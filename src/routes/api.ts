@@ -1,0 +1,262 @@
+import { Router } from 'express';
+import { MediaPlayerController } from '../controllers/mediaPlayerController.js';
+import { LibraryController } from '../controllers/libraryController.js';
+import { MovieController } from '../controllers/movieController.js';
+import { IgnorePatternController } from '../controllers/ignorePatternController.js';
+import { ImageController } from '../controllers/imageController.js';
+import { DatabaseManager } from '../database/DatabaseManager.js';
+import { MediaPlayerConnectionManager } from '../services/mediaPlayerConnectionManager.js';
+import { MediaPlayerService } from '../services/mediaPlayerService.js';
+import { LibraryService } from '../services/libraryService.js';
+import { LibraryScanService } from '../services/libraryScanService.js';
+import { MovieService } from '../services/movieService.js';
+import { IgnorePatternService } from '../services/ignorePatternService.js';
+import { ImageService } from '../services/imageService.js';
+// import { JobController } from '../controllers/jobController.js';
+// import { ProviderController } from '../controllers/providerController.js';
+
+// Initialize router factory function
+export const createApiRouter = (
+  dbManager: DatabaseManager,
+  connectionManager: MediaPlayerConnectionManager
+): Router => {
+  const router = Router();
+
+  // Initialize media player services and controller
+  const mediaPlayerService = new MediaPlayerService(dbManager, connectionManager);
+  const mediaPlayerController = new MediaPlayerController(mediaPlayerService, connectionManager);
+
+  // Initialize library services and controller
+  const libraryService = new LibraryService(dbManager);
+  const libraryScanService = new LibraryScanService(dbManager);
+  const libraryController = new LibraryController(libraryService, libraryScanService);
+
+  // Initialize movie service and controller
+  const movieService = new MovieService(dbManager);
+  const movieController = new MovieController(movieService, libraryScanService);
+
+  // Initialize ignore pattern service and controller
+  const ignorePatternService = new IgnorePatternService(dbManager);
+  const ignorePatternController = new IgnorePatternController(ignorePatternService);
+
+  // Initialize image service and controller
+  const imageService = new ImageService(dbManager);
+  const imageController = new ImageController(imageService);
+  // Initialize image service
+  imageService.initialize().catch(err => console.error('Failed to initialize image service:', err));
+
+  // Health check endpoint
+  router.get('/health', (_req, res) => {
+    res.json({
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      version: process.env.npm_package_version || '1.0.0',
+    });
+  });
+
+  // System information
+  router.get('/system/info', (_req, res) => {
+    res.json({
+      name: 'Metarr',
+      version: process.env.npm_package_version || '1.0.0',
+      description: 'Metadata management application bridging downloaders and media players',
+      uptime: process.uptime(),
+      nodeVersion: process.version,
+      platform: process.platform,
+      arch: process.arch,
+      memory: {
+        used: process.memoryUsage(),
+        free: process.memoryUsage().external,
+      },
+    });
+  });
+
+  // Media Player Routes
+  router.get('/media-players', (req, res, next) => mediaPlayerController.getAll(req, res, next));
+  router.get('/media-players/status', (req, res) => mediaPlayerController.streamStatus(req, res));
+  router.get('/media-players/:id', (req, res, next) =>
+    mediaPlayerController.getById(req, res, next)
+  );
+  router.post('/media-players', (req, res, next) => mediaPlayerController.create(req, res, next));
+  router.put('/media-players/:id', (req, res, next) =>
+    mediaPlayerController.update(req, res, next)
+  );
+  router.delete('/media-players/:id', (req, res, next) =>
+    mediaPlayerController.delete(req, res, next)
+  );
+  router.post('/media-players/test', (req, res, next) =>
+    mediaPlayerController.testConnectionUnsaved(req, res, next)
+  );
+  router.post('/media-players/:id/test', (req, res, next) =>
+    mediaPlayerController.testConnection(req, res, next)
+  );
+  router.post('/media-players/:id/connect', (req, res, next) =>
+    mediaPlayerController.connect(req, res, next)
+  );
+  router.post('/media-players/:id/disconnect', (req, res, next) =>
+    mediaPlayerController.disconnect(req, res, next)
+  );
+
+  // Library Routes
+  router.get('/libraries', (req, res, next) => libraryController.getAll(req, res, next));
+  router.get('/libraries/scan-status', (req, res) => libraryController.streamScanStatus(req, res));
+  router.get('/libraries/drives', (req, res, next) => libraryController.getDrives(req, res, next));
+  router.get('/libraries/browse', (req, res, next) => libraryController.browsePath(req, res, next));
+  router.post('/libraries/validate-path', (req, res, next) =>
+    libraryController.validatePath(req, res, next)
+  );
+  router.get('/libraries/:id', (req, res, next) => libraryController.getById(req, res, next));
+  router.post('/libraries', (req, res, next) => libraryController.create(req, res, next));
+  router.put('/libraries/:id', (req, res, next) => libraryController.update(req, res, next));
+  router.delete('/libraries/:id', (req, res, next) => libraryController.delete(req, res, next));
+  router.post('/libraries/:id/scan', (req, res, next) =>
+    libraryController.startScan(req, res, next)
+  );
+
+  // Ignore Pattern Routes
+  console.log('[API Router] Registering ignore pattern routes');
+  router.get('/ignore-patterns', (req, res, next) =>
+    ignorePatternController.getAll(req, res, next)
+  );
+  router.post('/ignore-patterns', (req, res, next) =>
+    ignorePatternController.create(req, res, next)
+  );
+  router.patch('/ignore-patterns/:id/toggle', (req, res, next) =>
+    ignorePatternController.toggle(req, res, next)
+  );
+  router.delete('/ignore-patterns/:id', (req, res, next) =>
+    ignorePatternController.delete(req, res, next)
+  );
+  router.post('/ignore-patterns/generate', (req, res, next) =>
+    ignorePatternController.generatePattern(req, res, next)
+  );
+  router.post('/ignore-patterns/ignore-and-delete', (req, res, next) =>
+    ignorePatternController.ignoreAndDeleteMatching(req, res, next)
+  );
+
+  // Movie Routes (order matters - specific routes before parameterized routes)
+  console.log('[API Router] Registering movie routes');
+
+  // SSE route for movie updates
+  router.get('/movies/updates', (req, res) => {
+    console.log('[Route Hit] /movies/updates');
+    movieController.streamMovieUpdates(req, res);
+  });
+
+  // List all movies
+  router.get('/movies', (req, res, next) => {
+    console.log('[Route Hit] /movies');
+    movieController.getAll(req, res, next);
+  });
+
+  // Movie detail sub-routes (MUST come before /movies/:id)
+  router.get('/movies/:id/unknown-files', (req, res, next) => {
+    console.log('[Route Hit] /movies/:id/unknown-files with id:', req.params.id);
+    movieController.getUnknownFiles(req, res, next);
+  });
+
+  router.post('/movies/:id/unknown-files/:fileId/assign', (req, res, next) => {
+    console.log('[Route Hit] /movies/:id/unknown-files/:fileId/assign with id:', req.params.id, 'fileId:', req.params.fileId);
+    movieController.assignUnknownFile(req, res, next);
+  });
+
+  router.post('/movies/:id/unknown-files/:fileId/ignore', (req, res, next) => {
+    console.log('[Route Hit] /movies/:id/unknown-files/:fileId/ignore with id:', req.params.id, 'fileId:', req.params.fileId);
+    movieController.ignoreUnknownFile(req, res, next);
+  });
+
+  router.delete('/movies/:id/unknown-files/:fileId', (req, res, next) => {
+    console.log('[Route Hit] DELETE /movies/:id/unknown-files/:fileId with id:', req.params.id, 'fileId:', req.params.fileId);
+    movieController.deleteUnknownFile(req, res, next);
+  });
+
+  // Asset rebuild endpoints
+  router.post('/movies/:id/rebuild-assets', (req, res, next) => {
+    movieController.rebuildAssets(req, res, next);
+  });
+
+  router.get('/movies/:id/verify-assets', (req, res, next) => {
+    movieController.verifyAssets(req, res, next);
+  });
+
+  router.get('/movies/:id/images', (req, res, next) => {
+    console.log('[Route Hit] /movies/:id/images with id:', req.params.id);
+    movieController.getImages(req, res, next);
+  });
+
+  // Refresh movie metadata (user-initiated)
+  router.post('/movies/:id/refresh', (req, res, next) => {
+    console.log('[Route Hit] /movies/:id/refresh with id:', req.params.id);
+    movieController.refreshMovie(req, res, next);
+  });
+
+  // Update movie metadata
+  router.patch('/movies/:id/metadata', (req, res, next) => {
+    console.log('[Route Hit] /movies/:id/metadata with id:', req.params.id);
+    movieController.updateMetadata(req, res, next);
+  });
+
+  // Movie detail (MUST come last among movie routes)
+  router.get('/movies/:id', (req, res, next) => {
+    console.log('[Route Hit] /movies/:id with id:', req.params.id);
+    movieController.getById(req, res, next);
+  });
+
+  // Image Routes
+  console.log('[API Router] Registering image routes');
+
+  // Image file serving (MUST come before /images/:id)
+  router.get('/images/:id/file', (req, res, next) => {
+    console.log('[Route Hit] /images/:id/file with id:', req.params.id);
+    imageController.serveImage(req, res, next);
+  });
+
+  // Movie image routes
+  router.get('/movies/:id/images', (req, res, next) => {
+    console.log('[Route Hit] /movies/:id/images with id:', req.params.id);
+    imageController.getMovieImages(req, res, next);
+  });
+
+  router.post(
+    '/movies/:id/images/upload',
+    imageController.upload.single('image'),
+    (req, res, next) => {
+      console.log('[Route Hit] /movies/:id/images/upload with id:', req.params.id);
+      imageController.uploadMovieImage(req, res, next);
+    }
+  );
+
+  router.post('/movies/:id/images/recover', (req, res, next) => {
+    console.log('[Route Hit] /movies/:id/images/recover with id:', req.params.id);
+    imageController.recoverImages(req, res, next);
+  });
+
+  // Generic image operations
+  router.patch('/images/:id/lock', (req, res, next) => {
+    console.log('[Route Hit] /images/:id/lock with id:', req.params.id);
+    imageController.lockImage(req, res, next);
+  });
+
+  router.delete('/images/:id', (req, res, next) => {
+    console.log('[Route Hit] /images/:id with id:', req.params.id);
+    imageController.deleteImage(req, res, next);
+  });
+
+  // Placeholder routes for future implementation
+  router.get('/jobs', (_req, res) => {
+    res.json({ message: 'Jobs endpoint coming soon' });
+  });
+
+  router.get('/providers', (_req, res) => {
+    res.json({ message: 'Providers endpoint coming soon' });
+  });
+
+  router.get('/series', (_req, res) => {
+    res.json({ message: 'Series endpoint coming soon' });
+  });
+
+  return router;
+};
+
+// Legacy export for backward compatibility
+export const apiRoutes = Router();

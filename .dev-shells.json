@@ -1,0 +1,16 @@
+{
+  "backend": {
+    "shellId": "2ee3d4",
+    "nodemonPid": 24684,
+    "tsNodePid": 572,
+    "port": 3000,
+    "startedAt": "2025-10-06T01:54:30.000Z"
+  },
+  "frontend": {
+    "shellId": "c417c6",
+    "vitePid": null,
+    "port": 3001,
+    "startedAt": "2025-10-06T01:54:57.000Z"
+  },
+  "lastUpdated": "2025-10-06T01:55:00.000Z"
+}

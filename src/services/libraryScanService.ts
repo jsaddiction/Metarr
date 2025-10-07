@@ -1,0 +1,365 @@
+import { EventEmitter } from 'events';
+import { DatabaseManager } from '../database/DatabaseManager.js';
+import { Library, ScanJob } from '../types/models.js';
+import { logger } from '../middleware/logging.js';
+import { getSubdirectories } from './nfo/nfoDiscovery.js';
+import { scanMovieDirectory } from './scan/unifiedScanService.js';
+import { markMovieForDeletion } from './scan/movieLookupService.js';
+import path from 'path';
+
+export class LibraryScanService extends EventEmitter {
+  constructor(private dbManager: DatabaseManager) {
+    super();
+  }
+
+  /**
+   * Start a library scan
+   * Creates a scan job and processes it asynchronously
+   */
+  async startScan(libraryId: number): Promise<ScanJob> {
+    try {
+      const db = this.dbManager.getConnection();
+
+      // Check if library exists
+      const libraryRows = await db.query<any[]>('SELECT * FROM libraries WHERE id = ?', [
+        libraryId,
+      ]);
+
+      if (libraryRows.length === 0) {
+        throw new Error('Library not found');
+      }
+
+      const row = libraryRows[0] as any;
+      const library: Library = {
+        id: row.id,
+        name: row.name,
+        type: row.type,
+        path: row.path,
+        enabled: Boolean(row.enabled),
+        createdAt: new Date(row.created_at),
+        updatedAt: new Date(row.updated_at),
+      };
+
+      if (!library.enabled) {
+        throw new Error('Library is disabled');
+      }
+
+      // Check for existing running scan
+      const existingScans = await db.query<any[]>(
+        'SELECT * FROM scan_jobs WHERE library_id = ? AND status = ?',
+        [libraryId, 'running']
+      );
+
+      if (existingScans.length > 0) {
+        throw new Error('A scan is already running for this library');
+      }
+
+      // Create scan job
+      const result = await db.execute(
+        `INSERT INTO scan_jobs (library_id, status, started_at, progress_current, progress_total, errors_count)
+         VALUES (?, ?, CURRENT_TIMESTAMP, ?, ?, ?)`,
+        [libraryId, 'running', 0, 0, 0]
+      );
+
+      const scanJobId = result.insertId!;
+
+      // Get the created scan job
+      const scanJob = await this.getScanJob(scanJobId);
+      if (!scanJob) {
+        throw new Error('Failed to create scan job');
+      }
+
+      logger.info(`Started scan for library ${library.name}`, { libraryId, scanJobId });
+
+      // Process scan asynchronously
+      this.processScan(scanJob, library).catch(error => {
+        logger.error(`Scan process failed for library ${libraryId}`, { error: error.message });
+      });
+
+      return scanJob;
+    } catch (error: any) {
+      logger.error(`Failed to start scan for library ${libraryId}`, { error: error.message });
+      throw new Error(`Failed to start scan: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get scan job by ID
+   */
+  async getScanJob(scanJobId: number): Promise<ScanJob | null> {
+    try {
+      const db = this.dbManager.getConnection();
+      const rows = await db.query<any[]>('SELECT * FROM scan_jobs WHERE id = ?', [scanJobId]);
+
+      if (rows.length === 0) {
+        return null;
+      }
+
+      return this.mapRowToScanJob(rows[0]);
+    } catch (error: any) {
+      logger.error(`Failed to get scan job ${scanJobId}`, { error: error.message });
+      return null;
+    }
+  }
+
+  /**
+   * Get all active scan jobs
+   */
+  async getActiveScanJobs(): Promise<ScanJob[]> {
+    try {
+      const db = this.dbManager.getConnection();
+      const rows = await db.query<any[]>(
+        'SELECT * FROM scan_jobs WHERE status = ? ORDER BY started_at DESC',
+        ['running']
+      );
+
+      return rows.map(this.mapRowToScanJob);
+    } catch (error: any) {
+      logger.error('Failed to get active scan jobs', { error: error.message });
+      return [];
+    }
+  }
+
+  /**
+   * Process a library scan
+   */
+  private async processScan(scanJob: ScanJob, library: Library): Promise<void> {
+    const db = this.dbManager.getConnection();
+    // Track active scan (for future use)
+
+    try {
+      logger.info(`Processing scan for ${library.name}`, {
+        type: library.type,
+        path: library.path,
+      });
+
+      if (library.type === 'movies') {
+        await this.scanMovieLibrary(scanJob, library);
+      } else if (library.type === 'tvshows') {
+        await this.scanTVShowLibrary(scanJob, library);
+      } else {
+        throw new Error(`Unsupported library type: ${library.type}`);
+      }
+
+      // Mark scan as completed
+      await db.execute(
+        'UPDATE scan_jobs SET status = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ?',
+        ['completed', scanJob.id]
+      );
+
+      logger.info(`Completed scan for ${library.name}`, { scanJobId: scanJob.id });
+
+      // Emit completion event
+      this.emit('scanCompleted', { scanJobId: scanJob.id, libraryId: library.id });
+    } catch (error: any) {
+      logger.error(`Scan failed for ${library.name}`, {
+        error: error.message,
+        scanJobId: scanJob.id,
+      });
+
+      // Mark scan as failed
+      await db.execute(
+        'UPDATE scan_jobs SET status = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ?',
+        ['failed', scanJob.id]
+      );
+
+      // Emit error event
+      this.emit('scanFailed', {
+        scanJobId: scanJob.id,
+        libraryId: library.id,
+        error: error.message,
+      });
+    } finally {
+      // Clear active scan tracking
+    }
+  }
+
+  /**
+   * Scan a movie library
+   */
+  private async scanMovieLibrary(scanJob: ScanJob, library: Library): Promise<void> {
+    const db = this.dbManager.getConnection();
+    const movieDirs = await getSubdirectories(library.path);
+
+    // Get all existing movies for this library (by path prefix)
+    const existingMovies = await db.query<any>(
+      'SELECT id, file_path FROM movies WHERE file_path LIKE ?',
+      [`${library.path}%`]
+    );
+
+    // Track which movie directories still exist on filesystem
+    const scannedDirs = new Set<string>();
+
+    // Update total count
+    await db.execute('UPDATE scan_jobs SET progress_total = ? WHERE id = ?', [
+      movieDirs.length,
+      scanJob.id,
+    ]);
+
+    this.emitProgress(scanJob.id, library.id, 0, movieDirs.length, '');
+
+    let totalErrors = 0;
+
+    // Process all movie directories found on filesystem using unified scan
+    for (let i = 0; i < movieDirs.length; i++) {
+      const movieDir = movieDirs[i];
+      const movieName = path.basename(movieDir);
+      scannedDirs.add(movieDir);
+
+      try {
+        // Update progress
+        await db.execute(
+          'UPDATE scan_jobs SET progress_current = ?, current_file = ? WHERE id = ?',
+          [i + 1, movieDir, scanJob.id]
+        );
+
+        this.emitProgress(scanJob.id, library.id, i + 1, movieDirs.length, movieDir);
+
+        // Use unified scan service with scheduled_scan trigger
+        const scanResult = await scanMovieDirectory(this.dbManager, library.id, movieDir, {
+          trigger: 'scheduled_scan',
+        });
+
+        // Log result
+        if (scanResult.isNewMovie) {
+          logger.info(`Added new movie: ${movieName}`, {
+            movieId: scanResult.movieId,
+            assetsFound: scanResult.assetsFound,
+            unknownFiles: scanResult.unknownFilesFound,
+          });
+        } else if (scanResult.directoryChanged) {
+          logger.info(`Updated movie: ${movieName}`, {
+            movieId: scanResult.movieId,
+            nfoRegenerated: scanResult.nfoRegenerated,
+            streamsExtracted: scanResult.streamsExtracted,
+            unknownFiles: scanResult.unknownFilesFound,
+          });
+        } else {
+          logger.debug(`Movie unchanged: ${movieName}`, {
+            movieId: scanResult.movieId,
+          });
+        }
+
+        // Count errors
+        if (scanResult.errors.length > 0) {
+          totalErrors += scanResult.errors.length;
+          logger.warn(`Scan errors for ${movieName}`, {
+            errors: scanResult.errors,
+          });
+        }
+      } catch (error: any) {
+        logger.error(`Failed to scan movie directory: ${movieDir}`, { error: error.message });
+        totalErrors++;
+        await this.incrementErrorCount(scanJob.id);
+      }
+    }
+
+    // Mark movies for deletion that no longer exist on filesystem (7-day grace period)
+    let markedForDeletionCount = 0;
+    for (const movieRow of existingMovies) {
+      const movie = movieRow as any;
+      const movieDir = path.dirname(movie.file_path);
+
+      if (!scannedDirs.has(movieDir)) {
+        await markMovieForDeletion(db, movie.id, 'File not found during scheduled library scan');
+        markedForDeletionCount++;
+        logger.info(`Marked movie for deletion (not found on filesystem): ${movie.file_path}`, {
+          movieId: movie.id,
+          deleteOn: '7 days from now',
+        });
+      }
+    }
+
+    if (markedForDeletionCount > 0) {
+      logger.info(
+        `Marked ${markedForDeletionCount} movies for deletion from library ${library.id} (no longer on filesystem)`
+      );
+    }
+
+    // Update final error count
+    if (totalErrors > 0) {
+      await db.execute('UPDATE scan_jobs SET errors_count = ? WHERE id = ?', [
+        totalErrors,
+        scanJob.id,
+      ]);
+    }
+
+    logger.info(`Completed movie library scan`, {
+      libraryId: library.id,
+      scanned: movieDirs.length,
+      markedForDeletion: markedForDeletionCount,
+      errors: totalErrors,
+    });
+  }
+
+  /**
+   * Scan a TV show library
+   * TODO: Implement TV show scanning with unified scan service
+   */
+  private async scanTVShowLibrary(scanJob: ScanJob, library: Library): Promise<void> {
+    const db = this.dbManager.getConnection();
+
+    logger.warn('TV show library scanning not yet implemented with unified scan service', {
+      libraryId: library.id,
+      scanJobId: scanJob.id,
+    });
+
+    // Mark as completed for now
+    await db.execute('UPDATE scan_jobs SET progress_total = 0, progress_current = 0 WHERE id = ?', [
+      scanJob.id,
+    ]);
+
+    this.emitProgress(scanJob.id, library.id, 0, 0, 'TV show scanning not yet implemented');
+  }
+
+  /**
+   * Increment error count for a scan job
+   */
+  private async incrementErrorCount(scanJobId: number): Promise<void> {
+    const db = this.dbManager.getConnection();
+    await db.execute('UPDATE scan_jobs SET errors_count = errors_count + 1 WHERE id = ?', [
+      scanJobId,
+    ]);
+  }
+
+  /**
+   * Emit progress event via EventEmitter
+   */
+  private emitProgress(
+    scanJobId: number,
+    libraryId: number,
+    current: number,
+    total: number,
+    currentFile: string
+  ): void {
+    this.emit('scanProgress', {
+      scanJobId,
+      libraryId,
+      progressCurrent: current,
+      progressTotal: total,
+      currentFile,
+    });
+  }
+
+  /**
+   * Map database row to ScanJob object
+   */
+  private mapRowToScanJob(row: any): ScanJob {
+    const scanJob: ScanJob = {
+      id: row.id,
+      libraryId: row.library_id,
+      status: row.status,
+      progressCurrent: row.progress_current,
+      progressTotal: row.progress_total,
+      currentFile: row.current_file || undefined,
+      errorsCount: row.errors_count,
+      startedAt: new Date(row.started_at),
+    };
+
+    if (row.completed_at) {
+      scanJob.completedAt = new Date(row.completed_at);
+    }
+
+    return scanJob;
+  }
+}
