@@ -4,12 +4,15 @@ import Fuse from 'fuse.js';
 import { ViewControls, ViewMode } from '../../components/ui/ViewControls';
 import { VirtualizedMovieTable } from '../../components/movie/VirtualizedMovieTable';
 import { Movie } from '../../types/movie';
-import { movieApi } from '../../utils/api';
+import { useMovies } from '../../hooks/useMovies';
 
 export const Movies: React.FC = () => {
   const navigate = useNavigate();
-  const [movies, setMovies] = useState<Movie[]>([]);
-  const [loading, setLoading] = useState(true);
+
+  // Use TanStack Query hook for movies data
+  const { data: moviesData, isLoading: loading, refetch } = useMovies();
+  const movies = moviesData?.movies || [];
+
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [viewMode, setViewMode] = useState<ViewMode>('table');
@@ -22,51 +25,6 @@ export const Movies: React.FC = () => {
 
     return () => clearTimeout(timer);
   }, [searchTerm]);
-
-  // Load movies on mount
-  useEffect(() => {
-    const loadMovies = async () => {
-      try {
-        const result = await movieApi.getAll();
-        setMovies(result.movies || []);
-      } catch (error) {
-        console.error('Failed to load movies:', error);
-        setMovies([]);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadMovies();
-  }, []);
-
-  // Subscribe to real-time movie updates
-  useEffect(() => {
-    const cleanup = movieApi.subscribeToUpdates(
-      // Movies added (batch)
-      (addedMovies) => {
-        if (addedMovies && Array.isArray(addedMovies)) {
-          setMovies((prev) => [...prev, ...addedMovies]);
-        }
-      },
-      // Movie updated
-      (updatedMovie) => {
-        if (updatedMovie) {
-          setMovies((prev) =>
-            prev.map((m) => (m.id === updatedMovie.id ? updatedMovie : m))
-          );
-        }
-      },
-      // Movie removed
-      (removedId) => {
-        if (removedId !== undefined && removedId !== null) {
-          setMovies((prev) => prev.filter((m) => m.id !== removedId));
-        }
-      }
-    );
-
-    return cleanup;
-  }, []);
 
   // Initialize Fuse.js for fuzzy search
   const fuse = useMemo(() => {
@@ -87,15 +45,7 @@ export const Movies: React.FC = () => {
   }, [debouncedSearchTerm, movies, fuse]);
 
   const handleRefresh = async () => {
-    setLoading(true);
-    try {
-      const result = await movieApi.getAll();
-      setMovies(result.movies || []);
-    } catch (error) {
-      console.error('Failed to refresh movies:', error);
-    } finally {
-      setLoading(false);
-    }
+    refetch();
   };
 
   const handleMovieClick = (movie: Movie) => {

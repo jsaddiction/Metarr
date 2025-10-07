@@ -1,0 +1,148 @@
+/**
+ * EXAMPLE: Movies component migrated to use WebSocket + TanStack Query
+ *
+ * This is an example showing how to migrate from SSE + manual state to
+ * WebSocket + TanStack Query. Compare this with the current Movies.tsx
+ * to see the differences.
+ *
+ * To use this migration:
+ * 1. Backup current Movies.tsx
+ * 2. Replace Movies.tsx with this file
+ * 3. Test thoroughly
+ * 4. Delete this .example file
+ */
+
+import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
+import Fuse from 'fuse.js';
+import { ViewControls, ViewMode } from '../../components/ui/ViewControls';
+import { VirtualizedMovieTable } from '../../components/movie/VirtualizedMovieTable';
+import { Movie } from '../../types/movie';
+import { useMovies } from '../../hooks/useMovies';
+
+export const Movies: React.FC = () => {
+  const navigate = useNavigate();
+  const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
+  const [viewMode, setViewMode] = useState<ViewMode>('table');
+
+  // TanStack Query hook - replaces manual state management
+  const { data, isLoading, error, refetch } = useMovies();
+  const movies = data?.movies || [];
+
+  // Debounce search input for performance
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
+  // Initialize Fuse.js for fuzzy search
+  const fuse = useMemo(() => {
+    return new Fuse(movies, {
+      keys: ['title', 'studio'],
+      threshold: 0.4,
+      ignoreLocation: true,
+      includeScore: true,
+    });
+  }, [movies]);
+
+  // Filter movies based on debounced search term
+  const filteredMovies = useMemo(() => {
+    if (!debouncedSearchTerm.trim()) {
+      return movies;
+    }
+    return fuse.search(debouncedSearchTerm).map((result) => result.item);
+  }, [debouncedSearchTerm, movies, fuse]);
+
+  const handleRefresh = () => {
+    refetch();
+  };
+
+  const handleEdit = (movie: Movie) => {
+    navigate(`/metadata/movies/${movie.id}/edit`);
+  };
+
+  const handleViewModeChange = (mode: ViewMode) => {
+    setViewMode(mode);
+  };
+
+  const handleSearchChange = (term: string) => {
+    setSearchTerm(term);
+  };
+
+  // Handle error state
+  if (error) {
+    return (
+      <div className="p-4">
+        <div className="bg-red-900/50 border border-red-500 rounded-lg p-4">
+          <h2 className="text-lg font-semibold text-red-200 mb-2">Error Loading Movies</h2>
+          <p className="text-red-300 mb-4">{error.message}</p>
+          <button
+            onClick={handleRefresh}
+            className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-md text-white transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col h-full">
+      <ViewControls
+        searchTerm={searchTerm}
+        onSearchChange={handleSearchChange}
+        viewMode={viewMode}
+        onViewModeChange={handleViewModeChange}
+        onRefresh={handleRefresh}
+        isRefreshing={isLoading}
+        itemCount={filteredMovies.length}
+        totalCount={movies.length}
+      />
+
+      <div className="flex-1 overflow-hidden">
+        {viewMode === 'table' && (
+          <VirtualizedMovieTable
+            movies={filteredMovies}
+            loading={isLoading}
+            onEdit={handleEdit}
+          />
+        )}
+        {/* Add other view modes here when implemented */}
+      </div>
+    </div>
+  );
+};
+
+/**
+ * MIGRATION NOTES:
+ *
+ * What was removed:
+ * - Manual state: useState for movies, loading
+ * - Manual fetching: useEffect with movieApi.getAll()
+ * - SSE subscription: useEffect with movieApi.subscribeToUpdates()
+ * - Manual error handling in async functions
+ *
+ * What was added:
+ * - useMovies() hook from TanStack Query
+ * - Automatic error state handling
+ * - Using refetch() instead of manual fetch in handleRefresh
+ *
+ * What stayed the same:
+ * - All UI components (ViewControls, VirtualizedMovieTable)
+ * - Search and filtering logic
+ * - Navigation and event handlers
+ * - View mode switching
+ *
+ * Benefits:
+ * - Less code (removed ~40 lines of boilerplate)
+ * - Automatic real-time updates via WebSocket
+ * - Built-in loading/error states
+ * - Automatic cache management
+ * - Request deduplication
+ * - Background refetching
+ */

@@ -79,15 +79,15 @@ export const ErrorBanner: React.FC<ErrorBannerProps> = ({
     }
   };
 
-  if (!error) return null;
+  if (!error || !isVisible) {
+    return null;
+  }
 
   const config = getTypeConfig();
 
   return (
     <div
-      className={`fixed bottom-0 left-0 right-0 z-50 transition-all duration-500 ease-in-out ${
-        isVisible ? 'max-h-32 opacity-100' : 'max-h-0 opacity-0'
-      } overflow-hidden`}
+      className="fixed bottom-0 left-0 right-0 z-50 animate-slide-up"
     >
       <div
         className={`${config.bgColor} ${config.borderColor} border-t-4`}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
@@ -21,19 +21,16 @@ import {
 import { MetadataTab } from '../../components/movie/MetadataTab';
 import { ImagesTab } from '../../components/movie/ImagesTab';
 import { ExtrasTab } from '../../components/movie/ExtrasTab';
+import { useMovie } from '../../hooks/useMovies';
+import {
+  useUnknownFiles,
+  useAssignUnknownFile,
+  useIgnoreUnknownFile,
+  useIgnoreUnknownFilePattern,
+  useDeleteUnknownFile,
+} from '../../hooks/useMovieAssets';
 
 type TabType = 'metadata' | 'images' | 'extras' | 'unknown-files';
-
-interface UnknownFile {
-  id: number;
-  file_name: string;
-  file_path: string;
-  file_size: number;
-  extension: string;
-  category: 'video' | 'image' | 'archive' | 'text' | 'other';
-  created_at: string;
-  library_path?: string;
-}
 
 interface AssignModalData {
   fileId: number;
@@ -43,46 +40,31 @@ interface AssignModalData {
 export const MovieEdit: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const movieId = id ? parseInt(id) : null;
+
+  // Fetch movie data with TanStack Query
+  const { data: movie, isLoading: movieLoading, error: movieError } = useMovie(movieId);
+
+  // Fetch unknown files with TanStack Query
+  const { data: unknownFiles = [], isLoading: loadingUnknownFiles } = useUnknownFiles(movieId);
+
+  // Mutations for unknown files
+  const assignFileMutation = useAssignUnknownFile(movieId!);
+  const ignoreFileMutation = useIgnoreUnknownFile(movieId!);
+  const ignorePatternMutation = useIgnoreUnknownFilePattern(movieId!);
+  const deleteFileMutation = useDeleteUnknownFile(movieId!);
+
   const [activeTab, setActiveTab] = useState<TabType>('metadata');
-  const [unknownFiles, setUnknownFiles] = useState<UnknownFile[]>([]);
-  const [loading, setLoading] = useState(false);
   const [assignModal, setAssignModal] = useState<AssignModalData | null>(null);
   const [selectedFileType, setSelectedFileType] = useState<string>('');
   const [processingAction, setProcessingAction] = useState(false);
 
-  // TODO: Fetch movie data from API
-  const movieTitle = 'Movie Title'; // Placeholder
-
-  // Fetch unknown files on mount to show badge count
-  useEffect(() => {
-    if (id) {
-      fetchUnknownFiles();
-    }
-  }, [id]);
-
-  const fetchUnknownFiles = async () => {
-    setLoading(true);
-    try {
-      const response = await fetch(`/api/movies/${id}/unknown-files`);
-      if (response.ok) {
-        const data = await response.json();
-        setUnknownFiles(data.unknownFiles || []);
-      }
-    } catch (error) {
-      console.error('Failed to fetch unknown files:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleIgnorePattern = async (fileId: number) => {
     try {
-      await fetch(`/api/movies/${id}/unknown-files/${fileId}/ignore-pattern`, {
-        method: 'POST',
-      });
-      fetchUnknownFiles();
+      await ignorePatternMutation.mutateAsync(fileId);
     } catch (error) {
       console.error('Failed to ignore pattern:', error);
+      alert('Failed to ignore pattern');
     }
   };
 
@@ -92,12 +74,10 @@ export const MovieEdit: React.FC = () => {
     }
 
     try {
-      await fetch(`/api/movies/${id}/unknown-files/${fileId}`, {
-        method: 'DELETE',
-      });
-      fetchUnknownFiles();
+      await deleteFileMutation.mutateAsync(fileId);
     } catch (error) {
       console.error('Failed to delete file:', error);
+      alert('Failed to delete file');
     }
   };
 
@@ -178,29 +158,19 @@ export const MovieEdit: React.FC = () => {
 
     setProcessingAction(true);
     try {
-      const response = await fetch(`/api/movies/${id}/unknown-files/${assignModal.fileId}/assign`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fileType: selectedFileType }),
+      await assignFileMutation.mutateAsync({
+        fileId: assignModal.fileId,
+        fileType: selectedFileType
       });
 
-      if (response.ok) {
-        // Success! Close modal and refresh lists
-        setAssignModal(null);
-        setSelectedFileType('');
-
-        // Refresh unknown files list
-        await fetchUnknownFiles();
-
-        // TODO: Trigger images/trailers/subtitles tab refresh
-        // This will be handled by the parent component state management
-      } else {
-        const error = await response.json();
-        alert(`Failed to assign file: ${error.message || 'Unknown error'}`);
-      }
-    } catch (error) {
+      // Success! Close modal and clear selection
+      // TanStack Query will automatically refresh unknown files list
+      // Backend broadcasts moviesChanged, which will invalidate movieImages/movieExtras
+      setAssignModal(null);
+      setSelectedFileType('');
+    } catch (error: any) {
       console.error('Failed to assign file:', error);
-      alert('Failed to assign file. Please try again.');
+      alert(`Failed to assign file: ${error.message || 'Unknown error'}`);
     } finally {
       setProcessingAction(false);
     }
@@ -211,16 +181,8 @@ export const MovieEdit: React.FC = () => {
 
     setProcessingAction(true);
     try {
-      const response = await fetch(`/api/movies/${id}/unknown-files/${assignModal.fileId}/ignore`, {
-        method: 'POST',
-      });
-
-      if (response.ok) {
-        setAssignModal(null);
-        await fetchUnknownFiles();
-      } else {
-        alert('Failed to ignore file. Please try again.');
-      }
+      await ignoreFileMutation.mutateAsync(assignModal.fileId);
+      setAssignModal(null);
     } catch (error) {
       console.error('Failed to ignore file:', error);
       alert('Failed to ignore file. Please try again.');
@@ -238,16 +200,8 @@ export const MovieEdit: React.FC = () => {
 
     setProcessingAction(true);
     try {
-      const response = await fetch(`/api/movies/${id}/unknown-files/${assignModal.fileId}`, {
-        method: 'DELETE',
-      });
-
-      if (response.ok) {
-        setAssignModal(null);
-        await fetchUnknownFiles();
-      } else {
-        alert('Failed to delete file. Please try again.');
-      }
+      await deleteFileMutation.mutateAsync(assignModal.fileId);
+      setAssignModal(null);
     } catch (error) {
       console.error('Failed to delete file:', error);
       alert('Failed to delete file. Please try again.');
@@ -258,11 +212,6 @@ export const MovieEdit: React.FC = () => {
 
   const handleBack = () => {
     navigate('/metadata/movies');
-  };
-
-  const handleSave = () => {
-    console.log('Saving movie...');
-    // TODO: Implement save logic
   };
 
   const formatFileSize = (bytes: number): string => {
@@ -297,6 +246,44 @@ export const MovieEdit: React.FC = () => {
     return relativePath;
   };
 
+  // Show loading state
+  if (movieLoading) {
+    return (
+      <div className="content-spacing">
+        <div className="flex items-center mb-6">
+          <button onClick={handleBack} className="btn btn-ghost" title="Back to Movies">
+            <FontAwesomeIcon icon={faArrowLeft} />
+          </button>
+          <h1 className="text-2xl font-bold text-white ml-4">Loading...</h1>
+        </div>
+        <div className="text-center py-8 text-neutral-400">
+          Loading movie data...
+        </div>
+      </div>
+    );
+  }
+
+  // Show error state
+  if (movieError || !movie) {
+    return (
+      <div className="content-spacing">
+        <div className="flex items-center mb-6">
+          <button onClick={handleBack} className="btn btn-ghost" title="Back to Movies">
+            <FontAwesomeIcon icon={faArrowLeft} />
+          </button>
+          <h1 className="text-2xl font-bold text-white ml-4">Error</h1>
+        </div>
+        <div className="text-center py-8">
+          <p className="text-error mb-2">Failed to load movie</p>
+          <p className="text-sm text-neutral-400">{movieError?.message || 'Movie not found'}</p>
+          <button onClick={handleBack} className="btn btn-primary mt-4">
+            Back to Movies
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="content-spacing">
       {/* Header */}
@@ -309,7 +296,7 @@ export const MovieEdit: React.FC = () => {
           <FontAwesomeIcon icon={faArrowLeft} />
         </button>
         <h1 className="text-2xl font-bold text-white ml-4">
-          Edit Movie: {movieTitle}
+          Edit Movie: {movie.title} {movie.year ? `(${movie.year})` : ''}
         </h1>
       </div>
 
@@ -415,7 +402,7 @@ export const MovieEdit: React.FC = () => {
                 </div>
               )}
 
-              {loading ? (
+              {loadingUnknownFiles ? (
                 <div className="text-center py-8 text-neutral-400">
                   Loading unknown files...
                 </div>

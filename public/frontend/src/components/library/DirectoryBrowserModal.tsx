@@ -15,12 +15,46 @@ export const DirectoryBrowserModal: React.FC<DirectoryBrowserModalProps> = ({
   isOpen,
   onClose,
   onSelect,
-  initialPath = 'C:\\',
+  initialPath,
 }) => {
-  const [currentPath, setCurrentPath] = useState<string>(initialPath);
+  const [currentPath, setCurrentPath] = useState<string>(initialPath || '/');
   const [directories, setDirectories] = useState<DirectoryEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [drives, setDrives] = useState<string[]>([]);
+
+  // Load available drives and initialize path
+  useEffect(() => {
+    const initializePath = async () => {
+      if (!isOpen) return;
+
+      try {
+        const availableDrives = await libraryApi.getDrives();
+        setDrives(availableDrives);
+
+        // Determine starting path:
+        // 1. If initialPath is provided and not empty, use it
+        // 2. If Windows (has drives), use first drive
+        // 3. Otherwise (Unix), use root /
+        if (initialPath && initialPath.trim()) {
+          setCurrentPath(initialPath);
+        } else if (availableDrives.length > 0) {
+          setCurrentPath(availableDrives[0]);
+        } else {
+          setCurrentPath('/');
+        }
+      } catch (err) {
+        // If getDrives fails, we're probably on Unix
+        if (initialPath && initialPath.trim()) {
+          setCurrentPath(initialPath);
+        } else {
+          setCurrentPath('/');
+        }
+      }
+    };
+
+    initializePath();
+  }, [isOpen, initialPath]);
 
   useEffect(() => {
     if (isOpen && currentPath) {

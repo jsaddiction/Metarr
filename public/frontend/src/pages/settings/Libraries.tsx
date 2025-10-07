@@ -1,80 +1,39 @@
-import React, { useState, useEffect } from 'react';
-import { Library, LibraryFormData, ScanProgressEvent } from '../../types/library';
-import { libraryApi } from '../../utils/api';
+import React, { useState } from 'react';
+import { Library, LibraryFormData } from '../../types/library';
 import { AddLibraryCard } from '../../components/library/AddLibraryCard';
 import { LibraryCard } from '../../components/library/LibraryCard';
 import { LibraryConfigModal } from '../../components/library/LibraryConfigModal';
 import { ScannerSettings } from '../../components/library/ScannerSettings';
+import { useLibraries, useActiveScans, useCreateLibrary, useUpdateLibrary, useDeleteLibrary, useStartLibraryScan } from '../../hooks/useLibraryScans';
 
 export const Libraries: React.FC = () => {
-  const [libraries, setLibraries] = useState<Library[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Use TanStack Query hooks for data fetching
+  const { data: libraries = [], isLoading: loading } = useLibraries();
+  const activeScans = useActiveScans();
+
+  // Mutations
+  const createLibrary = useCreateLibrary();
+  const updateLibrary = useUpdateLibrary();
+  const deleteLibrary = useDeleteLibrary();
+  const startScan = useStartLibraryScan();
+
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [selectedLibrary, setSelectedLibrary] = useState<Library | undefined>();
-  const [scanProgress, setScanProgress] = useState<Map<number, ScanProgressEvent>>(new Map());
-  const [scanningLibraries, setScanningLibraries] = useState<Set<number>>(new Set());
 
-  useEffect(() => {
-    loadLibraries();
+  // Build scan progress map from active scans
+  const scanProgress = new Map(
+    activeScans.map(scan => [scan.libraryId, {
+      libraryId: scan.libraryId,
+      scanId: scan.id,
+      phase: scan.status,
+      progressCurrent: scan.progressCurrent || 0,
+      progressTotal: scan.progressTotal || 0,
+      currentFile: scan.currentFile || '',
+      startedAt: scan.startedAt
+    }])
+  );
 
-    // Subscribe to scan progress updates
-    const cleanup = libraryApi.subscribeToScanProgress(
-      // On progress
-      (event) => {
-        setScanProgress((prev) => {
-          const updated = new Map(prev);
-          updated.set(event.libraryId, event);
-          return updated;
-        });
-        setScanningLibraries((prev) => new Set(prev).add(event.libraryId));
-      },
-      // On completed
-      (event) => {
-        setScanProgress((prev) => {
-          const updated = new Map(prev);
-          updated.delete(event.libraryId);
-          return updated;
-        });
-        setScanningLibraries((prev) => {
-          const updated = new Set(prev);
-          updated.delete(event.libraryId);
-          return updated;
-        });
-        // Reload libraries to get updated data
-        loadLibraries();
-      },
-      // On failed
-      (event) => {
-        setScanProgress((prev) => {
-          const updated = new Map(prev);
-          updated.delete(event.libraryId);
-          return updated;
-        });
-        setScanningLibraries((prev) => {
-          const updated = new Set(prev);
-          updated.delete(event.libraryId);
-          return updated;
-        });
-        console.error(`Library scan failed: ${event.error}`);
-      }
-    );
-
-    return () => {
-      cleanup();
-    };
-  }, []);
-
-  const loadLibraries = async () => {
-    try {
-      setLoading(true);
-      const data = await libraryApi.getAll();
-      setLibraries(data);
-    } catch (error) {
-      console.error('Failed to load libraries:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const scanningLibraries = new Set(activeScans.map(scan => scan.libraryId));
 
   const handleAddClick = () => {
     setSelectedLibrary(undefined);
@@ -89,17 +48,26 @@ export const Libraries: React.FC = () => {
   const handleSave = async (data: LibraryFormData, scanAfterSave: boolean) => {
     try {
       if (selectedLibrary) {
-        await libraryApi.update(selectedLibrary.id, data);
+        await updateLibrary.mutateAsync({ id: selectedLibrary.id, updates: data });
       } else {
-        const newLibrary = await libraryApi.create(data);
+        const newLibrary = await createLibrary.mutateAsync(data);
 
         // Trigger scan if requested
         if (scanAfterSave && newLibrary.enabled) {
-          await libraryApi.startScan(newLibrary.id);
-          setScanningLibraries((prev) => new Set(prev).add(newLibrary.id));
+          // Start scan via POST request only (no WebSocket)
+          // The backend will handle any conflicts (e.g., if scan is already running)
+          await startScan.mutateAsync(newLibrary.id).catch((scanError: any) => {
+            // Silently ignore 409 conflicts (scan already running)
+            // This is rare for newly created libraries but can happen in edge cases
+            if (scanError.message?.includes('already') || scanError.message?.includes('409')) {
+              console.log('Scan already running for library', newLibrary.id);
+            } else {
+              // Log other errors but don't block the flow
+              console.error('Failed to start scan after library creation:', scanError);
+            }
+          });
         }
       }
-      await loadLibraries();
       handleCloseConfigModal();
     } catch (error) {
       console.error('Failed to save library:', error);
@@ -110,19 +78,28 @@ export const Libraries: React.FC = () => {
   const handleScan = async (e: React.MouseEvent, libraryId: number) => {
     e.stopPropagation(); // Prevent card click
 
+    // Check if library is already scanning (via activeScans state from WebSocket)
+    const isAlreadyScanning = activeScans.some(scan => scan.libraryId === libraryId);
+
+    if (isAlreadyScanning) {
+      console.log('Library scan already in progress');
+      return;
+    }
+
     try {
-      await libraryApi.startScan(libraryId);
-      setScanningLibraries((prev) => new Set(prev).add(libraryId));
+      await startScan.mutateAsync(libraryId);
     } catch (error: any) {
       console.error('Failed to start scan:', error);
-      alert(`Failed to start scan: ${error.message}`);
+      // Only show alert if it's not a 409 (already scanning)
+      if (!error.message?.includes('already')) {
+        alert(`Failed to start scan: ${error.message}`);
+      }
     }
   };
 
   const handleDelete = async (id: number) => {
     try {
-      await libraryApi.delete(id);
-      await loadLibraries();
+      await deleteLibrary.mutateAsync(id);
     } catch (error: any) {
       console.error('Failed to delete library:', error);
       alert(`Failed to delete library: ${error.message}`);

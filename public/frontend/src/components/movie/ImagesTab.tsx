@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faLock,
@@ -10,6 +10,13 @@ import {
   faArrowLeft,
   faTimes,
 } from '@fortawesome/free-solid-svg-icons';
+import {
+  useMovieImages,
+  useUploadImage,
+  useToggleImageLock,
+  useDeleteImage,
+  useRecoverImages,
+} from '../../hooks/useMovieAssets';
 
 interface ImagesTabProps {
   movieId: number;
@@ -47,41 +54,16 @@ const IMAGE_TYPES = [
 ];
 
 export const ImagesTab: React.FC<ImagesTabProps> = ({ movieId }) => {
-  const [images, setImages] = useState<ImagesByType>({});
-  const [loading, setLoading] = useState(true);
-  const [uploading, setUploading] = useState(false);
+  // Use TanStack Query hooks
+  const { data: images = {}, isLoading: loading } = useMovieImages(movieId);
+  const uploadImageMutation = useUploadImage(movieId);
+  const toggleLockMutation = useToggleImageLock(movieId);
+  const deleteImageMutation = useDeleteImage(movieId);
+  const recoverImagesMutation = useRecoverImages(movieId);
+
   const [uploadType, setUploadType] = useState<string | null>(null);
   const [fullscreenImage, setFullscreenImage] = useState<Image | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    fetchImages();
-  }, [movieId]);
-
-  const fetchImages = async () => {
-    setLoading(true);
-    try {
-      const response = await fetch(`/api/movies/${movieId}/images`);
-      if (response.ok) {
-        const data = await response.json();
-
-        // Group images by type
-        const grouped: ImagesByType = {};
-        data.images.forEach((img: Image) => {
-          if (!grouped[img.image_type]) {
-            grouped[img.image_type] = [];
-          }
-          grouped[img.image_type].push(img);
-        });
-
-        setImages(grouped);
-      }
-    } catch (error) {
-      console.error('Failed to fetch images:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleUploadClick = (imageType: string) => {
     setUploadType(imageType);
@@ -92,28 +74,14 @@ export const ImagesTab: React.FC<ImagesTabProps> = ({ movieId }) => {
     if (!e.target.files || !e.target.files[0] || !uploadType) return;
 
     const file = e.target.files[0];
-    const formData = new FormData();
-    formData.append('image', file);
-    formData.append('imageType', uploadType);
 
-    setUploading(true);
     try {
-      const response = await fetch(`/api/movies/${movieId}/images/upload`, {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (response.ok) {
-        await fetchImages();
-      } else {
-        const error = await response.json();
-        alert(`Upload failed: ${error.error || 'Unknown error'}`);
-      }
+      await uploadImageMutation.mutateAsync({ file, type: uploadType });
+      // Success - TanStack Query will automatically refetch
     } catch (error) {
       console.error('Failed to upload image:', error);
       alert('Failed to upload image');
     } finally {
-      setUploading(false);
       setUploadType(null);
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
@@ -121,51 +89,36 @@ export const ImagesTab: React.FC<ImagesTabProps> = ({ movieId }) => {
     }
   };
 
-  const toggleLock = async (imageId: number, currentLocked: boolean) => {
+  const handleToggleLock = async (imageId: number, currentLocked: boolean) => {
     try {
-      const response = await fetch(`/api/images/${imageId}/lock`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ locked: !currentLocked }),
-      });
-
-      if (response.ok) {
-        await fetchImages();
-      }
+      await toggleLockMutation.mutateAsync({ imageId, locked: !currentLocked });
+      // Success - TanStack Query will automatically refetch
     } catch (error) {
       console.error('Failed to toggle lock:', error);
+      alert('Failed to toggle lock');
     }
   };
 
-  const deleteImage = async (imageId: number, imageType: string) => {
+  const handleDeleteImage = async (imageId: number) => {
     if (!confirm('Are you sure you want to delete this image?')) return;
 
     try {
-      const response = await fetch(`/api/images/${imageId}`, {
-        method: 'DELETE',
-      });
-
-      if (response.ok) {
-        await fetchImages();
-      }
+      await deleteImageMutation.mutateAsync(imageId);
+      // Success - TanStack Query will automatically refetch
     } catch (error) {
       console.error('Failed to delete image:', error);
+      alert('Failed to delete image');
     }
   };
 
-  const recoverImages = async () => {
+  const handleRecoverImages = async () => {
     try {
-      const response = await fetch(`/api/movies/${movieId}/images/recover`, {
-        method: 'POST',
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        alert(data.message);
-        await fetchImages();
-      }
+      const result = await recoverImagesMutation.mutateAsync();
+      alert(result.message || `Successfully recovered ${result.recoveredCount} image(s)`);
+      // Success - TanStack Query will automatically refetch
     } catch (error) {
       console.error('Failed to recover images:', error);
+      alert('Failed to recover images');
     }
   };
 
@@ -197,7 +150,7 @@ export const ImagesTab: React.FC<ImagesTabProps> = ({ movieId }) => {
           <div className="text-sm text-neutral-300">
             Missing images from library? Recover them from cache.
           </div>
-          <button onClick={recoverImages} className="btn btn-secondary btn-sm">
+          <button onClick={handleRecoverImages} className="btn btn-secondary btn-sm">
             Recover Images
           </button>
         </div>
@@ -222,7 +175,7 @@ export const ImagesTab: React.FC<ImagesTabProps> = ({ movieId }) => {
                   <button
                     onClick={() => handleUploadClick(type.key)}
                     className="btn btn-primary btn-sm"
-                    disabled={uploading}
+                    disabled={uploadImageMutation.isPending}
                   >
                     <FontAwesomeIcon icon={faUpload} className="mr-2" />
                     Upload
@@ -237,7 +190,7 @@ export const ImagesTab: React.FC<ImagesTabProps> = ({ movieId }) => {
                   <button
                     onClick={() => handleUploadClick(type.key)}
                     className="btn btn-secondary btn-sm mt-3"
-                    disabled={uploading}
+                    disabled={uploadImageMutation.isPending}
                   >
                     <FontAwesomeIcon icon={faUpload} className="mr-2" />
                     Upload {type.label}
@@ -284,7 +237,7 @@ export const ImagesTab: React.FC<ImagesTabProps> = ({ movieId }) => {
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                toggleLock(image.id, image.locked);
+                                handleToggleLock(image.id, image.locked);
                               }}
                               className={`btn btn-sm ${image.locked ? 'btn-warning' : 'btn-ghost'}`}
                               title={image.locked ? 'Locked' : 'Unlocked'}
@@ -294,7 +247,7 @@ export const ImagesTab: React.FC<ImagesTabProps> = ({ movieId }) => {
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                deleteImage(image.id, type.key);
+                                handleDeleteImage(image.id);
                               }}
                               className="btn btn-sm btn-ghost text-error hover:bg-error/20"
                               title="Delete"
@@ -324,7 +277,7 @@ export const ImagesTab: React.FC<ImagesTabProps> = ({ movieId }) => {
       })}
 
       {/* Upload indicator */}
-      {uploading && (
+      {uploadImageMutation.isPending && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-neutral-800 rounded-lg p-6 border border-neutral-700">
             <FontAwesomeIcon icon={faSpinner} spin className="text-3xl text-primary mb-3" />
@@ -390,8 +343,8 @@ export const ImagesTab: React.FC<ImagesTabProps> = ({ movieId }) => {
                 </div>
                 <div className="flex gap-2">
                   <button
-                    onClick={() => {
-                      toggleLock(fullscreenImage.id, fullscreenImage.locked);
+                    onClick={async () => {
+                      await handleToggleLock(fullscreenImage.id, fullscreenImage.locked);
                       setFullscreenImage({ ...fullscreenImage, locked: !fullscreenImage.locked });
                     }}
                     className={`btn btn-sm ${fullscreenImage.locked ? 'btn-warning' : 'btn-secondary'}`}
@@ -400,9 +353,9 @@ export const ImagesTab: React.FC<ImagesTabProps> = ({ movieId }) => {
                     {fullscreenImage.locked ? 'Locked' : 'Unlocked'}
                   </button>
                   <button
-                    onClick={() => {
+                    onClick={async () => {
                       if (confirm('Delete this image?')) {
-                        deleteImage(fullscreenImage.id, fullscreenImage.image_type);
+                        await handleDeleteImage(fullscreenImage.id);
                         setFullscreenImage(null);
                       }
                     }}

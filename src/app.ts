@@ -2,11 +2,15 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { createServer, Server as HttpServer } from 'http';
 import { ConfigManager } from './config/ConfigManager.js';
 import { DatabaseManager } from './database/DatabaseManager.js';
 import { MigrationRunner } from './database/MigrationRunner.js';
 import { MediaPlayerConnectionManager } from './services/mediaPlayerConnectionManager.js';
 import { GarbageCollectionService } from './services/garbageCollectionService.js';
+import { MetarrWebSocketServer } from './services/websocketServer.js';
+import { websocketBroadcaster } from './services/websocketBroadcaster.js';
+import { WebSocketController } from './controllers/websocketController.js';
 import { securityMiddleware, rateLimitByIp } from './middleware/security.js';
 import { requestLoggingMiddleware, errorLoggingMiddleware, logger } from './middleware/logging.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
@@ -20,17 +24,34 @@ const __dirname = path.dirname(__filename);
 
 export class App {
   public express: express.Application;
+  private httpServer: HttpServer;
   private config: ReturnType<ConfigManager['getConfig']>;
   private dbManager: DatabaseManager;
   private connectionManager: MediaPlayerConnectionManager;
   private garbageCollector: GarbageCollectionService;
+  private wsServer: MetarrWebSocketServer;
+  private wsController: WebSocketController;
 
   constructor() {
     this.express = express();
+    this.httpServer = createServer(this.express);
     this.config = ConfigManager.getInstance().getConfig();
     this.dbManager = new DatabaseManager(this.config.database);
     this.connectionManager = new MediaPlayerConnectionManager(this.dbManager);
     this.garbageCollector = new GarbageCollectionService(this.dbManager);
+
+    // Initialize WebSocket server
+    this.wsServer = new MetarrWebSocketServer({
+      pingInterval: 30000, // 30 seconds
+      pingTimeout: 5000, // 5 seconds
+    });
+
+    // Initialize WebSocket controller
+    this.wsController = new WebSocketController(
+      this.dbManager,
+      this.connectionManager,
+      this.wsServer
+    );
 
     this.initializeMiddleware();
     this.initializeRoutes();
@@ -117,6 +138,18 @@ export class App {
       await migrationRunner.migrate();
       logger.info('Database migrations completed');
 
+      // Initialize WebSocket server
+      this.wsServer.attach(this.httpServer);
+      logger.info('WebSocket server attached to HTTP server');
+
+      // Initialize WebSocket broadcaster
+      websocketBroadcaster.initialize(this.wsServer);
+      logger.info('WebSocket broadcaster initialized');
+
+      // Initialize WebSocket controller (register message handlers)
+      this.wsController.initialize();
+      logger.info('WebSocket controller initialized');
+
       // Reconnect all enabled media players
       await this.connectionManager.reconnectAll();
       logger.info('Media player connections initialized');
@@ -127,8 +160,9 @@ export class App {
 
       // Start server
       const { port, host } = this.config.server;
-      this.express.listen(port, host, () => {
+      this.httpServer.listen(port, host, () => {
         logger.info(`Metarr server started on ${host}:${port}`);
+        logger.info(`WebSocket available at ws://${host}:${port}/ws`);
         logger.info(`Environment: ${this.config.server.env}`);
         logger.info(`Database: ${this.config.database.type}`);
       });
@@ -143,6 +177,10 @@ export class App {
       // Stop garbage collection scheduler
       this.garbageCollector.stop();
       logger.info('Garbage collection scheduler stopped');
+
+      // Shutdown WebSocket server
+      await this.wsServer.shutdown();
+      logger.info('WebSocket server closed');
 
       // Shutdown all media player connections
       await this.connectionManager.shutdown();

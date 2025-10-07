@@ -10,6 +10,7 @@ import {
   faChevronDown,
   faCalendar,
 } from '@fortawesome/free-solid-svg-icons';
+import { useMovie } from '../../hooks/useMovies';
 
 // CSS to hide default date input calendar icon
 const hideDatePickerStyle = `
@@ -68,14 +69,35 @@ interface MovieMetadata {
 }
 
 export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
+  // Use TanStack Query to fetch movie data
+  const { data: movieData, isLoading: loading, refetch } = useMovie(movieId);
+
   const [metadata, setMetadata] = useState<MovieMetadata | null>(null);
   const [originalMetadata, setOriginalMetadata] = useState<MovieMetadata | null>(null);
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
+  // Update local state when movie data changes (from TanStack Query cache)
   useEffect(() => {
-    fetchMetadata();
-  }, [movieId]);
+    if (movieData) {
+      const normalizedData = {
+        ...movieData,
+        title_locked: movieData.title_locked ?? false,
+        original_title_locked: movieData.original_title_locked ?? false,
+        sort_title_locked: movieData.sort_title_locked ?? false,
+        year_locked: movieData.year_locked ?? false,
+        plot_locked: movieData.plot_locked ?? false,
+        outline_locked: movieData.outline_locked ?? false,
+        tagline_locked: movieData.tagline_locked ?? false,
+        mpaa_locked: movieData.mpaa_locked ?? false,
+        premiered_locked: movieData.premiered_locked ?? false,
+        user_rating_locked: movieData.user_rating_locked ?? false,
+        trailer_url_locked: movieData.trailer_url_locked ?? false,
+      };
+
+      setMetadata(normalizedData);
+      setOriginalMetadata(JSON.parse(JSON.stringify(normalizedData))); // Deep copy
+    }
+  }, [movieData]);
 
   // Deep comparison to detect actual changes
   const hasChanges = React.useMemo(() => {
@@ -88,39 +110,6 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
     return sortedMetadata !== sortedOriginal;
 
   }, [metadata, originalMetadata]);
-
-  const fetchMetadata = async () => {
-    setLoading(true);
-    try {
-      const response = await fetch(`/api/movies/${movieId}`);
-      if (response.ok) {
-        const data = await response.json();
-
-        // Ensure all lock fields exist with default false values
-        const normalizedData = {
-          ...data,
-          title_locked: data.title_locked ?? false,
-          original_title_locked: data.original_title_locked ?? false,
-          sort_title_locked: data.sort_title_locked ?? false,
-          year_locked: data.year_locked ?? false,
-          plot_locked: data.plot_locked ?? false,
-          outline_locked: data.outline_locked ?? false,
-          tagline_locked: data.tagline_locked ?? false,
-          mpaa_locked: data.mpaa_locked ?? false,
-          premiered_locked: data.premiered_locked ?? false,
-          user_rating_locked: data.user_rating_locked ?? false,
-          trailer_url_locked: data.trailer_url_locked ?? false,
-        };
-
-        setMetadata(normalizedData);
-        setOriginalMetadata(JSON.parse(JSON.stringify(normalizedData))); // Deep copy
-      }
-    } catch (error) {
-      console.error('Failed to fetch movie metadata:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleFieldChange = (field: keyof MovieMetadata, value: any) => {
     if (!metadata) return;

@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { MovieService } from '../services/movieService.js';
 import { LibraryScanService } from '../services/libraryScanService.js';
+import { websocketBroadcaster } from '../services/websocketBroadcaster.js';
 
 export class MovieController {
   constructor(
@@ -57,6 +58,10 @@ export class MovieController {
       const { fileType } = req.body;
 
       const result = await this.movieService.assignUnknownFile(movieId, fileId, fileType);
+
+      // Broadcast WebSocket update for cross-tab sync (movie assets changed)
+      websocketBroadcaster.broadcastMoviesUpdated([movieId]);
+
       res.json(result);
     } catch (error) {
       next(error);
@@ -91,6 +96,10 @@ export class MovieController {
     try {
       const movieId = parseInt(req.params.id);
       const result = await this.movieService.rebuildMovieAssets(movieId);
+
+      // Broadcast WebSocket update for cross-tab sync (movie assets rebuilt)
+      websocketBroadcaster.broadcastMoviesUpdated([movieId]);
+
       res.json(result);
     } catch (error) {
       next(error);
@@ -128,6 +137,10 @@ export class MovieController {
     try {
       const movieId = parseInt(req.params.id);
       const result = await this.movieService.refreshMovie(movieId);
+
+      // Broadcast WebSocket update for cross-tab sync (movie refreshed from provider)
+      websocketBroadcaster.broadcastMoviesUpdated([movieId]);
+
       res.json(result);
     } catch (error) {
       next(error);
@@ -140,6 +153,10 @@ export class MovieController {
       const metadata = req.body;
 
       const result = await this.movieService.updateMetadata(movieId, metadata);
+
+      // Broadcast WebSocket update to all connected clients for cross-tab sync
+      websocketBroadcaster.broadcastMoviesUpdated([movieId]);
+
       res.json(result);
     } catch (error) {
       next(error);

@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { useWebSocket } from '../contexts/WebSocketContext';
 import { globalConnectionMonitor } from './useConnectionMonitor';
 
 interface BackendConnectionState {
@@ -7,77 +8,48 @@ interface BackendConnectionState {
   lastChecked: Date | null;
 }
 
-const HEALTH_CHECK_INTERVAL = 15000; // Check every 15 seconds when connected
-const RETRY_INTERVAL = 3000; // Retry every 3 seconds when disconnected
-const HEALTH_ENDPOINT = '/api/health';
-const REQUEST_TIMEOUT = 5000; // 5 second timeout for health checks
-
 export const useBackendConnection = () => {
+  const { connectionState, isConnected } = useWebSocket();
   const [state, setState] = useState<BackendConnectionState>({
     isConnected: true,
     error: null,
     lastChecked: null,
   });
 
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
-  const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  useEffect(() => {
+    // Update state based on WebSocket connection
+    const now = new Date();
 
-  const checkConnection = useCallback(async () => {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
-
-      const response = await fetch(HEALTH_ENDPOINT, {
-        method: 'GET',
-        signal: controller.signal,
+    if (connectionState === 'connected') {
+      setState({
+        isConnected: true,
+        error: null,
+        lastChecked: now,
       });
-
-      clearTimeout(timeoutId);
-
-      if (response.ok) {
-        setState({
-          isConnected: true,
-          error: null,
-          lastChecked: new Date(),
-        });
-
-        // Update global connection monitor
-        globalConnectionMonitor.setConnected(true);
-
-        // If we recovered from an error, switch to normal interval
-        if (intervalRef.current) {
-          clearInterval(intervalRef.current);
-        }
-        intervalRef.current = setInterval(checkConnection, HEALTH_CHECK_INTERVAL);
-
-        return true;
-      } else {
-        throw new Error(`Server returned ${response.status}`);
-      }
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error && error.name === 'AbortError'
-          ? 'Backend server is not responding. Please check if the server is running.'
-          : 'Unable to connect to backend server. Please check your connection.';
-
+      globalConnectionMonitor.setConnected(true);
+    } else if (connectionState === 'error') {
       setState({
         isConnected: false,
-        error: errorMessage,
-        lastChecked: new Date(),
+        error: 'Backend server disconnected. Attempting to reconnect...',
+        lastChecked: now,
       });
-
-      // Update global connection monitor
       globalConnectionMonitor.setConnected(false);
-
-      // If we're disconnected, check more frequently
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
-      retryTimeoutRef.current = setTimeout(checkConnection, RETRY_INTERVAL);
-
-      return false;
+    } else if (connectionState === 'disconnected') {
+      setState({
+        isConnected: false,
+        error: 'Backend server disconnected. Attempting to reconnect...',
+        lastChecked: now,
+      });
+      globalConnectionMonitor.setConnected(false);
+    } else if (connectionState === 'connecting') {
+      // Keep showing error during reconnection attempts
+      setState((prev) => ({
+        isConnected: false,
+        error: prev.error || 'Connecting to backend server...',
+        lastChecked: now,
+      }));
     }
-  }, []);
+  }, [connectionState]);
 
   const dismissError = useCallback(() => {
     setState((prev) => ({
@@ -86,24 +58,15 @@ export const useBackendConnection = () => {
     }));
   }, []);
 
-  useEffect(() => {
-    // Initial health check
-    checkConnection();
-
-    // Cleanup on unmount
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
-      if (retryTimeoutRef.current) {
-        clearTimeout(retryTimeoutRef.current);
-      }
-    };
-  }, [checkConnection]);
+  const recheckConnection = useCallback(() => {
+    // WebSocket automatically handles reconnection
+    // This is just for compatibility with existing code
+    return Promise.resolve(isConnected);
+  }, [isConnected]);
 
   return {
     ...state,
     dismissError,
-    recheckConnection: checkConnection,
+    recheckConnection,
   };
 };

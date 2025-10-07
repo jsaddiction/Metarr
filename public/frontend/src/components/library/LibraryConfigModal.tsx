@@ -23,7 +23,7 @@ export const LibraryConfigModal: React.FC<LibraryConfigModalProps> = ({
   const [formData, setFormData] = useState<LibraryFormData>({
     name: '',
     type: 'movies',
-    path: 'C:\\',
+    path: '',
     enabled: true,
   });
 
@@ -48,7 +48,7 @@ export const LibraryConfigModal: React.FC<LibraryConfigModalProps> = ({
       setFormData({
         name: '',
         type: 'movies',
-        path: 'C:\\',
+        path: '',
         enabled: true,
       });
     }
@@ -222,7 +222,7 @@ export const LibraryConfigModal: React.FC<LibraryConfigModalProps> = ({
                     value={formData.path}
                     onChange={(e) => handleChange('path', e.target.value)}
                     className="input flex-1"
-                    placeholder="C:\Movies"
+                    placeholder="/path/to/movies or C:\Movies"
                     required
                   />
                   <button

@@ -5,6 +5,7 @@ import { logger } from '../middleware/logging.js';
 import { getSubdirectories } from './nfo/nfoDiscovery.js';
 import { scanMovieDirectory } from './scan/unifiedScanService.js';
 import { markMovieForDeletion } from './scan/movieLookupService.js';
+import { websocketBroadcaster } from './websocketBroadcaster.js';
 import path from 'path';
 
 export class LibraryScanService extends EventEmitter {
@@ -70,6 +71,14 @@ export class LibraryScanService extends EventEmitter {
       }
 
       logger.info(`Started scan for library ${library.name}`, { libraryId, scanJobId });
+
+      // Broadcast initial scan status via WebSocket
+      websocketBroadcaster.broadcastScanStatus(
+        scanJobId,
+        libraryId,
+        'running',
+        { current: 0, total: 0 }
+      );
 
       // Process scan asynchronously
       this.processScan(scanJob, library).catch(error => {
@@ -149,6 +158,14 @@ export class LibraryScanService extends EventEmitter {
 
       logger.info(`Completed scan for ${library.name}`, { scanJobId: scanJob.id });
 
+      // Broadcast scan completion via WebSocket
+      websocketBroadcaster.broadcastScanCompleted(scanJob.id, library.id, {
+        added: 0, // TODO: Track these stats during scan
+        updated: 0,
+        deleted: 0,
+        failed: 0,
+      });
+
       // Emit completion event
       this.emit('scanCompleted', { scanJobId: scanJob.id, libraryId: library.id });
     } catch (error: any) {
@@ -161,6 +178,15 @@ export class LibraryScanService extends EventEmitter {
       await db.execute(
         'UPDATE scan_jobs SET status = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ?',
         ['failed', scanJob.id]
+      );
+
+      // Broadcast scan failure via WebSocket
+      websocketBroadcaster.broadcastScanFailed(
+        scanJob.id,
+        library.id,
+        scanJob.progressCurrent || 0,
+        scanJob.progressTotal || 0,
+        scanJob.errorsCount || 0
       );
 
       // Emit error event
@@ -323,7 +349,7 @@ export class LibraryScanService extends EventEmitter {
   }
 
   /**
-   * Emit progress event via EventEmitter
+   * Emit progress event via EventEmitter and WebSocket
    */
   private emitProgress(
     scanJobId: number,
@@ -332,6 +358,7 @@ export class LibraryScanService extends EventEmitter {
     total: number,
     currentFile: string
   ): void {
+    // Emit via EventEmitter (legacy)
     this.emit('scanProgress', {
       scanJobId,
       libraryId,
@@ -339,6 +366,9 @@ export class LibraryScanService extends EventEmitter {
       progressTotal: total,
       currentFile,
     });
+
+    // Broadcast via WebSocket for real-time updates
+    websocketBroadcaster.broadcastScanProgress(scanJobId, libraryId, current, total, currentFile);
   }
 
   /**

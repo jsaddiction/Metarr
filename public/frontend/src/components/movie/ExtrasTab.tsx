@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faVideo,
@@ -10,6 +10,12 @@ import {
   faCheck,
   faExclamationTriangle,
 } from '@fortawesome/free-solid-svg-icons';
+import {
+  useMovieExtras,
+  useDeleteTrailer,
+  useDeleteSubtitle,
+  useDeleteThemeSong,
+} from '../../hooks/useMovieAssets';
 
 interface ExtrasTabProps {
   movieId: number;
@@ -40,31 +46,16 @@ interface ThemeSong {
 }
 
 export const ExtrasTab: React.FC<ExtrasTabProps> = ({ movieId }) => {
-  const [trailer, setTrailer] = useState<Trailer | null>(null);
-  const [subtitles, setSubtitles] = useState<Subtitle[]>([]);
-  const [themeSong, setThemeSong] = useState<ThemeSong | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Use TanStack Query hooks
+  const { data: extras, isLoading: loading } = useMovieExtras(movieId);
+  const deleteTrailerMutation = useDeleteTrailer(movieId);
+  const deleteSubtitleMutation = useDeleteSubtitle(movieId);
+  const deleteThemeMutation = useDeleteThemeSong(movieId);
 
-  useEffect(() => {
-    fetchExtras();
-  }, [movieId]);
-
-  const fetchExtras = async () => {
-    setLoading(true);
-    try {
-      const response = await fetch(`/api/movies/${movieId}/extras`);
-      if (response.ok) {
-        const data = await response.json();
-        setTrailer(data.trailer || null);
-        setSubtitles(data.subtitles || []);
-        setThemeSong(data.themeSong || null);
-      }
-    } catch (error) {
-      console.error('Failed to fetch extras:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Extract data from query result
+  const trailer = extras?.trailer || null;
+  const subtitles = extras?.subtitles || [];
+  const themeSong = extras?.themeSong || null;
 
   const formatFileSize = (bytes: number): string => {
     if (bytes < 1024) return `${bytes} B`;
@@ -80,53 +71,38 @@ export const ExtrasTab: React.FC<ExtrasTabProps> = ({ movieId }) => {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const deleteTrailer = async () => {
+  const handleDeleteTrailer = async () => {
     if (!trailer) return;
     if (!confirm('Are you sure you want to delete the trailer?')) return;
 
     try {
-      const response = await fetch(`/api/movies/${movieId}/extras/trailer`, {
-        method: 'DELETE',
-      });
-
-      if (response.ok) {
-        await fetchExtras();
-      }
+      await deleteTrailerMutation.mutateAsync();
     } catch (error) {
       console.error('Failed to delete trailer:', error);
+      alert('Failed to delete trailer');
     }
   };
 
-  const deleteSubtitle = async (subtitleId: number) => {
+  const handleDeleteSubtitle = async (subtitleId: number) => {
     if (!confirm('Are you sure you want to delete this subtitle?')) return;
 
     try {
-      const response = await fetch(`/api/movies/${movieId}/extras/subtitles/${subtitleId}`, {
-        method: 'DELETE',
-      });
-
-      if (response.ok) {
-        await fetchExtras();
-      }
+      await deleteSubtitleMutation.mutateAsync(subtitleId);
     } catch (error) {
       console.error('Failed to delete subtitle:', error);
+      alert('Failed to delete subtitle');
     }
   };
 
-  const deleteThemeSong = async () => {
+  const handleDeleteThemeSong = async () => {
     if (!themeSong) return;
     if (!confirm('Are you sure you want to delete the theme song?')) return;
 
     try {
-      const response = await fetch(`/api/movies/${movieId}/extras/theme`, {
-        method: 'DELETE',
-      });
-
-      if (response.ok) {
-        await fetchExtras();
-      }
+      await deleteThemeMutation.mutateAsync();
     } catch (error) {
       console.error('Failed to delete theme song:', error);
+      alert('Failed to delete theme song');
     }
   };
 
@@ -175,7 +151,7 @@ export const ExtrasTab: React.FC<ExtrasTabProps> = ({ movieId }) => {
                   </div>
                 </div>
                 <button
-                  onClick={deleteTrailer}
+                  onClick={handleDeleteTrailer}
                   className="btn btn-ghost btn-sm text-error hover:bg-error/20"
                 >
                   <FontAwesomeIcon icon={faTrash} />
@@ -234,7 +210,7 @@ export const ExtrasTab: React.FC<ExtrasTabProps> = ({ movieId }) => {
                       </div>
                     </div>
                     <button
-                      onClick={() => deleteSubtitle(subtitle.id)}
+                      onClick={() => handleDeleteSubtitle(subtitle.id)}
                       className="btn btn-ghost btn-sm text-error hover:bg-error/20"
                     >
                       <FontAwesomeIcon icon={faTrash} />
@@ -287,7 +263,7 @@ export const ExtrasTab: React.FC<ExtrasTabProps> = ({ movieId }) => {
                   </div>
                 </div>
                 <button
-                  onClick={deleteThemeSong}
+                  onClick={handleDeleteThemeSong}
                   className="btn btn-ghost btn-sm text-error hover:bg-error/20"
                 >
                   <FontAwesomeIcon icon={faTrash} />

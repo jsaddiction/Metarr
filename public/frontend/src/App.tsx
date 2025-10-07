@@ -1,5 +1,8 @@
 import React from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
+import { WebSocketProvider } from './contexts/WebSocketContext';
 import { Layout } from './components/layout/Layout';
 import { Dashboard } from './pages/Dashboard';
 import { Movies } from './pages/metadata/Movies';
@@ -25,6 +28,17 @@ import { Files } from './pages/settings/Files';
 import { Libraries } from './pages/settings/Libraries';
 import { MediaPlayers } from './pages/settings/MediaPlayers';
 import { Notifications } from './pages/settings/Notifications';
+
+// Configure QueryClient
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: Infinity, // Data is fresh until explicitly invalidated
+      refetchOnWindowFocus: false, // Don't refetch on window focus
+      retry: 1, // Only retry once on failure
+    },
+  },
+});
 
 // Helper to get page title based on route
 function usePageTitle() {
@@ -60,7 +74,7 @@ function usePageTitle() {
   return pathMap[location.pathname] || 'Metarr';
 }
 
-function App() {
+function AppRoutes() {
   const title = usePageTitle();
 
   return (
@@ -106,6 +120,17 @@ function App() {
         <Route path="*" element={<Navigate to="/metadata/movies" replace />} />
       </Routes>
     </Layout>
+  );
+}
+
+function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <WebSocketProvider>
+        <AppRoutes />
+        {import.meta.env.DEV && <ReactQueryDevtools initialIsOpen={false} />}
+      </WebSocketProvider>
+    </QueryClientProvider>
   );
 }
 
