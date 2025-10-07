@@ -23,10 +23,17 @@ export default defineConfig({
     },
     proxy: {
       '/api': {
-        target: 'http://localhost:3000',
+        target: 'http://127.0.0.1:3000',
         changeOrigin: true,
         ws: true,
         configure: (proxy, _options) => {
+          proxy.on('error', (err, _req, res) => {
+            console.error('Proxy error:', err);
+            if (!res.headersSent) {
+              res.writeHead(500, { 'Content-Type': 'text/plain' });
+            }
+            res.end('Proxy error: ' + err.message);
+          });
           proxy.on('proxyReq', (proxyReq, req, _res) => {
             // Enable SSE for all SSE endpoints
             if (req.url?.includes('/updates') || req.url?.includes('/scan-status') || req.url?.includes('/status')) {
@@ -48,8 +55,10 @@ export default defineConfig({
           });
         },
       },
-      '/webhooks': 'http://localhost:3000',
-      '/health': 'http://localhost:3000',
+      '/webhooks': {
+        target: 'http://127.0.0.1:3000',
+        changeOrigin: true,
+      },
     },
   },
   resolve: {
