@@ -160,12 +160,12 @@ export class PublishingService {
    * Get cache file path from content hash
    */
   private async getCachePath(contentHash: string): Promise<string | null> {
-    const result = await this.db.query<{ cache_path: string }>(
-      `SELECT cache_path FROM cache_inventory WHERE content_hash = ?`,
+    const result = await this.db.query<{ file_path: string }>(
+      `SELECT file_path FROM cache_inventory WHERE content_hash = ?`,
       [contentHash]
     );
 
-    return result.length > 0 ? result[0].cache_path : null;
+    return result.length > 0 ? result[0].file_path : null;
   }
 
   /**
@@ -338,13 +338,13 @@ export class PublishingService {
   private async logPublication(config: PublishConfig, result: PublishResult): Promise<void> {
     await this.db.execute(
       `INSERT INTO publish_log (
-        entity_type, entity_id, published_at, assets_published, nfo_generated, errors
+        entity_type, entity_id, published_at, assets_published, nfo_content, error_message
       ) VALUES (?, ?, CURRENT_TIMESTAMP, ?, ?, ?)`,
       [
         config.entityType,
         config.entityId,
-        result.assetsPublished,
-        result.nfoGenerated ? 1 : 0,
+        JSON.stringify({ count: result.assetsPublished }),
+        result.nfoGenerated ? 'NFO Generated' : null,
         result.errors.length > 0 ? JSON.stringify(result.errors) : null
       ]
     );

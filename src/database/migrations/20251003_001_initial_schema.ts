@@ -1198,17 +1198,19 @@ export class InitialSchemaMigration {
     await db.execute(`
       CREATE TABLE rejected_assets (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        provider TEXT NOT NULL,
-        provider_url TEXT NOT NULL,
+        entity_type TEXT NOT NULL,
+        entity_id INTEGER NOT NULL,
         asset_type TEXT NOT NULL,
+        file_path TEXT NOT NULL,
+        rejected_by TEXT,
         rejected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         reason TEXT,
 
-        UNIQUE(provider, provider_url)
+        UNIQUE(entity_type, entity_id, asset_type, file_path)
       )
     `);
 
-    await db.execute(`CREATE INDEX idx_rejected_provider_url ON rejected_assets(provider, provider_url)`);
+    await db.execute(`CREATE INDEX idx_rejected_entity ON rejected_assets(entity_type, entity_id)`);
 
     // Publish Log (Audit trail)
     await db.execute(`
@@ -1243,9 +1245,9 @@ export class InitialSchemaMigration {
     await db.execute(`
       CREATE TABLE job_queue (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        job_type TEXT NOT NULL,
+        type TEXT NOT NULL,
         priority INTEGER NOT NULL,
-        status TEXT DEFAULT 'pending',
+        state TEXT DEFAULT 'pending',
 
         -- Payload
         payload TEXT NOT NULL,
@@ -1259,7 +1261,7 @@ export class InitialSchemaMigration {
         retry_count INTEGER DEFAULT 0,
         max_retries INTEGER DEFAULT 3,
         next_retry_at TIMESTAMP,
-        error_message TEXT,
+        error TEXT,
         error_stack TEXT,
 
         -- Cancellation
@@ -1273,9 +1275,9 @@ export class InitialSchemaMigration {
       )
     `);
 
-    await db.execute(`CREATE INDEX idx_job_queue_status ON job_queue(status)`);
-    await db.execute(`CREATE INDEX idx_job_queue_priority ON job_queue(status, priority, created_at)`);
-    await db.execute(`CREATE INDEX idx_job_queue_worker ON job_queue(status, priority, created_at) WHERE status = 'pending'`);
+    await db.execute(`CREATE INDEX idx_job_queue_state ON job_queue(state)`);
+    await db.execute(`CREATE INDEX idx_job_queue_priority ON job_queue(state, priority, created_at)`);
+    await db.execute(`CREATE INDEX idx_job_queue_worker ON job_queue(state, priority, created_at) WHERE state = 'pending'`);
 
     // Completeness Configuration
     await db.execute(`

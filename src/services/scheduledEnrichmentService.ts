@@ -119,6 +119,16 @@ export class ScheduledEnrichmentService {
       return [];
     }
 
+    // Select columns based on entity type
+    // Movies: tmdb_id, imdb_id (no tvdb_id)
+    // Series/Episodes: tmdb_id, tvdb_id, imdb_id
+    let selectColumns = 'id, state, enrichment_priority, tmdb_id';
+    if (entityType === 'movie') {
+      selectColumns += ', imdb_id';
+    } else {
+      selectColumns += ', tvdb_id, imdb_id';
+    }
+
     // Get entities that:
     // 1. Are in 'discovered' state (never enriched), OR
     // 2. Have enrichment_priority > 0 (need re-enrichment), OR
@@ -129,8 +139,9 @@ export class ScheduledEnrichmentService {
       enrichment_priority: number;
       tmdb_id?: number;
       tvdb_id?: number;
+      imdb_id?: string;
     }>(
-      `SELECT id, state, enrichment_priority, tmdb_id, tvdb_id
+      `SELECT ${selectColumns}
        FROM ${table}
        WHERE state = 'discovered'
           OR enrichment_priority > 0
@@ -305,14 +316,23 @@ export class ScheduledEnrichmentService {
       throw new Error(`Invalid entity type: ${entityType}`);
     }
 
+    // Select columns based on entity type
+    let selectColumns = 'id, state, enrichment_priority, tmdb_id';
+    if (entityType === 'movie') {
+      selectColumns += ', imdb_id';
+    } else {
+      selectColumns += ', tvdb_id, imdb_id';
+    }
+
     const entities = await this.db.query<{
       id: number;
       state: string;
       enrichment_priority: number;
       tmdb_id?: number;
       tvdb_id?: number;
+      imdb_id?: string;
     }>(
-      `SELECT id, state, enrichment_priority, tmdb_id, tvdb_id FROM ${table} WHERE id = ?`,
+      `SELECT ${selectColumns} FROM ${table} WHERE id = ?`,
       [entityId]
     );
 
