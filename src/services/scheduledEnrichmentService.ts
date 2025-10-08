@@ -36,10 +36,12 @@ export class ScheduledEnrichmentService {
 
     this.isRunning = true;
 
-    // Run immediately on start
-    this.runEnrichmentCycle().catch(error => {
-      logger.error('Error in initial enrichment cycle:', error);
-    });
+    // Run after a short delay to ensure database is fully initialized
+    setTimeout(() => {
+      this.runEnrichmentCycle().catch(error => {
+        logger.error('Error in initial enrichment cycle:', error);
+      });
+    }, 5000); // 5 second delay
 
     // Then run on interval
     this.enrichmentInterval = setInterval(() => {

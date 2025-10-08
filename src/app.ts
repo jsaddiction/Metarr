@@ -54,7 +54,8 @@ export class App {
     );
 
     this.initializeMiddleware();
-    this.initializeRoutes();
+    this.initializeRoutes(); // Basic routes (health, frontend)
+    // API routes will be initialized in start() after database connection
     this.initializeErrorHandling();
   }
 
@@ -89,7 +90,7 @@ export class App {
   }
 
   private initializeRoutes(): void {
-    // Health check endpoint
+    // Health check endpoint (no auth required, no DB access)
     this.express.get('/health', (_req, res) => {
       res.json({
         status: 'healthy',
@@ -99,18 +100,20 @@ export class App {
       });
     });
 
-    // API routes (with dependency injection)
-    const apiRoutes = createApiRouter(this.dbManager, this.connectionManager);
-    this.express.use('/api', apiRoutes);
-
-    // Webhook routes (with dependency injection)
-    const webhookRoutes = createWebhookRouter(this.dbManager);
-    this.express.use('/webhooks', webhookRoutes);
-
-    // Root route for frontend
+    // Root route for frontend (no DB access)
     this.express.get('/', (_req, res) => {
       res.sendFile(path.join(__dirname, '../public/index.html'));
     });
+  }
+
+  private initializeApiRoutes(): void {
+    // API routes (with dependency injection) - requires DB connection
+    const apiRoutes = createApiRouter(this.dbManager, this.connectionManager);
+    this.express.use('/api', apiRoutes);
+
+    // Webhook routes (with dependency injection) - requires DB connection
+    const webhookRoutes = createWebhookRouter(this.dbManager);
+    this.express.use('/webhooks', webhookRoutes);
   }
 
   private initializeErrorHandling(): void {
@@ -137,6 +140,10 @@ export class App {
       const migrationRunner = new MigrationRunner(this.dbManager.getConnection());
       await migrationRunner.migrate();
       logger.info('Database migrations completed');
+
+      // Initialize API routes (now that DB is connected)
+      this.initializeApiRoutes();
+      logger.info('API routes initialized');
 
       // Initialize WebSocket server
       this.wsServer.attach(this.httpServer);
