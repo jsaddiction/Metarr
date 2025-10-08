@@ -4,6 +4,8 @@ import { LibraryController } from '../controllers/libraryController.js';
 import { MovieController } from '../controllers/movieController.js';
 import { IgnorePatternController } from '../controllers/ignorePatternController.js';
 import { ImageController } from '../controllers/imageController.js';
+import { AssetController } from '../controllers/assetController.js';
+import { JobController } from '../controllers/jobController.js';
 import { DatabaseManager } from '../database/DatabaseManager.js';
 import { MediaPlayerConnectionManager } from '../services/mediaPlayerConnectionManager.js';
 import { MediaPlayerService } from '../services/mediaPlayerService.js';
@@ -12,8 +14,8 @@ import { LibraryScanService } from '../services/libraryScanService.js';
 import { MovieService } from '../services/movieService.js';
 import { IgnorePatternService } from '../services/ignorePatternService.js';
 import { ImageService } from '../services/imageService.js';
-// import { JobController } from '../controllers/jobController.js';
-// import { ProviderController } from '../controllers/providerController.js';
+import { JobQueueService } from '../services/jobQueueService.js';
+import { JobHandlers } from '../services/jobHandlers.js';
 
 // Initialize router factory function
 export const createApiRouter = (
@@ -44,6 +46,17 @@ export const createApiRouter = (
   const imageController = new ImageController(imageService);
   // Initialize image service
   imageService.initialize().catch(err => console.error('Failed to initialize image service:', err));
+
+  // Initialize job queue and handlers
+  const db = dbManager.getConnection();
+  const jobQueue = new JobQueueService(db);
+  const jobHandlers = new JobHandlers(db, './data/cache');
+  jobHandlers.registerHandlers(jobQueue);
+  jobQueue.start(); // Start processing jobs
+
+  // Initialize asset and job controllers
+  const assetController = new AssetController(db);
+  const jobController = new JobController(jobQueue);
 
   // Health check endpoint
   router.get('/health', (_req, res) => {
@@ -247,11 +260,32 @@ export const createApiRouter = (
     imageController.deleteImage(req, res, next);
   });
 
-  // Placeholder routes for future implementation
-  router.get('/jobs', (_req, res) => {
-    res.json({ message: 'Jobs endpoint coming soon' });
-  });
+  // Asset Routes
+  console.log('[API Router] Registering asset routes');
+  router.get('/assets/candidates/:entityType/:entityId', assetController.getCandidates);
+  router.get('/assets/selected/:entityType/:entityId', assetController.getSelected);
+  router.post('/assets/select/manual', assetController.selectManual);
+  router.post('/assets/select/yolo', assetController.selectYOLO);
+  router.post('/assets/select/hybrid', assetController.selectHybrid);
+  router.post('/assets/approve', assetController.approveHybrid);
+  router.post('/assets/reject-selection', assetController.rejectSelection);
+  router.post('/assets/reject', assetController.rejectAsset);
+  router.post('/assets/unlock', assetController.unlockAssetType);
+  router.post('/assets/publish', assetController.publish);
+  router.get('/assets/needs-publishing/:entityType/:entityId', assetController.needsPublishing);
+  router.get('/assets/needs-publishing/:entityType', assetController.getEntitiesNeedingPublish);
 
+  // Job Routes
+  console.log('[API Router] Registering job routes');
+  router.get('/jobs/stats', jobController.getStats);
+  router.get('/jobs/recent', jobController.getRecent);
+  router.get('/jobs/by-type/:type', jobController.getByType);
+  router.get('/jobs/:jobId', jobController.getJob);
+  router.post('/jobs/:jobId/retry', jobController.retry);
+  router.delete('/jobs/:jobId', jobController.cancel);
+  router.post('/jobs/clear-old', jobController.clearOld);
+
+  // Placeholder routes for future implementation
   router.get('/providers', (_req, res) => {
     res.json({ message: 'Providers endpoint coming soon' });
   });
