@@ -1047,6 +1047,356 @@ export class InitialSchemaMigration {
         [pattern.pattern, pattern.description]
       );
     }
+
+    // ========================================
+    // PHASE 1: REVISED ARCHITECTURE TABLES
+    // ========================================
+    // Integrated from docs/DATABASE_SCHEMA.md
+    // Part of comprehensive architecture redesign
+
+    // Asset Candidates (Tier 1: Provider URLs + Cache)
+    await db.execute(`
+      CREATE TABLE asset_candidates (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        entity_type TEXT NOT NULL,      -- 'movie', 'series', 'episode', 'actor'
+        entity_id INTEGER NOT NULL,
+        asset_type TEXT NOT NULL,       -- 'poster', 'fanart', 'banner', 'trailer', etc.
+
+        -- Provider information
+        provider TEXT NOT NULL,         -- 'tmdb', 'tvdb', 'fanart.tv', 'local'
+        provider_url TEXT,              -- NULL if local file
+        provider_metadata TEXT,         -- JSON: { language, vote_avg, vote_count }
+
+        -- Asset properties (from provider API, before download)
+        width INTEGER,                  -- For images
+        height INTEGER,                 -- For images
+        duration_seconds INTEGER,       -- For trailers
+        file_size INTEGER,
+
+        -- Download state
+        is_downloaded BOOLEAN DEFAULT 0,
+        cache_path TEXT,                -- NULL until downloaded
+        content_hash TEXT,              -- SHA256 of file content
+        perceptual_hash TEXT,           -- pHash for duplicate detection (images only)
+
+        -- Selection state
+        is_selected BOOLEAN DEFAULT 0,
+        is_rejected BOOLEAN DEFAULT 0,  -- User or algorithm rejected
+        selected_by TEXT,               -- 'auto', 'manual', 'local'
+        selected_at TIMESTAMP,
+
+        -- Scoring (for auto-selection algorithm)
+        auto_score REAL,                -- 0-100
+
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await db.execute(`CREATE INDEX idx_candidates_entity ON asset_candidates(entity_type, entity_id, asset_type)`);
+    await db.execute(`CREATE INDEX idx_candidates_selected ON asset_candidates(entity_type, entity_id, is_selected)`);
+    await db.execute(`CREATE INDEX idx_candidates_downloaded ON asset_candidates(is_downloaded)`);
+    await db.execute(`CREATE INDEX idx_candidates_content_hash ON asset_candidates(content_hash)`);
+    await db.execute(`CREATE INDEX idx_candidates_provider_url ON asset_candidates(provider, provider_url)`);
+    await db.execute(`CREATE INDEX idx_candidates_needs_download ON asset_candidates(is_selected, is_downloaded) WHERE is_selected = 1 AND is_downloaded = 0`);
+
+    // Cache Inventory (Tier 2: Content-addressed storage)
+    await db.execute(`
+      CREATE TABLE cache_inventory (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        content_hash TEXT UNIQUE NOT NULL,
+        file_path TEXT NOT NULL,
+        file_size BIGINT NOT NULL,
+        asset_type TEXT NOT NULL,       -- 'image', 'trailer', 'subtitle'
+        mime_type TEXT,
+
+        -- Reference counting
+        reference_count INTEGER DEFAULT 0,
+
+        -- Lifecycle
+        first_used_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        last_used_at TIMESTAMP,
+        orphaned_at TIMESTAMP,          -- Set when ref_count = 0
+
+        -- Image metadata
+        width INTEGER,
+        height INTEGER,
+        perceptual_hash TEXT,
+
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await db.execute(`CREATE INDEX idx_cache_content_hash ON cache_inventory(content_hash)`);
+    await db.execute(`CREATE INDEX idx_cache_orphaned ON cache_inventory(orphaned_at)`);
+    await db.execute(`CREATE INDEX idx_cache_perceptual_hash ON cache_inventory(perceptual_hash)`);
+    await db.execute(`CREATE INDEX idx_cache_gc ON cache_inventory(orphaned_at) WHERE orphaned_at IS NOT NULL`);
+
+    // Asset Selection Configuration
+    await db.execute(`
+      CREATE TABLE asset_selection_config (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        library_id INTEGER NOT NULL,
+        asset_type TEXT NOT NULL,
+
+        -- Quantity
+        min_count INTEGER DEFAULT 1,
+        max_count INTEGER DEFAULT 3,
+
+        -- Quality filters
+        min_width INTEGER,
+        min_height INTEGER,
+        prefer_language TEXT DEFAULT 'en',
+
+        -- Scoring weights (must sum to 1.0)
+        weight_resolution REAL DEFAULT 0.3,
+        weight_votes REAL DEFAULT 0.4,
+        weight_language REAL DEFAULT 0.2,
+        weight_provider REAL DEFAULT 0.1,
+
+        -- Duplicate detection
+        phash_similarity_threshold REAL DEFAULT 0.90,
+
+        -- Provider priority (JSON array)
+        provider_priority TEXT DEFAULT '["tmdb", "tvdb", "fanart.tv"]',
+
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+        FOREIGN KEY (library_id) REFERENCES libraries(id) ON DELETE CASCADE,
+        UNIQUE(library_id, asset_type)
+      )
+    `);
+
+    await db.execute(`CREATE INDEX idx_asset_config_library ON asset_selection_config(library_id)`);
+
+    // Library Automation Configuration
+    await db.execute(`
+      CREATE TABLE library_automation_config (
+        library_id INTEGER PRIMARY KEY,
+
+        -- Automation level
+        automation_mode TEXT DEFAULT 'hybrid',  -- 'manual', 'yolo', 'hybrid'
+
+        -- Phase 2 behavior
+        auto_enrich BOOLEAN DEFAULT 1,
+        auto_select_assets BOOLEAN DEFAULT 1,
+        auto_publish BOOLEAN DEFAULT 0,         -- Only true for 'yolo' mode
+
+        -- Webhook behavior
+        webhook_enabled BOOLEAN DEFAULT 1,
+        webhook_auto_publish BOOLEAN DEFAULT 1,  -- Always publish on webhook
+
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+        FOREIGN KEY (library_id) REFERENCES libraries(id) ON DELETE CASCADE
+      )
+    `);
+
+    // Rejected Assets (Global blacklist)
+    await db.execute(`
+      CREATE TABLE rejected_assets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        provider TEXT NOT NULL,
+        provider_url TEXT NOT NULL,
+        asset_type TEXT NOT NULL,
+        rejected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        reason TEXT,
+
+        UNIQUE(provider, provider_url)
+      )
+    `);
+
+    await db.execute(`CREATE INDEX idx_rejected_provider_url ON rejected_assets(provider, provider_url)`);
+
+    // Publish Log (Audit trail)
+    await db.execute(`
+      CREATE TABLE publish_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        entity_type TEXT NOT NULL,
+        entity_id INTEGER NOT NULL,
+
+        -- Publish details
+        published_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        published_by TEXT,
+        success BOOLEAN DEFAULT 1,
+        error_message TEXT,
+
+        -- Published content
+        nfo_content TEXT,
+        nfo_hash TEXT,
+        assets_published TEXT,
+
+        -- Metadata
+        duration_ms INTEGER,
+
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await db.execute(`CREATE INDEX idx_publish_log_entity ON publish_log(entity_type, entity_id)`);
+    await db.execute(`CREATE INDEX idx_publish_log_published_at ON publish_log(published_at)`);
+    await db.execute(`CREATE INDEX idx_publish_log_success ON publish_log(success)`);
+
+    // Job Queue (Background processing)
+    await db.execute(`
+      CREATE TABLE job_queue (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        job_type TEXT NOT NULL,
+        priority INTEGER NOT NULL,
+        status TEXT DEFAULT 'pending',
+
+        -- Payload
+        payload TEXT NOT NULL,
+
+        -- Progress tracking
+        progress_current INTEGER DEFAULT 0,
+        progress_total INTEGER DEFAULT 0,
+        progress_message TEXT,
+
+        -- Retry logic
+        retry_count INTEGER DEFAULT 0,
+        max_retries INTEGER DEFAULT 3,
+        next_retry_at TIMESTAMP,
+        error_message TEXT,
+        error_stack TEXT,
+
+        -- Cancellation
+        is_cancellable BOOLEAN DEFAULT 1,
+        cancelled_at TIMESTAMP,
+
+        -- Timing
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        started_at TIMESTAMP,
+        completed_at TIMESTAMP
+      )
+    `);
+
+    await db.execute(`CREATE INDEX idx_job_queue_status ON job_queue(status)`);
+    await db.execute(`CREATE INDEX idx_job_queue_priority ON job_queue(status, priority, created_at)`);
+    await db.execute(`CREATE INDEX idx_job_queue_worker ON job_queue(status, priority, created_at) WHERE status = 'pending'`);
+
+    // Completeness Configuration
+    await db.execute(`
+      CREATE TABLE completeness_config (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        media_type TEXT NOT NULL UNIQUE,
+
+        -- Required Scalar Fields (JSON array)
+        required_fields TEXT NOT NULL,
+
+        -- Required Images (exact quantities)
+        required_posters INTEGER DEFAULT 1,
+        required_fanart INTEGER DEFAULT 1,
+        required_landscape INTEGER DEFAULT 0,
+        required_keyart INTEGER DEFAULT 0,
+        required_banners INTEGER DEFAULT 0,
+        required_clearart INTEGER DEFAULT 0,
+        required_clearlogo INTEGER DEFAULT 0,
+        required_discart INTEGER DEFAULT 0,
+
+        -- Required Media Assets
+        required_trailers INTEGER DEFAULT 0,
+        required_subtitles INTEGER DEFAULT 0,
+        required_themes INTEGER DEFAULT 0,
+
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Seed completeness config
+    await db.execute(`INSERT INTO completeness_config (media_type, required_fields, required_posters, required_fanart) VALUES ('movies', '["plot", "mpaa", "premiered"]', 1, 1)`);
+    await db.execute(`INSERT INTO completeness_config (media_type, required_fields, required_posters, required_fanart, required_banners) VALUES ('series', '["plot", "mpaa"]', 1, 2, 1)`);
+    await db.execute(`INSERT INTO completeness_config (media_type, required_fields, required_posters) VALUES ('episodes', '["plot"]', 1)`);
+
+
+    // ========================================
+    // PHASE 1: ALTER EXISTING TABLES
+    // ========================================
+
+    // Movies - Add state machine and publishing columns
+    await db.execute(`ALTER TABLE movies ADD COLUMN state TEXT DEFAULT 'discovered'`);
+    await db.execute(`ALTER TABLE movies ADD COLUMN enriched_at TIMESTAMP`);
+    await db.execute(`ALTER TABLE movies ADD COLUMN enrichment_priority INTEGER DEFAULT 5`);
+    await db.execute(`ALTER TABLE movies ADD COLUMN has_unpublished_changes BOOLEAN DEFAULT 0`);
+    await db.execute(`ALTER TABLE movies ADD COLUMN last_published_at TIMESTAMP`);
+    await db.execute(`ALTER TABLE movies ADD COLUMN published_nfo_hash TEXT`);
+
+    // Movies - Add asset locking columns
+    await db.execute(`ALTER TABLE movies ADD COLUMN poster_locked BOOLEAN DEFAULT 0`);
+    await db.execute(`ALTER TABLE movies ADD COLUMN fanart_locked BOOLEAN DEFAULT 0`);
+    await db.execute(`ALTER TABLE movies ADD COLUMN banner_locked BOOLEAN DEFAULT 0`);
+    await db.execute(`ALTER TABLE movies ADD COLUMN clearlogo_locked BOOLEAN DEFAULT 0`);
+    await db.execute(`ALTER TABLE movies ADD COLUMN clearart_locked BOOLEAN DEFAULT 0`);
+    await db.execute(`ALTER TABLE movies ADD COLUMN discart_locked BOOLEAN DEFAULT 0`);
+    await db.execute(`ALTER TABLE movies ADD COLUMN landscape_locked BOOLEAN DEFAULT 0`);
+    await db.execute(`ALTER TABLE movies ADD COLUMN keyart_locked BOOLEAN DEFAULT 0`);
+    await db.execute(`ALTER TABLE movies ADD COLUMN trailer_locked BOOLEAN DEFAULT 0`);
+
+    // Movies - Add indexes for Phase 1
+    await db.execute(`CREATE INDEX idx_movies_state ON movies(state)`);
+    await db.execute(`CREATE INDEX idx_movies_unpublished ON movies(has_unpublished_changes) WHERE has_unpublished_changes = 1`);
+    await db.execute(`CREATE INDEX idx_movies_needs_enrichment ON movies(state, enriched_at, enrichment_priority) WHERE state IN ('identified', 'discovered') AND enriched_at IS NULL`);
+
+    // Series - Add state machine and publishing columns
+    await db.execute(`ALTER TABLE series ADD COLUMN state TEXT DEFAULT 'discovered'`);
+    await db.execute(`ALTER TABLE series ADD COLUMN enriched_at TIMESTAMP`);
+    await db.execute(`ALTER TABLE series ADD COLUMN enrichment_priority INTEGER DEFAULT 5`);
+    await db.execute(`ALTER TABLE series ADD COLUMN has_unpublished_changes BOOLEAN DEFAULT 0`);
+    await db.execute(`ALTER TABLE series ADD COLUMN last_published_at TIMESTAMP`);
+    await db.execute(`ALTER TABLE series ADD COLUMN published_nfo_hash TEXT`);
+
+    // Series - Add asset locking columns
+    await db.execute(`ALTER TABLE series ADD COLUMN poster_locked BOOLEAN DEFAULT 0`);
+    await db.execute(`ALTER TABLE series ADD COLUMN fanart_locked BOOLEAN DEFAULT 0`);
+    await db.execute(`ALTER TABLE series ADD COLUMN banner_locked BOOLEAN DEFAULT 0`);
+    await db.execute(`ALTER TABLE series ADD COLUMN clearlogo_locked BOOLEAN DEFAULT 0`);
+
+    // Series - Add indexes for Phase 1
+    await db.execute(`CREATE INDEX idx_series_state ON series(state)`);
+    await db.execute(`CREATE INDEX idx_series_unpublished ON series(has_unpublished_changes) WHERE has_unpublished_changes = 1`);
+
+    // Episodes - Add state machine and publishing columns
+    await db.execute(`ALTER TABLE episodes ADD COLUMN state TEXT DEFAULT 'discovered'`);
+    await db.execute(`ALTER TABLE episodes ADD COLUMN enriched_at TIMESTAMP`);
+    await db.execute(`ALTER TABLE episodes ADD COLUMN enrichment_priority INTEGER DEFAULT 5`);
+    await db.execute(`ALTER TABLE episodes ADD COLUMN has_unpublished_changes BOOLEAN DEFAULT 0`);
+    await db.execute(`ALTER TABLE episodes ADD COLUMN last_published_at TIMESTAMP`);
+    await db.execute(`ALTER TABLE episodes ADD COLUMN published_nfo_hash TEXT`);
+
+    // Episodes - Add asset locking columns
+    await db.execute(`ALTER TABLE episodes ADD COLUMN thumb_locked BOOLEAN DEFAULT 0`);
+
+    // Episodes - Add indexes for Phase 1
+    await db.execute(`CREATE INDEX idx_episodes_state ON episodes(state)`);
+    await db.execute(`CREATE INDEX idx_episodes_unpublished ON episodes(has_unpublished_changes) WHERE has_unpublished_changes = 1`);
+
+    // ========================================
+    // PHASE 1: TRIGGERS
+    // ========================================
+
+    // Trigger: Orphan cache assets when asset_candidate deleted
+    await db.execute(`
+      CREATE TRIGGER orphan_cache_assets
+      AFTER DELETE ON asset_candidates
+      FOR EACH ROW
+      WHEN OLD.content_hash IS NOT NULL
+      BEGIN
+        -- Decrement reference count
+        UPDATE cache_inventory
+        SET reference_count = reference_count - 1
+        WHERE content_hash = OLD.content_hash;
+
+        -- Mark as orphaned if ref_count = 0
+        UPDATE cache_inventory
+        SET orphaned_at = CURRENT_TIMESTAMP
+        WHERE content_hash = OLD.content_hash
+          AND reference_count = 0
+          AND orphaned_at IS NULL;
+      END
+    `);
   }
 
   static async down(_db: DatabaseConnection): Promise<void> {
@@ -1055,4 +1405,4 @@ export class InitialSchemaMigration {
   }
 }
 
-// Migration updated: 2025-10-06 - Force recompile to include deleted_on column
+// Migration updated: 2025-10-08 - Integrated Phase 1 revised architecture (asset_candidates, cache_inventory, state machine, publishing workflow)

@@ -247,7 +247,7 @@ export class LibraryScanService extends EventEmitter {
         });
 
         // Log result and broadcast WebSocket updates for real-time UI updates
-        if (scanResult.isNewMovie) {
+        if (scanResult.isNewMovie && scanResult.movieId !== undefined) {
           logger.info(`Added new movie: ${movieName}`, {
             movieId: scanResult.movieId,
             assetsFound: scanResult.assetsFound,
@@ -255,7 +255,7 @@ export class LibraryScanService extends EventEmitter {
           });
           // Broadcast movie added immediately
           websocketBroadcaster.broadcastMoviesAdded([scanResult.movieId]);
-        } else if (scanResult.directoryChanged) {
+        } else if (scanResult.directoryChanged && scanResult.movieId !== undefined) {
           logger.info(`Updated movie: ${movieName}`, {
             movieId: scanResult.movieId,
             nfoRegenerated: scanResult.nfoRegenerated,
