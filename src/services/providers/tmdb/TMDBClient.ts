@@ -19,6 +19,8 @@ import {
   TMDBError,
   TMDBImageSize,
   TMDBImageType,
+  TMDBImage,
+  TMDBVideo,
 } from '../../../types/providers/tmdb.js';
 
 export class TMDBClient {
@@ -127,6 +129,35 @@ export class TMDBClient {
    */
   async getConfiguration(): Promise<TMDBConfiguration> {
     return this.request<TMDBConfiguration>('/configuration');
+  }
+
+  /**
+   * Get all images for a movie (posters, backdrops, logos)
+   */
+  async getMovieImages(movieId: number, language?: string): Promise<{
+    id: number;
+    backdrops: TMDBImage[];
+    posters: TMDBImage[];
+    logos: TMDBImage[];
+  }> {
+    const params: any = {};
+    if (language) {
+      params.language = language;
+    }
+    return this.request(`/movie/${movieId}/images`, { params });
+  }
+
+  /**
+   * Get videos for a movie (trailers, teasers, clips)
+   */
+  async getMovieVideos(movieId: number, language?: string): Promise<{
+    id: number;
+    results: TMDBVideo[];
+  }> {
+    const params = {
+      language: language || this.language,
+    };
+    return this.request(`/movie/${movieId}/videos`, { params });
   }
 
   /**
