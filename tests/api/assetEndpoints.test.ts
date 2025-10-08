@@ -24,14 +24,14 @@ describe('Asset API Endpoints', () => {
     // Register routes (simplified for testing)
     app.get('/api/assets/candidates/:entityType/:entityId',
       (req, res) => assetController.getCandidates(req, res));
-    app.post('/api/assets/select',
-      (req, res) => assetController.selectAsset(req, res));
+    app.post('/api/assets/select/manual',
+      (req, res) => assetController.selectManual(req, res));
     app.post('/api/assets/reject',
       (req, res) => assetController.rejectAsset(req, res));
     app.delete('/api/assets/unlock/:entityType/:entityId/:assetType',
       (req, res) => assetController.unlockAssetType(req, res));
     app.get('/api/assets/selected/:entityType/:entityId',
-      (req, res) => assetController.getSelectedAssets(req, res));
+      (req, res) => assetController.getSelected(req, res));
 
     // Seed test data
     await testDb.seed({

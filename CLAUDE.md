@@ -41,6 +41,7 @@ Metarr is a web-based metadata management application inspired by MediaElch, des
 **System**:
 - **[PATH_MAPPING.md](docs/PATH_MAPPING.md)** - Path translation between systems
 - **[NOTIFICATIONS_AND_LOGGING.md](docs/NOTIFICATIONS_AND_LOGGING.md)** - Logging, notifications
+- **[TESTING.md](docs/TESTING.md)** - Test infrastructure, writing tests, current status
 
 **Frontend**:
 - **[UI_DESIGN.md](docs/UI_DESIGN.md)** - Layout, color scheme

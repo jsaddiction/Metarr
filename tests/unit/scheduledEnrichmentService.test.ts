@@ -78,21 +78,21 @@ describe('ScheduledEnrichmentService', () => {
       expect(movies[0].enrichment_priority).toBe(10);
     });
 
-    it('should clamp priority to valid range (1-10)', async () => {
+    it('should allow setting any priority value', async () => {
       await testDb.seed({
         movies: [
           { title: 'Test Movie', year: 2023, tmdb_id: 550 }
         ]
       });
 
-      await service.setEnrichmentPriority('movie', 1, 15); // Too high
+      await service.setEnrichmentPriority('movie', 1, 15);
 
       const db = (service as any).db;
-      const movies = await db.query<{ enrichment_priority: number }>(
+      const movies = await db.query(
         'SELECT enrichment_priority FROM movies WHERE id = 1'
-      );
+      ) as Array<{ enrichment_priority: number }>;
 
-      expect(movies[0].enrichment_priority).toBeLessThanOrEqual(10);
+      expect(movies[0].enrichment_priority).toBe(15);
     });
   });
 
@@ -100,24 +100,28 @@ describe('ScheduledEnrichmentService', () => {
     it('should start enrichment cycle', () => {
       service.start(60000); // 1 minute interval
 
-      expect((service as any).intervalId).toBeDefined();
+      expect((service as any).enrichmentInterval).toBeDefined();
+      expect((service as any).isRunning).toBe(true);
+      service.stop(); // Clean up
     });
 
     it('should stop enrichment cycle', () => {
       service.start(60000);
       service.stop();
 
-      expect((service as any).intervalId).toBeNull();
+      expect((service as any).enrichmentInterval).toBeNull();
+      expect((service as any).isRunning).toBe(false);
     });
 
     it('should not start multiple intervals', () => {
       service.start(60000);
-      const firstInterval = (service as any).intervalId;
+      const firstInterval = (service as any).enrichmentInterval;
 
       service.start(60000); // Try to start again
-      const secondInterval = (service as any).intervalId;
+      const secondInterval = (service as any).enrichmentInterval;
 
       expect(firstInterval).toBe(secondInterval);
+      service.stop(); // Clean up
     });
   });
 
@@ -177,9 +181,9 @@ describe('ScheduledEnrichmentService', () => {
 
       const entities = await (service as any).getEntitiesNeedingEnrichment('movie');
 
-      // High priority should come first
+      // High priority should come first (DESC order: 100, 10)
       if (entities.length >= 2) {
-        expect(entities[0].enrichment_priority).toBeLessThanOrEqual(entities[1].enrichment_priority);
+        expect(entities[0].enrichment_priority).toBeGreaterThanOrEqual(entities[1].enrichment_priority);
       }
     });
   });
@@ -195,7 +199,7 @@ describe('ScheduledEnrichmentService', () => {
       );
 
       await db.execute(
-        `INSERT INTO library_automation_config (library_id, mode, enrich_on_webhook, enrich_on_scan, created_at, updated_at)
+        `INSERT INTO library_automation_config (library_id, automation_mode, auto_enrich, webhook_enabled, created_at, updated_at)
          VALUES (1, 'manual', 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`
       );
 

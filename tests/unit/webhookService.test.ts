@@ -156,7 +156,8 @@ describe('WebhookService', () => {
           year: 2023,
           path: '/tv/Test Series',
           tvdbId: 12345,
-          tvMazeId: 67890
+          tvMazeId: 67890,
+          type: 'series'
         },
         episodes: [
           {
@@ -189,7 +190,8 @@ describe('WebhookService', () => {
           year: 2023,
           path: '/test',
           tvdbId: 1,
-          tvMazeId: 1
+          tvMazeId: 1,
+          type: 'series'
         }
       };
 
@@ -207,7 +209,8 @@ describe('WebhookService', () => {
           year: 2023,
           path: '/tv/Test Series',
           tvdbId: 12345,
-          tvMazeId: 67890
+          tvMazeId: 67890,
+          type: 'series'
         }
       };
 
@@ -235,7 +238,8 @@ describe('WebhookService', () => {
             id: 1,
             title: 'Test Album',
             releaseDate: '2023-01-01',
-            mbId: 'mbid-album-1'
+            mbId: 'mbid-album-1',
+            trackCount: 12
           }
         ]
       };
