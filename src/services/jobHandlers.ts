@@ -305,22 +305,118 @@ export class JobHandlers {
    *
    * Payload: {
    *   libraryId: number,
-   *   libraryPath: string
+   *   libraryPath: string,
+   *   libraryType: 'movie' | 'series' | 'music'
    * }
    */
   private async handleLibraryScan(job: Job): Promise<void> {
-    const { libraryId, libraryPath } = job.payload;
+    const { libraryId, libraryPath, libraryType } = job.payload;
 
-    logger.info(`Scanning library ${libraryId}: ${libraryPath}`);
+    logger.info(`Scanning library ${libraryId}: ${libraryPath} (${libraryType})`);
 
-    // TODO: Implement full library scan
-    // 1. Recursively scan library directory
-    // 2. Identify media files (by extension)
-    // 3. Parse NFO files if present
-    // 4. Match to existing entities or create new
-    // 5. Discover assets in each directory
+    try {
+      // Import fs for directory scanning
+      const fs = await import('fs/promises');
+      const path = await import('path');
 
-    logger.info(`Library scan complete for ${libraryId}`);
+      // Get all subdirectories (each should be a movie/series folder)
+      const entries = await fs.readdir(libraryPath, { withFileTypes: true });
+      const directories = entries.filter(e => e.isDirectory());
+
+      logger.info(`Found ${directories.length} directories in library ${libraryId}`);
+
+      let processed = 0;
+      let errors = 0;
+
+      for (const dir of directories) {
+        try {
+          const fullPath = path.join(libraryPath, dir.name);
+
+          // Check if entity already exists in database
+          const existing = await this.findEntityByPath(fullPath, libraryType);
+
+          if (existing) {
+            logger.debug(`Entity already exists for ${fullPath}, skipping`);
+            continue;
+          }
+
+          // Look for media files in directory
+          const files = await fs.readdir(fullPath);
+          const videoExtensions = ['.mkv', '.mp4', '.avi', '.mov', '.m4v'];
+          const hasVideo = files.some(f => videoExtensions.includes(path.extname(f).toLowerCase()));
+
+          if (!hasVideo) {
+            logger.debug(`No video files found in ${fullPath}, skipping`);
+            continue;
+          }
+
+          // For movies: create entity and schedule discovery
+          if (libraryType === 'movie') {
+            // Parse directory name for title and year
+            const match = dir.name.match(/^(.+?)\s*\((\d{4})\)$/);
+            const title = match ? match[1].trim() : dir.name;
+            const year = match ? parseInt(match[2]) : null;
+
+            // Insert movie into database
+            const result = await this.db.execute(
+              `INSERT INTO movies (title, year, file_path, library_id, state)
+               VALUES (?, ?, ?, ?, 'discovered')`,
+              [title, year, fullPath, libraryId]
+            );
+
+            const movieId = result.insertId!;
+
+            // Schedule asset discovery job
+            await this.db.execute(
+              `INSERT INTO job_queue (type, priority, payload, state, retry_count, max_retries, created_at)
+               VALUES ('discover-assets', 8, ?, 'pending', 0, 3, CURRENT_TIMESTAMP)`,
+              [JSON.stringify({
+                entityType: 'movie',
+                entityId: movieId,
+                directoryPath: fullPath
+              })]
+            );
+
+            processed++;
+            logger.info(`Created movie ${movieId}: ${title}${year ? ` (${year})` : ''}`);
+          }
+          // Series handling would go here (more complex)
+          else if (libraryType === 'series') {
+            logger.debug(`Series library scanning not yet fully implemented`);
+          }
+
+        } catch (error: any) {
+          logger.error(`Error processing directory ${dir.name}:`, error);
+          errors++;
+        }
+      }
+
+      logger.info(`Library scan complete for ${libraryId}: ${processed} processed, ${errors} errors`);
+
+    } catch (error) {
+      logger.error(`Error scanning library ${libraryId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Find entity by file path
+   */
+  private async findEntityByPath(filePath: string, libraryType: string): Promise<boolean> {
+    if (libraryType === 'movie') {
+      const result = await this.db.query<{ id: number }>(
+        `SELECT id FROM movies WHERE file_path = ?`,
+        [filePath]
+      );
+      return result.length > 0;
+    } else if (libraryType === 'series') {
+      const result = await this.db.query<{ id: number }>(
+        `SELECT id FROM series WHERE path = ?`,
+        [filePath]
+      );
+      return result.length > 0;
+    }
+    return false;
   }
 
   // ============================================

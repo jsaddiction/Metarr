@@ -6,6 +6,7 @@ import { IgnorePatternController } from '../controllers/ignorePatternController.
 import { ImageController } from '../controllers/imageController.js';
 import { AssetController } from '../controllers/assetController.js';
 import { JobController } from '../controllers/jobController.js';
+import { AutomationConfigController } from '../controllers/automationConfigController.js';
 import { DatabaseManager } from '../database/DatabaseManager.js';
 import { MediaPlayerConnectionManager } from '../services/mediaPlayerConnectionManager.js';
 import { MediaPlayerService } from '../services/mediaPlayerService.js';
@@ -16,6 +17,8 @@ import { IgnorePatternService } from '../services/ignorePatternService.js';
 import { ImageService } from '../services/imageService.js';
 import { JobQueueService } from '../services/jobQueueService.js';
 import { JobHandlers } from '../services/jobHandlers.js';
+import { ScheduledEnrichmentService } from '../services/scheduledEnrichmentService.js';
+import { AutomationConfigService } from '../services/automationConfigService.js';
 
 // Initialize router factory function
 export const createApiRouter = (
@@ -53,6 +56,14 @@ export const createApiRouter = (
   const jobHandlers = new JobHandlers(db, './data/cache');
   jobHandlers.registerHandlers(jobQueue);
   jobQueue.start(); // Start processing jobs
+
+  // Initialize scheduled enrichment service
+  const scheduledEnrichment = new ScheduledEnrichmentService(db, jobQueue);
+  scheduledEnrichment.start(3600000); // Run every hour (3600000ms)
+
+  // Initialize automation config service and controller
+  const automationConfigService = new AutomationConfigService(db);
+  const automationConfigController = new AutomationConfigController(automationConfigService);
 
   // Initialize asset and job controllers
   const assetController = new AssetController(db);
@@ -284,6 +295,17 @@ export const createApiRouter = (
   router.post('/jobs/:jobId/retry', jobController.retry);
   router.delete('/jobs/:jobId', jobController.cancel);
   router.post('/jobs/clear-old', jobController.clearOld);
+
+  // Automation Config Routes
+  console.log('[API Router] Registering automation config routes');
+  router.get('/automation/:libraryId', automationConfigController.getAutomationConfig);
+  router.put('/automation/:libraryId', automationConfigController.setAutomationConfig);
+  router.get('/automation/:libraryId/asset-selection', automationConfigController.getAssetSelectionConfig);
+  router.put('/automation/:libraryId/asset-selection/:assetType', automationConfigController.setAssetSelectionConfig);
+  router.get('/automation/:libraryId/completeness', automationConfigController.getCompletenessConfig);
+  router.put('/automation/:libraryId/completeness/:fieldName', automationConfigController.setCompletenessConfig);
+  router.post('/automation/:libraryId/initialize', automationConfigController.initializeDefaults);
+  router.delete('/automation/:libraryId', automationConfigController.deleteAutomationConfig);
 
   // Placeholder routes for future implementation
   router.get('/providers', (_req, res) => {
