@@ -1,1400 +1,853 @@
 # Core Application Workflows
 
-This document details the primary workflows and operational sequences in Metarr.
+**Related Docs**: [ARCHITECTURE.md](ARCHITECTURE.md), [AUTOMATION_AND_WEBHOOKS.md](AUTOMATION_AND_WEBHOOKS.md), [ASSET_MANAGEMENT.md](ASSET_MANAGEMENT.md), [PUBLISHING_WORKFLOW.md](PUBLISHING_WORKFLOW.md)
+
+This document details the primary operational workflows in Metarr's revised architecture, including two-phase scanning, enrichment pipeline, and automated publishing.
 
 ---
 
-## Three Scan Initiation Methods
+## Workflow Overview
 
-Metarr supports three distinct methods to initiate a scan on media directories. Each has different contexts and lookup strategies.
-
-### 1. Webhook-Initiated Scan (Critical Priority)
-
-**Trigger**: Radarr/Sonarr/Lidarr sends webhook when download completes
-
-**Context Available**:
-- ✅ TMDB ID (from webhook payload)
-- ✅ IMDB ID (from webhook payload)
-- ✅ File path (from webhook payload)
-- ✅ Movie metadata (title, year, quality, etc.)
-
-**Database Lookup Strategy**:
-1. Search by `tmdb_id` (authoritative identifier)
-2. If found AND path changed → Update `file_path`
-3. If not found → Create new movie record
-4. Clear `deleted_on` if previously marked for deletion
-
-**Priority**: **Critical** - Pauses scheduled library scans if running
-
-**Use Case**: Real-time processing of newly downloaded media
-
-See [WEBHOOKS.md](WEBHOOKS.md) for complete webhook documentation.
-
----
-
-### 2. User-Initiated Refresh (High Priority)
-
-**Trigger**: User clicks "Refresh" button on movie details page
-
-**Context Available**:
-- ✅ Movie ID (database record)
-- ✅ TMDB ID (from existing record)
-- ✅ Old file path (from existing record)
-- ❌ No external metadata
-
-**Database Lookup Strategy**:
-1. Load existing record by `id`
-2. Check if directory still exists
-3. Find video file (path may have changed due to rename)
-4. Update `file_path` if changed
-5. If directory missing → Mark `deleted_on = NOW() + 7 days`
-
-**Priority**: **High** - Queued after webhooks
-
-**Use Case**: Manual metadata refresh, recover from errors, re-scan after manual edits
-
----
-
-### 3. Scheduled Library Scan (Normal Priority)
-
-**Trigger**: Periodic scan (e.g., daily at 2 AM) or manual library scan
-
-**Context Available**:
-- ✅ Library directory paths only
-- ❌ No TMDB ID initially
-- ❌ No IMDB ID initially
-- ❌ No external metadata
-
-**Database Lookup Strategy**:
-1. Discover all movie directories in library
-2. Find NFO files and parse for `tmdb_id`
-3. If NFO has TMDB ID:
-   - Search database by `tmdb_id`
-   - If found AND path changed → Update `file_path`
-   - If not found → Create new record
-4. If no NFO or no TMDB ID:
-   - Search database by `file_path`
-   - If not found → Create record with `status = 'needs_identification'`
-5. Compare directory hash to detect changes
-   - Hash match → Skip scan (nothing changed)
-   - Hash differs → Run unified scan
-
-**Critical Function**: **Only way to detect deletions** (no delete webhook from Radarr)
-
-After scanning all directories:
-- Movies with paths NOT discovered → Set `deleted_on = NOW() + 7 days`
-- 7-day grace period before permanent deletion
-
-**Priority**: **Normal** - Can be paused by webhooks
-
-**Use Case**: Discover new media added while Metarr was offline, detect deleted files, verify database accuracy
-
----
-
-## Database Lookup Priority (All Scan Types)
-
-All scans follow this priority when looking up movies:
+Metarr operates through four distinct operational phases:
 
 ```
-1. TMDB ID (authoritative)
-   ↓
-2. File Path (fallback for legacy items)
-   ↓
-3. Create New (if not found)
+┌─────────────────────────────────────────────────────────────┐
+│                  METARR WORKFLOW PHASES                      │
+└─────────────────────────────────────────────────────────────┘
+
+PHASE 1: DISCOVERY (Fast Local Scan)
+  ├─ Scan filesystem for media files
+  ├─ Parse NFO for IDs + basic metadata
+  ├─ FFprobe video files (stream details)
+  ├─ Discover local assets (copy to cache)
+  └─ Insert to database (state = 'discovered' or 'identified')
+
+PHASE 2: ENRICHMENT (Background, Rate-Limited)
+  ├─ Fetch provider metadata (TMDB/TVDB)
+  ├─ Fetch asset candidate URLs
+  ├─ Run auto-selection algorithm (if enabled)
+  ├─ Download selected assets to cache
+  └─ Update database (state = 'enriched' or 'selected')
+
+PHASE 3: PUBLISHING (User-Triggered or Auto)
+  ├─ Generate NFO from database
+  ├─ Copy assets from cache → library
+  ├─ Write NFO to library
+  └─ Update database (state = 'published', has_unpublished_changes = 0)
+
+PHASE 4: NOTIFICATION (Async, Non-Blocking)
+  └─ Trigger media player scans (Kodi/Jellyfin)
 ```
 
-### Why TMDB ID is Authoritative
+**Key Principle**: Each phase is **independent** and **resumable**. Crashes don't lose progress.
 
-- **Files can be renamed/moved** → Path changes
-- **TMDB ID never changes** → Stable identifier
-- **Webhooks always include TMDB ID** → Reliable source
-- **Prevents duplicate entries** → Same movie, different path
+---
 
-### Path Change Detection
+## Scan Initiation Methods
 
-When movie found by TMDB ID but path differs:
+Metarr supports three methods to initiate discovery/enrichment workflows.
+
+### 1. Initial Library Scan (User-Triggered)
+
+**Trigger**: User clicks "Scan Library" button
+
+**Target Users**:
+- New Metarr installation
+- Adding new library
+- Rebuilding after database deletion
+
+**Automation Behavior** (depends on library config):
+
+| Mode | Phase 1 (Discovery) | Phase 2 (Enrichment) | Phase 3 (Publishing) |
+|------|---------------------|----------------------|----------------------|
+| **Manual** | ✓ Runs immediately | User triggers per-item | User triggers per-item |
+| **YOLO** | ✓ Runs immediately | ✓ Auto (background) | ✓ Auto (after selection) |
+| **Hybrid** | ✓ Runs immediately | ✓ Auto (background) | User triggers (bulk) |
+
+**Workflow** (YOLO Mode - Full Automation):
 
 ```typescript
-if (movie.tmdb_id === tmdbId && movie.file_path !== newFilePath) {
-  logger.info('Path changed', {
-    movieId: movie.id,
-    oldPath: movie.file_path,
-    newPath: newFilePath,
-    trigger: 'webhook' // or 'user_refresh' or 'scheduled_scan'
-  });
+// User clicks "YOLO My Library"
+POST /api/libraries/1/scan?mode=yolo
 
-  await db.execute(
-    `UPDATE movies SET file_path = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-    [newFilePath, movie.id]
-  );
-}
+1. Phase 1: Fast Local Scan (3-5 hours for 32k items)
+   ├─ Discover all movie directories
+   ├─ For each directory:
+   │   ├─ Find video file (*.mkv, *.mp4, etc.)
+   │   ├─ Parse NFO if exists
+   │   │   ├─ Extract IDs (tmdb_id, imdb_id)
+   │   │   ├─ Extract basic metadata (title, year, plot, genres, actors)
+   │   │   ├─ Do NOT follow <thumb> URLs (just store URLs)
+   │   │   └─ Calculate NFO hash (detect future changes)
+   │   ├─ FFprobe video file
+   │   │   └─ Store stream details (video, audio, subtitle tables)
+   │   ├─ Discover local assets (poster.jpg, fanart*.jpg)
+   │   │   ├─ Copy to content-addressed cache
+   │   │   ├─ Calculate pHash
+   │   │   └─ Insert to asset_candidates (provider='local', is_selected=1)
+   │   └─ Insert movie to database
+   │       ├─ state = 'identified' (if has tmdb_id)
+   │       ├─ state = 'discovered' (if no IDs)
+   │       └─ enrichment_priority = 5 (normal)
+   │
+   └─ Result: User sees 32k movies in UI immediately
+
+2. Phase 2: Lazy Enrichment (18-36 hours, rate-limited)
+   ├─ Background job picks up items where state = 'identified' AND enriched_at IS NULL
+   ├─ For each movie (priority queue):
+   │   ├─ Fetch TMDB metadata (50/sec rate limit)
+   │   │   ├─ Plot, tagline, genres, actors, directors (respect locks)
+   │   │   └─ Store in database, mark enriched_at = NOW()
+   │   ├─ Fetch asset candidates (URLs only, don't download yet)
+   │   │   ├─ 15 posters from TMDB
+   │   │   ├─ 20 fanarts from TMDB
+   │   │   └─ Insert to asset_candidates (provider='tmdb', is_downloaded=0)
+   │   ├─ Run auto-selection algorithm
+   │   │   ├─ Score each candidate (resolution, votes, language)
+   │   │   ├─ Filter duplicates (pHash similarity)
+   │   │   ├─ Select top N (config: max_count)
+   │   │   └─ Mark is_selected=1, selected_by='auto'
+   │   ├─ Download selected assets to cache
+   │   │   ├─ Calculate content hash (SHA256)
+   │   │   ├─ Save as /cache/assets/{hash}.jpg
+   │   │   └─ Update asset_candidates (cache_path, content_hash, is_downloaded=1)
+   │   └─ Update movie state = 'selected'
+   │
+   └─ Emit SSE progress events (every 10 items)
+
+3. Phase 3: Auto-Publish (YOLO mode)
+   ├─ For each movie where state = 'selected':
+   │   ├─ Generate NFO from database
+   │   ├─ Copy selected assets from cache → library
+   │   │   ├─ poster.jpg (first poster)
+   │   │   ├─ fanart.jpg (first fanart)
+   │   │   └─ fanart1.jpg, fanart2.jpg, ... (additional fanarts)
+   │   ├─ Write NFO to library
+   │   └─ Update movie
+   │       ├─ state = 'published'
+   │       ├─ has_unpublished_changes = 0
+   │       ├─ last_published_at = NOW()
+   │       └─ published_nfo_hash = SHA256(nfo_content)
+   │
+   └─ Result: All assets in library, ready for player scan
+
+4. Phase 4: Notify Players (Async)
+   └─ Trigger Kodi/Jellyfin scans (one per library, not per movie)
 ```
 
-**Result**: Database stays current even when files are renamed or moved.
-
----
-
-## Webhook Flow - Download Processing
-
-Metarr receives webhooks from download managers (Radarr/Sonarr/Lidarr) for various events. The **Download** webhook is the primary trigger for automated metadata management.
-
-**For complete webhook documentation, see [WEBHOOKS.md](WEBHOOKS.md)**
-
-This section provides workflow overview only.
-
-### Sequence Diagram
-
-```
-Radarr/Sonarr                Metarr                          Kodi/Jellyfin
-─────────────                ──────                          ─────────────
-     │                          │                                  │
-     │ 1. "grab" webhook        │                                  │
-     ├─────────────────────────>│                                  │
-     │    (movie downloading)   │                                  │
-     │                          │ Check if playing via WebSocket   │
-     │                          ├─────────────────────────────────>│
-     │                          │<─────────────────────────────────┤
-     │                          │ Send notification if playing     │
-     │                          ├─────────────────────────────────>│
-     │                          │                                  │
-     │ 2. "download" webhook    │                                  │
-     ├─────────────────────────>│                                  │
-     │    (download complete)   │                                  │
-     │                          │ Pause library scan if running    │
-     │                          │ Process immediately (highest priority)
-     │                          │                                  │
-     │                          │ Check if file being played       │
-     │                          ├─────────────────────────────────>│
-     │                          │<─────────────────────────────────┤
-     │                          │ If playing → stop, save position │
-     │                          ├─────────────────────────────────>│
-     │                          │                                  │
-     │                          │ Apply path mapping (manager→Metarr)
-     │                          │ Check if exists in DB (by path/tmdbId)
-     │                          │ Create/update DB entry           │
-     │                          │                                  │
-     │                          │ UNIFIED SCAN PROCESS             │
-     │                          │ ================================ │
-     │                          │ 1. Parse NFO metadata            │
-     │                          │    (skip URL elements - see NFO_PARSING.md)
-     │                          │                                  │
-     │                          │ 2. Scan stream details (FFprobe) │
-     │                          │    - Video: codec, resolution, HDR│
-     │                          │    - Audio: codec, language, channels
-     │                          │    - Subtitles: language, external│
-     │                          │    Store in video/audio/subtitle_streams
-     │                          │                                  │
-     │                          │ 3. Discover image assets         │
-     │                          │    - poster.jpg, fanart*.jpg, etc.│
-     │                          │    - .actors/*.jpg               │
-     │                          │    - Migrate legacy (extrafanart/)│
-     │                          │    - Copy to cache (backup)      │
-     │                          │    - Calculate pHash             │
-     │                          │                                  │
-     │                          │ 4. Discover trailer files        │
-     │                          │    - {movie}-trailer.mkv         │
-     │                          │    - Max ONE trailer per movie   │
-     │                          │    Store in trailers table       │
-     │                          │                                  │
-     │                          │ 5. Discover subtitles            │
-     │                          │    - External .srt/.ass files    │
-     │                          │    Store in subtitle_streams     │
-     │                          │                                  │
-     │                          │ 6. Detect unknown files          │
-     │                          │    - Files not matching patterns │
-     │                          │    Store in unknown_files table  │
-     │                          │                                  │
-     │                          │ 7. Atomic database update        │
-     │                          │    - All metadata committed together│
-     │                          │                                  │
-     │                          │ 8. Enrich from providers (optional)│
-     │                          │    (TMDB, TVDB - only unlocked fields)
-     │                          │                                  │
-     │                          │ Generate/update NFO file         │
-     │                          │ Include streamdetails from DB    │
-     │                          │ Calculate NFO hash, store in DB  │
-     │                          │                                  │
-     │                          │ Copy images from cache to library│
-     │                          │                                  │
-     │                          │ Apply path mapping (Metarr→player)
-     │                          │ Trigger library scan             │
-     │                          ├─────────────────────────────────>│
-     │                          │<─────────────────────────────────┤
-     │                          │ (Kodi scans, caches images)      │
-     │                          │                                  │
-     │                          │ If playback was stopped →        │
-     │                          │   Resume at saved position       │
-     │                          ├─────────────────────────────────>│
-     │                          │                                  │
-     │                          │ Resume library scan if paused    │
-     │                          │                                  │
-```
-
-### Detailed Steps
-
-#### Step 1: "Grab" Event (Download Started)
-1. Receive webhook with `Radarr_EventType: grab`
-2. Extract `tmdbId`, `imdbId`, and `path` from payload
-3. Apply media manager path mapping (if configured)
-4. Check all connected Kodi players via WebSocket
-5. If movie is currently playing:
-   - Send Kodi notification: "Upgrade downloading for [Movie Title]"
-   - Record playback state (for later interruption)
-6. No other action (download not complete yet)
-
-#### Step 2: "Download" Event (Download Complete)
-1. Receive webhook with `eventType: Download`
-2. **Immediately process** (pause library scan if running - critical priority)
-3. Check `isUpgrade` flag:
-   - If `true` → Check for active playback, stop if needed, save position
-4. Apply media manager path mapping to webhook path (Radarr path → Metarr path)
-5. **Database Lookup** (TMDB ID first):
-   - Search by `tmdb_id` (from webhook - authoritative)
-   - If found AND path changed → Update `file_path`
-   - If found AND `deleted_on` set → Clear deletion flag (file restored)
-   - If not found → Create new movie record with webhook metadata
-6. Run unified scan workflow (see Unified Scan Process below)
-
-#### Step 3: Metadata Enrichment
-1. Check `status` (skip if already 'enriching')
-2. Set `status = 'enriching'`
-3. For each provider (TMDB, TVDB):
-   - Check rate limits, wait if necessary (1-second window)
-   - Fetch metadata (append_to_response for batching)
-   - **Merge only unlocked fields** (check `plot_locked`, `poster_locked`, etc.)
-   - Skip locked fields entirely (preserve user edits)
-4. Download images:
-   - Check completeness requirements (e.g., "3 fanarts required")
-   - Filter already-locked images
-   - Download candidates to temp directory
-   - Calculate perceptual hashes
-   - Select top N by vote_average + resolution + uniqueness (90% similarity threshold)
-   - Move selected to cache directory
-   - Store URLs, hashes, dimensions in `images` table
-5. Set `status = null` (or error state if failed)
-
-#### Step 4: Stream Details Scanning (FFprobe)
-1. Locate video file using `file_path` from database
-2. Execute FFprobe to extract stream information:
-   - Video stream (codec, resolution, bitrate, HDR, framerate, aspect ratio)
-   - Audio streams (codec, language, channels, bitrate, defaults)
-   - Subtitle streams (language, codec, defaults)
-3. Scan for external subtitle files (.srt, .ass, .sub) in same directory
-4. Update database tables:
-   - Delete existing streams for this entity
-   - Insert video stream into `video_streams` table
-   - Insert audio streams into `audio_streams` table
-   - Insert subtitle streams (embedded + external) into `subtitle_streams` table
-5. Store `duration_seconds` (authoritative runtime)
-6. See `@docs/STREAM_DETAILS.md` for complete details
-
-#### Step 5: NFO Generation
-1. Build complete NFO XML from database state
-2. Include all metadata (scalar fields + arrays)
-3. Include image URLs from `images` table
-4. **Generate `<fileinfo><streamdetails>` section from database** (video_streams, audio_streams, subtitle_streams)
-5. Write NFO to library directory (e.g., `movie.nfo`)
-6. Calculate hash of NFO content (SHA256)
-7. Store hash in `movies.nfo_hash` column
-
-**Note:** NFO `<streamdetails>` is **write-only** - never parsed on import, always generated from FFprobe data.
-
-#### Step 6: Image Deployment
-1. For each image in `images` table (for this movie):
-   - Copy from cache to library directory
-   - Use Kodi naming conventions (poster.jpg, fanart.jpg, fanart1.jpg, etc.)
-   - If cache file missing → re-download from provider URL
-
-#### Step 7: Media Player Update
-1. For each configured media player:
-   - Apply path mapping (Metarr library path → player path)
-   - If Kodi:
-     - Trigger scan on specific directory (mapped path)
-     - If metadata-only update → scan fake directory `/doesNotExist` to force skin refresh
-   - If Kodi Shared Group:
-     - Pick one member to trigger scan (all share same database)
-   - If Jellyfin/Plex:
-     - Trigger library scan via REST API
-
-#### Step 8: Playback Resumption (If Upgrade)
-1. If playback was stopped during upgrade:
-   - Wait for Kodi scan to complete (listen for `VideoLibrary.OnScanFinished` via WebSocket)
-   - Check user setting: "Auto-resume after upgrade" (default: true)
-   - If enabled → Resume playback at saved position (per player)
-   - Send notification: "Playback resuming..."
-
----
-
-## Library Scan Flow
-
-Manual or scheduled library scans discover new media, parse NFO files, and populate the database.
-
-### Sequence Diagram
-
-```
-User/Scheduler          Metarr                    Filesystem            Database
-─────────────          ──────                    ──────────            ────────
-     │                    │                            │                   │
-     │ Trigger scan       │                            │                   │
-     ├───────────────────>│                            │                   │
-     │                    │ Set scan_job status='running'                  │
-     │                    ├──────────────────────────────────────────────>│
-     │                    │                            │                   │
-     │                    │ Discover directories       │                   │
-     │                    ├───────────────────────────>│                   │
-     │                    │<───────────────────────────┤                   │
-     │                    │ (list of movie directories)│                   │
-     │                    │                            │                   │
-     │                    │ For each directory:        │                   │
-     │                    │   Search for NFO files     │                   │
-     │                    ├───────────────────────────>│                   │
-     │                    │<───────────────────────────┤                   │
-     │                    │                            │                   │
-     │                    │   Read NFO content         │                   │
-     │                    ├───────────────────────────>│                   │
-     │                    │<───────────────────────────┤                   │
-     │                    │                            │                   │
-     │                    │   Calculate NFO hash       │                   │
-     │                    │   Lookup by path in DB     │                   │
-     │                    ├──────────────────────────────────────────────>│
-     │                    │<──────────────────────────────────────────────┤
-     │                    │                            │                   │
-     │                    │   If new → Unified scan, insert DB            │
-     │                    │   If exists → Compare hash │                   │
-     │                    │     If hash match → skip   │                   │
-     │                    │     If hash differ → unified scan + merge     │
-     │                    │       (preserve locked fields)                │
-     │                    │                            │                   │
-     │                    │   UNIFIED SCAN:            │                   │
-     │                    │   - Parse NFO              │                   │
-     │                    │   - FFprobe stream details │                   │
-     │                    │   - Discover images (cache backup)            │
-     │                    │   - Discover trailers      │                   │
-     │                    │   - Discover subtitles     │                   │
-     │                    │   - Detect unknown files   │                   │
-     │                    │   - Atomic DB commit       │
-     │                    │                            │                   │
-     │                    │   Emit SSE progress event  │                   │
-     │                    ├──────────────────────────────────────────────>│
-     │                    │                            │                   │
-     │                    │ Remove deleted directories │                   │
-     │                    │   (DB entries for missing paths)              │
-     │                    ├──────────────────────────────────────────────>│
-     │                    │                            │                   │
-     │                    │ Orphan cleanup (unused entities)              │
-     │                    ├──────────────────────────────────────────────>│
-     │                    │                            │                   │
-     │                    │ Set scan_job status='completed'               │
-     │                    ├──────────────────────────────────────────────>│
-     │                    │                            │                   │
-     │                    │ Emit SSE scanCompleted     │                   │
-     │                    │                            │                   │
-```
-
-### Detailed Steps
-
-#### Step 1: Directory Discovery
-1. For each library configured in `libraries` table:
-   - If `enabled = false` → skip
-   - Read `path` column (e.g., `/data/movies`)
-   - List subdirectories (each subdirectory = one movie)
-   - Store discovered paths in temp list
-
-#### Step 2: NFO Processing (Per Directory)
-1. Search for NFO files:
-   - Priority 1: `movie.nfo`
-   - Priority 2: `{directory_name}.nfo` (e.g., `The Matrix (1999).nfo`)
-   - If none found → Set `status = 'needs_identification'`, skip to next
-2. Read NFO content (UTF-8)
-3. Calculate NFO hash: `SHA256(nfo_content)`
-4. Check if movie exists in DB by `file_path`
-5. If exists → Compare `nfo_hash` from DB with calculated hash:
-   - **If hashes match** → NFO unchanged, skip parsing entirely (no updates needed)
-   - **If hashes differ** → Continue to step 6
-6. If new movie OR hash differs:
-   - Detect format (XML vs URL):
-     - If XML → Parse with XML parser
-     - If URL → Extract provider IDs from URLs
-   - Extract metadata (see NFO_PARSING.md for details)
-
-#### Step 3: Database Lookup
-1. Query database by `file_path`:
-   ```sql
-   SELECT * FROM movies WHERE file_path = ?
-   ```
-2. If **not found** (new movie):
-   - Insert new row with parsed metadata
-   - Set `status = null` (will be picked up by scheduled enrichment if incomplete)
-   - Set `nfo_hash = calculated_hash`
-   - Insert link table entries (actors, genres, directors, etc.)
-   - Emit SSE progress: `{ type: 'scanProgress', added: 1 }`
-
-3. If **found** (existing movie) and hash differs:
-   - Proceed to intelligent merge (Step 4)
-
-#### Step 4: Intelligent Merge (NFO Changed)
-1. Parse new NFO data (**Note:** `<fileinfo><streamdetails>` is skipped)
-2. For each scalar field (plot, tagline, year, etc.):
-   - If field is **locked** (e.g., `plot_locked = 1`):
-     - **Keep database value** (ignore NFO changes)
-   - If field is **unlocked** (e.g., `plot_locked = 0`):
-     - **Update from NFO** (accept external changes)
-3. For array fields (actors, genres, directors):
-   - If unlocked → Clear existing links, insert new links from NFO
-   - If locked → Keep existing links (ignore NFO changes)
-4. For images:
-   - If unlocked → Update URLs from NFO
-   - If locked → Keep existing image references
-5. Update `nfo_hash` with new hash
-6. Update `updated_at` timestamp
-7. Emit SSE progress: `{ type: 'scanProgress', updated: 1 }`
-
-#### Step 4b: Stream Details Scanning (FFprobe)
-1. Locate video file in directory (scan for .mkv, .mp4, .avi, etc.)
-2. If file found:
-   - Execute FFprobe (with timeout: 30 seconds)
-   - Parse JSON output for video/audio/subtitle streams
-   - Scan for external subtitle files (.srt, .ass, .sub)
-   - Update database tables:
-     - `video_streams` (upsert by entity_type + entity_id)
-     - `audio_streams` (delete existing, insert new)
-     - `subtitle_streams` (delete existing, insert new + external)
-3. If FFprobe fails:
-   - Log error but continue scan (don't fail entire library scan)
-   - Mark movie with error flag if desired
-4. See `@docs/STREAM_DETAILS.md` for complete workflow
-
-#### Step 5: Remove Deleted Directories (Soft Delete)
-1. After processing all discovered directories:
-   ```sql
-   -- Mark movies for deletion (7-day grace period)
-   UPDATE movies
-   SET deleted_on = DATETIME('now', '+7 days')
-   WHERE file_path NOT IN (
-     -- Temp list of discovered paths
-   )
-   AND deleted_on IS NULL;
-
-   -- Mark associated images for deletion
-   UPDATE images
-   SET deleted_on = DATETIME('now', '+7 days')
-   WHERE entity_type = 'movie'
-     AND entity_id IN (
-       SELECT id FROM movies WHERE deleted_on IS NOT NULL
-     )
-     AND deleted_on IS NULL;
-   ```
-2. Cascading deletes happen during daily cleanup task (7 days later)
-3. Emit SSE progress: `{ type: 'scanProgress', markedForDeletion: X }`
-
-#### Step 6: Orphan Cleanup
-1. Delete unused entities:
-   ```sql
-   DELETE FROM actors WHERE id NOT IN (
-     SELECT DISTINCT actor_id FROM movies_actors
-     UNION SELECT DISTINCT actor_id FROM series_actors
-     UNION SELECT DISTINCT actor_id FROM episodes_actors
-   );
-   ```
-2. Repeat for genres, directors, writers, studios, tags, countries
-
-#### Step 7: Completion
-1. Update scan_job:
-   ```sql
-   UPDATE scan_jobs SET
-     status = 'completed',
-     completed_at = CURRENT_TIMESTAMP,
-     total_items = ?,
-     added_items = ?,
-     updated_items = ?,
-     removed_items = ?
-   WHERE id = ?;
-   ```
-2. Emit SSE: `{ type: 'scanCompleted', jobId, stats }`
-
----
-
-## Scheduled Metadata Updates
-
-Background task runs every 12 hours to check monitored items for metadata updates.
-
-### Task Flow
-
-```
-Scheduler                Metarr                   Providers (TMDB, TVDB)
-─────────               ──────                   ──────────────────────
-   │                       │                              │
-   │ Every 12 hours        │                              │
-   ├──────────────────────>│                              │
-   │                       │ Query "needs update" items   │
-   │                       │ (unlocked + incomplete)      │
-   │                       │                              │
-   │                       │ Order by: created_at DESC    │
-   │                       │ (newest first - most likely  │
-   │                       │  to have new metadata)       │
-   │                       │                              │
-   │                       │ For each item:               │
-   │                       │   Check provider rate limits │
-   │                       │   If at limit → skip provider│
-   │                       │                              │
-   │                       │   Fetch metadata             │
-   │                       ├─────────────────────────────>│
-   │                       │<─────────────────────────────┤
-   │                       │                              │
-   │                       │   Update unlocked fields     │
-   │                       │   Download missing images    │
-   │                       │   Regenerate NFO             │
-   │                       │                              │
-   │                       │   Check completeness         │
-   │                       │   If complete → lock all     │
-   │                       │                              │
-   │                       │ Continue until:              │
-   │                       │   - All items processed      │
-   │                       │   - OR rate limits hit       │
-   │                       │   - OR 12 hour window ends   │
-   │                       │                              │
-```
-
-### Query for "Needs Update"
-
-```sql
-SELECT * FROM movies
-WHERE
-  -- Not in error state
-  status IS NULL
-
-  -- Has at least one unlocked field
-  AND (
-    plot_locked = 0
-    OR poster_locked = 0
-    OR fanart_locked = 0
-    -- ... (check all lockable fields)
-  )
-
-  -- Is incomplete (computed in application layer)
-  -- Example: Missing required plot, or has 1 fanart but needs 3
-
-ORDER BY created_at DESC  -- Newest first
-LIMIT 1000;  -- Process in batches
-```
-
-### Rate Limiting Strategy
-
-Each provider manages its own rate limit. When limit is reached, wait until the next time window.
+**Progress Tracking** (Real-Time SSE):
 
 ```typescript
-class ProviderRateLimiter {
-  private requestsInWindow = 0;
-  private windowStart = Date.now();
-  private maxRequests = 50;  // Per provider (TMDB: 50/sec, TVDB: 1/sec)
-  private windowMs = 1000;   // 1 second window
-  private reservedCapacity = 10;  // Reserve for webhooks
-
-  canMakeRequest(): boolean {
-    this.resetWindowIfExpired();
-    return this.requestsInWindow < (this.maxRequests - this.reservedCapacity);
-  }
-
-  private resetWindowIfExpired(): void {
-    const elapsed = Date.now() - this.windowStart;
-    if (elapsed >= this.windowMs) {
-      this.requestsInWindow = 0;
-      this.windowStart = Date.now();
-    }
-  }
-
-  private async waitForNextWindow(): Promise<void> {
-    const elapsed = Date.now() - this.windowStart;
-    const remaining = this.windowMs - elapsed;
-
-    if (remaining > 0) {
-      await new Promise(resolve => setTimeout(resolve, remaining));
-      this.requestsInWindow = 0;
-      this.windowStart = Date.now();
-    }
-  }
-
-  async executeWithWait<T>(fn: () => Promise<T>): Promise<T> {
-    // Wait until we can make a request
-    while (!this.canMakeRequest()) {
-      await this.waitForNextWindow();
-    }
-
-    this.requestsInWindow++;
-    return fn();
-  }
-}
-```
-
-**Usage Example:**
-```typescript
-// TMDB Rate Limiter (50 requests per second)
-const tmdbLimiter = new ProviderRateLimiter(50, 1000);
-
-// TVDB Rate Limiter (1 request per second)
-const tvdbLimiter = new ProviderRateLimiter(1, 1000);
-
-// Fetch metadata with automatic waiting
-const movieData = await tmdbLimiter.executeWithWait(() =>
-  tmdbClient.getMovieDetails(tmdbId)
-);
-```
-
-### Priority Ordering
-
-1. **Newest items first** - Recently added via webhook, most likely to have updates
-2. **Oldest "last checked" timestamp** - Ensure nothing gets stuck
-3. Continue processing until:
-   - All items checked
-   - OR all providers hit rate limits
-   - OR task runtime exceeds threshold
-
----
-
-## NFO Hash Validation & Intelligent Merge
-
-Detects when external tools (Radarr, manual edits) modify NFO files and merges changes intelligently.
-
-### When NFO Hash Differs
-
-```
-Current DB State:
-  plot: "User's custom description" (plot_locked = 1)
-  tagline: "Original tagline" (tagline_locked = 0)
-  nfo_hash: "abc123..."
-
-NFO File Changed (Radarr updated it):
-  plot: "Radarr's new plot from TMDB"
-  tagline: "Updated tagline from TMDB"
-  nfo_hash (calculated): "def456..."
-
-Intelligent Merge Result:
-  plot: "User's custom description" (locked field preserved)
-  tagline: "Updated tagline from TMDB" (unlocked field updated)
-  nfo_hash: "def456..." (new hash stored)
-```
-
-### Merge Algorithm
-
-```typescript
-async function mergeNFOChanges(movieId: number, parsedNFO: NFOData): Promise<void> {
-  const movie = await db.getMovie(movieId);
-  const updates: Partial<Movie> = {};
-
-  // Scalar fields
-  for (const field of SCALAR_FIELDS) {
-    const locked = movie[`${field}_locked`];
-    if (!locked && parsedNFO[field] !== undefined) {
-      updates[field] = parsedNFO[field];  // Accept NFO change
-    }
-    // If locked → skip (preserve DB value)
-  }
-
-  // Update database
-  await db.updateMovie(movieId, updates);
-
-  // Array fields (actors, genres, etc.)
-  for (const arrayField of ARRAY_FIELDS) {
-    const locked = movie[`${arrayField}_locked`];
-    if (!locked) {
-      // Clear existing links
-      await db.clearLinks(movieId, arrayField);
-      // Insert new links from NFO
-      await db.insertLinks(movieId, arrayField, parsedNFO[arrayField]);
-    }
-  }
-
-  // Update hash
-  await db.updateMovie(movieId, { nfo_hash: newHash });
-}
-```
-
----
-
-## Backup & Restore Process
-
-Database-only backup with automatic asset rebuilding from library files and providers.
-
-### Backup Flow
-
-```
-User                    Metarr                  Filesystem
-────                    ──────                  ──────────
- │                         │                         │
- │ Click "Create Backup"   │                         │
- ├────────────────────────>│                         │
- │                         │ Stop active operations  │
- │                         │ (scans, scheduled tasks)│
- │                         │                         │
- │                         │ Dump database           │
- │                         ├────────────────────────>│
- │                         │ (metarr_backup_YYYYMMDD_HHmmss.sql)
- │                         │                         │
- │                         │ Compress (gzip)         │
- │                         │                         │
- │<────────────────────────┤                         │
- │ Download backup file    │                         │
- │                         │                         │
-```
-
-### Restore Flow with Policy Configuration
-
-```
-User                    Metarr                  Filesystem/Providers
-────                    ──────                  ────────────────────
- │                         │                         │
- │ Upload backup file      │                         │
- ├────────────────────────>│                         │
- │                         │ Validate backup         │
- │                         │                         │
- │                         │ Show policy config:     │
- │<────────────────────────┤                         │
- │ "Locked assets missing: │                         │
- │  [X] Unlock automatically"                        │
- │  [ ] Ask me for each"   │                         │
- │                         │                         │
- │ Select "Unlock auto"    │                         │
- ├────────────────────────>│                         │
- │                         │ Stop all operations     │
- │                         │ Restore database        │
- │                         │                         │
- │                         │ Rebuild cache:          │
- │                         │ For each movie:         │
- │                         │   Check library dir     │
- │                         ├────────────────────────>│
- │                         │<────────────────────────┤
- │                         │ Copy images to cache    │
- │                         │                         │
- │                         │ If image missing:       │
- │                         │   If locked → unlock,   │
- │                         │     mark as needs update│
- │                         │   If unlocked → mark as │
- │                         │     needs update        │
- │                         │                         │
- │                         │ Trigger library scan    │
- │                         │ (fetches missing assets)│
- │                         │                         │
- │<────────────────────────┤                         │
- │ "Restore complete!      │                         │
- │  8 locked images marked │                         │
- │  as monitored"          │                         │
- │                         │                         │
-```
-
-### Restore Policies
-
-**Automatic Mode (Default):**
-- Locked assets missing → Unlock, mark as incomplete
-- Unlocked assets missing → Mark as incomplete
-- After restore → Trigger full library scan
-- Library scan → Fetch all missing assets from providers
-- Result: Fully automated, no user intervention
-
-**Manual Review Mode:**
-- For each locked asset missing → Show modal:
-  - "Unlock" - Allow auto-replacement
-  - "Skip" - Leave locked, add to skip report
-  - "Cancel" - Abort restore
-- Generate downloadable skip report (CSV/JSON)
-- User reviews later, manually uploads or marks as monitored
-
----
-
-## Media Player Scan Triggers
-
-Different strategies for different update types and player configurations.
-
-### Kodi: Standard Scan (New Files)
-```
-Metarr → Kodi: VideoLibrary.Scan({ directory: "/mnt/movies/The Matrix (1999)/" })
-Result: Kodi reads NFO, converts images, caches, updates skin
-```
-
-### Kodi: Metadata-Only Update (No New Files)
-```
-Metarr → Kodi: VideoLibrary.Scan({ directory: "/doesNotExist" })
-Result: Scan fails (no directory), but triggers skin refresh and cache rebuild
-```
-
-### Kodi Shared Library Group
-```
-Group: Living Room Kodi, Bedroom Kodi, Basement Kodi
-Shared: MySQL database on NAS
-
-Metarr action:
-1. Pick one member (e.g., Living Room Kodi)
-2. Trigger scan on that player only
-3. All players now see updated metadata (shared DB)
-4. Each player rebuilds its own image cache independently
-5. Send notification to each player: "Library updated"
-```
-
-### Jellyfin/Plex
-```
-Metarr → Jellyfin: POST /Library/Refresh
-Result: Jellyfin scans library, reads NFO files, updates database
-```
-
----
-
-## Daily Cleanup Task
-
-Scheduled task runs daily (default: 3 AM local time) to permanently delete media and images past their 7-day grace period.
-
-### Task Flow
-
-```
-Scheduler (Daily at 3 AM)    Metarr                          Filesystem
-─────────────────────────    ──────                          ──────────
-         │                      │                                 │
-         │ Trigger cleanup      │                                 │
-         ├─────────────────────>│                                 │
-         │                      │ Query images pending deletion   │
-         │                      │ (deleted_on <= NOW())          │
-         │                      │                                 │
-         │                      │ For each image:                 │
-         │                      │   Delete cache file             │
-         │                      ├────────────────────────────────>│
-         │                      │   Delete library file           │
-         │                      ├────────────────────────────────>│
-         │                      │   DELETE FROM images           │
-         │                      │                                 │
-         │                      │ Query movies pending deletion   │
-         │                      │ (deleted_on <= NOW())          │
-         │                      │                                 │
-         │                      │ For each movie:                 │
-         │                      │   DELETE FROM movies           │
-         │                      │   (cascades to link tables)    │
-         │                      │                                 │
-         │                      │ Orphan cleanup (unused entities)│
-         │                      │                                 │
-         │                      │ Log activity                    │
-         │                      │                                 │
-```
-
-### Implementation
-
-```typescript
-async function runDailyCleanup(): Promise<void> {
-  const startTime = Date.now();
-
-  // Step 1: Clean up images
-  const imagesToDelete = await db.query(`
-    SELECT id, cache_path, file_path
-    FROM images
-    WHERE deleted_on IS NOT NULL
-      AND deleted_on <= CURRENT_TIMESTAMP
-  `);
-
-  let imagesDeleted = 0;
-  let imageErrors = 0;
-
-  for (const image of imagesToDelete) {
-    try {
-      // Delete cache file
-      if (image.cache_path && await fs.exists(image.cache_path)) {
-        await fs.remove(image.cache_path);
-      }
-
-      // Delete library file
-      if (image.file_path && await fs.exists(image.file_path)) {
-        await fs.remove(image.file_path);
-      }
-
-      // Remove from database
-      await db.run('DELETE FROM images WHERE id = ?', [image.id]);
-      imagesDeleted++;
-    } catch (error) {
-      console.error(`Failed to delete image ${image.id}:`, error);
-      imageErrors++;
-    }
-  }
-
-  // Step 2: Clean up movies (and associated link table entries via CASCADE)
-  const result = await db.run(`
-    DELETE FROM movies
-    WHERE deleted_on IS NOT NULL
-      AND deleted_on <= CURRENT_TIMESTAMP
-  `);
-  const moviesDeleted = result.changes;
-
-  // Step 3: Clean up series
-  const seriesResult = await db.run(`
-    DELETE FROM series
-    WHERE deleted_on IS NOT NULL
-      AND deleted_on <= CURRENT_TIMESTAMP
-  `);
-  const seriesDeleted = seriesResult.changes;
-
-  // Step 4: Clean up episodes
-  const episodesResult = await db.run(`
-    DELETE FROM episodes
-    WHERE deleted_on IS NOT NULL
-      AND deleted_on <= CURRENT_TIMESTAMP
-  `);
-  const episodesDeleted = episodesResult.changes;
-
-  // Step 5: Orphan cleanup (actors, genres, directors, etc.)
-  await cleanOrphanedEntities();
-
-  // Step 6: Log activity
-  const duration = Date.now() - startTime;
-  await db.logActivity({
-    event_type: 'cleanup_completed',
-    severity: 'info',
-    description: `Daily cleanup completed in ${duration}ms`,
-    metadata: JSON.stringify({
-      imagesDeleted,
-      imageErrors,
-      moviesDeleted,
-      seriesDeleted,
-      episodesDeleted,
-      durationMs: duration
-    })
-  });
-}
-
-async function cleanOrphanedEntities(): Promise<void> {
-  // Delete actors with no links
-  await db.run(`
-    DELETE FROM actors
-    WHERE id NOT IN (
-      SELECT DISTINCT actor_id FROM movies_actors
-      UNION SELECT DISTINCT actor_id FROM series_actors
-      UNION SELECT DISTINCT actor_id FROM episodes_actors
-    )
-  `);
-
-  // Delete genres with no links
-  await db.run(`
-    DELETE FROM genres
-    WHERE id NOT IN (
-      SELECT DISTINCT genre_id FROM movies_genres
-      UNION SELECT DISTINCT genre_id FROM series_genres
-    )
-  `);
-
-  // Similar for directors, writers, studios, tags, countries
-  // ...
-}
-```
-
-### Scheduling Configuration
-
-```typescript
-import * as cron from 'node-cron';
-
-// Schedule daily cleanup at 3 AM local time
-cron.schedule('0 3 * * *', async () => {
-  console.log('Starting daily cleanup task...');
-  await runDailyCleanup();
-  console.log('Daily cleanup task completed.');
+// Frontend listens to SSE
+const eventSource = new EventSource('/api/events');
+
+eventSource.addEventListener('scan:progress', (e) => {
+  // { current: 1234, total: 32000, added: 1100, updated: 134 }
+});
+
+eventSource.addEventListener('enrich:progress', (e) => {
+  // { current: 456, total: 32000, entityId: 789 }
+});
+
+eventSource.addEventListener('publish:progress', (e) => {
+  // { current: 123, total: 32000, entityId: 456 }
 });
 ```
 
-**Alternative Schedule Times:**
-- `0 3 * * *` - 3:00 AM daily (default)
-- `0 2 * * *` - 2:00 AM daily
-- `0 4 * * 0` - 4:00 AM Sundays only
+**See Also**:
+- [AUTOMATION_AND_WEBHOOKS.md](AUTOMATION_AND_WEBHOOKS.md#automation-levels) - Automation modes
+- [ASSET_MANAGEMENT.md](ASSET_MANAGEMENT.md#auto-selection-algorithm) - Asset selection algorithm
 
-### Recovery Before Cleanup
+---
 
-Users can recover deleted items during the 7-day grace period:
+### 2. Webhook-Initiated Processing (Fully Automated)
+
+**Trigger**: Radarr/Sonarr sends webhook when download completes
+
+**Context Available**:
+- ✅ TMDB ID (authoritative identifier)
+- ✅ IMDB ID (secondary identifier)
+- ✅ File path (manager's view, needs path mapping)
+- ✅ Movie metadata (title, year, quality)
+
+**Automation**: **Always fully automated** (regardless of library mode)
+
+**Rationale**: User enabled webhooks because they want automation. No manual review for webhook-triggered content.
+
+**Workflow** (New Download):
 
 ```typescript
-async function recoverMovie(movieId: number): Promise<void> {
-  // Clear deletion timestamps
-  await db.run(`
-    UPDATE movies
-    SET deleted_on = NULL
-    WHERE id = ? AND deleted_on > CURRENT_TIMESTAMP
-  `, [movieId]);
+// Radarr sends webhook
+POST https://metarr.local/webhooks/radarr
+Body: {
+  eventType: "Download",
+  tmdb_id: 603,
+  imdb_id: "tt0133093",
+  title: "The Matrix",
+  year: 1999,
+  path: "/data/movies/The Matrix (1999)/The Matrix.mkv"
+}
 
-  await db.run(`
-    UPDATE images
-    SET deleted_on = NULL
-    WHERE entity_type = 'movie'
-      AND entity_id = ?
-      AND deleted_on > CURRENT_TIMESTAMP
-  `, [movieId]);
+1. Webhook Received (Critical Priority - Pauses other jobs)
+   ├─ Parse payload
+   ├─ Apply path mapping (manager → Metarr)
+   │   └─ /data/movies/ → M:\Movies\
+   └─ Check if movie exists (by tmdb_id)
 
-  // Log recovery
-  await db.logActivity({
-    event_type: 'recovery_completed',
-    severity: 'info',
-    entity_type: 'movie',
-    entity_id: movieId,
-    description: 'Movie recovered from pending deletion'
+2. Database Lookup Strategy
+   ├─ Query: SELECT * FROM movies WHERE tmdb_id = 603
+   ├─ If found:
+   │   └─ UPGRADE WORKFLOW (see next section)
+   └─ If not found:
+       └─ NEW DOWNLOAD WORKFLOW (continue below)
+
+3. Phase 1: Scan Directory (High Priority)
+   ├─ Find video file
+   ├─ Parse NFO (if exists)
+   │   ├─ Extract IDs, basic metadata
+   │   └─ Calculate NFO hash
+   ├─ FFprobe video file
+   ├─ Discover local assets (copy to cache)
+   └─ Insert movie
+       ├─ state = 'identified'
+       ├─ enrichment_priority = 2 (high - webhook triggered)
+
+4. Phase 2: Enrich from TMDB (High Priority)
+   ├─ Jump to front of enrichment queue (priority=2)
+   ├─ Fetch metadata (TMDB API)
+   ├─ Fetch asset candidates
+   ├─ Auto-select assets (algorithm)
+   ├─ Download to cache
+   └─ state = 'selected'
+
+5. Phase 3: Auto-Publish (Immediate)
+   ├─ Generate NFO
+   ├─ Copy assets to library
+   ├─ Write NFO
+   └─ state = 'published'
+
+6. Phase 4: Notify Players (Async)
+   └─ Trigger Kodi scan on specific directory
+
+RESULT: New movie appears in Kodi within 30-60 seconds
+```
+
+**Workflow** (Upgrade - Radarr Deleted Directory):
+
+```typescript
+// Scenario: Radarr upgrades 720p → 1080p, deletes entire directory
+
+POST https://metarr.local/webhooks/radarr
+Body: {
+  eventType: "Download",
+  isUpgrade: true,
+  tmdb_id: 603,
+  path: "/data/movies/The Matrix (1999)/The Matrix.mkv"
+}
+
+1. Webhook Received
+   └─ Query: SELECT * FROM movies WHERE tmdb_id = 603
+       └─ Found movie ID 123
+
+2. Detect Missing Assets (Disaster Recovery)
+   ├─ Get library path: M:\Movies\The Matrix (1999)\
+   ├─ Check NFO exists: movie.nfo → MISSING
+   ├─ Check poster exists: poster.jpg → MISSING
+   └─ Conclusion: Directory was deleted by Radarr
+
+3. Restore from Cache
+   ├─ Get last published assets from publish_log
+   │   └─ Query: SELECT assets_published FROM publish_log WHERE entity_id=123 AND success=1 ORDER BY published_at DESC LIMIT 1
+   ├─ Ensure library directory exists
+   │   └─ mkdir -p "M:\Movies\The Matrix (1999)"
+   ├─ Copy assets from cache → library
+   │   ├─ /cache/assets/abc123.jpg → poster.jpg
+   │   ├─ /cache/assets/def456.jpg → fanart.jpg
+   │   └─ /cache/assets/ghi789.jpg → fanart1.jpg
+   └─ Regenerate NFO from database
+       └─ Write movie.nfo (with metadata from database)
+
+4. Update Video File Path
+   └─ UPDATE movies SET file_path = 'M:\Movies\...\The Matrix.mkv' WHERE id = 123
+
+5. Re-Scan Stream Details (New File)
+   ├─ FFprobe new 1080p file
+   ├─ Update video_streams (resolution, bitrate, etc.)
+   └─ Update audio/subtitle streams
+
+6. Regenerate NFO (Updated Streams)
+   └─ Write movie.nfo with new <fileinfo><streamdetails>
+
+7. Mark as Published
+   ├─ state = 'published'
+   ├─ has_unpublished_changes = 0
+   └─ last_published_at = NOW()
+
+8. Notify Players
+   └─ Trigger Kodi scan
+
+RESULT: Seamless upgrade, user sees no data loss
+```
+
+**See Also**:
+- [WEBHOOKS.md](WEBHOOKS.md) - Complete webhook reference
+- [AUTOMATION_AND_WEBHOOKS.md](AUTOMATION_AND_WEBHOOKS.md#webhook-automation) - Webhook behavior
+- [ASSET_MANAGEMENT.md](ASSET_MANAGEMENT.md#disaster-recovery) - Restore from cache
+
+---
+
+### 3. User-Initiated Refresh (Manual Enrichment)
+
+**Trigger**: User clicks "Enrich" button on movie detail page
+
+**Use Cases**:
+- Manual mode: User wants to fetch latest metadata
+- Fix enrichment errors
+- Update metadata after provider changes
+
+**Workflow**:
+
+```typescript
+// User clicks "Enrich from TMDB"
+POST /api/movies/123/enrich
+
+1. Check Current State
+   ├─ Load movie from database
+   └─ Check field locks (skip locked fields)
+
+2. Fetch TMDB Metadata
+   ├─ Query TMDB API (movie.tmdb_id)
+   ├─ Merge data (respect locks)
+   │   ├─ If plot_locked = 0 → Update plot
+   │   ├─ If plot_locked = 1 → Skip plot
+   │   └─ Repeat for all fields
+   └─ Mark enriched_at = NOW()
+
+3. Fetch Asset Candidates
+   ├─ Query TMDB images API
+   ├─ Insert to asset_candidates (is_downloaded=0)
+   └─ Return candidate count to UI
+
+4. User Reviews Candidates
+   ├─ UI shows grid of 15 posters
+   └─ User selects poster #3
+
+5. Download Selected
+   ├─ Download from provider URL
+   ├─ Save to cache (content-addressed)
+   └─ Mark is_selected=1, selected_by='manual'
+
+6. Lock Asset
+   └─ UPDATE movies SET poster_locked=1 WHERE id=123
+
+7. Mark Dirty
+   └─ UPDATE movies SET has_unpublished_changes=1 WHERE id=123
+
+8. User Clicks "Publish"
+   └─ Run publishing workflow (see PUBLISHING_WORKFLOW.md)
+```
+
+**See Also**:
+- [PUBLISHING_WORKFLOW.md](PUBLISHING_WORKFLOW.md) - Publishing process
+- [ASSET_MANAGEMENT.md](ASSET_MANAGEMENT.md#manual-selection-workflow) - Manual asset selection
+
+---
+
+## Phase 1: Discovery (Fast Local Scan)
+
+### Purpose
+
+Quickly populate database with filesystem state, no network calls.
+
+### What Gets Scanned
+
+```typescript
+function scanDirectory(dirPath: string): ScanResult {
+  // 1. Find video file
+  const videoFile = findVideoFile(dirPath);  // *.mkv, *.mp4, *.avi, etc.
+
+  if (!videoFile) {
+    return { skipped: true, reason: 'no_video_file' };
+  }
+
+  // 2. Parse NFO (if exists)
+  const nfoPath = path.join(dirPath, 'movie.nfo');
+  let nfoData = null;
+
+  if (fs.existsSync(nfoPath)) {
+    nfoData = parseNFO(nfoPath, {
+      extractIDs: true,           // tmdb_id, imdb_id
+      extractBasicMetadata: true, // title, year, plot, genres
+      followThumbURLs: false,     // Do NOT download images
+      followTrailerURLs: false    // Do NOT download trailers
+    });
+  }
+
+  // 3. FFprobe video file
+  const streamDetails = await ffprobe(videoFile);
+
+  // 4. Discover local assets
+  const localAssets = discoverLocalAssets(dirPath, {
+    imagePatterns: ['poster.jpg', 'fanart*.jpg', 'banner.jpg', 'clearlogo.png'],
+    trailerPatterns: ['*-trailer.mkv', 'trailer.mp4'],
+    subtitlePatterns: ['*.srt', '*.ass']
+  });
+
+  // 5. Copy assets to cache (content-addressed)
+  for (const asset of localAssets) {
+    const buffer = fs.readFileSync(asset.path);
+    const contentHash = sha256(buffer);
+    const cachePath = `/data/cache/assets/${contentHash}.${asset.ext}`;
+
+    if (!fs.existsSync(cachePath)) {
+      fs.copyFileSync(asset.path, cachePath);
+    }
+
+    // Calculate pHash (for images)
+    if (asset.type === 'image') {
+      asset.perceptualHash = await calculatePHash(buffer);
+    }
+  }
+
+  // 6. Insert to database
+  const movieId = await db.insertMovie({
+    title: nfoData?.title || extractTitleFromPath(dirPath),
+    year: nfoData?.year,
+    tmdb_id: nfoData?.tmdb_id,
+    imdb_id: nfoData?.imdb_id,
+    plot: nfoData?.plot,
+    genres: nfoData?.genres,
+    actors: nfoData?.actors,
+    directors: nfoData?.directors,
+    file_path: videoFile,
+    nfo_hash: nfoData ? sha256(nfoData.raw) : null,
+    state: nfoData?.tmdb_id ? 'identified' : 'discovered',
+    enrichment_priority: 5  // Normal priority
+  });
+
+  // 7. Insert stream details
+  await db.insertVideoStream(movieId, streamDetails.video);
+  await db.insertAudioStreams(movieId, streamDetails.audio);
+  await db.insertSubtitleStreams(movieId, streamDetails.subtitles);
+
+  // 8. Insert local assets as candidates
+  for (const asset of localAssets) {
+    await db.insertAssetCandidate({
+      entity_type: 'movie',
+      entity_id: movieId,
+      asset_type: asset.type,  // 'poster', 'fanart', etc.
+      provider: 'local',
+      is_downloaded: 1,
+      cache_path: asset.cachePath,
+      content_hash: asset.contentHash,
+      perceptual_hash: asset.perceptualHash,
+      is_selected: 1,  // Local assets auto-selected
+      selected_by: 'local'
+    });
+  }
+
+  return { success: true, movieId };
+}
+```
+
+### Performance Characteristics
+
+| Metric | Value |
+|--------|-------|
+| Time per item | ~0.5 seconds |
+| 1,000 items | ~8 minutes |
+| 10,000 items | ~1.4 hours |
+| 32,000 items | ~4.5 hours |
+
+### NFO Parsing During Phase 1
+
+**What Gets Parsed**:
+- ✅ Provider IDs (`<tmdbid>`, `<imdbid>`)
+- ✅ Basic metadata (`<title>`, `<year>`, `<plot>`, `<genre>`)
+- ✅ Cast/crew (`<actor>`, `<director>`, `<writer>`)
+- ✅ Ratings (`<ratings>`)
+
+**What Gets Deferred**:
+- ❌ `<thumb>` URLs (stored but not downloaded)
+- ❌ `<fanart>` URLs (stored but not downloaded)
+- ❌ `<trailer>` URLs (ignored - local files only)
+
+**Rationale**: Fast scan with immediate UI feedback. User can search, browse, and make edits while Phase 2 runs in background.
+
+### Database State After Phase 1
+
+```sql
+-- Movies discovered
+SELECT COUNT(*) FROM movies WHERE state = 'discovered';
+-- Result: 500 (movies without provider IDs)
+
+SELECT COUNT(*) FROM movies WHERE state = 'identified';
+-- Result: 31,500 (movies with tmdb_id from NFO)
+
+-- Local assets discovered
+SELECT COUNT(*) FROM asset_candidates WHERE provider = 'local';
+-- Result: 128,000 (posters + fanarts from library)
+
+-- Stream details scanned
+SELECT COUNT(*) FROM video_streams;
+-- Result: 32,000 (one per movie)
+```
+
+**User Can Immediately**:
+- Browse library (all 32k items visible)
+- Search by title
+- View basic metadata (from NFO)
+- View local assets (posters already in library)
+- Manually edit any field
+- Manually trigger enrichment on specific items
+
+---
+
+## Phase 2: Enrichment (Background, Rate-Limited)
+
+### Purpose
+
+Fetch metadata and asset candidates from providers without blocking UI.
+
+### Enrichment Queue
+
+```sql
+-- Items needing enrichment
+SELECT * FROM movies
+WHERE state = 'identified'
+  AND enriched_at IS NULL
+ORDER BY enrichment_priority ASC, created_at DESC;
+
+-- Priority levels:
+-- 1 = Critical (webhook-triggered, immediate)
+-- 2 = High (user-triggered, jump queue)
+-- 5 = Normal (scheduled background)
+```
+
+### Enrichment Worker
+
+```typescript
+class EnrichmentWorker {
+  async start() {
+    while (true) {
+      // 1. Fetch next item from queue
+      const movie = await db.query(`
+        SELECT * FROM movies
+        WHERE state = 'identified'
+          AND enriched_at IS NULL
+        ORDER BY enrichment_priority ASC, created_at ASC
+        LIMIT 1
+      `);
+
+      if (!movie.length) {
+        await sleep(1000);  // Wait 1 second, check again
+        continue;
+      }
+
+      const item = movie[0];
+
+      // 2. Mark as enriching
+      await db.execute(`
+        UPDATE movies SET state = 'enriching' WHERE id = ?
+      `, [item.id]);
+
+      try {
+        // 3. Fetch metadata (rate-limited)
+        await this.enrichMovie(item);
+
+        // 4. Mark as enriched
+        await db.execute(`
+          UPDATE movies
+          SET state = 'enriched',
+              enriched_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `, [item.id]);
+
+      } catch (error) {
+        // Handle error (retry or mark failed)
+        await this.handleEnrichmentError(item, error);
+      }
+
+      // Small delay between items (avoid hammering)
+      await sleep(100);
+    }
+  }
+
+  async enrichMovie(movie: Movie) {
+    // 1. Fetch TMDB metadata (rate-limited)
+    const tmdbData = await rateLimiter.execute(
+      () => tmdb.getMovieDetails(movie.tmdb_id, {
+        append_to_response: 'credits,images'
+      }),
+      movie.enrichment_priority
+    );
+
+    // 2. Merge metadata (respect locks)
+    const updates: any = {};
+
+    if (!movie.plot_locked && tmdbData.overview) {
+      updates.plot = tmdbData.overview;
+    }
+
+    if (!movie.tagline_locked && tmdbData.tagline) {
+      updates.tagline = tmdbData.tagline;
+    }
+
+    // ... (repeat for all unlocked fields)
+
+    if (Object.keys(updates).length > 0) {
+      await db.updateMovie(movie.id, updates);
+    }
+
+    // 3. Fetch asset candidates (URLs only)
+    for (const poster of tmdbData.images.posters) {
+      await db.insertAssetCandidate({
+        entity_type: 'movie',
+        entity_id: movie.id,
+        asset_type: 'poster',
+        provider: 'tmdb',
+        provider_url: `https://image.tmdb.org/t/p/original${poster.file_path}`,
+        width: poster.width,
+        height: poster.height,
+        provider_metadata: JSON.stringify({
+          language: poster.iso_639_1,
+          vote_average: poster.vote_average,
+          vote_count: poster.vote_count
+        }),
+        is_downloaded: 0  // Not yet downloaded
+      });
+    }
+
+    // 4. Auto-select assets (if YOLO mode)
+    const library = await db.getLibraryForMovie(movie.id);
+    const automationConfig = await db.getAutomationConfig(library.id);
+
+    if (automationConfig.auto_select_assets) {
+      await assetSelector.autoSelectAssets(movie.id, 'movie', 'poster');
+      await assetSelector.autoSelectAssets(movie.id, 'movie', 'fanart');
+
+      await db.execute(`
+        UPDATE movies SET state = 'selected' WHERE id = ?
+      `, [movie.id]);
+    }
+
+    // 5. Auto-publish (if YOLO mode)
+    if (automationConfig.auto_publish) {
+      await publishService.publishEntity('movie', movie.id, {
+        publishedBy: 'auto'
+      });
+
+      // Emit SSE event
+      eventEmitter.emit('movie:published', { movieId: movie.id });
+    }
+  }
+}
+
+// Start worker on app boot
+const enrichmentWorker = new EnrichmentWorker();
+enrichmentWorker.start();
+```
+
+### Rate Limiting
+
+```typescript
+class RateLimiter {
+  private tmdbRequests = 0;
+  private tvdbRequests = 0;
+  private windowStart = Date.now();
+
+  async execute<T>(
+    fn: () => Promise<T>,
+    priority: number,
+    provider: 'tmdb' | 'tvdb' = 'tmdb'
+  ): Promise<T> {
+    // Wait until we can make request
+    while (!this.canMakeRequest(provider, priority)) {
+      await this.waitForWindow(provider);
+    }
+
+    // Make request
+    if (provider === 'tmdb') {
+      this.tmdbRequests++;
+    } else {
+      this.tvdbRequests++;
+    }
+
+    return fn();
+  }
+
+  private canMakeRequest(provider: string, priority: number): boolean {
+    this.resetWindowIfNeeded();
+
+    if (provider === 'tmdb') {
+      // 50/sec limit, reserve 10 for high priority
+      const limit = priority <= 2 ? 50 : 40;
+      return this.tmdbRequests < limit;
+    } else {
+      // 1/sec limit
+      return this.tvdbRequests < 1;
+    }
+  }
+}
+```
+
+### Auto-Publish After Enrichment (YOLO Mode)
+
+**Question Answered**: Q6 - When auto-enrichment updates fields, immediately republish.
+
+```typescript
+// After enrichment completes in YOLO mode
+if (automationConfig.auto_publish) {
+  // Generate NFO with updated metadata
+  await publishService.publishEntity('movie', movie.id);
+
+  // Players stay in sync automatically
+  // User never sees stale data
+}
+```
+
+**Result**: In YOLO mode, library is **always** in sync with database. No dirty state accumulates.
+
+---
+
+## Phase 3: Publishing
+
+Publishing is covered in detail in [PUBLISHING_WORKFLOW.md](PUBLISHING_WORKFLOW.md).
+
+**Quick Reference**:
+
+```typescript
+// Single entity
+POST /api/movies/:id/publish
+
+// Bulk
+POST /api/movies/publish-bulk
+Body: { ids: [1, 2, 3, ...] }
+
+// Transactional process:
+1. Generate NFO from database
+2. Copy assets from cache → library (atomic)
+3. Write NFO (atomic)
+4. Update database (transaction)
+5. Notify players (async)
+```
+
+---
+
+## Phase 4: Player Notification
+
+Player notification is covered in [PUBLISHING_WORKFLOW.md](PUBLISHING_WORKFLOW.md#player-notification).
+
+**Quick Reference**:
+
+```typescript
+// Kodi
+await kodi.request('VideoLibrary.Scan', {
+  directory: '/movies/The Matrix (1999)/'
+});
+
+// Jellyfin
+await fetch('http://jellyfin:8096/Library/Refresh', {
+  method: 'POST',
+  headers: { 'X-MediaBrowser-Token': apiKey },
+  body: JSON.stringify({ path: '/movies/The Matrix (1999)' })
+});
+```
+
+---
+
+## Error Handling & Recovery
+
+### NFO Parsing Errors
+
+```typescript
+try {
+  const nfoData = parseNFO(nfoPath);
+} catch (error) {
+  // Log error, continue with default values
+  logger.error('NFO parse error', { path: nfoPath, error });
+
+  // Create movie with status = 'needs_identification'
+  await db.insertMovie({
+    title: extractTitleFromPath(dirPath),
+    state: 'needs_identification',
+    status: 'error_nfo_parse',
+    error_message: error.message
   });
 }
 ```
 
----
+### Enrichment Errors
 
-## Priority System & Task Interruption
-
-Metarr uses a priority-based task system to ensure responsiveness.
-
-### Priority Levels
-
-1. **Critical** - Webhook events (new downloads)
-2. **High** - Manual user actions (force refresh, edits)
-3. **Normal** - Scheduled metadata updates
-4. **Low** - Full library scans
-
-### Interruption Rules
-
-**When webhook arrives:**
-- If library scan running → **Pause scan**, save state
-- Process webhook immediately (10-30 seconds typical)
-- Resume library scan from saved position
-
-**When user triggers action:**
-- If scheduled task running → Continue scheduled task (non-blocking)
-- Queue user action as high priority
-- Process after current webhook (if any)
-
-**Concurrency:**
-- Webhooks: Sequential (one at a time, FIFO order)
-- Library scans: One at a time per library
-- Scheduled tasks: One global task (all libraries)
-- User actions: Queue, process sequentially
-
-### Example Timeline
-
+```typescript
+try {
+  await this.enrichMovie(movie);
+} catch (error) {
+  if (error.code === 'RATE_LIMIT_EXCEEDED') {
+    // Retry with backoff
+    await db.execute(`
+      UPDATE movies
+      SET enrichment_priority = enrichment_priority + 1,
+          state = 'identified'
+      WHERE id = ?
+    `, [movie.id]);
+  } else {
+    // Mark as error
+    await db.execute(`
+      UPDATE movies
+      SET state = 'error_provider_failure',
+          error_message = ?
+      WHERE id = ?
+    `, [error.message, movie.id]);
+  }
+}
 ```
-Time  Event                              Action
-────  ─────                              ──────
-0:00  Library scan starts (1000 movies)  Processing...
-0:30  Webhook arrives (Movie A)          Pause scan at item 452
-0:30  Process Movie A                    Enrich, NFO, images, Kodi scan
-0:45  Movie A complete                   Resume library scan from item 453
-1:15  Webhook arrives (Movie B)          Pause scan at item 623
-1:15  Process Movie B                    Enrich, NFO, images, Kodi scan
-1:30  Movie B complete                   Resume library scan from item 624
-2:00  Library scan completes             All 1000 movies processed
-```
+
+### Publishing Errors
+
+See [PUBLISHING_WORKFLOW.md](PUBLISHING_WORKFLOW.md#validation-before-publish) for validation and rollback.
 
 ---
 
-## Status State Diagram
+## Performance Monitoring
 
-Media items transition through various status states during processing. Status is **transient operational state**, not data completeness.
+### Metrics to Track
 
-### State Transitions
+```typescript
+// Scan performance
+{
+  phase1_duration_ms: 16200000,  // 4.5 hours
+  items_scanned: 32000,
+  items_per_second: 1.98
+}
 
-```
-┌──────────────────────────────────────────────────────────────────┐
-│                        Media Item Lifecycle                       │
-└──────────────────────────────────────────────────────────────────┘
+// Enrichment performance
+{
+  phase2_duration_ms: 64800000,  // 18 hours
+  items_enriched: 32000,
+  items_per_second: 0.49,  // Rate-limited
+  tmdb_api_calls: 32000,
+  tvdb_api_calls: 0
+}
 
-┌─────────────┐
-│ File Created│  (New movie file appears in library)
-└──────┬──────┘
-       │
-       ▼
-┌─────────────┐
-│status: null │  (Normal/idle state)
-└──────┬──────┘
-       │
-       │  ┌────────────────────────────────────┐
-       │  │ Triggers:                          │
-       │  │ - Library scan discovers file      │
-       │  │ - Webhook notification received    │
-       │  │ - User manual action               │
-       │  └────────────────────────────────────┘
-       │
-       ├──────────────────┬──────────────────┬──────────────────┐
-       │                  │                  │                  │
-       ▼                  ▼                  ▼                  ▼
- ┌──────────┐      ┌──────────┐      ┌──────────┐      ┌──────────┐
- │ scanning │      │processing│      │enriching │      │  needs_  │
- │          │      │_webhook  │      │          │      │identifi- │
- │          │      │          │      │          │      │ cation   │
- └────┬─────┘      └────┬─────┘      └────┬─────┘      └────┬─────┘
-      │                 │                 │                 │
-      │  Success        │  Success        │  Success        │  User
-      │                 │                 │                 │  provides
-      ▼                 ▼                 ▼                 │  ID
- ┌──────────┐      ┌──────────┐      ┌──────────┐         │
- │status:   │      │status:   │      │status:   │         │
- │null      │      │null      │      │null      │         │
- └────┬─────┘      └──────────┘      └──────────┘         │
-      │                                                     │
-      │                                                     ▼
-      │            ┌─────────────────────────────────────────┐
-      │            │            Error States                 │
-      │            └─────────────────────────────────────────┘
-      │                 │                 │                 │
-      │                 ▼                 ▼                 ▼
-      │         ┌──────────┐      ┌──────────┐      ┌──────────┐
-      │         │error_nfo_│      │error_    │      │error_    │
-      │         │conflict  │      │provider_ │      │network   │
-      │         │          │      │failure   │      │          │
-      │         └────┬─────┘      └────┬─────┘      └────┬─────┘
-      │              │                 │                 │
-      │              │  User resolves  │  Retry          │  Retry
-      │              │  manually       │                 │
-      │              ▼                 ▼                 ▼
-      └────────────> status: null (retry processing)
-                         │
-                         ▼
-                  ┌──────────────┐
-                  │ Completeness │
-                  │   Check      │
-                  └──────┬───────┘
-                         │
-                    ┌────┴────┐
-                    │         │
-                    ▼         ▼
-            ┌──────────┐ ┌──────────┐
-            │Complete  │ │Incomplete│
-            │→Lock All │ │→Monitored│
-            └──────────┘ └──────────┘
-```
-
-### Status Values
-
-| Status | Description | Next States | User Action |
-|--------|-------------|-------------|-------------|
-| `null` | Normal/idle state, no processing | `scanning`, `processing_webhook`, `enriching` | View, Edit, Delete |
-| `scanning` | Currently being scanned (library scan) | `null`, `error_nfo_conflict`, `needs_identification` | View only |
-| `processing_webhook` | Processing download webhook | `enriching`, `null` | View only |
-| `enriching` | Fetching metadata from providers | `null`, `error_provider_failure`, `error_network` | View only |
-| `needs_identification` | No NFO or provider IDs found | `null` (after user provides ID) | Provide TMDB/IMDB ID |
-| `error_nfo_conflict` | Multiple conflicting NFO files | `null` (after user resolves) | Delete duplicate NFOs |
-| `error_provider_failure` | Provider API returned error | `null` (retry) | Manual retry |
-| `error_network` | Network connectivity issue | `null` (retry) | Check network, retry |
-
-### State Persistence
-
-- **Status is NOT persisted long-term** - Set to `null` after completion
-- **Error states persist** until user resolves or system retries
-- **Status does NOT indicate data quality** - Use completeness % for that
-- **Deleted items** use `deleted_on` timestamp, not status
-
-### Example State Transitions
-
-**Scenario 1: New Movie Downloaded**
-```
-1. Webhook received → status = 'processing_webhook'
-2. Metadata enrichment → status = 'enriching'
-3. Completion → status = null
-```
-
-**Scenario 2: Library Scan with NFO Error**
-```
-1. Scan starts → status = 'scanning'
-2. Multiple NFOs found → status = 'error_nfo_conflict'
-3. User deletes duplicate → status = null
-4. Rescan → status = 'scanning' → null
-```
-
-**Scenario 3: Provider API Failure**
-```
-1. Enrichment starts → status = 'enriching'
-2. TMDB returns 500 error → status = 'error_provider_failure'
-3. Automatic retry (1 hour later) → status = 'enriching'
-4. Success → status = null
-```
-
-**Scenario 4: No NFO File**
-```
-1. Scan discovers directory → status = 'scanning'
-2. No NFO found → status = 'needs_identification'
-3. User provides TMDB ID → status = 'enriching'
-4. Metadata fetched → status = null
+// Publishing performance
+{
+  publish_duration_ms: 2340,  // 2.3 seconds per item
+  nfo_generation_ms: 45,
+  asset_copy_ms: 1200,
+  database_update_ms: 95,
+  player_notification_ms: 1000
+}
 ```
 
 ---
 
-## Unknown File Resolution Workflow
+## Related Documentation
 
-When files don't match known patterns during scanning, they're tracked in the `unknown_files` table for user resolution.
-
-### Detection Process
-
-During directory scanning, files are matched against known patterns:
-- NFO files (`movie.nfo`, `tvshow.nfo`)
-- Media files (`*.mkv`, `*.mp4`, `*.avi`)
-- Images (`poster*.jpg`, `fanart*.jpg`, etc.)
-- Trailers (`*-trailer.*`)
-- Subtitles (`*.srt`, `*.ass`, `*.sub`)
-- Actor images (`.actors/*.jpg`)
-- Ignore patterns (user-configured)
-
-Files that don't match any pattern are inserted into `unknown_files` table.
-
-### Resolution Actions
-
-#### Action 1: Delete File
-
-```typescript
-async function deleteUnknownFile(unknownFileId: number) {
-  const file = await db.getUnknownFile(unknownFileId);
-
-  // 1. Delete physical file from filesystem
-  await fs.unlink(file.file_path);
-
-  // 2. Delete from database
-  await db.query('DELETE FROM unknown_files WHERE id = ?', [unknownFileId]);
-
-  // File will NEVER appear in unknown list again (doesn't exist)
-}
-```
-
-#### Action 2: Assign To Asset Type
-
-User assigns unknown file to an asset type (poster, fanart, etc.).
-
-```typescript
-async function assignUnknownFile(
-  unknownFileId: number,
-  assignTo: 'poster' | 'fanart' | 'banner' | 'clearlogo' | etc.,
-  forceInclude: boolean = false
-) {
-  const file = await db.getUnknownFile(unknownFileId);
-
-  // 1. Process as normal asset
-  const pHash = await calculatePerceptualHash(file.file_path);
-
-  // Check for duplicates
-  const existingImages = await db.getImages(file.entity_id, assignTo);
-  const isDuplicate = existingImages.some(img =>
-    calculateSimilarity(pHash, img.perceptual_hash) > 90
-  );
-
-  if (isDuplicate && !forceInclude) {
-    throw new Error('Duplicate image detected. Use Force Include to bypass.');
-  }
-
-  // 2. Quality check (unless force include)
-  const config = await db.getCompletenessConfig(file.entity_type);
-  const maxCount = config[`required_${assignTo}s`];
-  const currentCount = existingImages.length;
-
-  if (currentCount >= maxCount && !forceInclude) {
-    throw new Error(`Maximum ${maxCount} ${assignTo}s allowed. Use Force Include to bypass.`);
-  }
-
-  // 3. Rename file to standard pattern
-  const nextIndex = getNextImageIndex(file.entity_id, assignTo);
-  const extension = path.extname(file.file_path);
-  const newFileName = nextIndex === 0 ? `${assignTo}${extension}` : `${assignTo}${nextIndex}${extension}`;
-  const newLibraryPath = path.join(path.dirname(file.file_path), newFileName);
-
-  await fs.rename(file.file_path, newLibraryPath);
-
-  // 4. Copy to cache
-  const cacheFileName = `${assignTo}_${generateHash()}${extension}`;
-  const cachePath = `/cache/images/${file.entity_id}/${cacheFileName}`;
-  await copyFile(newLibraryPath, cachePath);
-
-  // 5. Insert into images table
-  await db.insertImage({
-    entity_type: file.entity_type,
-    entity_id: file.entity_id,
-    image_type: assignTo,
-    library_path: newLibraryPath,
-    cache_path: cachePath,
-    perceptual_hash: pHash,
-    locked: forceInclude ? 1 : 0  // Lock if force included
-  });
-
-  // 6. Delete from unknown_files (resolution complete)
-  await db.query('DELETE FROM unknown_files WHERE id = ?', [unknownFileId]);
-
-  // File will NEVER appear in unknown list again (now tracked in images table)
-
-  // 7. Trigger media player update (optional)
-  await triggerLibraryScan(file.entity_id);
-}
-```
-
-#### Action 3: Add to Ignore Pattern
-
-User adds a pattern to ignore similar files in future scans.
-
-```typescript
-async function addIgnorePattern(unknownFileId: number, pattern: string) {
-  const file = await db.getUnknownFile(unknownFileId);
-
-  // 1. Add pattern to configuration
-  const config = await db.getConfig('ignore_patterns') || { patterns: [] };
-  config.patterns.push(pattern);
-  await db.setConfig('ignore_patterns', config);
-
-  // 2. Find all matching files across ALL media items
-  const allUnknownFiles = await db.query('SELECT * FROM unknown_files');
-
-  const matchingFiles = allUnknownFiles.filter(f =>
-    minimatch(f.file_name, pattern)
-  );
-
-  // 3. Delete matching files from database
-  for (const matchingFile of matchingFiles) {
-    await db.query('DELETE FROM unknown_files WHERE id = ?', [matchingFile.id]);
-  }
-
-  // Files will NEVER appear in unknown list again (pattern added to ignore list)
-  // Future scans skip files matching this pattern
-}
-```
-
-### Unknown Files UI Views
-
-#### View 1: Per-Media Edit Page
-
-Displayed when editing a specific movie/series/episode:
-
-```typescript
-// Get unknown files for this media item
-const unknownFiles = await db.query(
-  'SELECT * FROM unknown_files WHERE entity_type = ? AND entity_id = ?',
-  [entityType, entityId]
-);
-
-// UI displays:
-// - File name
-// - File size
-// - Actions: [Delete] [Assign To ▼] [Add to Ignore Pattern]
-```
-
-#### View 2: Global Unknown Files Table
-
-System-wide view of all unknown files:
-
-```sql
-SELECT
-  uf.*,
-  m.title AS media_title,
-  m.year AS media_year
-FROM unknown_files uf
-LEFT JOIN movies m ON uf.entity_type = 'movie' AND uf.entity_id = m.id
-LEFT JOIN series s ON uf.entity_type = 'series' AND uf.entity_id = s.id
-ORDER BY uf.discovered_at DESC;
-```
-
-**Table Columns:**
-- File Name
-- Media Item (clickable link to edit page)
-- File Size
-- Discovered At
-- Actions
-
-### Foreign Key Cascade Behavior
-
-When a media item is deleted, all associated unknown files are automatically deleted:
-
-```sql
-CREATE TABLE unknown_files (
-  -- ...
-  FOREIGN KEY (entity_type, entity_id) REFERENCES movies(id) ON DELETE CASCADE
-);
-```
-
-**Example:**
-1. Movie "The Matrix" has 3 unknown files
-2. User deletes "The Matrix" from library
-3. Database automatically deletes 3 unknown files (CASCADE)
-4. No orphaned unknown files remain
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** - Overall system design
+- **[AUTOMATION_AND_WEBHOOKS.md](AUTOMATION_AND_WEBHOOKS.md)** - Automation modes, webhook handling
+- **[ASSET_MANAGEMENT.md](ASSET_MANAGEMENT.md)** - Three-tier asset system
+- **[PUBLISHING_WORKFLOW.md](PUBLISHING_WORKFLOW.md)** - Publishing process
+- **[WEBHOOKS.md](WEBHOOKS.md)** - Webhook payload reference
+- **[NFO_PARSING.md](NFO_PARSING.md)** - NFO format specification
+- **[DATABASE_SCHEMA.md](DATABASE_SCHEMA.md)** - Schema reference

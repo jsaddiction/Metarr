@@ -1,16 +1,23 @@
 # Field-Level Locking & Monitoring System
 
+**Related Docs**: [AUTOMATION_AND_WEBHOOKS.md](AUTOMATION_AND_WEBHOOKS.md), [ASSET_MANAGEMENT.md](ASSET_MANAGEMENT.md), [DATABASE_SCHEMA.md](DATABASE_SCHEMA.md)
+
 This document explains Metarr's field-level locking mechanism for preserving manual user edits and the computed monitoring state system.
 
 ## Core Concept
 
-**Field-level locking** tracks which specific fields a user has manually edited, preventing automatic updates from overwriting their customizations while still allowing automatic updates for other fields.
+**Field-level locking** tracks which specific fields and assets a user has manually edited, preventing automatic updates from overwriting their customizations while still allowing automatic updates for other fields/assets.
 
 **Key Principles:**
-1. Manual user edit → Lock that specific field
-2. Locked fields → Never auto-updated (preserved across scans, enrichment, webhooks)
-3. Unlocked fields → Continue receiving automatic updates
+1. Manual user edit → Lock that specific field/asset
+2. Locked fields/assets → Never auto-updated (preserved across scans, enrichment, webhooks)
+3. Unlocked fields/assets → Continue receiving automatic updates
 4. No explicit "monitored" boolean → Computed from (unlocked fields + incompleteness)
+5. Asset locking is per-type (e.g., lock poster, but not fanart)
+
+**Two Levels of Locking:**
+- **Field Locking**: Scalar fields (plot, tagline, mpaa) and array fields (actors, genres)
+- **Asset Locking**: Images, trailers, subtitles (per asset type: poster, fanart, etc.)
 
 ---
 
@@ -235,11 +242,358 @@ ALTER TABLE movies ADD COLUMN studios_locked BOOLEAN DEFAULT 0;
 ALTER TABLE movies ADD COLUMN tags_locked BOOLEAN DEFAULT 0;
 ALTER TABLE movies ADD COLUMN countries_locked BOOLEAN DEFAULT 0;
 
--- Image locking handled in images table (images.locked BOOLEAN)
+-- Asset Locking (per-type, not per-asset)
+ALTER TABLE movies ADD COLUMN poster_locked BOOLEAN DEFAULT 0;
+ALTER TABLE movies ADD COLUMN fanart_locked BOOLEAN DEFAULT 0;
+ALTER TABLE movies ADD COLUMN banner_locked BOOLEAN DEFAULT 0;
+ALTER TABLE movies ADD COLUMN clearlogo_locked BOOLEAN DEFAULT 0;
+ALTER TABLE movies ADD COLUMN clearart_locked BOOLEAN DEFAULT 0;
+ALTER TABLE movies ADD COLUMN discart_locked BOOLEAN DEFAULT 0;
+
 -- Runtime/file_size/quality handled in video_streams table (no locking - always from FFprobe)
 ```
 
 **Similar for series and episodes tables.**
+
+---
+
+## Asset-Level Locking
+
+### Purpose
+
+Asset locking prevents automatic replacement or addition of images, trailers, and other media assets. Unlike field locking (which locks a single scalar value), asset locking is **per-type** and affects all assets of that type.
+
+**See [ASSET_MANAGEMENT.md](ASSET_MANAGEMENT.md) for complete asset management workflows.**
+
+### Per-Type Locking (Not Per-Asset)
+
+Asset locking is **type-level**, not individual-asset-level:
+
+```typescript
+// CORRECT: Lock all posters for this movie
+movie.poster_locked = 1;
+// Result: Algorithm will NOT auto-select or download any posters
+
+// CORRECT: Lock all fanart for this movie
+movie.fanart_locked = 1;
+// Result: Algorithm will NOT auto-select or download any fanart
+
+// NOT SUPPORTED: Lock only fanart #2, but allow fanart #1 and #3 to be replaced
+// Reason: Per-asset locking adds too much complexity for minimal benefit
+```
+
+**Why per-type, not per-asset?**
+- Simpler UI (one lock button per asset type, not per image)
+- Clearer semantics (user has manually curated this asset type)
+- Easier querying (single boolean check, not JOIN to asset_candidates)
+- Most users lock all assets of a type together
+
+### Asset Locking Columns
+
+```sql
+-- movies table
+ALTER TABLE movies ADD COLUMN poster_locked BOOLEAN DEFAULT 0;
+ALTER TABLE movies ADD COLUMN fanart_locked BOOLEAN DEFAULT 0;
+ALTER TABLE movies ADD COLUMN landscape_locked BOOLEAN DEFAULT 0;
+ALTER TABLE movies ADD COLUMN banner_locked BOOLEAN DEFAULT 0;
+ALTER TABLE movies ADD COLUMN clearlogo_locked BOOLEAN DEFAULT 0;
+ALTER TABLE movies ADD COLUMN clearart_locked BOOLEAN DEFAULT 0;
+ALTER TABLE movies ADD COLUMN discart_locked BOOLEAN DEFAULT 0;
+ALTER TABLE movies ADD COLUMN keyart_locked BOOLEAN DEFAULT 0;
+ALTER TABLE movies ADD COLUMN trailer_locked BOOLEAN DEFAULT 0;
+
+-- series table (similar)
+ALTER TABLE series ADD COLUMN poster_locked BOOLEAN DEFAULT 0;
+ALTER TABLE series ADD COLUMN fanart_locked BOOLEAN DEFAULT 0;
+ALTER TABLE series ADD COLUMN banner_locked BOOLEAN DEFAULT 0;
+ALTER TABLE series ADD COLUMN clearlogo_locked BOOLEAN DEFAULT 0;
+
+-- episodes table
+ALTER TABLE episodes ADD COLUMN thumb_locked BOOLEAN DEFAULT 0;
+```
+
+### Asset Locking Behavior
+
+**When asset type is locked:**
+1. ❌ Algorithm will NOT auto-select new candidates from providers
+2. ❌ Algorithm will NOT download new assets
+3. ❌ Algorithm will NOT replace existing assets
+4. ✅ User can still manually select/upload/delete assets via UI
+5. ✅ Existing selected assets remain published
+
+**When asset type is unlocked:**
+1. ✅ Algorithm can auto-select candidates based on scoring
+2. ✅ Algorithm can download better-quality replacements
+3. ✅ Algorithm respects `asset_selection_config` (max_count, quality thresholds)
+
+### Locking Triggers
+
+**Manual asset selection/upload:**
+```typescript
+// User selects a specific poster candidate
+async function selectAssetCandidate(
+  entityType: string,
+  entityId: number,
+  candidateId: number,
+  assetType: string
+): Promise<void> {
+  // Mark candidate as selected
+  await db.execute(`
+    UPDATE asset_candidates
+    SET is_selected = 1,
+        selected_by = 'manual',
+        selected_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `, [candidateId]);
+
+  // Lock the asset type
+  const lockColumn = `${assetType}_locked`;
+  await db.execute(`
+    UPDATE ${entityType}s
+    SET ${lockColumn} = 1,
+        has_unpublished_changes = 1
+    WHERE id = ?
+  `, [entityId]);
+
+  // Log activity
+  await db.logActivity({
+    event_type: 'asset.locked',
+    entity_type: entityType,
+    entity_id: entityId,
+    description: `User selected ${assetType}, asset type locked`
+  });
+}
+```
+
+**Manual asset upload:**
+```typescript
+// User uploads custom poster
+async function uploadCustomAsset(
+  entityType: string,
+  entityId: number,
+  assetType: string,
+  fileBuffer: Buffer
+): Promise<void> {
+  // Calculate hashes
+  const contentHash = sha256(fileBuffer);
+  const pHash = await calculatePerceptualHash(fileBuffer);
+
+  // Store in cache
+  const cachePath = `/data/cache/assets/${contentHash}.jpg`;
+  await fs.writeFile(cachePath, fileBuffer);
+
+  // Add to cache_inventory
+  await storeAsset(fileBuffer, 'image', { mimeType: 'image/jpeg' });
+
+  // Add to asset_candidates
+  await db.execute(`
+    INSERT INTO asset_candidates (
+      entity_type, entity_id, asset_type,
+      provider, cache_path, content_hash, perceptual_hash,
+      is_downloaded, is_selected, selected_by
+    ) VALUES (?, ?, ?, 'local', ?, ?, ?, 1, 1, 'manual')
+  `, [entityType, entityId, assetType, cachePath, contentHash, pHash]);
+
+  // Lock the asset type
+  const lockColumn = `${assetType}_locked`;
+  await db.execute(`
+    UPDATE ${entityType}s
+    SET ${lockColumn} = 1,
+        has_unpublished_changes = 1
+    WHERE id = ?
+  `, [entityId]);
+}
+```
+
+### Asset Enrichment with Locking
+
+```typescript
+async function enrichMovieAssets(movie: Movie): Promise<void> {
+  const tmdbData = await tmdb.getMovieImages(movie.tmdb_id);
+
+  // Check poster lock
+  if (!movie.poster_locked) {
+    // Fetch poster candidates
+    for (const poster of tmdbData.posters) {
+      await db.execute(`
+        INSERT INTO asset_candidates (
+          entity_type, entity_id, asset_type,
+          provider, provider_url, width, height,
+          provider_metadata
+        ) VALUES (?, ?, 'poster', 'tmdb', ?, ?, ?, ?)
+      `, [
+        'movie',
+        movie.id,
+        `https://image.tmdb.org/t/p/original${poster.file_path}`,
+        poster.width,
+        poster.height,
+        JSON.stringify({ language: poster.iso_639_1, vote_average: poster.vote_average })
+      ]);
+    }
+
+    // Auto-select top posters (if YOLO mode)
+    const config = await getLibraryAutomationConfig(movie.library_id);
+    if (config.auto_select_assets) {
+      await autoSelectAssets(movie.id, 'movie', 'poster');
+    }
+  } else {
+    console.log(`Poster locked for movie ${movie.id}, skipping poster enrichment`);
+  }
+
+  // Check fanart lock
+  if (!movie.fanart_locked) {
+    // Similar logic for fanart
+  }
+}
+```
+
+### UI - Asset Lock Controls
+
+**Edit Page - Asset Section:**
+```
+┌────────────────────────────────────────────────┐
+│ Poster                                [🔒 Lock]│
+├────────────────────────────────────────────────┤
+│ [Thumbnail]  2000×3000  8.5★  TMDB             │
+│ ☑ Selected  🤖 Auto-selected                   │
+└────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────┐
+│ Fanart                              [🔓 Unlock]│
+├────────────────────────────────────────────────┤
+│ [Thumbnail 1]  1920×1080  7.8★  TMDB           │
+│ ☑ Selected  👤 User-selected                   │
+│                                                │
+│ [Thumbnail 2]  1920×1080  7.2★  TMDB           │
+│ ☑ Selected  👤 User-selected                   │
+│                                                │
+│ [Thumbnail 3]  1920×1080  6.9★  TMDB           │
+│ ☑ Selected  🤖 Auto-selected                   │
+│                                                │
+│ [+ Replace Images] [+ Upload Custom]           │
+└────────────────────────────────────────────────┘
+```
+
+**Lock Button Behavior:**
+- **🔒 Locked**: Asset type frozen, no automatic changes
+- **🔓 Unlocked**: Asset type can receive automatic updates
+- **Click to toggle**: User can lock/unlock at any time
+
+**Selection Indicators:**
+- **🤖 Auto Selected**: Selected by algorithm (can be auto-replaced if unlocked)
+- **👤 User Selected**: Manually selected by user (triggered lock)
+- **📁 Local**: Discovered during scan (triggered lock)
+
+### Unlock Workflow
+
+**User wants to allow automatic updates again:**
+
+```typescript
+async function unlockAssetType(
+  entityType: string,
+  entityId: number,
+  assetType: string
+): Promise<void> {
+  // Unlock the asset type
+  const lockColumn = `${assetType}_locked`;
+  await db.execute(`
+    UPDATE ${entityType}s
+    SET ${lockColumn} = 0
+    WHERE id = ?
+  `, [entityId]);
+
+  // Update selected_by for currently selected assets
+  await db.execute(`
+    UPDATE asset_candidates
+    SET selected_by = 'manual_unlocked'
+    WHERE entity_type = ?
+      AND entity_id = ?
+      AND asset_type = ?
+      AND is_selected = 1
+      AND selected_by = 'manual'
+  `, [entityType, entityId, assetType]);
+
+  // Log activity
+  await db.logActivity({
+    event_type: 'asset.unlocked',
+    entity_type: entityType,
+    entity_id: entityId,
+    description: `User unlocked ${assetType} for automatic updates`
+  });
+
+  // Trigger enrichment (if incomplete)
+  const entity = await db.getEntity(entityType, entityId);
+  const completeness = await calculateCompleteness(entity);
+
+  if (completeness < 100) {
+    await queueEnrichmentJob(entityType, entityId, 2); // High priority
+  }
+}
+```
+
+**Result:**
+- Asset type unlocked
+- Next enrichment run can auto-select better candidates
+- Existing selected assets remain (but can be replaced)
+
+### Asset Lock and Completeness
+
+Asset locks affect completeness calculation:
+
+```typescript
+async function calculateCompleteness(movie: Movie, config: CompletenessConfig): Promise<number> {
+  let totalRequirements = 0;
+  let metRequirements = 0;
+
+  // ... (scalar fields calculation)
+
+  // Asset requirements
+  const assetTypes = ['poster', 'fanart', 'landscape', 'banner', 'clearlogo', 'clearart', 'discart'];
+
+  for (const assetType of assetTypes) {
+    const required = config[`required_${assetType}s`];
+
+    if (required > 0) {
+      const isLocked = movie[`${assetType}_locked`];
+      const selectedCount = await db.query(`
+        SELECT COUNT(*) as count
+        FROM asset_candidates
+        WHERE entity_type = 'movie'
+          AND entity_id = ?
+          AND asset_type = ?
+          AND is_selected = 1
+      `, [movie.id, assetType]);
+
+      totalRequirements += required;
+
+      if (isLocked) {
+        // If locked, current count is "acceptable" (user chose this)
+        // Don't penalize for not meeting config requirements
+        metRequirements += required;
+      } else {
+        // If unlocked, must meet config requirements
+        metRequirements += Math.min(selectedCount[0].count, required);
+      }
+    }
+  }
+
+  return (metRequirements / totalRequirements) * 100;
+}
+```
+
+**Example:**
+```
+Config requires: 3 fanarts
+Current state: 1 fanart selected, fanart_locked = 1
+
+Completeness calculation:
+  - Required: 3 fanarts
+  - Has: 1 fanart
+  - Locked: Yes
+  - Result: Counts as COMPLETE (3/3) because user locked it
+
+Reason: User explicitly chose to have only 1 fanart, their choice is respected.
+```
 
 ---
 

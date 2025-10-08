@@ -812,6 +812,6 @@ async function assignUnknownFile(
 
 - **NFO Parsing**: `@docs/NFO_PARSING.md` - NFO file format and URL elements policy
 - **Stream Details**: `@docs/STREAM_DETAILS.md` - FFprobe scanning and stream metadata
-- **Image Management**: `@docs/IMAGE_MANAGEMENT.md` - Three-tier storage and perceptual hashing
-- **Database Schema**: `@docs/DATABASE_SCHEMA.md` - trailers and unknown_files table schemas
+- **Asset Management**: `@docs/ASSET_MANAGEMENT.md` - Three-tier asset system and perceptual hashing
+- **Database Schema**: `@docs/DATABASE_SCHEMA.md` - Asset candidates and unknown_files table schemas
 - **Workflows**: `@docs/WORKFLOWS.md` - Unified scan process and unknown file resolution

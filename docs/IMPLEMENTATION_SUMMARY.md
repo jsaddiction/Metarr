@@ -189,12 +189,12 @@ public/frontend/src/
 
 ## Key Design Decisions
 
-### 1. Three-Tier Caching Architecture
+### 1. Three-Tier Asset Architecture
 
-**Rationale:** Follows the IMAGE_MANAGEMENT.md documentation exactly:
-- **Provider URLs** (Tier 1): Source of truth, enables re-download
-- **Cache Directory** (Tier 2): Persistent backup, survives media manager cleanup
-- **Library Directory** (Tier 3): Kodi-readable location, may be deleted externally
+**Rationale:** Follows the ASSET_MANAGEMENT.md documentation exactly:
+- **Asset Candidates** (Tier 1): Provider URLs + metadata, lazy loading
+- **Cache** (Tier 2): Content-addressed immutable storage, deduplication
+- **Library** (Tier 3): Published assets with Kodi naming, ephemeral
 
 ### 2. Perceptual Hashing
 

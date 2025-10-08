@@ -5,80 +5,116 @@
 Detailed architecture documentation is located in `docs/`. **Read specific files only when needed for the current task** to avoid context overload.
 
 ### Application Overview
-Metarr is an application that integrates with various media players and media managers. It maintains **two sources of truth protected from external interference**:
 
-1. **Database**: All metadata (titles, plots, cast, crew, ratings, etc.)
-2. **Cache Directory**: All assets (images, trailers, subtitles, etc.)
+Metarr is a web-based metadata management application inspired by MediaElch, designed for Docker deployment. It provides intelligent metadata management with **user control first**, bridging media managers (Sonarr/Radarr/Lidarr) and media players (Kodi/Jellyfin/Plex).
 
-These are **protected from Radarr/Sonarr/Lidarr deletion** and preserved even if web sources disappear. Metarr can rebuild the entire library directory from these sources in response to most failures.
+**Core Principle**: "Intelligent Defaults with Manual Override Capability"
+- Initial setup: User chooses automation level (Manual, YOLO, or Hybrid)
+- Manual edits are sacred: Locks prevent automation from overwriting user changes
+- Webhooks (if enabled): Fully automated for hands-off operation
+- Cache as source of truth: Immutable, content-addressed storage protects against data loss
 
-The application provides media players with a complete media experience through a web UI that allows users to modify content. Changes (manual or automatic) are relayed to media players for inclusion.
+### Quick Start Documentation
 
-### Architecture & Design
-- `docs/DATABASE_SCHEMA.md` - Complete database schema with tables, relationships, and query patterns
-- `docs/API_ARCHITECTURE.md` - REST API + SSE communication architecture, endpoints, error handling
-- `docs/WORKFLOWS.md` - Core application workflows (webhook processing, library scans, scheduled updates)
-- `docs/FIELD_LOCKING.md` - Field-level locking system and computed monitoring state
+**For New Developers**:
+1. **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** - **START HERE** - Complete architectural vision and design principles
+2. **[IMPLEMENTATION_ROADMAP.md](docs/IMPLEMENTATION_ROADMAP.md)** - Phased development plan
 
-### External Integrations
-- `docs/KODI_API.md` - Kodi JSON-RPC API reference (WebSocket + HTTP communication)
-- `docs/METADATA_PROVIDERS.md` - TMDB, TVDB, MusicBrainz API integration patterns
-- `docs/NFO_PARSING.md` - Kodi NFO file format parsing and validation
+**Core Architecture**:
+- **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** - System design, data flow, technology stack
+- **[DATABASE_SCHEMA.md](docs/DATABASE_SCHEMA.md)** - Complete schema with new tables (asset_candidates, cache_inventory, publish_log)
+- **[WORKFLOWS.md](docs/WORKFLOWS.md)** - Two-phase scanning, enrichment pipeline, operational workflows
+- **[API_ARCHITECTURE.md](docs/API_ARCHITECTURE.md)** - REST API + SSE endpoints
 
-### Feature-Specific Documentation
-- `docs/IMAGE_MANAGEMENT.md` - Three-tier image storage (Provider → Cache → Library)
-- `docs/PATH_MAPPING.md` - Path translation for media managers and players (includes Kodi shared groups)
-- `docs/NOTIFICATIONS_AND_LOGGING.md` - Notification channels, activity logging, authentication system
+**Feature Areas**:
+- **[ASSET_MANAGEMENT.md](docs/ASSET_MANAGEMENT.md)** - Three-tier asset system (Candidates → Cache → Library)
+- **[AUTOMATION_AND_WEBHOOKS.md](docs/AUTOMATION_AND_WEBHOOKS.md)** - Automation levels, webhook handling, field locking
+- **[PUBLISHING_WORKFLOW.md](docs/PUBLISHING_WORKFLOW.md)** - Dirty state, transactional publishing, player notification
+- **[FIELD_LOCKING.md](docs/FIELD_LOCKING.md)** - Field-level locking system
 
-### Frontend Implementation
-- `docs/UI_DESIGN.md` - Layout system, color scheme, navigation patterns
-- `docs/FRONTEND_COMPONENTS.md` - React components, view modes, routing
+**External Integrations**:
+- **[METADATA_PROVIDERS.md](docs/METADATA_PROVIDERS.md)** - TMDB, TVDB integration, rate limiting
+- **[KODI_API.md](docs/KODI_API.md)** - Kodi JSON-RPC reference
+- **[WEBHOOKS.md](docs/WEBHOOKS.md)** - Radarr/Sonarr webhook handling
+- **[NFO_PARSING.md](docs/NFO_PARSING.md)** - Kodi NFO format
+
+**System**:
+- **[PATH_MAPPING.md](docs/PATH_MAPPING.md)** - Path translation between systems
+- **[NOTIFICATIONS_AND_LOGGING.md](docs/NOTIFICATIONS_AND_LOGGING.md)** - Logging, notifications
+
+**Frontend**:
+- **[UI_DESIGN.md](docs/UI_DESIGN.md)** - Layout, color scheme
+- **[FRONTEND_COMPONENTS.md](docs/FRONTEND_COMPONENTS.md)** - React components
 
 ## Executive Summary
 
-Metarr is a **"set it and forget it"** metadata management application that bridges downloader tools (Sonarr/Radarr/Lidarr) and media players (Kodi/Jellyfin/Plex). It automates metadata enrichment while preserving manual user edits through a sophisticated field-locking system.
+Metarr is a **web-based metadata management application** inspired by MediaElch, designed to give users complete control over media library metadata while optionally leveraging intelligent automation. It bridges media managers (Sonarr/Radarr/Lidarr) and media players (Kodi/Jellyfin/Plex) with a flexible workflow system.
 
-### Core Concepts
+### Design Philosophy
 
-**Two-Copy Architecture (Database + Cache as Source of Truth)**
-- **Database**: Stores all metadata. NFO files and provider APIs populate it, but database is authoritative
-- **Cache Directory**: Stores all assets (images, trailers, subtitles). Protected from external deletion
-- **Library Directory**: Ephemeral working directory. Contains media files (not backed up) + assets (rebuilt from cache)
-- **Disaster Recovery**: Can rebuild library assets from cache even if web sources are unavailable
+**"Intelligent Defaults with Manual Override Capability"**
 
-**Protection from Media Manager Interference**
-- Radarr/Sonarr/Lidarr may delete files during upgrades or cleanup operations
-- Metarr preserves assets by maintaining cache copies hidden from media managers
-- Database entries and cache files survive media manager operations
+1. **User Control First**: Choose your automation level
+   - **Manual Mode**: Full MediaElch-style control (scan → review → edit → publish)
+   - **YOLO Mode**: Full automation (trust the algorithm, fix mistakes later)
+   - **Hybrid Mode**: Auto-process but review before publishing (recommended default)
 
-**Field-Level Locking**
-- Manual user edits automatically lock fields
-- Automated processes only update unlocked fields
-- Preserves user customization while allowing automatic enrichment
+2. **Manual Edits are Sacred**: Any user change locks that field/asset permanently
+   - Locked fields excluded from all future automation
+   - Visual indicators: 🔒 User Selected vs 🤖 Auto Selected
+   - Unlock capability when user wants automation back
 
-### Primary Workflow
-1. **Download Complete** → Sonarr/Radarr sends webhook to Metarr
-2. **Parse NFO** → Extract metadata, images, actors, directors from Kodi-format NFO files
-3. **Enrich Metadata** → Optionally fetch additional data from TMDB/TVDB
-4. **Update Media Players** → Trigger library scan on configured Kodi/Jellyfin/Plex instances
-5. **Monitor & Update** → Scheduled updates respect field locks (only update unlocked, incomplete fields)
+3. **Webhooks = Full Automation**: If enabled, new downloads auto-publish
+   - User opted in because they want automation
+   - Seamless integration with existing *arr stack
+   - Upgrades restore from cache (disaster recovery built-in)
+
+### Core Architecture
+
+**Three-Tier Asset System** (replaces two-copy architecture)
+
+```
+Tier 1: CANDIDATES (Provider URLs + Metadata)
+  ↓ User selects or algorithm chooses
+Tier 2: CACHE (Content-Addressed Immutable Storage)
+  ↓ User clicks "Publish"
+Tier 3: LIBRARY (Published Assets for Players)
+```
+
+**Two-Phase Scanning** (fast feedback, non-blocking)
+
+```
+Phase 1: FAST LOCAL SCAN (minutes)
+  - Filesystem discovery, NFO parsing, FFprobe
+  - No provider API calls
+  - User sees library immediately
+
+Phase 2: LAZY ENRICHMENT (hours to days, background)
+  - Provider metadata fetch (rate-limited)
+  - Asset candidate collection
+  - Auto-selection (if enabled)
+  - Non-blocking, resumable
+```
+
+**Data State Machine**
+
+```
+DISCOVERED → IDENTIFIED → ENRICHING → ENRICHED → SELECTED → PUBLISHED
+                                                             ↑
+                                                    (dirty state tracking)
+```
 
 ### Key Features
-- **Two-Copy Asset Storage**:
-  - Cache copy (source of truth, protected from deletion)
-  - Library copy (for media player scans, can be rebuilt)
-  - All assets: images, trailers, subtitles
-- **Field-Level Locking**: Manual edits automatically lock fields; automated processes only update unlocked fields
-- **Computed Monitoring State**: No explicit "monitored" flag - computed from locked fields + completeness config
-- **Disaster Recovery**: Rebuild library from database + cache if:
-  - Radarr/Sonarr deletes assets during cleanup
-  - Web sources (TMDB/TVDB) remove images
-  - User accidentally deletes library directory
-  - Only requirement: media file must still exist
-- **Path Mapping**: Translate filesystem paths between Metarr, downloaders, and media players
-- **NFO Hash Validation**: Re-parse NFO files only when content changes (SHA-256 hash comparison)
-- **Priority-Based Task System**: Webhooks (critical) > User actions (high) > Scheduled updates (normal) > Library scans (low)
-- **Real-Time Communication**: REST API for CRUD operations, SSE for status updates and progress monitoring
+
+- **Content-Addressed Cache**: SHA256-based naming, automatic deduplication, immutable storage
+- **Dirty State Tracking**: `has_unpublished_changes` flag, batch publishing, rollback capability
+- **Field & Asset Locking**: Per-field and per-asset granular locking preserves user intent
+- **Transactional Publishing**: Atomic writes, rollback on failure, player notification
+- **Disaster Recovery**: Restore from cache when Radarr/Sonarr deletes assets during upgrades
+- **Background Jobs**: Priority queue (webhooks > user actions > auto-enrichment > library scans)
+- **Rate Limiting**: Respect provider quotas (50/sec TMDB, 1/sec TVDB), reserved capacity for webhooks
+- **Real-Time Updates**: SSE for progress tracking, cache invalidation
+- **Scale-Aware**: Virtual scrolling, pagination, indexed queries (target: 32k items)
 
 ## Technology Stack
 

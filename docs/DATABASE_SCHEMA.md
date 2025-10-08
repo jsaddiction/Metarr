@@ -1,22 +1,77 @@
 # Database Schema Reference
 
-This document provides comprehensive reference for Metarr's normalized database schema, including table structures, relationships, and usage patterns.
+**Last Updated**: 2025-10-08
+**Status**: Design Phase - Pre-Implementation
+**Related Docs**: [ARCHITECTURE.md](ARCHITECTURE.md), [ASSET_MANAGEMENT.md](ASSET_MANAGEMENT.md), [WORKFLOWS.md](WORKFLOWS.md)
+
+This document provides the complete database schema for Metarr's redesigned architecture, including all new tables for the three-tier asset system, state machine tracking, and publishing workflow.
+
+---
+
+## Table of Contents
+
+1. [Schema Design Principles](#schema-design-principles)
+2. [Core Media Tables](#core-media-tables)
+3. [Asset Management Tables](#asset-management-tables)
+4. [Automation & Publishing Tables](#automation--publishing-tables)
+5. [Stream Details Tables](#stream-details-tables)
+6. [Normalized Entity Tables](#normalized-entity-tables)
+7. [System Tables](#system-tables)
+8. [Notification System Tables](#notification-system-tables)
+9. [Many-to-Many Link Tables](#many-to-many-link-tables)
+10. [Common Query Patterns](#common-query-patterns)
+11. [Migration Strategy](#migration-strategy)
+
+---
 
 ## Schema Design Principles
 
-### Normalization Strategy
+### Normalized Design
 
-Metarr uses a **fully normalized schema** to:
-- Eliminate data duplication (actors, genres, directors shared across media)
-- Enable efficient querying and updates
-- Support incremental scanning without losing custom metadata
-- Automatically clean up orphaned entities
+Metarr uses fully normalized schema to:
+- **Eliminate duplication**: Actors, genres, directors shared across media
+- **Enable efficient updates**: Change actor name once, affects all movies
+- **Support incremental scans**: Update existing records without losing custom metadata
+- **Automatic cleanup**: Cascade deletes remove orphaned references
+
+### Content-Addressed Storage
+
+Assets stored using SHA256 hash as filename:
+- **Automatic deduplication**: Same file stored once regardless of usage
+- **Integrity verification**: Rehash file to detect corruption
+- **Immutable naming**: Filename never changes (perfect for caching)
+- **Database tracking**: `cache_inventory` table tracks reference counts
+
+### State Machine Architecture
+
+Media items transition through well-defined lifecycle states:
+```
+discovered → identified → enriching → enriched → selected → published
+```
+
+Special states:
+- `needs_identification`: No provider IDs found
+- `error_*`: Various error conditions (provider failure, network, etc.)
+
+### Field-Level Locking
+
+Every lockable field has corresponding `{field}_locked` boolean:
+- Manual user edits automatically lock field
+- Locked fields excluded from automated updates
+- No explicit "monitored" flag (computed from locks + completeness)
+
+See [FIELD_LOCKING.md](FIELD_LOCKING.md) for details.
+
+### Soft Deletes with Grace Periods
+
+- `deleted_on`: Set to NOW() + 90 days on deletion
+- Scheduled garbage collection deletes when `deleted_on <= CURRENT_TIMESTAMP`
+- Allows recovery during grace period
 
 ### Cascading Deletes
 
-Foreign keys use `ON DELETE CASCADE` to automatically clean up related records when parent is deleted.
+Foreign keys use `ON DELETE CASCADE` to automatically clean up related records:
 
-**Movie Deletion Cascade**:
 ```
 DELETE FROM movies WHERE id = 1
   ↓ CASCADE
@@ -28,62 +83,163 @@ DELETE FROM movies WHERE id = 1
   ├─ movies_tags (all tag links)
   ├─ movies_countries (all country links)
   ├─ ratings (all ratings for this movie)
-  ├─ images (all images for this movie)
-  ├─ trailers (trailer file entry)
+  ├─ asset_candidates (all asset candidates)
+  │   ↓ TRIGGER: orphan_cache_assets
+  │   └─ Decrement reference_count in cache_inventory
+  │      └─ If ref_count = 0, set orphaned_at = NOW()
   ├─ video_streams (video stream entry)
   ├─ audio_streams (all audio tracks)
   ├─ subtitle_streams (all subtitle tracks)
   └─ unknown_files (all unknown file entries)
 ```
 
-**Series Deletion Cascade**:
+**Similar Cascade for Series:**
 ```
 DELETE FROM series WHERE id = 1
   ↓ CASCADE
   ├─ episodes (all episodes)
-  │   ↓ CASCADE
+  │   ↓ CASCADE (same as movies)
   │   ├─ episodes_actors
   │   ├─ episodes_directors
   │   ├─ episodes_writers
+  │   ├─ asset_candidates → trigger cache orphaning
   │   ├─ audio_streams
   │   ├─ subtitle_streams
   │   └─ video_streams
   ├─ series_actors
   ├─ series_genres
-  ├─ series_directors
   ├─ series_studios
   ├─ series_tags
   ├─ ratings
-  └─ images
+  ├─ asset_candidates → trigger cache orphaning
+  └─ unknown_files
 ```
 
-**Media Player Deletion Cascade**:
-```
-DELETE FROM media_players WHERE id = 1
-  ↓ CASCADE
-  ├─ player_path_mappings (all path mappings)
-  ├─ notification_channels (linked notification channel)
-  └─ media_player_group_members (group membership)
+### Cache Asset Orphaning Trigger
+
+**Purpose**: Automatically mark cache assets for garbage collection when all references deleted
+
+```sql
+-- Trigger: Decrement cache reference count when asset_candidate deleted
+CREATE TRIGGER orphan_cache_assets
+AFTER DELETE ON asset_candidates
+FOR EACH ROW
+WHEN OLD.content_hash IS NOT NULL
+BEGIN
+  -- Decrement reference count
+  UPDATE cache_inventory
+  SET reference_count = reference_count - 1
+  WHERE content_hash = OLD.content_hash;
+
+  -- Mark as orphaned if ref_count = 0
+  UPDATE cache_inventory
+  SET orphaned_at = CURRENT_TIMESTAMP
+  WHERE content_hash = OLD.content_hash
+    AND reference_count = 0
+    AND orphaned_at IS NULL;
+END;
 ```
 
-**Notification Channel Deletion Cascade**:
-```
-DELETE FROM notification_channels WHERE id = 1
-  ↓ CASCADE
-  ├─ notification_subscriptions (all subscriptions)
-  └─ notification_delivery_log (delivery history)
+**How It Works:**
+
+1. **User deletes movie** (via UI or webhook):
+   ```sql
+   DELETE FROM movies WHERE id = 123;
+   ```
+
+2. **CASCADE deletes all related records**:
+   - `asset_candidates` for movie 123 deleted
+   - Trigger fires for each deleted asset_candidate
+   - Cache reference counts decremented
+
+3. **Cache assets orphaned**:
+   - If `reference_count = 0`, `orphaned_at` set to NOW()
+   - Asset remains in cache for 90-day grace period
+
+4. **Garbage collection** (scheduled weekly):
+   ```sql
+   -- Find orphaned assets older than 90 days
+   DELETE FROM cache_inventory
+   WHERE orphaned_at IS NOT NULL
+     AND orphaned_at < DATETIME('now', '-90 days');
+   ```
+
+5. **Physical file deletion**:
+   ```typescript
+   async function garbageCollect(): Promise<void> {
+     const orphaned = await db.query(`
+       SELECT * FROM cache_inventory
+       WHERE orphaned_at < DATETIME('now', '-90 days')
+     `);
+
+     for (const asset of orphaned) {
+       await fs.unlink(asset.file_path);
+       await db.execute(`DELETE FROM cache_inventory WHERE id = ?`, [asset.id]);
+     }
+   }
+   ```
+
+**Webhook Delete Flow:**
+
+```typescript
+// Radarr sends "MovieDelete" webhook
+async function handleMovieDeleteWebhook(payload: any): Promise<void> {
+  const movie = await db.query(`
+    SELECT * FROM movies WHERE tmdb_id = ?
+  `, [payload.movie.tmdbId]);
+
+  if (movie) {
+    // This triggers cascade delete + cache orphaning
+    await db.execute(`DELETE FROM movies WHERE id = ?`, [movie.id]);
+
+    // Log activity
+    await logActivity({
+      event_type: 'movie.deleted',
+      entity_type: 'movie',
+      entity_id: movie.id,
+      description: `Movie deleted via webhook: ${movie.title}`,
+      metadata: JSON.stringify({ trigger: 'webhook', payload })
+    });
+  }
+}
 ```
 
-**Library Deletion Cascade**:
-```
-DELETE FROM libraries WHERE id = 1
-  ↓ CASCADE
-  └─ scan_jobs (all scan history)
+**Manual Delete Flow (UI):**
+
+```typescript
+// User clicks "Delete" in UI
+async function deleteMovie(movieId: number): Promise<void> {
+  const movie = await db.getMovie(movieId);
+
+  // Soft delete first (90-day grace period)
+  await db.execute(`
+    UPDATE movies
+    SET deleted_on = DATETIME('now', '+90 days')
+    WHERE id = ?
+  `, [movieId]);
+
+  // User can restore within 90 days
+  // Scheduled job will permanently delete after grace period
+}
+
+// Scheduled job: Permanent deletion
+async function permanentlyDeleteExpiredMovies(): Promise<void> {
+  const expired = await db.query(`
+    SELECT * FROM movies
+    WHERE deleted_on IS NOT NULL
+      AND deleted_on <= CURRENT_TIMESTAMP
+  `);
+
+  for (const movie of expired) {
+    // This triggers cascade delete + cache orphaning
+    await db.execute(`DELETE FROM movies WHERE id = ?`, [movie.id]);
+  }
+}
 ```
 
-**Orphaned Entity Cleanup**:
+**Orphaned Entity Cleanup:**
 
-After cascading deletes, orphaned entities (actors, genres, etc. with no links) can be cleaned up:
+After cascading deletes, orphaned entities (actors, genres, etc. with no links) should be cleaned up:
 
 ```sql
 -- Delete actors with no movie/series/episode links
@@ -97,39 +253,18 @@ WHERE id NOT IN (
 -- Similar for genres, directors, writers, studios, tags, countries
 ```
 
-**Note**: Orphan cleanup is run:
+**Note**: Orphan cleanup runs:
 - After garbage collection deletes expired movies
 - During scheduled maintenance (daily)
 - After bulk delete operations
 
-### Status States
-
-Media items track their **transient operational state** (not data completeness):
-- `null` or empty: Normal/idle state (no processing needed)
-- `scanning`: Currently being scanned
-- `processing_webhook`: Currently processing webhook-triggered update
-- `enriching`: Fetching metadata from providers
-- `needs_identification`: No NFO or provider IDs found
-- `error_nfo_conflict`: Multiple conflicting NFO files in directory
-- `error_provider_failure`: Provider API returned error
-- `error_network`: Network connectivity issue
-
-**Note**: Status state is **not** the same as monitored state. See Field Locking documentation for computed monitoring logic.
-
-### Field Locking System
-
-Metarr implements **field-level locking** to preserve manual user edits:
-- Each lockable field has a corresponding `{field}_locked` boolean column
-- Manual user edits automatically lock that field
-- Locked fields are excluded from automated updates (NFO rescans, provider refreshes)
-- **No explicit "monitored" flag** - monitoring is computed from locked fields + completeness
-- See `@docs/FIELD_LOCKING.md` for complete documentation
+---
 
 ## Core Media Tables
 
 ### movies
 
-Stores movie metadata from NFO files and optional provider enrichment.
+Stores movie metadata from NFO files and provider enrichment.
 
 ```sql
 CREATE TABLE movies (
@@ -159,25 +294,28 @@ CREATE TABLE movies (
   -- User Data
   user_rating REAL,       -- User's personal rating (0-10)
 
-  -- Media Assets
-  trailer_url TEXT,       -- Link to trailer
-
   -- Movie Set/Collection
   set_id INTEGER,         -- FK to sets table
 
   -- File Info
-  file_path TEXT NOT NULL
+  file_path TEXT NOT NULL UNIQUE,
 
   -- NFO Validation
   nfo_hash TEXT,          -- SHA-256 hash of NFO file content
   nfo_parsed_at TEXT,     -- ISO timestamp when NFO was last parsed
 
-  -- Status (transient operational state)
-  status TEXT,            -- null, scanning, processing_webhook, enriching, needs_identification, error_*
-  error_message TEXT,     -- Error details if status is error_*
+  -- State Machine (NEW)
+  state TEXT DEFAULT 'discovered',  -- discovered, identified, enriching, enriched, selected, published, needs_identification, error_*
+  enriched_at TIMESTAMP,             -- When provider fetch completed
+  enrichment_priority INTEGER DEFAULT 5,  -- 1 (highest) to 10 (lowest)
+
+  -- Publishing State (NEW)
+  has_unpublished_changes BOOLEAN DEFAULT 0,
+  last_published_at TIMESTAMP,
+  published_nfo_hash TEXT,          -- Hash of last published NFO
 
   -- Soft Delete
-  deleted_on TIMESTAMP,   -- Set to NOW() + 7 days on deletion, null otherwise
+  deleted_on TIMESTAMP,   -- Set to NOW() + 90 days on deletion
 
   -- Field Locking (preserves manual edits)
   title_locked BOOLEAN DEFAULT 0,
@@ -190,7 +328,6 @@ CREATE TABLE movies (
   mpaa_locked BOOLEAN DEFAULT 0,
   premiered_locked BOOLEAN DEFAULT 0,
   user_rating_locked BOOLEAN DEFAULT 0,
-  trailer_url_locked BOOLEAN DEFAULT 0,
   set_id_locked BOOLEAN DEFAULT 0,
 
   -- Array Field Locking (locked as a whole)
@@ -202,7 +339,13 @@ CREATE TABLE movies (
   tags_locked BOOLEAN DEFAULT 0,
   countries_locked BOOLEAN DEFAULT 0,
 
-  -- Note: Images have per-image locking (see images table)
+  -- Asset Locking (per-type)
+  poster_locked BOOLEAN DEFAULT 0,
+  fanart_locked BOOLEAN DEFAULT 0,
+  banner_locked BOOLEAN DEFAULT 0,
+  clearlogo_locked BOOLEAN DEFAULT 0,
+  clearart_locked BOOLEAN DEFAULT 0,
+  discart_locked BOOLEAN DEFAULT 0,
 
   -- Timestamps
   created_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -211,12 +354,21 @@ CREATE TABLE movies (
   FOREIGN KEY (set_id) REFERENCES sets(id) ON DELETE SET NULL
 );
 
+-- Critical Indexes
 CREATE INDEX idx_movies_tmdb_id ON movies(tmdb_id);
 CREATE INDEX idx_movies_imdb_id ON movies(imdb_id);
-CREATE INDEX idx_movies_status ON movies(status);
-CREATE INDEX idx_movies_nfo_hash ON movies(nfo_hash);
-CREATE INDEX idx_movies_set_id ON movies(set_id);
+CREATE INDEX idx_movies_state ON movies(state);
+CREATE INDEX idx_movies_file_path ON movies(file_path);
 CREATE INDEX idx_movies_deleted_on ON movies(deleted_on);
+
+-- Performance Indexes
+CREATE INDEX idx_movies_needs_enrichment
+  ON movies(state, enriched_at, enrichment_priority)
+  WHERE state = 'identified' AND enriched_at IS NULL;
+
+CREATE INDEX idx_movies_needs_publish
+  ON movies(has_unpublished_changes)
+  WHERE has_unpublished_changes = 1;
 ```
 
 **Example Row:**
@@ -224,29 +376,17 @@ CREATE INDEX idx_movies_deleted_on ON movies(deleted_on);
 {
   "id": 1,
   "title": "Kick-Ass",
-  "original_title": "Kick-Ass",
-  "sort_title": "Kick-Ass",
   "year": 2010,
   "tmdb_id": 12345,
   "imdb_id": "tt1250777",
   "plot": "A teenager decides to become a superhero...",
-  "outline": "Teen becomes superhero",
-  "tagline": "Shut up. Kick ass.",
-  "mpaa": "R",
-  "premiered": "2010-04-16",
-  "user_rating": 8.5,
-  "trailer_url": "plugin://plugin.video.youtube/?action=play_video&videoid=...",
-  "set_id": 1,
-  "file_path": "M:\\Movies\\Kick-Ass (2010)\\Kick-Ass.mkv",
-  "nfo_hash": "a3f2c1b9e4d8f7e6c5b4a3f2c1b9e4d8f7e6c5b4a3f2c1b9e4d8f7e6c5b4a3f2",
-  "nfo_parsed_at": "2025-10-02T10:30:00Z",
-  "status": null,
-  "error_message": null,
-  "deleted_on": null,
-  "title_locked": 0,
+  "state": "published",
+  "enriched_at": "2025-10-02T10:30:00Z",
+  "has_unpublished_changes": 0,
+  "last_published_at": "2025-10-02T10:35:00Z",
   "plot_locked": 1,
-  "created_at": "2025-10-02T10:30:00Z",
-  "updated_at": "2025-10-02T10:30:00Z"
+  "poster_locked": 1,
+  "file_path": "M:\\Movies\\Kick-Ass (2010)\\Kick-Ass.mkv"
 }
 ```
 
@@ -284,15 +424,21 @@ CREATE TABLE series (
   user_rating REAL,
 
   -- File Info
-  directory_path TEXT NOT NULL,
+  directory_path TEXT NOT NULL UNIQUE,
 
   -- NFO Validation
   nfo_hash TEXT,
   nfo_parsed_at TEXT,
 
-  -- Status
-  status TEXT,
-  error_message TEXT,
+  -- State Machine (NEW)
+  state TEXT DEFAULT 'discovered',
+  enriched_at TIMESTAMP,
+  enrichment_priority INTEGER DEFAULT 5,
+
+  -- Publishing State (NEW)
+  has_unpublished_changes BOOLEAN DEFAULT 0,
+  last_published_at TIMESTAMP,
+  published_nfo_hash TEXT,
 
   -- Soft Delete
   deleted_on TIMESTAMP,
@@ -312,10 +458,15 @@ CREATE TABLE series (
   -- Array Field Locking
   actors_locked BOOLEAN DEFAULT 0,
   directors_locked BOOLEAN DEFAULT 0,
-  writers_locked BOOLEAN DEFAULT 0,
   genres_locked BOOLEAN DEFAULT 0,
   studios_locked BOOLEAN DEFAULT 0,
   tags_locked BOOLEAN DEFAULT 0,
+
+  -- Asset Locking
+  poster_locked BOOLEAN DEFAULT 0,
+  fanart_locked BOOLEAN DEFAULT 0,
+  banner_locked BOOLEAN DEFAULT 0,
+  clearlogo_locked BOOLEAN DEFAULT 0,
 
   -- Timestamps
   created_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -324,9 +475,7 @@ CREATE TABLE series (
 
 CREATE INDEX idx_series_tmdb_id ON series(tmdb_id);
 CREATE INDEX idx_series_tvdb_id ON series(tvdb_id);
-CREATE INDEX idx_series_imdb_id ON series(imdb_id);
-CREATE INDEX idx_series_status ON series(status);
-CREATE INDEX idx_series_nfo_hash ON series(nfo_hash);
+CREATE INDEX idx_series_state ON series(state);
 CREATE INDEX idx_series_deleted_on ON series(deleted_on);
 ```
 
@@ -357,15 +506,21 @@ CREATE TABLE episodes (
   user_rating REAL,
 
   -- File Info
-  file_path TEXT NOT NULL,
+  file_path TEXT NOT NULL UNIQUE,
 
   -- NFO Validation
   nfo_hash TEXT,
   nfo_parsed_at TEXT,
 
-  -- Status
-  status TEXT,
-  error_message TEXT,
+  -- State Machine (NEW)
+  state TEXT DEFAULT 'discovered',
+  enriched_at TIMESTAMP,
+  enrichment_priority INTEGER DEFAULT 5,
+
+  -- Publishing State (NEW)
+  has_unpublished_changes BOOLEAN DEFAULT 0,
+  last_published_at TIMESTAMP,
+  published_nfo_hash TEXT,
 
   -- Soft Delete
   deleted_on TIMESTAMP,
@@ -382,6 +537,9 @@ CREATE TABLE episodes (
   directors_locked BOOLEAN DEFAULT 0,
   writers_locked BOOLEAN DEFAULT 0,
 
+  -- Asset Locking
+  thumb_locked BOOLEAN DEFAULT 0,
+
   -- Timestamps
   created_at TEXT DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -391,520 +549,261 @@ CREATE TABLE episodes (
 
 CREATE INDEX idx_episodes_series_id ON episodes(series_id);
 CREATE INDEX idx_episodes_season_episode ON episodes(season_number, episode_number);
-CREATE INDEX idx_episodes_status ON episodes(status);
-CREATE INDEX idx_episodes_nfo_hash ON episodes(nfo_hash);
+CREATE INDEX idx_episodes_state ON episodes(state);
 CREATE INDEX idx_episodes_deleted_on ON episodes(deleted_on);
 ```
 
-## Stream Details Tables
+---
 
-### video_streams
+## Asset Management Tables
 
-Stores video stream information extracted from FFprobe. One video stream per movie/episode.
+See [ASSET_MANAGEMENT.md](ASSET_MANAGEMENT.md) for complete workflow documentation.
 
-```sql
-CREATE TABLE video_streams (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  entity_type TEXT NOT NULL,      -- 'movie', 'episode'
-  entity_id INTEGER NOT NULL,
+### asset_candidates
 
-  -- Video Properties
-  codec TEXT,                      -- h264, hevc, vp9, av1
-  aspect_ratio REAL,               -- 2.35, 1.78, etc.
-  width INTEGER,                   -- 1920, 3840, etc.
-  height INTEGER,                  -- 1080, 2160, etc.
-  duration_seconds INTEGER,        -- Total runtime in seconds
+**NEW TABLE** - Tracks all available assets (Provider URLs + Cache)
 
-  -- Advanced Properties
-  bitrate INTEGER,                 -- Video bitrate in kbps
-  framerate REAL,                  -- 23.976, 24, 29.97, 60, etc.
-  hdr_type TEXT,                   -- NULL, HDR10, HDR10+, Dolby Vision, HLG
-  color_space TEXT,                -- bt709, bt2020, etc.
-  file_size BIGINT,                -- File size in bytes
-
-  -- Scan Tracking
-  scanned_at TEXT DEFAULT CURRENT_TIMESTAMP,
-
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-  updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-
-  UNIQUE(entity_type, entity_id)
-);
-
-CREATE INDEX idx_video_streams_entity ON video_streams(entity_type, entity_id);
-CREATE INDEX idx_video_streams_resolution ON video_streams(width, height);
-CREATE INDEX idx_video_streams_codec ON video_streams(codec);
-```
-
-**Example Row:**
-```json
-{
-  "id": 1,
-  "entity_type": "movie",
-  "entity_id": 1,
-  "codec": "hevc",
-  "aspect_ratio": 2.35,
-  "width": 3840,
-  "height": 2160,
-  "duration_seconds": 8160,
-  "bitrate": 45000,
-  "framerate": 23.976,
-  "hdr_type": "HDR10",
-  "color_space": "bt2020",
-  "file_size": 46179488972,
-  "scanned_at": "2025-10-04T10:30:00Z"
-}
-```
-
-**Usage Notes:**
-- Populated exclusively by FFprobe scanning (never from NFO)
-- Scanned on: webhook trigger, full library scan, manual rescan
-- Use `duration_seconds` as authoritative runtime (not NFO `<runtime>`)
-- Quality derived from resolution: 2160p = 4K, 1080p = HD, etc.
-
-### audio_streams
-
-Stores audio track information. Multiple audio streams per movie/episode.
+**Replaces**: `images` table (old two-copy system) and `trailers` table
 
 ```sql
-CREATE TABLE audio_streams (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  entity_type TEXT NOT NULL,      -- 'movie', 'episode'
-  entity_id INTEGER NOT NULL,
-  stream_index INTEGER NOT NULL,  -- 0-based index in file
-
-  -- Audio Properties
-  codec TEXT,                      -- aac, ac3, eac3, dts, truehd, flac
-  language TEXT,                   -- ISO 639-2 (eng, spa, fra, etc.)
-  channels INTEGER,                -- 2, 6, 8, etc.
-  channel_layout TEXT,             -- stereo, 5.1, 7.1, etc.
-
-  -- Advanced Properties
-  bitrate INTEGER,                 -- Audio bitrate in kbps
-  sample_rate INTEGER,             -- 48000, 96000, etc.
-  title TEXT,                      -- Stream title/description
-
-  -- Stream Flags
-  is_default BOOLEAN DEFAULT 0,
-  is_forced BOOLEAN DEFAULT 0,
-
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-  updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-
-  UNIQUE(entity_type, entity_id, stream_index)
-);
-
-CREATE INDEX idx_audio_streams_entity ON audio_streams(entity_type, entity_id);
-CREATE INDEX idx_audio_streams_language ON audio_streams(language);
-CREATE INDEX idx_audio_streams_codec ON audio_streams(codec);
-```
-
-**Example Rows:**
-```json
-[
-  {
-    "id": 1,
-    "entity_type": "movie",
-    "entity_id": 1,
-    "stream_index": 0,
-    "codec": "truehd",
-    "language": "eng",
-    "channels": 8,
-    "channel_layout": "7.1",
-    "bitrate": 4608,
-    "sample_rate": 48000,
-    "title": "English Dolby TrueHD 7.1",
-    "is_default": 1,
-    "is_forced": 0
-  },
-  {
-    "id": 2,
-    "entity_type": "movie",
-    "entity_id": 1,
-    "stream_index": 1,
-    "codec": "ac3",
-    "language": "eng",
-    "channels": 6,
-    "channel_layout": "5.1",
-    "bitrate": 640,
-    "sample_rate": 48000,
-    "title": "English AC3 5.1",
-    "is_default": 0,
-    "is_forced": 0
-  }
-]
-```
-
-### subtitle_streams
-
-Stores subtitle track information. Multiple subtitle streams per movie/episode.
-
-```sql
-CREATE TABLE subtitle_streams (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  entity_type TEXT NOT NULL,      -- 'movie', 'episode'
-  entity_id INTEGER NOT NULL,
-  stream_index INTEGER NOT NULL,  -- 0-based index (embedded) or NULL (external)
-
-  -- Subtitle Properties
-  language TEXT,                   -- ISO 639-2 (eng, spa, fra, etc.)
-  codec TEXT,                      -- subrip, ass, pgs, vobsub, etc.
-  title TEXT,                      -- Stream title/description
-
-  -- Stream Type
-  is_external BOOLEAN DEFAULT 0,  -- TRUE for .srt files, FALSE for embedded
-  file_path TEXT,                  -- Path to external subtitle file
-
-  -- Stream Flags
-  is_default BOOLEAN DEFAULT 0,
-  is_forced BOOLEAN DEFAULT 0,
-
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-  updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-
-  UNIQUE(entity_type, entity_id, stream_index, file_path)
-);
-
-CREATE INDEX idx_subtitle_streams_entity ON subtitle_streams(entity_type, entity_id);
-CREATE INDEX idx_subtitle_streams_language ON subtitle_streams(language);
-CREATE INDEX idx_subtitle_streams_external ON subtitle_streams(is_external);
-```
-
-**Example Rows:**
-```json
-[
-  {
-    "id": 1,
-    "entity_type": "movie",
-    "entity_id": 1,
-    "stream_index": 0,
-    "language": "eng",
-    "codec": "subrip",
-    "title": "English",
-    "is_external": 0,
-    "file_path": null,
-    "is_default": 1,
-    "is_forced": 0
-  },
-  {
-    "id": 2,
-    "entity_type": "movie",
-    "entity_id": 1,
-    "stream_index": null,
-    "language": "spa",
-    "codec": "subrip",
-    "title": "Spanish",
-    "is_external": 1,
-    "file_path": "/movies/The Matrix (1999)/The Matrix.spa.srt",
-    "is_default": 0,
-    "is_forced": 0
-  }
-]
-```
-
-**Usage Notes:**
-- `stream_index` is NULL for external subtitle files
-- External subtitles detected by scanning for .srt, .ass, .sub files in movie directory
-- Use `is_default` to determine which subtitle track is selected by default
-
-## Normalized Entity Tables
-
-### actors
-
-Shared actor data across all media types.
-
-```sql
-CREATE TABLE actors (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL UNIQUE,
-  thumb_url TEXT,
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-  updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX idx_actors_name ON actors(name);
-```
-
-### genres
-
-Shared genre data.
-
-```sql
-CREATE TABLE genres (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL UNIQUE,
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX idx_genres_name ON genres(name);
-```
-
-### directors
-
-Shared director data.
-
-```sql
-CREATE TABLE directors (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL UNIQUE,
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX idx_directors_name ON directors(name);
-```
-
-### writers
-
-Shared writer data.
-
-```sql
-CREATE TABLE writers (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL UNIQUE,
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX idx_writers_name ON writers(name);
-```
-
-### studios
-
-Shared studio data.
-
-```sql
-CREATE TABLE studios (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL UNIQUE,
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX idx_studios_name ON studios(name);
-```
-
-### tags
-
-User-defined tags.
-
-```sql
-CREATE TABLE tags (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL UNIQUE,
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX idx_tags_name ON tags(name);
-```
-
-### countries
-
-Country of origin data.
-
-```sql
-CREATE TABLE countries (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL UNIQUE,
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX idx_countries_name ON countries(name);
-```
-
-### sets
-
-Movie collections (e.g., "Kick-Ass Collection", "Marvel Cinematic Universe").
-
-```sql
-CREATE TABLE sets (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL UNIQUE,
-  overview TEXT,
-  tmdb_collection_id INTEGER,
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-  updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX idx_sets_name ON sets(name);
-CREATE INDEX idx_sets_tmdb_id ON sets(tmdb_collection_id);
-```
-
-**Example Row:**
-```json
-{
-  "id": 1,
-  "name": "Kick-Ass Collection",
-  "overview": "The complete Kick-Ass series featuring Dave Lizewski's adventures as the superhero Kick-Ass.",
-  "tmdb_collection_id": 169484
-}
-```
-
-### ratings
-
-Multi-source rating system.
-
-```sql
-CREATE TABLE ratings (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  entity_type TEXT NOT NULL,  -- 'movie', 'series', 'episode'
-  entity_id INTEGER NOT NULL,
-  source TEXT NOT NULL,       -- 'tmdb', 'imdb', 'rottenTomatoes', 'metacritic'
-  value REAL NOT NULL,
-  votes INTEGER,
-  is_default BOOLEAN DEFAULT 0,
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-  updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX idx_ratings_entity ON ratings(entity_type, entity_id);
-CREATE INDEX idx_ratings_source ON ratings(source);
-```
-
-**Example Rows:**
-```json
-[
-  {
-    "entity_type": "movie",
-    "entity_id": 1,
-    "source": "tmdb",
-    "value": 7.6,
-    "votes": 12543,
-    "is_default": 1
-  },
-  {
-    "entity_type": "movie",
-    "entity_id": 1,
-    "source": "imdb",
-    "value": 7.6,
-    "votes": 567890,
-    "is_default": 0
-  },
-  {
-    "entity_type": "movie",
-    "entity_id": 1,
-    "source": "rottenTomatoes",
-    "value": 76,
-    "votes": 235,
-    "is_default": 0
-  }
-]
-```
-
-### images
-
-Stores image assets with three-tier architecture (Provider → Cache → Library).
-
-```sql
-CREATE TABLE images (
+CREATE TABLE asset_candidates (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   entity_type TEXT NOT NULL,      -- 'movie', 'series', 'episode', 'actor'
   entity_id INTEGER NOT NULL,
-  image_type TEXT NOT NULL,       -- 'poster', 'fanart', 'landscape', 'keyart', 'banner', 'clearart', 'clearlogo', 'discart'
+  asset_type TEXT NOT NULL,       -- 'poster', 'fanart', 'banner', 'clearlogo', 'trailer', 'subtitle', etc.
 
-  -- Image Sources
-  provider_url TEXT,              -- Original provider URL
-  cache_path TEXT,                -- Path in cache directory
-  library_path TEXT,              -- Path in library directory (copied on selection)
+  -- Provider information
+  provider TEXT NOT NULL,         -- 'tmdb', 'tvdb', 'fanart.tv', 'local'
+  provider_url TEXT,              -- NULL if local file
+  provider_metadata TEXT,         -- JSON: { language, vote_avg, vote_count }
 
-  -- Image Metadata
-  width INTEGER,
-  height INTEGER,
+  -- Asset properties (from provider API, before download)
+  width INTEGER,                  -- For images
+  height INTEGER,                 -- For images
+  duration_seconds INTEGER,       -- For trailers
   file_size INTEGER,
-  perceptual_hash TEXT,           -- pHash for duplicate detection
 
-  -- Selection Metrics
-  vote_average REAL,              -- Provider rating
-  vote_count INTEGER,
-  is_selected BOOLEAN DEFAULT 0,  -- Currently selected for this entity+type
+  -- Download state
+  is_downloaded BOOLEAN DEFAULT 0,
+  cache_path TEXT,                -- NULL until downloaded
+  content_hash TEXT,              -- SHA256 of file content
+  perceptual_hash TEXT,           -- pHash for duplicate detection (images only)
 
-  -- Locking
-  locked BOOLEAN DEFAULT 0,       -- User manually selected this image
+  -- Selection state
+  is_selected BOOLEAN DEFAULT 0,
+  is_rejected BOOLEAN DEFAULT 0,  -- User or algorithm rejected
+  selected_by TEXT,               -- 'auto', 'manual', 'local'
+  selected_at TIMESTAMP,
 
-  -- Timestamps
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-  updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+  -- Scoring (for auto-selection algorithm)
+  auto_score REAL,                -- 0-100
+
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+  -- Cascading deletes when parent entity deleted
+  FOREIGN KEY (entity_type, entity_id) REFERENCES movies(id) ON DELETE CASCADE,
+  FOREIGN KEY (entity_type, entity_id) REFERENCES series(id) ON DELETE CASCADE,
+  FOREIGN KEY (entity_type, entity_id) REFERENCES episodes(id) ON DELETE CASCADE
 );
 
-CREATE INDEX idx_images_entity ON images(entity_type, entity_id);
-CREATE INDEX idx_images_type ON images(image_type);
-CREATE INDEX idx_images_selected ON images(is_selected);
-CREATE INDEX idx_images_phash ON images(perceptual_hash);
+-- Critical Indexes
+CREATE INDEX idx_candidates_entity ON asset_candidates(entity_type, entity_id, asset_type);
+CREATE INDEX idx_candidates_selected ON asset_candidates(entity_type, entity_id, is_selected);
+CREATE INDEX idx_candidates_downloaded ON asset_candidates(is_downloaded);
+CREATE INDEX idx_candidates_content_hash ON asset_candidates(content_hash);
+CREATE INDEX idx_candidates_provider_url ON asset_candidates(provider, provider_url);
+
+-- Performance Index
+CREATE INDEX idx_candidates_needs_download
+  ON asset_candidates(is_selected, is_downloaded)
+  WHERE is_selected = 1 AND is_downloaded = 0;
 ```
 
-**Image Type Reference:**
-- `poster`: 2:3 aspect ratio (movie/series posters)
-- `fanart`: 16:9 backdrop images
-- `landscape`: 16:9 landscape artwork
-- `keyart`: Promotional key art
-- `banner`: Wide banner (10:1 aspect ratio)
-- `clearart`: Transparent logo/character art
-- `clearlogo`: Transparent title logo
-- `discart`: Disc/DVD artwork
+**Example Rows:**
+```json
+[
+  {
+    "id": 123,
+    "entity_type": "movie",
+    "entity_id": 1,
+    "asset_type": "poster",
+    "provider": "tmdb",
+    "provider_url": "https://image.tmdb.org/t/p/original/abc.jpg",
+    "width": 2000,
+    "height": 3000,
+    "is_downloaded": 1,
+    "cache_path": "/data/cache/assets/abc123...xyz.jpg",
+    "content_hash": "abc123def456...",
+    "perceptual_hash": "a1b2c3d4...",
+    "is_selected": 1,
+    "selected_by": "manual",
+    "auto_score": 87.5
+  },
+  {
+    "id": 124,
+    "entity_type": "movie",
+    "entity_id": 1,
+    "asset_type": "poster",
+    "provider": "tmdb",
+    "provider_url": "https://image.tmdb.org/t/p/original/def.jpg",
+    "width": 1500,
+    "height": 2250,
+    "is_downloaded": 0,
+    "is_selected": 0,
+    "is_rejected": 0,
+    "auto_score": 72.3
+  }
+]
+```
 
-**Usage Notes:**
-- `provider_url` → downloaded to `cache_path` on first fetch
-- When image is selected (`is_selected = 1`), copied to `library_path`
-- `locked = 1` prevents automatic replacement during updates
-- Duplicate detection uses `perceptual_hash` with 90% similarity threshold
-- See `@docs/IMAGE_MANAGEMENT.md` for complete workflow
+### cache_inventory
 
-### trailers
-
-Stores trailer file metadata. One-to-one relationship with movies/episodes.
+**NEW TABLE** - Tracks content-addressed cache with reference counting
 
 ```sql
-CREATE TABLE trailers (
+CREATE TABLE cache_inventory (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  entity_type TEXT NOT NULL,      -- 'movie', 'episode', 'series'
-  entity_id INTEGER NOT NULL,
-
-  -- File Properties
+  content_hash TEXT UNIQUE NOT NULL,
   file_path TEXT NOT NULL,
-  file_size BIGINT,
+  file_size BIGINT NOT NULL,
+  asset_type TEXT NOT NULL,       -- 'image', 'trailer', 'subtitle'
+  mime_type TEXT,
 
-  -- Video Properties (from FFprobe)
-  duration_seconds INTEGER,
-  resolution TEXT,                -- '1080p', '720p', '2160p', etc.
-  codec TEXT,                     -- h264, hevc, etc.
+  -- Reference counting
+  reference_count INTEGER DEFAULT 0,
 
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-  updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  -- Lifecycle
+  first_used_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  last_used_at TIMESTAMP,
+  orphaned_at TIMESTAMP,          -- Set when ref_count = 0
 
-  UNIQUE(entity_type, entity_id)
+  -- Image metadata
+  width INTEGER,
+  height INTEGER,
+  perceptual_hash TEXT,
+
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_trailers_entity ON trailers(entity_type, entity_id);
-```
+-- Critical Indexes
+CREATE INDEX idx_cache_content_hash ON cache_inventory(content_hash);
+CREATE INDEX idx_cache_orphaned ON cache_inventory(orphaned_at);
+CREATE INDEX idx_cache_perceptual_hash ON cache_inventory(perceptual_hash);
 
-**Usage Notes:**
-- Only ONE trailer per movie/episode (enforced by UNIQUE constraint)
-- For TV shows: trailers are ONLY at series level (`entity_type = 'series'`), never episodes
-- Only local file paths (never URL-based trailers)
-- NFO `<trailer>` URLs are NEVER read or written (see NFO_PARSING.md)
-- Trailer discovery part of unified scan process (see WORKFLOWS.md)
-- File patterns: `<movie>-trailer.mkv`, `trailer.mkv`, `<movie>-trailer1.mp4`, etc.
+-- Garbage Collection Index
+CREATE INDEX idx_cache_gc
+  ON cache_inventory(orphaned_at)
+  WHERE orphaned_at IS NOT NULL;
+```
 
 **Example Row:**
 ```json
 {
   "id": 1,
-  "entity_type": "movie",
-  "entity_id": 1,
-  "file_path": "/movies/Kick-Ass (2010)/Kick-Ass-trailer.mkv",
-  "file_size": 52428800,
-  "duration_seconds": 150,
-  "resolution": "1080p",
-  "codec": "h264"
+  "content_hash": "abc123def456789012345678901234567890123456789012345678901234",
+  "file_path": "/data/cache/assets/abc123def456...xyz.jpg",
+  "file_size": 1048576,
+  "asset_type": "image",
+  "mime_type": "image/jpeg",
+  "reference_count": 3,
+  "width": 2000,
+  "height": 3000,
+  "perceptual_hash": "a1b2c3d4e5f6g7h8",
+  "first_used_at": "2025-10-01T10:00:00Z",
+  "last_used_at": "2025-10-04T15:30:00Z",
+  "orphaned_at": null
 }
+```
+
+### asset_selection_config
+
+**NEW TABLE** - Configures auto-selection algorithm per library
+
+```sql
+CREATE TABLE asset_selection_config (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  library_id INTEGER NOT NULL,
+  asset_type TEXT NOT NULL,
+
+  -- Quantity
+  min_count INTEGER DEFAULT 1,
+  max_count INTEGER DEFAULT 3,
+
+  -- Quality filters
+  min_width INTEGER,
+  min_height INTEGER,
+  prefer_language TEXT DEFAULT 'en',
+
+  -- Scoring weights (must sum to 1.0)
+  weight_resolution REAL DEFAULT 0.3,
+  weight_votes REAL DEFAULT 0.4,
+  weight_language REAL DEFAULT 0.2,
+  weight_provider REAL DEFAULT 0.1,
+
+  -- Duplicate detection
+  phash_similarity_threshold REAL DEFAULT 0.90,
+
+  -- Provider priority (JSON array)
+  provider_priority TEXT DEFAULT '["tmdb", "tvdb", "fanart.tv"]',
+
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+  FOREIGN KEY (library_id) REFERENCES libraries(id) ON DELETE CASCADE,
+  UNIQUE(library_id, asset_type)
+);
+
+CREATE INDEX idx_asset_config_library ON asset_selection_config(library_id);
+```
+
+**Example Row:**
+```json
+{
+  "library_id": 1,
+  "asset_type": "poster",
+  "min_count": 1,
+  "max_count": 3,
+  "min_width": 1000,
+  "min_height": 1500,
+  "prefer_language": "en",
+  "weight_resolution": 0.3,
+  "weight_votes": 0.4,
+  "weight_language": 0.2,
+  "weight_provider": 0.1,
+  "phash_similarity_threshold": 0.90,
+  "provider_priority": "[\"tmdb\", \"fanart.tv\", \"tvdb\"]"
+}
+```
+
+### rejected_assets
+
+**NEW TABLE** - Global blacklist for rejected assets
+
+```sql
+CREATE TABLE rejected_assets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  provider TEXT NOT NULL,
+  provider_url TEXT NOT NULL,
+  asset_type TEXT NOT NULL,
+  rejected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  reason TEXT,  -- 'user_rejected', 'duplicate', 'low_quality', 'inappropriate'
+
+  UNIQUE(provider, provider_url)
+);
+
+CREATE INDEX idx_rejected_provider_url ON rejected_assets(provider, provider_url);
 ```
 
 ### unknown_files
 
-Temporary tracking for unrecognized files discovered during scanning.
+Tracks unrecognized files discovered during scanning.
 
 ```sql
 CREATE TABLE unknown_files (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   entity_type TEXT NOT NULL,      -- 'movie', 'series', 'episode'
-  entity_id INTEGER NOT NULL,     -- Links to parent media item
+  entity_id INTEGER NOT NULL,
 
   -- File Properties
   file_path TEXT NOT NULL UNIQUE,
@@ -915,7 +814,10 @@ CREATE TABLE unknown_files (
 
   discovered_at TEXT DEFAULT CURRENT_TIMESTAMP,
 
-  FOREIGN KEY (entity_type, entity_id) REFERENCES movies(id) ON DELETE CASCADE
+  -- Cascading delete when parent entity deleted
+  FOREIGN KEY (entity_type, entity_id) REFERENCES movies(id) ON DELETE CASCADE,
+  FOREIGN KEY (entity_type, entity_id) REFERENCES series(id) ON DELETE CASCADE,
+  FOREIGN KEY (entity_type, entity_id) REFERENCES episodes(id) ON DELETE CASCADE
 );
 
 CREATE INDEX idx_unknown_files_entity ON unknown_files(entity_type, entity_id);
@@ -947,17 +849,6 @@ CREATE INDEX idx_unknown_files_path ON unknown_files(file_path);
     "file_extension": "png",
     "mime_type": "image/png",
     "discovered_at": "2025-10-04T10:30:00Z"
-  },
-  {
-    "id": 2,
-    "entity_type": "movie",
-    "entity_id": 1,
-    "file_path": "/movies/Kick-Ass (2010)/.stfolder",
-    "file_name": ".stfolder",
-    "file_size": 0,
-    "file_extension": null,
-    "mime_type": "application/octet-stream",
-    "discovered_at": "2025-10-04T10:31:00Z"
   }
 ]
 ```
@@ -971,8 +862,8 @@ CREATE TABLE completeness_config (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   media_type TEXT NOT NULL UNIQUE,  -- 'movies', 'series', 'episodes'
 
-  -- Required Scalar Fields
-  required_fields TEXT NOT NULL,    -- JSON array: ["plot", "mpaa", "premiered", ...]
+  -- Required Scalar Fields (JSON array)
+  required_fields TEXT NOT NULL,    -- ["plot", "mpaa", "premiered"]
 
   -- Required Images (exact quantities)
   required_posters INTEGER DEFAULT 1,
@@ -1009,8 +900,6 @@ VALUES ('movies', '["plot", "mpaa", "premiered"]', 1, 1);
   "required_trailers": 2,
   "required_subtitles": 0
 }
-
-**Note:** Runtime is not a required field as it comes from `video_streams.duration_seconds` (FFprobe scan).
 ```
 
 **Completeness Calculation:**
@@ -1025,13 +914,13 @@ function calculateCompleteness(movie: Movie, config: CompletenessConfig): number
     if (movie[field] !== null && movie[field] !== '') satisfied++;
   }
 
-  // Check images
-  const imageCounts = getImageCounts(movie.id);
-  for (const imageType of IMAGE_TYPES) {
-    const required = config[`required_${imageType}s`];
+  // Check assets
+  const assetCounts = getAssetCounts(movie.id);
+  for (const assetType of ASSET_TYPES) {
+    const required = config[`required_${assetType}s`];
     if (required > 0) {
       total++;
-      if (imageCounts[imageType] >= required) satisfied++;
+      if (assetCounts[assetType] >= required) satisfied++;
     }
   }
 
@@ -1039,133 +928,434 @@ function calculateCompleteness(movie: Movie, config: CompletenessConfig): number
 }
 ```
 
-## Many-to-Many Link Tables
+---
 
-### movies_actors
+## Automation & Publishing Tables
 
-Links movies to actors with role information.
+### library_automation_config
+
+**NEW TABLE** - Configures automation behavior per library
 
 ```sql
-CREATE TABLE movies_actors (
-  movie_id INTEGER NOT NULL,
-  actor_id INTEGER NOT NULL,
-  role TEXT,              -- Character name
-  order_index INTEGER,    -- Display order in credits
-  PRIMARY KEY (movie_id, actor_id),
-  FOREIGN KEY (movie_id) REFERENCES movies(id) ON DELETE CASCADE,
-  FOREIGN KEY (actor_id) REFERENCES actors(id) ON DELETE CASCADE
-);
+CREATE TABLE library_automation_config (
+  library_id INTEGER PRIMARY KEY,
 
-CREATE INDEX idx_movies_actors_movie ON movies_actors(movie_id);
-CREATE INDEX idx_movies_actors_actor ON movies_actors(actor_id);
+  -- Automation level
+  automation_mode TEXT DEFAULT 'hybrid',  -- 'manual', 'yolo', 'hybrid'
+
+  -- Phase 2 behavior
+  auto_enrich BOOLEAN DEFAULT 1,
+  auto_select_assets BOOLEAN DEFAULT 1,
+  auto_publish BOOLEAN DEFAULT 0,         -- Only true for 'yolo' mode
+
+  -- Webhook behavior
+  webhook_enabled BOOLEAN DEFAULT 1,
+  webhook_auto_publish BOOLEAN DEFAULT 1,  -- Always publish on webhook
+
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+  FOREIGN KEY (library_id) REFERENCES libraries(id) ON DELETE CASCADE
+);
 ```
 
-**Example Rows:**
+**Example Configurations:**
+
+**Manual Mode:**
 ```json
-[
-  {
-    "movie_id": 1,
-    "actor_id": 1,
-    "role": "Dave Lizewski / Kick-Ass",
-    "order_index": 0
-  },
-  {
-    "movie_id": 1,
-    "actor_id": 2,
-    "role": "Mindy Macready / Hit-Girl",
-    "order_index": 1
-  }
-]
+{
+  "library_id": 1,
+  "automation_mode": "manual",
+  "auto_enrich": 0,
+  "auto_select_assets": 0,
+  "auto_publish": 0,
+  "webhook_enabled": 0
+}
 ```
 
-### movies_genres
+**YOLO Mode:**
+```json
+{
+  "library_id": 1,
+  "automation_mode": "yolo",
+  "auto_enrich": 1,
+  "auto_select_assets": 1,
+  "auto_publish": 1,
+  "webhook_enabled": 1,
+  "webhook_auto_publish": 1
+}
+```
+
+**Hybrid Mode:**
+```json
+{
+  "library_id": 1,
+  "automation_mode": "hybrid",
+  "auto_enrich": 1,
+  "auto_select_assets": 1,
+  "auto_publish": 0,
+  "webhook_enabled": 1,
+  "webhook_auto_publish": 1
+}
+```
+
+### publish_log
+
+**NEW TABLE** - Audit trail for publish operations
 
 ```sql
-CREATE TABLE movies_genres (
-  movie_id INTEGER NOT NULL,
-  genre_id INTEGER NOT NULL,
-  PRIMARY KEY (movie_id, genre_id),
-  FOREIGN KEY (movie_id) REFERENCES movies(id) ON DELETE CASCADE,
-  FOREIGN KEY (genre_id) REFERENCES genres(id) ON DELETE CASCADE
+CREATE TABLE publish_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  entity_type TEXT NOT NULL,
+  entity_id INTEGER NOT NULL,
+
+  -- Publish details
+  published_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  published_by TEXT,              -- 'auto', 'manual', 'webhook'
+  success BOOLEAN DEFAULT 1,
+  error_message TEXT,
+
+  -- Published content
+  nfo_content TEXT,               -- Full NFO content
+  nfo_hash TEXT,                  -- SHA256 of NFO
+  assets_published TEXT,          -- JSON array: [{ asset_type, cache_path, library_path, content_hash }]
+
+  -- Metadata
+  duration_ms INTEGER,
+
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE INDEX idx_publish_log_entity ON publish_log(entity_type, entity_id);
+CREATE INDEX idx_publish_log_published_at ON publish_log(published_at);
+CREATE INDEX idx_publish_log_success ON publish_log(success);
 ```
 
-### movies_directors
+**Example Row:**
+```json
+{
+  "id": 1,
+  "entity_type": "movie",
+  "entity_id": 1,
+  "published_at": "2025-10-02T10:35:00Z",
+  "published_by": "manual",
+  "success": 1,
+  "nfo_content": "<?xml version=\"1.0\"?>\n<movie>...",
+  "nfo_hash": "abc123...",
+  "assets_published": "[{\"asset_type\":\"poster\",\"cache_path\":\"/data/cache/assets/abc.jpg\",\"library_path\":\"/movies/The Matrix/poster.jpg\",\"content_hash\":\"abc123...\"}]",
+  "duration_ms": 1250
+}
+```
+
+### job_queue
+
+**NEW TABLE** - Background job processing queue
 
 ```sql
-CREATE TABLE movies_directors (
-  movie_id INTEGER NOT NULL,
-  director_id INTEGER NOT NULL,
-  PRIMARY KEY (movie_id, director_id),
-  FOREIGN KEY (movie_id) REFERENCES movies(id) ON DELETE CASCADE,
-  FOREIGN KEY (director_id) REFERENCES directors(id) ON DELETE CASCADE
+CREATE TABLE job_queue (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  job_type TEXT NOT NULL,           -- 'scan_directory', 'enrich_metadata', 'download_asset', 'publish_entity', 'webhook_process'
+  priority INTEGER NOT NULL,        -- 1 (critical) to 10 (low)
+  status TEXT DEFAULT 'pending',    -- 'pending', 'processing', 'completed', 'failed'
+
+  -- Payload
+  payload TEXT NOT NULL,            -- JSON with job-specific data
+
+  -- Retry logic
+  retry_count INTEGER DEFAULT 0,
+  max_retries INTEGER DEFAULT 3,
+  error_message TEXT,
+
+  -- Timing
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  started_at TIMESTAMP,
+  completed_at TIMESTAMP
 );
+
+CREATE INDEX idx_job_queue_status ON job_queue(status);
+CREATE INDEX idx_job_queue_priority ON job_queue(status, priority, created_at);
+
+-- Worker query optimization
+CREATE INDEX idx_job_queue_worker
+  ON job_queue(status, priority, created_at)
+  WHERE status = 'pending';
 ```
 
-### movies_writers
+**Priority Levels:**
+- **1 (Critical)**: Webhooks
+- **2 (High)**: User-triggered actions
+- **5 (Normal)**: Auto-enrichment
+- **7 (Low)**: Library scans
+- **10 (Background)**: Garbage collection, cleanup
+
+**Example Row:**
+```json
+{
+  "id": 1,
+  "job_type": "enrich_metadata",
+  "priority": 2,
+  "status": "completed",
+  "payload": "{\"entity_type\":\"movie\",\"entity_id\":1,\"provider\":\"tmdb\"}",
+  "retry_count": 0,
+  "created_at": "2025-10-02T10:30:00Z",
+  "started_at": "2025-10-02T10:30:05Z",
+  "completed_at": "2025-10-02T10:30:07Z"
+}
+```
+
+---
+
+## Stream Details Tables
+
+### video_streams
+
+Stores video stream information extracted from FFprobe.
 
 ```sql
-CREATE TABLE movies_writers (
-  movie_id INTEGER NOT NULL,
-  writer_id INTEGER NOT NULL,
-  PRIMARY KEY (movie_id, writer_id),
-  FOREIGN KEY (movie_id) REFERENCES movies(id) ON DELETE CASCADE,
-  FOREIGN KEY (writer_id) REFERENCES writers(id) ON DELETE CASCADE
+CREATE TABLE video_streams (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  entity_type TEXT NOT NULL,      -- 'movie', 'episode'
+  entity_id INTEGER NOT NULL,
+
+  -- Video Properties
+  codec TEXT,                      -- h264, hevc, vp9, av1
+  aspect_ratio REAL,               -- 2.35, 1.78, etc.
+  width INTEGER,                   -- 1920, 3840, etc.
+  height INTEGER,                  -- 1080, 2160, etc.
+  duration_seconds INTEGER,        -- Total runtime in seconds
+
+  -- Advanced Properties
+  bitrate INTEGER,                 -- Video bitrate in kbps
+  framerate REAL,                  -- 23.976, 24, 29.97, 60, etc.
+  hdr_type TEXT,                   -- NULL, HDR10, HDR10+, Dolby Vision, HLG
+  color_space TEXT,                -- bt709, bt2020, etc.
+  file_size BIGINT,                -- File size in bytes
+
+  -- Scan Tracking
+  scanned_at TEXT DEFAULT CURRENT_TIMESTAMP,
+
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+
+  UNIQUE(entity_type, entity_id)
 );
+
+CREATE INDEX idx_video_streams_entity ON video_streams(entity_type, entity_id);
+CREATE INDEX idx_video_streams_resolution ON video_streams(width, height);
+CREATE INDEX idx_video_streams_codec ON video_streams(codec);
 ```
 
-### movies_studios
+### audio_streams
+
+Stores audio track information.
 
 ```sql
-CREATE TABLE movies_studios (
-  movie_id INTEGER NOT NULL,
-  studio_id INTEGER NOT NULL,
-  PRIMARY KEY (movie_id, studio_id),
-  FOREIGN KEY (movie_id) REFERENCES movies(id) ON DELETE CASCADE,
-  FOREIGN KEY (studio_id) REFERENCES studios(id) ON DELETE CASCADE
+CREATE TABLE audio_streams (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  entity_type TEXT NOT NULL,      -- 'movie', 'episode'
+  entity_id INTEGER NOT NULL,
+  stream_index INTEGER NOT NULL,  -- 0-based index in file
+
+  -- Audio Properties
+  codec TEXT,                      -- aac, ac3, eac3, dts, truehd, flac
+  language TEXT,                   -- ISO 639-2 (eng, spa, fra, etc.)
+  channels INTEGER,                -- 2, 6, 8, etc.
+  channel_layout TEXT,             -- stereo, 5.1, 7.1, etc.
+
+  -- Advanced Properties
+  bitrate INTEGER,                 -- Audio bitrate in kbps
+  sample_rate INTEGER,             -- 48000, 96000, etc.
+  title TEXT,                      -- Stream title/description
+
+  -- Stream Flags
+  is_default BOOLEAN DEFAULT 0,
+  is_forced BOOLEAN DEFAULT 0,
+
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+
+  UNIQUE(entity_type, entity_id, stream_index)
 );
+
+CREATE INDEX idx_audio_streams_entity ON audio_streams(entity_type, entity_id);
+CREATE INDEX idx_audio_streams_language ON audio_streams(language);
 ```
 
-### movies_tags
+### subtitle_streams
+
+Stores subtitle track information.
 
 ```sql
-CREATE TABLE movies_tags (
-  movie_id INTEGER NOT NULL,
-  tag_id INTEGER NOT NULL,
-  PRIMARY KEY (movie_id, tag_id),
-  FOREIGN KEY (movie_id) REFERENCES movies(id) ON DELETE CASCADE,
-  FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
+CREATE TABLE subtitle_streams (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  entity_type TEXT NOT NULL,      -- 'movie', 'episode'
+  entity_id INTEGER NOT NULL,
+  stream_index INTEGER,           -- 0-based index (NULL for external)
+
+  -- Subtitle Properties
+  language TEXT,                   -- ISO 639-2 (eng, spa, fra, etc.)
+  codec TEXT,                      -- subrip, ass, pgs, vobsub, etc.
+  title TEXT,                      -- Stream title/description
+
+  -- Stream Type
+  is_external BOOLEAN DEFAULT 0,  -- TRUE for .srt files, FALSE for embedded
+  file_path TEXT,                  -- Path to external subtitle file
+
+  -- Stream Flags
+  is_default BOOLEAN DEFAULT 0,
+  is_forced BOOLEAN DEFAULT 0,
+
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+
+  UNIQUE(entity_type, entity_id, stream_index, file_path)
 );
+
+CREATE INDEX idx_subtitle_streams_entity ON subtitle_streams(entity_type, entity_id);
+CREATE INDEX idx_subtitle_streams_language ON subtitle_streams(language);
+CREATE INDEX idx_subtitle_streams_external ON subtitle_streams(is_external);
 ```
 
-### movies_countries
+---
+
+## Normalized Entity Tables
+
+### actors
+
+Shared actor data across all media types.
 
 ```sql
-CREATE TABLE movies_countries (
-  movie_id INTEGER NOT NULL,
-  country_id INTEGER NOT NULL,
-  PRIMARY KEY (movie_id, country_id),
-  FOREIGN KEY (movie_id) REFERENCES movies(id) ON DELETE CASCADE,
-  FOREIGN KEY (country_id) REFERENCES countries(id) ON DELETE CASCADE
+CREATE TABLE actors (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE,
+  tmdb_id INTEGER,
+  thumb_url TEXT,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE INDEX idx_actors_name ON actors(name);
+CREATE INDEX idx_actors_tmdb_id ON actors(tmdb_id);
 ```
 
-### Similar Link Tables for TV Shows
+### genres
 
 ```sql
--- tvshows_actors, tvshows_genres, tvshows_directors,
--- tvshows_studios, tvshows_tags
--- (Similar structure to movies_* tables)
+CREATE TABLE genres (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
 
--- episodes_actors, episodes_directors, episodes_writers
--- (Episode-specific credits)
+CREATE INDEX idx_genres_name ON genres(name);
 ```
+
+### directors
+
+```sql
+CREATE TABLE directors (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_directors_name ON directors(name);
+```
+
+### writers
+
+```sql
+CREATE TABLE writers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_writers_name ON writers(name);
+```
+
+### studios
+
+```sql
+CREATE TABLE studios (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_studios_name ON studios(name);
+```
+
+### tags
+
+```sql
+CREATE TABLE tags (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_tags_name ON tags(name);
+```
+
+### countries
+
+```sql
+CREATE TABLE countries (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_countries_name ON countries(name);
+```
+
+### sets
+
+Movie collections (e.g., "Kick-Ass Collection").
+
+```sql
+CREATE TABLE sets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE,
+  overview TEXT,
+  tmdb_collection_id INTEGER,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_sets_name ON sets(name);
+CREATE INDEX idx_sets_tmdb_id ON sets(tmdb_collection_id);
+```
+
+### ratings
+
+Multi-source rating system.
+
+```sql
+CREATE TABLE ratings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  entity_type TEXT NOT NULL,  -- 'movie', 'series', 'episode'
+  entity_id INTEGER NOT NULL,
+  source TEXT NOT NULL,       -- 'tmdb', 'imdb', 'rottenTomatoes', 'metacritic'
+  value REAL NOT NULL,
+  votes INTEGER,
+  is_default BOOLEAN DEFAULT 0,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_ratings_entity ON ratings(entity_type, entity_id);
+CREATE INDEX idx_ratings_source ON ratings(source);
+```
+
+---
 
 ## System Tables
 
 ### libraries
 
-Library configuration and scan tracking.
+Library configuration.
 
 ```sql
 CREATE TABLE libraries (
@@ -1217,6 +1407,7 @@ Tracks library scan operations.
 CREATE TABLE scan_jobs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   library_id INTEGER NOT NULL,
+  scan_type TEXT NOT NULL,      -- 'full', 'incremental', 'single_directory'
   status TEXT NOT NULL,         -- 'running', 'completed', 'failed'
   started_at TEXT NOT NULL,
   completed_at TEXT,
@@ -1231,233 +1422,8 @@ CREATE TABLE scan_jobs (
 
 CREATE INDEX idx_scan_jobs_library ON scan_jobs(library_id);
 CREATE INDEX idx_scan_jobs_status ON scan_jobs(status);
+CREATE INDEX idx_scan_jobs_started ON scan_jobs(started_at);
 ```
-
-### jobs
-
-Background job processing queue.
-
-```sql
-CREATE TABLE jobs (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  type TEXT NOT NULL,           -- 'metadata_fetch', 'library_scan', 'webhook_process'
-  status TEXT NOT NULL,         -- 'pending', 'processing', 'completed', 'failed'
-  priority INTEGER DEFAULT 5,   -- 1 (highest) to 10 (lowest)
-  payload TEXT NOT NULL,        -- JSON data
-  retry_count INTEGER DEFAULT 0,
-  max_retries INTEGER DEFAULT 3,
-  error_message TEXT,
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-  started_at TEXT,
-  completed_at TEXT
-);
-
-CREATE INDEX idx_jobs_status ON jobs(status);
-CREATE INDEX idx_jobs_type ON jobs(type);
-CREATE INDEX idx_jobs_priority ON jobs(priority);
-```
-
-### player_path_mappings
-
-Maps filesystem paths between Metarr's view and media player's view.
-
-```sql
-CREATE TABLE player_path_mappings (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  player_id INTEGER NOT NULL,
-  metarr_path TEXT NOT NULL,    -- Path as Metarr sees it (e.g., "M:\Movies\")
-  player_path TEXT NOT NULL,    -- Path as player sees it (e.g., "/mnt/movies/")
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-  updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (player_id) REFERENCES media_players(id) ON DELETE CASCADE
-);
-
-CREATE INDEX idx_player_path_mappings_player ON player_path_mappings(player_id);
-```
-
-**Example Mappings:**
-```json
-[
-  {
-    "player_id": 1,
-    "metarr_path": "M:\\Movies\\",
-    "player_path": "/mnt/movies/"
-  },
-  {
-    "player_id": 1,
-    "metarr_path": "M:\\TV Shows\\",
-    "player_path": "/mnt/tv/"
-  }
-]
-```
-
-**Translation Algorithm:**
-- Sort mappings by `metarr_path` length (longest first)
-- Find first mapping where `metarr_path` is prefix of file path
-- Replace prefix with `player_path`
-- See `@docs/PATH_MAPPING.md` for details
-
-### media_player_groups
-
-Groups media players that share a library (e.g., Kodi MySQL shared library).
-
-```sql
-CREATE TABLE media_player_groups (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL UNIQUE,
-  description TEXT,
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-  updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-);
-```
-
-### media_player_group_members
-
-Links media players to groups.
-
-```sql
-CREATE TABLE media_player_group_members (
-  group_id INTEGER NOT NULL,
-  player_id INTEGER NOT NULL,
-  PRIMARY KEY (group_id, player_id),
-  FOREIGN KEY (group_id) REFERENCES media_player_groups(id) ON DELETE CASCADE,
-  FOREIGN KEY (player_id) REFERENCES media_players(id) ON DELETE CASCADE
-);
-```
-
-**Group Behavior:**
-- All players in a group share the same path mappings
-- Library scan on any group member triggers scan on representative player only
-- One player per group is designated as "representative" for path operations
-- See `@docs/PATH_MAPPING.md` for Kodi shared library configuration
-
-### manager_path_mappings
-
-Maps filesystem paths between Metarr's view and media manager's view (Sonarr/Radarr/Lidarr).
-
-```sql
-CREATE TABLE manager_path_mappings (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  manager_type TEXT NOT NULL,   -- 'sonarr', 'radarr', 'lidarr'
-  manager_path TEXT NOT NULL,   -- Path as manager sees it (webhook payload)
-  metarr_path TEXT NOT NULL,    -- Path as Metarr sees it (filesystem access)
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-  updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX idx_manager_path_mappings_type ON manager_path_mappings(manager_type);
-```
-
-**Example Mappings:**
-```json
-[
-  {
-    "manager_type": "radarr",
-    "manager_path": "/data/movies/",
-    "metarr_path": "M:\\Movies\\"
-  }
-]
-```
-
-### activity_log
-
-Comprehensive audit trail of all significant events, user actions, and webhook activity.
-
-```sql
-CREATE TABLE activity_log (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  timestamp TEXT NOT NULL,
-  event_type TEXT NOT NULL,     -- 'webhook', 'download_complete', 'scan_completed', 'user_edit', 'movie.download.complete', etc.
-  severity TEXT NOT NULL,       -- 'info', 'warning', 'error', 'success'
-  entity_type TEXT,             -- 'movie', 'series', 'episode', 'library', 'player', 'webhook'
-  entity_id INTEGER,
-  description TEXT NOT NULL,
-  metadata TEXT,                -- JSON with event-specific details
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX idx_activity_log_timestamp ON activity_log(timestamp);
-CREATE INDEX idx_activity_log_event_type ON activity_log(event_type);
-CREATE INDEX idx_activity_log_severity ON activity_log(severity);
-CREATE INDEX idx_activity_log_entity ON activity_log(entity_type, entity_id);
-```
-
-**Event Types**:
-
-1. **Webhook Events** (`event_type = 'webhook'`):
-   - All webhooks from Radarr/Sonarr/Lidarr
-   - Full payload stored in `metadata` for debugging
-   - See `@docs/WEBHOOKS.md`
-
-2. **Notification Events** (`event_type = 'movie.download.complete'`, etc.):
-   - System-wide events that can trigger notifications
-   - See `@docs/NOTIFICATIONS.md`
-
-3. **System Events** (`event_type = 'scan_completed'`, etc.):
-   - Library scans, garbage collection, scheduled tasks
-
-4. **User Actions** (`event_type = 'user_edit'`, etc.):
-   - Manual metadata edits, user-initiated scans
-
-**Example Entries:**
-```json
-[
-  {
-    "timestamp": "2025-10-02T10:30:00Z",
-    "event_type": "webhook",
-    "severity": "info",
-    "entity_type": "webhook",
-    "entity_id": null,
-    "description": "Radarr Download: The Matrix",
-    "metadata": {
-      "source": "radarr",
-      "eventType": "Download",
-      "status": "processed",
-      "processingTime": 1250,
-      "payload": { "movie": { "title": "The Matrix", "tmdbId": 603 } }
-    }
-  },
-  {
-    "timestamp": "2025-10-02T10:30:05Z",
-    "event_type": "movie.download.complete",
-    "severity": "success",
-    "entity_type": "movie",
-    "entity_id": 1,
-    "description": "Movie downloaded: The Matrix",
-    "metadata": {
-      "movie": { "title": "The Matrix", "year": 1999, "quality": "Bluray-1080p" }
-    }
-  },
-  {
-    "timestamp": "2025-10-02T10:35:00Z",
-    "event_type": "metadata_updated",
-    "severity": "info",
-    "entity_type": "movie",
-    "entity_id": 1,
-    "description": "Metadata enriched from TMDB",
-    "metadata": {
-      "provider": "tmdb",
-      "fields_updated": ["plot", "ratings", "actors"]
-    }
-  },
-  {
-    "timestamp": "2025-10-03T02:00:00Z",
-    "event_type": "system.scan.complete",
-    "severity": "success",
-    "entity_type": "library",
-    "entity_id": 1,
-    "description": "Library scan completed",
-    "metadata": {
-      "scan": { "added": 5, "updated": 12, "removed": 2, "durationMs": 45000 }
-    }
-  }
-]
-```
-
-**Retention:**
-- Activity log entries are kept for configurable retention period (default: 90 days)
-- Old entries automatically deleted during scheduled cleanup
-- See `@docs/NOTIFICATIONS_AND_LOGGING.md` for configuration
 
 ### users
 
@@ -1474,12 +1440,6 @@ CREATE TABLE users (
 
 CREATE INDEX idx_users_username ON users(username);
 ```
-
-**Initial Setup:**
-- Database migration creates default admin if table is empty
-- Default credentials: `Metarr:password` (if no environment variables provided)
-- Environment variables `ADMIN_USERNAME` and `ADMIN_PASSWORD` can set initial credentials
-- Only one admin user supported (single row in table)
 
 ### sessions
 
@@ -1500,31 +1460,49 @@ CREATE INDEX idx_sessions_user_id ON sessions(user_id);
 CREATE INDEX idx_sessions_expires_at ON sessions(expires_at);
 ```
 
-**Session Behavior:**
-- JWT tokens stored in HTTP-only cookie
-- Default expiration: 7 days
-- Automatic cleanup of expired sessions (scheduled task)
+### activity_log
+
+Comprehensive audit trail.
+
+```sql
+CREATE TABLE activity_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  timestamp TEXT NOT NULL,
+  event_type TEXT NOT NULL,     -- 'webhook', 'scan_completed', 'user_edit', etc.
+  severity TEXT NOT NULL,       -- 'info', 'warning', 'error', 'success'
+  entity_type TEXT,             -- 'movie', 'series', 'episode', 'library'
+  entity_id INTEGER,
+  description TEXT NOT NULL,
+  metadata TEXT,                -- JSON with event-specific details
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_activity_log_timestamp ON activity_log(timestamp);
+CREATE INDEX idx_activity_log_event_type ON activity_log(event_type);
+CREATE INDEX idx_activity_log_severity ON activity_log(severity);
+CREATE INDEX idx_activity_log_entity ON activity_log(entity_type, entity_id);
+```
+
+---
 
 ## Notification System Tables
 
-See `@docs/NOTIFICATIONS.md` for complete notification system architecture.
-
 ### notification_channels
 
-Defines WHERE notifications are sent (Kodi players, Pushover, Discord, etc.).
+Defines WHERE notifications are sent.
 
 ```sql
 CREATE TABLE notification_channels (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL,                    -- "Living Room Kodi", "Pushover"
-  type TEXT NOT NULL,                    -- 'kodi', 'pushover', 'discord', 'slack', 'email', 'webhook'
+  name TEXT NOT NULL,
+  type TEXT NOT NULL,                    -- 'kodi', 'pushover', 'discord', etc.
   enabled BOOLEAN DEFAULT 1,
 
   -- Link to media player (for Kodi channels only)
-  media_player_id INTEGER,               -- NULL for global channels like Pushover
+  media_player_id INTEGER,
 
   -- Type-specific configuration (JSON)
-  config TEXT,                           -- For non-Kodi channels
+  config TEXT,
 
   -- Capabilities (JSON array)
   capabilities TEXT NOT NULL,            -- ["text", "images"]
@@ -1537,50 +1515,11 @@ CREATE TABLE notification_channels (
 
 CREATE INDEX idx_notification_channels_type ON notification_channels(type);
 CREATE INDEX idx_notification_channels_enabled ON notification_channels(enabled);
-CREATE INDEX idx_notification_channels_player ON notification_channels(media_player_id);
-```
-
-**Channel Types**:
-- `kodi`: Notification to specific Kodi player (links to `media_players` table)
-- `pushover`: Push notifications to mobile devices
-- `discord`: Discord webhook
-- `slack`: Slack webhook
-- `email`: Email notifications
-- `webhook`: Custom webhook endpoint
-
-**Capabilities**:
-- `text`: Plain text messages
-- `images`: Can embed images
-- `rich_media`: Rich formatting (embeds, buttons)
-- `interactive`: Supports user interaction
-
-**Example Rows**:
-```json
-[
-  {
-    "id": 1,
-    "name": "Living Room Kodi Notifications",
-    "type": "kodi",
-    "enabled": true,
-    "media_player_id": 1,
-    "config": null,
-    "capabilities": "[\"text\", \"images\"]"
-  },
-  {
-    "id": 2,
-    "name": "Pushover",
-    "type": "pushover",
-    "enabled": true,
-    "media_player_id": null,
-    "config": "{\"apiKey\": \"abc123\", \"userKey\": \"def456\"}",
-    "capabilities": "[\"text\", \"images\", \"links\"]"
-  }
-]
 ```
 
 ### notification_event_types
 
-Defines all possible events that can trigger notifications.
+Defines all possible events.
 
 ```sql
 CREATE TABLE notification_event_types (
@@ -1591,29 +1530,15 @@ CREATE TABLE notification_event_types (
 
   -- Defaults
   default_enabled BOOLEAN DEFAULT 1,
-  default_severity TEXT DEFAULT 'info',  -- 'info', 'warning', 'error', 'success'
+  default_severity TEXT DEFAULT 'info',
 
-  -- Required capabilities for this event
-  required_capabilities TEXT,            -- JSON: ["text"] or ["text", "images"]
+  -- Required capabilities
+  required_capabilities TEXT,            -- JSON: ["text", "images"]
 
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX idx_notification_event_types_category ON notification_event_types(category);
-```
-
-**Seeded Events**:
-```sql
-INSERT INTO notification_event_types (event_name, category, description, default_severity, required_capabilities) VALUES
-  ('movie.download.started', 'movie', 'Download queued', 'info', '["text"]'),
-  ('movie.download.complete', 'movie', 'Download finished', 'success', '["text", "images"]'),
-  ('movie.upgrade.available', 'movie', 'Upgrade downloading', 'info', '["text"]'),
-  ('movie.file.deleted', 'movie', 'File deleted', 'warning', '["text"]'),
-  ('movie.renamed', 'movie', 'File renamed', 'info', '["text"]'),
-  ('health.issue.detected', 'health', 'Health problem', 'error', '["text"]'),
-  ('health.issue.resolved', 'health', 'Health resolved', 'success', '["text"]'),
-  ('system.scan.started', 'system', 'Library scan started', 'info', '["text"]'),
-  ('system.scan.complete', 'system', 'Library scan complete', 'success', '["text"]');
 ```
 
 ### notification_subscriptions
@@ -1628,7 +1553,7 @@ CREATE TABLE notification_subscriptions (
   enabled BOOLEAN DEFAULT 1,
 
   -- Message customization
-  message_template TEXT,                 -- NULL = use default template
+  message_template TEXT,
 
   -- Filtering (future feature)
   filter_conditions TEXT,                -- JSON: {"quality": "1080p"}
@@ -1646,19 +1571,6 @@ CREATE INDEX idx_notification_subscriptions_channel ON notification_subscription
 CREATE INDEX idx_notification_subscriptions_event ON notification_subscriptions(event_name);
 ```
 
-**Example Subscriptions**:
-```sql
--- Living Room Kodi: Download complete events only
-INSERT INTO notification_subscriptions (channel_id, event_name, enabled, message_template) VALUES
-  (1, 'movie.download.complete', 1, '✅ Ready to watch: {{movie.title}}');
-
--- Pushover: Critical events only
-INSERT INTO notification_subscriptions (channel_id, event_name, enabled, message_template) VALUES
-  (2, 'movie.download.complete', 1, '✅ {{movie.title}} ({{movie.year}}) downloaded'),
-  (2, 'movie.file.deleted', 1, '⚠️ File deleted: {{movie.title}}'),
-  (2, 'health.issue.detected', 1, '⚠️ {{health.message}}');
-```
-
 ### notification_queue
 
 Transient queue for async notification processing.
@@ -1668,7 +1580,7 @@ CREATE TABLE notification_queue (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   event_name TEXT NOT NULL,
   event_data TEXT NOT NULL,              -- JSON: full event payload
-  status TEXT DEFAULT 'pending',         -- 'pending', 'processing', 'completed', 'failed'
+  status TEXT DEFAULT 'pending',
   retry_count INTEGER DEFAULT 0,
   max_retries INTEGER DEFAULT 3,
   error_message TEXT,
@@ -1681,48 +1593,116 @@ CREATE INDEX idx_notification_queue_status ON notification_queue(status);
 CREATE INDEX idx_notification_queue_created ON notification_queue(created_at);
 ```
 
-**Queue Lifecycle**:
-1. Event emitted → Insert with `status = 'pending'`
-2. Processor picks up → Set `status = 'processing'`
-3. Success → Set `status = 'completed'`, set `processed_at`
-4. Failure → Retry up to 3 times, then set `status = 'failed'`
+---
 
-**Cleanup**: Completed/failed items older than 7 days can be deleted.
+## Many-to-Many Link Tables
 
-### notification_delivery_log
-
-Tracks delivery success/failure per channel (for debugging).
+### movies_actors
 
 ```sql
-CREATE TABLE notification_delivery_log (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  queue_id INTEGER,
-  channel_id INTEGER NOT NULL,
-  event_name TEXT NOT NULL,
-  status TEXT NOT NULL,                  -- 'sent', 'failed'
-  error_message TEXT,
-  delivery_time_ms INTEGER,
-
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-
-  FOREIGN KEY (queue_id) REFERENCES notification_queue(id) ON DELETE CASCADE,
-  FOREIGN KEY (channel_id) REFERENCES notification_channels(id) ON DELETE CASCADE
+CREATE TABLE movies_actors (
+  movie_id INTEGER NOT NULL,
+  actor_id INTEGER NOT NULL,
+  role TEXT,              -- Character name
+  order_index INTEGER,    -- Display order in credits
+  PRIMARY KEY (movie_id, actor_id),
+  FOREIGN KEY (movie_id) REFERENCES movies(id) ON DELETE CASCADE,
+  FOREIGN KEY (actor_id) REFERENCES actors(id) ON DELETE CASCADE
 );
 
-CREATE INDEX idx_notification_delivery_log_queue ON notification_delivery_log(queue_id);
-CREATE INDEX idx_notification_delivery_log_channel ON notification_delivery_log(channel_id);
-CREATE INDEX idx_notification_delivery_log_status ON notification_delivery_log(status);
+CREATE INDEX idx_movies_actors_movie ON movies_actors(movie_id);
+CREATE INDEX idx_movies_actors_actor ON movies_actors(actor_id);
 ```
 
-**Usage**: Query failed deliveries to diagnose notification issues:
+### movies_genres
+
 ```sql
-SELECT * FROM notification_delivery_log
-WHERE status = 'failed'
-ORDER BY created_at DESC
+CREATE TABLE movies_genres (
+  movie_id INTEGER NOT NULL,
+  genre_id INTEGER NOT NULL,
+  PRIMARY KEY (movie_id, genre_id),
+  FOREIGN KEY (movie_id) REFERENCES movies(id) ON DELETE CASCADE,
+  FOREIGN KEY (genre_id) REFERENCES genres(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_movies_genres_movie ON movies_genres(movie_id);
+CREATE INDEX idx_movies_genres_genre ON movies_genres(genre_id);
+```
+
+### movies_directors
+
+```sql
+CREATE TABLE movies_directors (
+  movie_id INTEGER NOT NULL,
+  director_id INTEGER NOT NULL,
+  PRIMARY KEY (movie_id, director_id),
+  FOREIGN KEY (movie_id) REFERENCES movies(id) ON DELETE CASCADE,
+  FOREIGN KEY (director_id) REFERENCES directors(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_movies_directors_movie ON movies_directors(movie_id);
+CREATE INDEX idx_movies_directors_director ON movies_directors(director_id);
+```
+
+**Similar tables exist for**: `movies_writers`, `movies_studios`, `movies_tags`, `movies_countries`, `series_actors`, `series_genres`, etc.
+
+---
+
+## Common Query Patterns
+
+### Get Movies Needing Enrichment
+
+```sql
+SELECT * FROM movies
+WHERE state = 'identified'
+  AND enriched_at IS NULL
+ORDER BY enrichment_priority ASC, created_at DESC
 LIMIT 50;
 ```
 
-## Common Query Patterns
+### Get Movies Needing Publish
+
+```sql
+SELECT * FROM movies
+WHERE has_unpublished_changes = 1
+ORDER BY updated_at DESC;
+```
+
+### Get Selected Assets for Movie
+
+```sql
+SELECT ac.*, ci.file_path, ci.width, ci.height
+FROM asset_candidates ac
+LEFT JOIN cache_inventory ci ON ac.content_hash = ci.content_hash
+WHERE ac.entity_type = 'movie'
+  AND ac.entity_id = ?
+  AND ac.is_selected = 1
+ORDER BY ac.asset_type;
+```
+
+### Get Asset Candidates (Not Downloaded)
+
+```sql
+SELECT * FROM asset_candidates
+WHERE entity_type = ?
+  AND entity_id = ?
+  AND asset_type = ?
+  AND is_downloaded = 0
+  AND is_rejected = 0
+  AND provider_url NOT IN (
+    SELECT provider_url FROM rejected_assets
+  )
+ORDER BY auto_score DESC;
+```
+
+### Get Orphaned Cache Files
+
+```sql
+SELECT * FROM cache_inventory
+WHERE orphaned_at IS NOT NULL
+  AND orphaned_at < DATETIME('now', '-90 days')
+ORDER BY orphaned_at ASC;
+```
 
 ### Get Movie with Full Metadata
 
@@ -1730,460 +1710,148 @@ LIMIT 50;
 SELECT
   m.*,
   s.name AS set_name,
-  s.overview AS set_overview,
   GROUP_CONCAT(DISTINCT g.name) AS genres,
-  GROUP_CONCAT(DISTINCT d.name) AS directors,
-  GROUP_CONCAT(DISTINCT st.name) AS studios,
-  GROUP_CONCAT(DISTINCT c.name) AS countries,
-  GROUP_CONCAT(DISTINCT t.name) AS tags
+  GROUP_CONCAT(DISTINCT d.name) AS directors
 FROM movies m
 LEFT JOIN sets s ON m.set_id = s.id
 LEFT JOIN movies_genres mg ON m.id = mg.movie_id
 LEFT JOIN genres g ON mg.genre_id = g.id
 LEFT JOIN movies_directors md ON m.id = md.movie_id
 LEFT JOIN directors d ON md.director_id = d.id
-LEFT JOIN movies_studios ms ON m.id = ms.movie_id
-LEFT JOIN studios st ON ms.studio_id = st.id
-LEFT JOIN movies_countries mc ON m.id = mc.movie_id
-LEFT JOIN countries c ON mc.country_id = c.id
-LEFT JOIN movies_tags mt ON m.id = mt.movie_id
-LEFT JOIN tags t ON mt.tag_id = t.id
 WHERE m.id = ?
 GROUP BY m.id;
 ```
 
-### Get Movie with Actors and Roles
+---
 
-```sql
-SELECT
-  m.id,
-  m.title,
-  m.year,
-  a.id AS actor_id,
-  a.name AS actor_name,
-  a.thumb_url AS actor_thumb,
-  ma.role,
-  ma.order_index
-FROM movies m
-JOIN movies_actors ma ON m.id = ma.movie_id
-JOIN actors a ON ma.actor_id = a.id
-WHERE m.id = ?
-ORDER BY ma.order_index;
+## Migration Strategy
+
+### Schema Changes Summary
+
+**Tables REMOVED:**
+1. **`images`** - Replaced by `asset_candidates` (three-tier system)
+2. **`trailers`** - Now handled by `asset_candidates` with `asset_type = 'trailer'`
+
+**Tables ADDED:**
+1. **`asset_candidates`** - Three-tier asset system (replaces `images` and `trailers`)
+2. **`cache_inventory`** - Content-addressed cache tracking with reference counting
+3. **`asset_selection_config`** - Auto-selection algorithm configuration
+4. **`rejected_assets`** - Global asset blacklist
+5. **`library_automation_config`** - Automation mode configuration (Manual, YOLO, Hybrid)
+6. **`publish_log`** - Audit trail for publish operations
+7. **`job_queue`** - Background job processing with priority levels
+
+**Tables MODIFIED (columns added):**
+- **`movies`**, **`series`**, **`episodes`**:
+  - State machine: `state`, `enriched_at`, `enrichment_priority`
+  - Publishing: `has_unpublished_changes`, `last_published_at`, `published_nfo_hash`
+  - Asset locking: `poster_locked`, `fanart_locked`, etc.
+  - File path: `UNIQUE` constraint added
+
+**Triggers ADDED:**
+- **`orphan_cache_assets`** - Automatic cache orphaning on asset deletion
+
+**Foreign Keys ADDED:**
+- `asset_candidates` → cascades from `movies`, `series`, `episodes`
+- `unknown_files` → cascades from `movies`, `series`, `episodes`
+- All link tables properly cascade
+
+### Development Phase (Current)
+
+**Approach**: Delete and recreate database
+- No production users
+- Database deletion acceptable
+- Test with small library subset (100-500 items)
+- Iterate on schema rapidly
+
+**Migration Steps:**
+```bash
+# 1. Backup existing data (optional, for reference)
+sqlite3 data/metarr.sqlite .dump > backup.sql
+
+# 2. Delete old database
+rm data/metarr.sqlite
+
+# 3. Run new migration scripts
+npm run db:migrate
+
+# 4. Seed with test data
+npm run db:seed
 ```
 
-### Get All Ratings for a Movie
+### Pre-Production Phase
 
-```sql
-SELECT
-  source,
-  value,
-  votes,
-  is_default
-FROM ratings
-WHERE entity_type = 'movie' AND entity_id = ?
-ORDER BY is_default DESC, source;
-```
+**Approach**: Migration scripts with data transformation
+1. Export existing data to JSON
+2. Drop old tables (`images`, `trailers`)
+3. Create new tables
+4. Transform data:
+   - Migrate `images` → `asset_candidates` (set `is_downloaded = 1`, `is_selected = 1`, `selected_by = 'local'`)
+   - Migrate `trailers` → `asset_candidates` (same transformation)
+   - Import cache files into `cache_inventory`
+   - Calculate reference counts
+5. Verify integrity
 
-### Find Movies by Genre
-
-```sql
-SELECT DISTINCT m.*
-FROM movies m
-JOIN movies_genres mg ON m.id = mg.movie_id
-JOIN genres g ON mg.genre_id = g.id
-WHERE g.name = 'Action'
-ORDER BY m.title;
-```
-
-### Find Movies by Actor
-
-```sql
-SELECT DISTINCT m.*
-FROM movies m
-JOIN movies_actors ma ON m.id = ma.movie_id
-JOIN actors a ON ma.actor_id = a.id
-WHERE a.name = 'Keanu Reeves'
-ORDER BY m.year DESC;
-```
-
-### Find Orphaned Actors (No Movie Links)
-
-```sql
-SELECT a.*
-FROM actors a
-LEFT JOIN movies_actors ma ON a.id = ma.actor_id
-LEFT JOIN tvshows_actors ta ON a.id = ta.actor_id
-LEFT JOIN episodes_actors ea ON a.id = ea.actor_id
-WHERE ma.actor_id IS NULL
-  AND ta.actor_id IS NULL
-  AND ea.actor_id IS NULL;
-```
-
-### Delete Orphaned Entities
-
-```sql
--- Delete orphaned actors
-DELETE FROM actors
-WHERE id NOT IN (
-  SELECT DISTINCT actor_id FROM movies_actors
-  UNION
-  SELECT DISTINCT actor_id FROM tvshows_actors
-  UNION
-  SELECT DISTINCT actor_id FROM episodes_actors
-);
-
--- Delete orphaned genres
-DELETE FROM genres
-WHERE id NOT IN (
-  SELECT DISTINCT genre_id FROM movies_genres
-  UNION
-  SELECT DISTINCT genre_id FROM tvshows_genres
-);
-
--- Similar for directors, writers, studios, tags, countries
-```
-
-### Get Movies Currently Processing
-
-```sql
-SELECT *
-FROM movies
-WHERE status IS NOT NULL
-  AND status != ''
-ORDER BY created_at DESC;
-```
-
-### Get Movies with Errors
-
-```sql
-SELECT *
-FROM movies
-WHERE status LIKE 'error_%'
-ORDER BY updated_at DESC;
-```
-
-### Get Movies Pending Deletion
-
-```sql
-SELECT *
-FROM movies
-WHERE deleted_on IS NOT NULL
-  AND deleted_on <= CURRENT_TIMESTAMP
-ORDER BY deleted_on ASC;
-```
-
-**Note**: Scheduled cleanup task runs daily to permanently delete these items.
-
-### Get Monitored Movies (Computed State)
-
-```sql
--- Movies with at least one unlocked field AND incomplete metadata
-SELECT m.*,
-       COUNT(CASE WHEN i.is_selected = 1 THEN 1 END) AS selected_image_count
-FROM movies m
-LEFT JOIN images i ON m.id = i.entity_id AND i.entity_type = 'movie'
-WHERE (
-  -- Has at least one unlocked scalar field
-  m.title_locked = 0 OR
-  m.plot_locked = 0 OR
-  m.outline_locked = 0 OR
-  m.tagline_locked = 0 OR
-  m.mpaa_locked = 0 OR
-  m.runtime_locked = 0 OR
-  m.premiered_locked = 0 OR
-  m.user_rating_locked = 0 OR
-  m.trailer_url_locked = 0 OR
-  m.set_id_locked = 0
-)
-GROUP BY m.id
--- Filter for incomplete (requires application-level completeness check)
-ORDER BY m.created_at DESC;
-```
-
-**Note**: Full completeness calculation requires application-level logic to compare against `completeness_config` table. The above query returns candidates; filter by completeness < 100% in code.
-
-### Calculate Movie Completeness
-
+**Example Transformation:**
 ```typescript
-async function getMovieCompleteness(movieId: number): Promise<number> {
-  const movie = await db.getMovie(movieId);
-  const config = await db.getCompletenessConfig('movies');
-  const requiredFields = JSON.parse(config.required_fields);
+// Migrate images table to asset_candidates
+async function migrateImages() {
+  const oldImages = await db.query(`SELECT * FROM images`);
 
-  let total = 0;
-  let satisfied = 0;
+  for (const img of oldImages) {
+    const contentHash = await hashFile(img.cache_path);
 
-  // Check scalar fields
-  for (const field of requiredFields) {
-    total++;
-    if (movie[field] !== null && movie[field] !== '') {
-      satisfied++;
-    }
+    // Insert into cache_inventory
+    await db.execute(`
+      INSERT OR IGNORE INTO cache_inventory (
+        content_hash, file_path, file_size, asset_type,
+        width, height, perceptual_hash, reference_count
+      ) VALUES (?, ?, ?, 'image', ?, ?, ?, 1)
+    `, [contentHash, img.cache_path, img.file_size, img.width, img.height, img.perceptual_hash]);
+
+    // Insert into asset_candidates
+    await db.execute(`
+      INSERT INTO asset_candidates (
+        entity_type, entity_id, asset_type,
+        provider, provider_url, width, height,
+        is_downloaded, cache_path, content_hash, perceptual_hash,
+        is_selected, selected_by
+      ) VALUES (?, ?, ?, 'local', ?, ?, ?, 1, ?, ?, ?, 1, 'local')
+    `, [
+      img.entity_type,
+      img.entity_id,
+      img.image_type,
+      img.provider_url,
+      img.width,
+      img.height,
+      img.cache_path,
+      contentHash,
+      img.perceptual_hash
+    ]);
   }
-
-  // Check images
-  const imageCounts = await db.getImageCounts(movieId, 'movie');
-  const imageTypes = ['poster', 'fanart', 'landscape', 'keyart', 'banner', 'clearart', 'clearlogo', 'discart'];
-
-  for (const imageType of imageTypes) {
-    const required = config[`required_${imageType}s`];
-    if (required > 0) {
-      total++;
-      if ((imageCounts[imageType] || 0) >= required) {
-        satisfied++;
-      }
-    }
-  }
-
-  return total > 0 ? (satisfied / total) * 100 : 100;
 }
 ```
 
-### Check NFO Hash for Changes
+### Production Phase (Future)
 
-```sql
--- Find movies whose NFO files have changed since last parse
-SELECT m.id, m.title, m.file_path, m.nfo_hash
-FROM movies m
-WHERE m.nfo_hash IS NULL
-   OR m.nfo_hash != :new_hash;
-```
+**Approach**: Zero-downtime migrations
+1. Create new tables alongside old
+2. Dual-write to both schemas
+3. Backfill new tables
+4. Switch read traffic to new tables
+5. Drop old tables after verification
 
-**Workflow:**
-1. During library scan, calculate SHA-256 hash of each NFO file
-2. Compare against `nfo_hash` column
-3. If hash differs or is NULL → re-parse NFO and merge changes
-4. Locked fields are preserved during merge
+---
 
-### Get Movies in a Collection/Set
+## Related Documentation
 
-```sql
-SELECT m.*
-FROM movies m
-JOIN sets s ON m.set_id = s.id
-WHERE s.name = 'Kick-Ass Collection'
-ORDER BY m.year;
-```
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** - Overall system design
+- **[ASSET_MANAGEMENT.md](ASSET_MANAGEMENT.md)** - Three-tier asset system
+- **[AUTOMATION_AND_WEBHOOKS.md](AUTOMATION_AND_WEBHOOKS.md)** - Automation configuration
+- **[PUBLISHING_WORKFLOW.md](PUBLISHING_WORKFLOW.md)** - Publishing process
+- **[WORKFLOWS.md](WORKFLOWS.md)** - Operational workflows
+- **[FIELD_LOCKING.md](FIELD_LOCKING.md)** - Field-level locking system
 
-### Get Selected Images for Movie
+---
 
-```sql
-SELECT *
-FROM images
-WHERE entity_type = 'movie'
-  AND entity_id = ?
-  AND is_selected = 1
-ORDER BY image_type;
-```
-
-### Find Duplicate Images (Perceptual Hash)
-
-```sql
--- Find images with similar perceptual hashes (90% similarity threshold)
-SELECT i1.id AS image1_id, i2.id AS image2_id, i1.image_type, i1.perceptual_hash, i2.perceptual_hash
-FROM images i1
-JOIN images i2 ON i1.entity_type = i2.entity_type
-              AND i1.entity_id = i2.entity_id
-              AND i1.image_type = i2.image_type
-              AND i1.id < i2.id
-WHERE hamming_distance(i1.perceptual_hash, i2.perceptual_hash) <= 6  -- Approx 90% similarity
-ORDER BY i1.entity_type, i1.entity_id, i1.image_type;
-```
-
-**Note**: `hamming_distance()` is a custom function. Calculate in application code for each candidate pair.
-
-### Translate Path for Media Player
-
-```typescript
-function translatePath(playerId: number, metarrPath: string): string {
-  const mappings = db.getPlayerPathMappings(playerId);
-
-  // Sort by metarr_path length descending (longest prefix first)
-  mappings.sort((a, b) => b.metarr_path.length - a.metarr_path.length);
-
-  for (const mapping of mappings) {
-    if (metarrPath.startsWith(mapping.metarr_path)) {
-      return metarrPath.replace(mapping.metarr_path, mapping.player_path);
-    }
-  }
-
-  return metarrPath;  // No mapping found, return original
-}
-```
-
-### Get Activity Log for Entity
-
-```sql
-SELECT *
-FROM activity_log
-WHERE entity_type = 'movie'
-  AND entity_id = ?
-ORDER BY timestamp DESC
-LIMIT 50;
-```
-
-### Get Recent Activity (All Entities)
-
-```sql
-SELECT *
-FROM activity_log
-ORDER BY timestamp DESC
-LIMIT 100;
-```
-
-## Incremental Scanning Pattern
-
-### Step 1: Discover New Directories
-
-```sql
--- Insert new directories found on filesystem
-INSERT OR IGNORE INTO movies (title, file_path, status, nfo_parsed_at)
-VALUES ('The Matrix (1999)', '/movies/The Matrix (1999)/', 'needs_identification', NULL);
-```
-
-**Note**: New movies are marked with `status = 'needs_identification'` if no NFO file or provider IDs found.
-
-### Step 2: Update Existing Entries
-
-```sql
--- Update metadata from re-parsed NFO
-UPDATE movies
-SET
-  title = ?,
-  year = ?,
-  plot = ?,
-  tmdb_id = ?,
-  imdb_id = ?,
-  nfo_parsed_at = CURRENT_TIMESTAMP,
-  updated_at = CURRENT_TIMESTAMP
-WHERE id = ?;
-```
-
-### Step 3: Mark Deleted Directories (Soft Delete)
-
-```sql
--- Mark movies for deletion (7-day grace period)
-UPDATE movies
-SET deleted_on = DATETIME('now', '+7 days')
-WHERE file_path NOT IN (
-  -- List of currently discovered directories
-  SELECT path FROM temp_discovered_paths
-)
-AND deleted_on IS NULL;  -- Don't update if already marked for deletion
-```
-
-**Note**: Scheduled cleanup task runs daily to permanently delete items where `deleted_on <= NOW()`. This allows recovery within the 7-day grace period.
-
-### Step 4: Update Link Tables
-
-```sql
--- Clear existing links for movie
-DELETE FROM movies_genres WHERE movie_id = ?;
-DELETE FROM movies_actors WHERE movie_id = ?;
-DELETE FROM movies_directors WHERE movie_id = ?;
-
--- Insert new links
-INSERT INTO movies_genres (movie_id, genre_id) VALUES (?, ?);
--- Repeat for actors, directors, etc.
-```
-
-## Transaction Patterns
-
-### Movie Insert with Full Metadata
-
-```typescript
-db.transaction(() => {
-  // 1. Insert/get normalized entities
-  const genreIds = genres.map(name => getOrCreateGenre(name));
-  const actorIds = actors.map(actor => getOrCreateActor(actor.name));
-  const directorIds = directors.map(name => getOrCreateDirector(name));
-  const setId = set ? getOrCreateSet(set.name) : null;
-
-  // 2. Insert movie
-  const movieId = db.run(`
-    INSERT INTO movies (title, year, plot, tmdb_id, imdb_id, set_id, ...)
-    VALUES (?, ?, ?, ?, ?, ?, ...)
-  `, [title, year, plot, tmdbId, imdbId, setId, ...]);
-
-  // 3. Insert links
-  genreIds.forEach(genreId => {
-    db.run('INSERT INTO movies_genres (movie_id, genre_id) VALUES (?, ?)',
-      [movieId, genreId]);
-  });
-
-  actorIds.forEach((actorId, index) => {
-    db.run('INSERT INTO movies_actors (movie_id, actor_id, role, order_index) VALUES (?, ?, ?, ?)',
-      [movieId, actorId, actors[index].role, index]);
-  });
-
-  // 4. Insert ratings
-  ratings.forEach(rating => {
-    db.run('INSERT INTO ratings (entity_type, entity_id, source, value, votes) VALUES (?, ?, ?, ?, ?)',
-      ['movie', movieId, rating.source, rating.value, rating.votes]);
-  });
-});
-```
-
-## Best Practices
-
-### 1. Use Transactions for Multi-Table Operations
-Wrap related inserts/updates in transactions to ensure consistency.
-
-### 2. Leverage Normalized Entities
-Check for existing entities before creating new ones to avoid duplicates.
-
-### 3. Clean Up Orphans Periodically
-Run orphan cleanup after library scans or deletions.
-
-### 4. Index Frequently Queried Columns
-Provider IDs, status fields, and foreign keys should be indexed.
-
-### 5. Use Prepared Statements
-Prevent SQL injection and improve performance with prepared statements.
-
-### 6. Handle NULL Values Gracefully
-Use `IS NULL` / `IS NOT NULL` rather than `= NULL` / `!= NULL`.
-
-### 7. Optimize JOIN Queries
-Use appropriate JOIN types (INNER, LEFT) based on data requirements.
-
-### 8. Batch Operations for Performance
-Use batch inserts for large datasets (e.g., initial library scan).
-
-## Migration Examples
-
-### Adding New Column
-
-```sql
--- Add new column with default value
-ALTER TABLE movies ADD COLUMN certification_country TEXT DEFAULT 'US';
-```
-
-### Adding New Table
-
-```sql
--- Create new entity table
-CREATE TABLE keywords (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL UNIQUE,
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP
-);
-
--- Create link table
-CREATE TABLE movies_keywords (
-  movie_id INTEGER NOT NULL,
-  keyword_id INTEGER NOT NULL,
-  PRIMARY KEY (movie_id, keyword_id),
-  FOREIGN KEY (movie_id) REFERENCES movies(id) ON DELETE CASCADE,
-  FOREIGN KEY (keyword_id) REFERENCES keywords(id) ON DELETE CASCADE
-);
-```
-
-### Backfilling Data
-
-```sql
--- Backfill missing sort_title from title
-UPDATE movies
-SET sort_title = title
-WHERE sort_title IS NULL;
-```
+**Next Steps**: Implement Phase 1 database migration (see [IMPLEMENTATION_ROADMAP.md](IMPLEMENTATION_ROADMAP.md))
