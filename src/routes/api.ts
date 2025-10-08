@@ -184,6 +184,11 @@ export const createApiRouter = (
     movieController.getImages(req, res, next);
   });
 
+  router.get('/movies/:id/extras', (req, res, next) => {
+    console.log('[Route Hit] /movies/:id/extras with id:', req.params.id);
+    movieController.getExtras(req, res, next);
+  });
+
   // Refresh movie metadata (user-initiated)
   router.post('/movies/:id/refresh', (req, res, next) => {
     console.log('[Route Hit] /movies/:id/refresh with id:', req.params.id);

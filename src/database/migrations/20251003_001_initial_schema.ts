@@ -445,12 +445,11 @@ export class InitialSchemaMigration {
 
         -- Two-copy architecture: cache (source of truth) + library (for media players)
         cache_path VARCHAR(1000),
-        library_path VARCHAR(1000),
         local_path VARCHAR(1000),
 
         -- Trailer properties
         title VARCHAR(255),
-        quality VARCHAR(50),
+        resolution VARCHAR(50),
         file_size BIGINT,
         duration INTEGER,
         file_hash VARCHAR(64),
@@ -485,7 +484,7 @@ export class InitialSchemaMigration {
 
         -- Two-copy architecture: cache (source of truth) + library (for media players)
         cache_path VARCHAR(1000),
-        library_path VARCHAR(1000),
+        file_path VARCHAR(1000),
 
         -- Subtitle properties
         language VARCHAR(10),
@@ -495,7 +494,7 @@ export class InitialSchemaMigration {
 
         -- Metadata
         is_default BOOLEAN NOT NULL DEFAULT 0,
-        is_forced BOOLEAN NOT NULL DEFAULT 0,
+        forced BOOLEAN NOT NULL DEFAULT 0,
         locked BOOLEAN NOT NULL DEFAULT 0,
 
         -- Soft delete
@@ -941,7 +940,7 @@ export class InitialSchemaMigration {
     await db.execute('CREATE INDEX idx_trailers_source_type ON trailers(source_type)');
     await db.execute('CREATE INDEX idx_trailers_hash ON trailers(file_hash)');
     await db.execute('CREATE INDEX idx_trailers_cache_path ON trailers(cache_path)');
-    await db.execute('CREATE INDEX idx_trailers_library_path ON trailers(library_path)');
+    await db.execute('CREATE INDEX idx_trailers_local_path ON trailers(local_path)');
     await db.execute('CREATE INDEX idx_trailers_locked ON trailers(locked)');
     await db.execute('CREATE INDEX idx_trailers_deleted_on ON trailers(deleted_on)');
 
@@ -951,7 +950,7 @@ export class InitialSchemaMigration {
     await db.execute('CREATE INDEX idx_subtitles_language ON subtitles(language)');
     await db.execute('CREATE INDEX idx_subtitles_hash ON subtitles(file_hash)');
     await db.execute('CREATE INDEX idx_subtitles_cache_path ON subtitles(cache_path)');
-    await db.execute('CREATE INDEX idx_subtitles_library_path ON subtitles(library_path)');
+    await db.execute('CREATE INDEX idx_subtitles_file_path ON subtitles(file_path)');
     await db.execute('CREATE INDEX idx_subtitles_locked ON subtitles(locked)');
     await db.execute('CREATE INDEX idx_subtitles_deleted_on ON subtitles(deleted_on)');
 

@@ -133,6 +133,16 @@ export class MovieController {
     }
   }
 
+  async getExtras(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const movieId = parseInt(req.params.id);
+      const extras = await this.movieService.getExtras(movieId);
+      res.json(extras);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   async refreshMovie(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const movieId = parseInt(req.params.id);

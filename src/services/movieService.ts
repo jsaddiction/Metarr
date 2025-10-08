@@ -303,6 +303,51 @@ export class MovieService {
     return this.db.query<any>(query, [movieId]);
   }
 
+  async getExtras(movieId: number): Promise<{
+    trailer: any | null;
+    subtitles: any[];
+    themeSong: any | null;
+  }> {
+    // Get trailer
+    const trailerQuery = `
+      SELECT
+        id,
+        provider_url,
+        local_path,
+        resolution,
+        file_size,
+        duration,
+        locked
+      FROM trailers
+      WHERE entity_type = 'movie' AND entity_id = ? AND deleted_on IS NULL
+      ORDER BY is_default DESC, created_at DESC
+      LIMIT 1
+    `;
+    const trailers = await this.db.query<any>(trailerQuery, [movieId]);
+
+    // Get subtitles
+    const subtitlesQuery = `
+      SELECT
+        id,
+        language,
+        file_path,
+        format,
+        forced,
+        file_size,
+        locked
+      FROM subtitles
+      WHERE entity_type = 'movie' AND entity_id = ? AND deleted_on IS NULL
+      ORDER BY language ASC
+    `;
+    const subtitles = await this.db.query<any>(subtitlesQuery, [movieId]);
+
+    return {
+      trailer: trailers.length > 0 ? trailers[0] : null,
+      subtitles,
+      themeSong: null // Not implemented yet
+    };
+  }
+
   /**
    * Assign an unknown file to a specific asset type
    * This processes the file as if it were discovered during scanning

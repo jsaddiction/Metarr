@@ -50,6 +50,7 @@ const IMAGE_TYPES = {
   clearlogo: ['clearlogo', 'logo'],
   discart: ['discart', 'disc'],
   characterart: ['characterart'],
+  keyart: ['keyart'],
 };
 
 export interface DiscoveredImage {
@@ -177,10 +178,29 @@ function detectImageType(baseName: string, mediaFileName?: string): string | nul
     }
   }
 
-  // Check for standard naming patterns
+  // Check for standard naming patterns (including numbered variants)
   for (const [type, patterns] of Object.entries(IMAGE_TYPES)) {
     for (const pattern of patterns) {
-      if (lowerBaseName === pattern || lowerBaseName.endsWith(`-${pattern}`)) {
+      // Exact match (e.g., "poster", "fanart")
+      if (lowerBaseName === pattern) {
+        return type;
+      }
+
+      // Hyphenated match (e.g., "moviename-poster")
+      if (lowerBaseName.endsWith(`-${pattern}`)) {
+        return type;
+      }
+
+      // Numbered variant (e.g., "poster1", "fanart2", "fanart19")
+      // Match pattern followed by 1-2 digits (poster1-poster19, fanart1-fanart19)
+      const numberedMatch = lowerBaseName.match(new RegExp(`^${pattern}(\\d{1,2})$`));
+      if (numberedMatch) {
+        return type;
+      }
+
+      // Hyphenated numbered variant (e.g., "moviename-poster1", "moviename-fanart2")
+      const hyphenatedNumberedMatch = lowerBaseName.match(new RegExp(`-${pattern}(\\d{1,2})$`));
+      if (hyphenatedNumberedMatch) {
         return type;
       }
     }
@@ -473,7 +493,7 @@ export async function storeDiscoveredTrailers(
       // Store with BOTH cache_path and local_path
       await db.execute(
         `INSERT INTO trailers (
-          entity_type, entity_id, source_type, cache_path, local_path, file_size, file_hash, quality
+          entity_type, entity_id, source_type, cache_path, local_path, file_size, file_hash, resolution
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           entityType,

@@ -246,13 +246,15 @@ export class LibraryScanService extends EventEmitter {
           trigger: 'scheduled_scan',
         });
 
-        // Log result
+        // Log result and broadcast WebSocket updates for real-time UI updates
         if (scanResult.isNewMovie) {
           logger.info(`Added new movie: ${movieName}`, {
             movieId: scanResult.movieId,
             assetsFound: scanResult.assetsFound,
             unknownFiles: scanResult.unknownFilesFound,
           });
+          // Broadcast movie added immediately
+          websocketBroadcaster.broadcastMoviesAdded([scanResult.movieId]);
         } else if (scanResult.directoryChanged) {
           logger.info(`Updated movie: ${movieName}`, {
             movieId: scanResult.movieId,
@@ -260,6 +262,8 @@ export class LibraryScanService extends EventEmitter {
             streamsExtracted: scanResult.streamsExtracted,
             unknownFiles: scanResult.unknownFilesFound,
           });
+          // Broadcast movie updated immediately
+          websocketBroadcaster.broadcastMoviesUpdated([scanResult.movieId]);
         } else {
           logger.debug(`Movie unchanged: ${movieName}`, {
             movieId: scanResult.movieId,

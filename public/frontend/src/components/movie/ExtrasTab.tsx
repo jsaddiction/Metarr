@@ -141,7 +141,7 @@ export const ExtrasTab: React.FC<ExtrasTabProps> = ({ movieId }) => {
                   <div className="flex items-center space-x-2 mb-2">
                     <FontAwesomeIcon icon={faFile} className="text-neutral-400" />
                     <span className="text-neutral-200 font-mono text-sm">
-                      {trailer.file_path.split('/').pop()}
+                      {trailer.local_path?.split('/').pop() || 'No path available'}
                     </span>
                   </div>
                   <div className="flex items-center space-x-4 text-sm text-neutral-400">

@@ -179,15 +179,24 @@ export async function buildKnownFilesSet(
     // Add the media file itself
     knownFiles.add(mediaFilePath);
 
-    // Add NFO files
-    const nfoPath = path.join(path.dirname(mediaFilePath), 'movie.nfo');
-    knownFiles.add(nfoPath);
+    // Add NFO files (both standard and media-file-named variants)
+    const mediaDir = path.dirname(mediaFilePath);
+    const mediaBaseName = path.parse(mediaFilePath).name;
 
-    // For episodes, also check for episode-specific NFO
+    // Standard NFO naming (e.g., movie.nfo for movies, tvshow.nfo for series)
+    if (entityType === 'movie') {
+      const standardNfoPath = path.join(mediaDir, 'movie.nfo');
+      knownFiles.add(standardNfoPath);
+    }
+
+    // Media file-named NFO (e.g., "Movie Name.nfo" matching "Movie Name.mkv")
+    const mediaFileNfoPath = path.join(mediaDir, `${mediaBaseName}.nfo`);
+    knownFiles.add(mediaFileNfoPath);
+
+    // For episodes, standard naming is also supported
     if (entityType === 'episode') {
-      const parsedPath = path.parse(mediaFilePath);
-      const episodeNfoPath = path.join(parsedPath.dir, `${parsedPath.name}.nfo`);
-      knownFiles.add(episodeNfoPath);
+      const standardNfoPath = path.join(mediaDir, 'tvshow.nfo');
+      knownFiles.add(standardNfoPath);
     }
 
     // Add images from database (stored in images table)
