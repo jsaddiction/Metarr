@@ -26,7 +26,8 @@ import {
 } from '../../../types/providers/fanart.js';
 
 export class FanArtProvider extends BaseProvider {
-  private fanartClient: FanArtClient;
+  private fanartClient!: FanArtClient;
+  private hasPersonalKey: boolean = false;
 
   constructor(config: ProviderConfig, options?: ProviderOptions) {
     super(config, options);
@@ -38,6 +39,7 @@ export class FanArtProvider extends BaseProvider {
     };
     if (options?.personalApiKey) {
       clientOptions.personalApiKey = options.personalApiKey as string;
+      this.hasPersonalKey = true;
     }
     this.fanartClient = new FanArtClient(clientOptions);
 
@@ -53,7 +55,7 @@ export class FanArtProvider extends BaseProvider {
    * Create rate limiter for FanArt.tv API
    */
   protected createRateLimiter(): RateLimiter {
-    const rps = this.fanartClient.getRateLimit();
+    const rps = this.hasPersonalKey ? 2 : 1;
     return new RateLimiter({
       requestsPerSecond: rps,
       burstCapacity: rps * 5, // 5 second burst
@@ -91,8 +93,8 @@ export class FanArtProvider extends BaseProvider {
       },
 
       rateLimit: {
-        requestsPerSecond: this.fanartClient.getRateLimit(),
-        burstCapacity: this.fanartClient.getRateLimit() * 5,
+        requestsPerSecond: this.hasPersonalKey ? 2 : 1,
+        burstCapacity: (this.hasPersonalKey ? 2 : 1) * 5,
         webhookReservedCapacity: 0, // No webhook support for FanArt.tv
         enforcementType: 'client',
       },

@@ -8,6 +8,9 @@ import { TVDBProvider } from '../../src/services/providers/tvdb/TVDBProvider.js'
 import { MusicBrainzProvider } from '../../src/services/providers/musicbrainz/MusicBrainzProvider.js';
 import { createMockProviderConfig } from './helpers.js';
 
+// Import provider index to trigger registrations
+import '../../src/services/providers/index.js';
+
 describe('ProviderRegistry', () => {
   let registry: ProviderRegistry;
 
