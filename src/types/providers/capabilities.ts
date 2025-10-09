@@ -21,19 +21,24 @@ export type ProviderId =
  * Types of media entities supported by providers
  */
 export type EntityType =
+  // Video entities
   | 'movie'
   | 'series'
   | 'season'
   | 'episode'
-  | 'actor'
-  | 'album'
+  | 'collection'
+  // Music entities
   | 'artist'
-  | 'collection';
+  | 'album'
+  | 'track'
+  // Cross-media entities
+  | 'actor';
 
 /**
  * Types of assets (images, videos, etc.) that providers can supply
  */
 export type AssetType =
+  // Video assets
   | 'poster'
   | 'fanart'
   | 'banner'
@@ -43,12 +48,20 @@ export type AssetType =
   | 'characterart'
   | 'discart'
   | 'landscape'
-  | 'keyart';
+  | 'keyart'
+  // Music assets
+  | 'cdart'
+  | 'albumcover'
+  | 'artistthumb'
+  | 'musiclogo'
+  | 'hdmusiclogo'
+  | 'artistbackground';
 
 /**
  * Metadata fields that providers can supply
  */
 export type MetadataField =
+  // Common fields
   | 'title'
   | 'originalTitle'
   | 'sortTitle'
@@ -59,16 +72,30 @@ export type MetadataField =
   | 'premiered'
   | 'runtime'
   | 'genres'
+  | 'ratings'
+  | 'country'
+  | 'status'
+  // Video-specific fields
   | 'actors'
   | 'directors'
   | 'writers'
   | 'studios'
-  | 'ratings'
   | 'certification'
   | 'collection'
-  | 'country'
   | 'trailer'
-  | 'status';
+  // Music-specific fields
+  | 'artist'
+  | 'albumArtist'
+  | 'label'
+  | 'duration'
+  | 'trackNumber'
+  | 'discNumber'
+  | 'biography'
+  | 'formed'
+  | 'disbanded'
+  | 'mood'
+  | 'style'
+  | 'theme';
 
 /**
  * Provider authentication configuration
