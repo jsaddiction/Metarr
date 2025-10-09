@@ -4,11 +4,25 @@ This document provides comprehensive reference for external metadata provider AP
 
 ## Provider Overview
 
-Metarr uses multiple metadata providers to enrich media metadata beyond what's available in NFO files:
-- **Primary Source**: NFO files (database is source of truth)
-- **Supplemental**: Provider APIs to add additional fields (vote counts, popularity, provider-specific images)
+Metarr uses multiple metadata providers to enrich media metadata:
+- **Local Provider**: NFO parsing, local asset discovery (filesystem scanning)
+- **Remote Providers**: External APIs (TMDB, TVDB, FanArt.tv) for metadata and assets
+- **Database as Source of Truth**: All data stored in database with provenance tracking
 - **Field Locking**: Locked fields are **never** overwritten by provider updates
-- **Optional Enhancement**: Metadata enrichment is a future feature, not currently implemented
+- **Backup Cache**: Original local assets backed up before replacement during enrichment
+
+### Provider Types
+
+**Implemented Providers:**
+1. **TMDB** - Movies and collections (metadata + images)
+2. **TVDB** - TV shows, seasons, episodes (metadata + images)
+3. **FanArt.tv** - High-quality curated artwork (images only)
+4. **Local** - NFO parsing and local asset discovery (metadata + images)
+
+**Planned Providers:**
+5. **IMDb** - Ratings via web scraping (metadata only)
+6. **MusicBrainz** - Music metadata
+7. **TheAudioDB** - Music artwork
 
 ### Field Locking Behavior
 
@@ -38,6 +52,236 @@ async function updateFromProvider(movieId: number, tmdbData: any): Promise<void>
 ```
 
 See `@docs/FIELD_LOCKING.md` for complete documentation.
+
+## Local Provider & Backup Cache
+
+### Overview
+
+The Local Provider handles discovery and parsing of existing media files, NFO files, and local assets in the user's library. Unlike remote providers, it operates on the local filesystem without rate limits or API calls.
+
+### Backup Cache Strategy
+
+**Problem:** Users may have existing posters, fanart, and other assets in their library. During enrichment, Metarr needs to decide whether to keep local assets or replace them with remote assets from providers.
+
+**Solution:** Backup original local assets before enrichment, allowing users to restore them later if they prefer the originals.
+
+#### Directory Structure
+
+```
+data/
+├── cache/                          # Main cache (remote assets)
+│   ├── images/{movieId}/
+│   ├── trailers/{movieId}/
+│   └── subtitles/{movieId}/
+│
+└── backup/                         # Backup cache (original local assets)
+    ├── images/{movieId}/
+    ├── trailers/{movieId}/
+    └── subtitles/{movieId}/
+```
+
+#### Database Schema
+
+```sql
+CREATE TABLE backup_assets (
+  id INTEGER PRIMARY KEY,
+  movie_id INTEGER NOT NULL,
+  type TEXT NOT NULL,                    -- poster, fanart, banner, etc.
+
+  -- Original location
+  original_path TEXT NOT NULL,
+  original_filename TEXT NOT NULL,
+  original_hash TEXT,                    -- SHA256 hash
+
+  -- Backup location
+  backup_path TEXT NOT NULL,
+  backed_up_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+  -- File properties
+  file_size INTEGER,
+  width INTEGER,
+  height INTEGER,
+  phash TEXT,                            -- Perceptual hash for deduplication
+
+  -- Restoration tracking
+  restored BOOLEAN DEFAULT FALSE,
+  restored_at TIMESTAMP,
+
+  FOREIGN KEY (movie_id) REFERENCES movies(id) ON DELETE CASCADE
+);
+```
+
+#### Enrichment Workflow with Backup
+
+```typescript
+async function enrichMovie(movieId: number, libraryPath: string) {
+  const backupEnabled = await getSetting('backup_local_assets', 'true');
+
+  // Step 1: Backup local assets (if enabled)
+  if (backupEnabled === 'true') {
+    await backupLocalAssets(movieId, libraryPath);
+  }
+
+  // Step 2: Fetch remote candidates from providers
+  const remoteCandidates = await fetchFromProviders(movieId);
+
+  // Step 3: Run asset selection on remote candidates
+  const selected = await selectBestAssets(movieId, remoteCandidates);
+
+  // Step 4: Download selected assets to main cache
+  await downloadToCache(selected);
+
+  // Step 5: Publish to library (replaces old local assets)
+  await publishToLibrary(movieId, selected);
+
+  // Step 6: Notify media player to refresh
+  await notifyPlayer(movieId);
+}
+```
+
+#### Asset Deduplication (pHash Matching)
+
+When a local asset has the same perceptual hash (pHash) as a remote asset, they are the same image:
+
+```typescript
+// During enrichment, check for duplicates
+for (const remote of remoteCandidates) {
+  const matchingLocal = localBackups.find(l => l.phash === remote.phash);
+
+  if (matchingLocal) {
+    // Same image! Use local file, inherit remote metadata
+    candidate = {
+      providerId: remote.providerId,      // Credit the source
+      providerResultId: remote.id,
+      url: remote.url,
+      localPath: matchingLocal.backup_path, // Already have it!
+      alreadyDownloaded: true,
+      width: matchingLocal.width,
+      height: matchingLocal.height,
+      voteAverage: remote.voteAverage,    // Inherit scoring
+      voteCount: remote.voteCount,
+    };
+    // Skip download, use local copy
+  }
+}
+```
+
+#### User Settings
+
+```typescript
+interface BackupSettings {
+  enabled: boolean;              // Default: true
+  retentionDays: number;         // Default: 90
+  autoCleanup: boolean;          // Default: true
+  backupSubtitles: boolean;      // Default: false (can be large)
+  backupTrailers: boolean;       // Default: false (can be huge)
+}
+```
+
+#### Asset Restoration
+
+Users can restore backed-up assets via the UI:
+
+```typescript
+async function restoreBackupAsset(backupId: number): Promise<void> {
+  // 1. Copy from backup cache to main cache
+  // 2. Create asset_candidate entry with providerId='local_restored'
+  // 3. Mark as selected
+  // 4. Publish to library
+  // 5. Rebalance selection (remove lowest scored if over limit)
+}
+```
+
+#### Automatic Cleanup
+
+Background job runs daily to cleanup old backups:
+
+```typescript
+// Delete backups older than retention period
+const cutoffDate = new Date();
+cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
+
+await db.deleteBackupsOlderThan(cutoffDate);
+```
+
+### Local Asset Discovery
+
+The Local Provider discovers assets using Kodi naming conventions:
+
+```typescript
+const IMAGE_TYPES = {
+  poster: ['poster', 'folder', 'cover'],
+  fanart: ['fanart', 'backdrop', 'background'],
+  banner: ['banner'],
+  thumb: ['thumb', 'landscape'],
+  clearart: ['clearart'],
+  clearlogo: ['clearlogo', 'logo'],
+  discart: ['discart', 'disc'],
+};
+
+// Examples:
+// poster.jpg, folder.jpg, movie-poster.jpg
+// fanart.jpg, backdrop.jpg, movie-fanart.jpg
+// banner.jpg, movie-banner.jpg
+```
+
+### NFO Parsing
+
+The Local Provider parses Kodi-format NFO files:
+
+```typescript
+// XML-based NFO
+<movie>
+  <title>The Matrix</title>
+  <uniqueid type="tmdb" default="true">603</uniqueid>
+  <uniqueid type="imdb">tt0133093</uniqueid>
+  <plot>Set in the 22nd century...</plot>
+  <runtime>136</runtime>
+</movie>
+
+// URL-based NFO (legacy)
+https://www.themoviedb.org/movie/603
+https://www.imdb.com/title/tt0133093/
+```
+
+**ID Extraction Strategy:**
+1. Parse all NFO files in directory
+2. Extract TMDB/IMDB/TVDB IDs
+3. Check for conflicts (ambiguous if multiple IDs)
+4. Use IDs to lookup metadata from remote providers
+
+### Local Provider Capabilities
+
+Unlike remote providers, the Local Provider:
+- ✅ No rate limits (filesystem access)
+- ✅ No authentication required
+- ✅ Instant "search" (parse NFO files)
+- ✅ High quality assets (if user curated them)
+- ❌ No community ratings/votes
+- ❌ No automatic quality scoring
+- ❌ Limited metadata (only what's in NFO)
+
+### Integration with Remote Providers
+
+**Two-Phase Scanning Workflow:**
+
+```
+Phase 1: Fast Local Scan (minutes)
+├─ Parse NFO files → Extract IDs
+├─ Discover local assets → Backup to backup cache
+├─ Extract media info (FFprobe) → Video streams
+└─ Create provisional movie entry → Immediately playable
+
+Phase 2: Enrichment (background, hours to days)
+├─ Fetch metadata from TMDB/TVDB using extracted IDs
+├─ Fetch asset candidates from TMDB/FanArt.tv/TVDB
+├─ Score and select best assets
+├─ Download to main cache
+├─ Publish to library (replaces local assets)
+└─ Notify media player
+```
+
+**Key Principle:** Local scan provides fast feedback, enrichment runs in background without blocking.
 
 ## TMDB (The Movie Database)
 
