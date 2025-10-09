@@ -5,9 +5,6 @@
 import { TMDBProvider } from '../../src/services/providers/tmdb/TMDBProvider.js';
 import { createMockProviderConfig } from './helpers.js';
 
-// Mock the TMDBClient
-jest.mock('../../src/services/providers/tmdb/TMDBClient.js');
-
 describe('TMDBProvider', () => {
   let provider: TMDBProvider;
 

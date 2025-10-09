@@ -12,7 +12,7 @@ describe('ProviderRegistry', () => {
   let registry: ProviderRegistry;
 
   beforeEach(() => {
-    registry = new ProviderRegistry();
+    registry = ProviderRegistry.getInstance();
   });
 
   describe('Provider Registration', () => {
@@ -60,7 +60,7 @@ describe('ProviderRegistry', () => {
 
       registry.registerProvider('test' as any, TMDBProvider as any, mockCapabilities);
 
-      expect(registry.isProviderRegistered('test' as any)).toBe(true);
+      expect(registry.isRegistered('test' as any)).toBe(true);
     });
 
     it('should get provider capabilities', () => {
@@ -115,7 +115,7 @@ describe('ProviderRegistry', () => {
 
     it('should list all registered providers', () => {
       // Registry should already have providers registered from imports
-      const providers = registry.listProviders();
+      const providers = registry.getRegisteredProviderIds();
 
       expect(providers.length).toBeGreaterThan(0);
       expect(providers).toContain('tmdb');
@@ -140,7 +140,7 @@ describe('ProviderRegistry', () => {
       const config = createMockProviderConfig('nonexistent' as any);
 
       await expect(registry.createProvider(config)).rejects.toThrow(
-        'Provider nonexistent is not registered'
+        'Unknown provider: nonexistent'
       );
     });
   });
@@ -150,21 +150,14 @@ describe('ProviderRegistry', () => {
       const movieProviders = registry.getProvidersForEntityType('movie');
 
       expect(movieProviders.length).toBeGreaterThan(0);
-      expect(movieProviders).toContain('tmdb');
-    });
-
-    it('should get providers by category', () => {
-      const metadataProviders = registry.getProvidersByCategory('metadata');
-
-      expect(metadataProviders.length).toBeGreaterThan(0);
-      expect(metadataProviders).toContain('musicbrainz');
+      expect(movieProviders.some(p => p.id === 'tmdb')).toBe(true);
     });
 
     it('should get providers that support specific asset type', () => {
-      const posterProviders = registry.getProvidersForAssetType('poster', 'movie');
+      const posterProviders = registry.getProvidersForAssetType('movie', 'poster');
 
       expect(posterProviders.length).toBeGreaterThan(0);
-      expect(posterProviders).toContain('tmdb');
+      expect(posterProviders.some(p => p.id === 'tmdb')).toBe(true);
     });
   });
 });

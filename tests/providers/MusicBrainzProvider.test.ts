@@ -5,9 +5,6 @@
 import { MusicBrainzProvider } from '../../src/services/providers/musicbrainz/MusicBrainzProvider.js';
 import { createMockProviderConfig } from './helpers.js';
 
-// Mock the MusicBrainzClient
-jest.mock('../../src/services/providers/musicbrainz/MusicBrainzClient.js');
-
 describe('MusicBrainzProvider', () => {
   let provider: MusicBrainzProvider;
 

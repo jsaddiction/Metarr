@@ -2,14 +2,11 @@
  * ProviderOrchestrator Integration Tests
  */
 
+import { jest } from '@jest/globals';
 import { ProviderOrchestrator } from '../../src/services/providers/ProviderOrchestrator.js';
 import { ProviderRegistry } from '../../src/services/providers/ProviderRegistry.js';
 import { ProviderConfigService } from '../../src/services/providerConfigService.js';
-import { DatabaseManager } from '../../src/database/DatabaseManager.js';
-
-// Mock the database and provider configs
-jest.mock('../../src/database/DatabaseManager.js');
-jest.mock('../../src/services/providerConfigService.js');
+import { DatabaseConnection } from '../../src/types/database.js';
 
 describe('ProviderOrchestrator Integration Tests', () => {
   let orchestrator: ProviderOrchestrator;
@@ -19,14 +16,21 @@ describe('ProviderOrchestrator Integration Tests', () => {
   beforeEach(() => {
     registry = ProviderRegistry.getInstance();
 
-    // Mock config service
-    const mockDb = new DatabaseManager({ type: 'sqlite3', file: ':memory:' }) as jest.Mocked<
-      DatabaseManager
-    >;
-    configService = new ProviderConfigService(mockDb) as jest.Mocked<ProviderConfigService>;
+    // Create mock DatabaseConnection
+    const mockDb = {
+      query: jest.fn<() => Promise<any[]>>().mockResolvedValue([]) as any,
+      execute: jest.fn<() => Promise<any>>().mockResolvedValue({ affectedRows: 0 }) as any,
+      close: jest.fn<() => Promise<void>>().mockResolvedValue(undefined) as any,
+      beginTransaction: jest.fn<() => Promise<void>>().mockResolvedValue(undefined) as any,
+      commit: jest.fn<() => Promise<void>>().mockResolvedValue(undefined) as any,
+      rollback: jest.fn<() => Promise<void>>().mockResolvedValue(undefined) as any,
+    } as DatabaseConnection;
 
-    // Mock getEnabledProviders to return test configs
-    configService.getEnabledProviders = jest.fn().mockResolvedValue([
+    // Create config service and mock its methods
+    configService = new ProviderConfigService(mockDb) as any;
+
+    // Mock getAll to return test configs
+    configService.getAll = jest.fn<() => Promise<any[]>>().mockResolvedValue([
       {
         id: 1,
         providerName: 'tmdb',
@@ -105,45 +109,41 @@ describe('ProviderOrchestrator Integration Tests', () => {
 
   describe('Metadata Fetching', () => {
     it('should fetch metadata from a single provider', async () => {
-      const metadataRequest = {
-        providerId: 'tmdb' as const,
-        providerResultId: '603',
-        entityType: 'movie' as const,
-      };
+      const entityType = 'movie' as const;
+      const externalIds = { tmdb: '603' };
+      const strategy = { strategy: 'preferred_first' as const };
 
       await expect(
-        orchestrator.fetchMetadata(metadataRequest, { strategy: 'preferred_first' })
+        orchestrator.fetchMetadata(entityType, externalIds, strategy)
       ).resolves.not.toThrow();
     });
   });
 
   describe('Asset Collection', () => {
     it('should collect assets from multiple providers', async () => {
-      const assetRequest = {
-        providerId: 'tmdb' as const,
-        providerResultId: '603',
-        entityType: 'movie' as const,
-        assetTypes: ['poster' as const],
-      };
+      const entityType = 'movie' as const;
+      const externalIds = { tmdb: '603' };
+      const assetTypes = ['poster' as const];
 
-      const results = await orchestrator.collectAssets(assetRequest, {
-        includeAllProviders: true,
-      });
+      const results = await orchestrator.fetchAssetCandidates(
+        entityType,
+        externalIds,
+        assetTypes
+      );
 
       expect(Array.isArray(results)).toBe(true);
     });
 
     it('should filter assets by type', async () => {
-      const assetRequest = {
-        providerId: 'tmdb' as const,
-        providerResultId: '603',
-        entityType: 'movie' as const,
-        assetTypes: ['poster' as const, 'fanart' as const],
-      };
+      const entityType = 'movie' as const;
+      const externalIds = { tmdb: '603' };
+      const assetTypes = ['poster' as const, 'fanart' as const];
 
-      const results = await orchestrator.collectAssets(assetRequest, {
-        includeAllProviders: true,
-      });
+      const results = await orchestrator.fetchAssetCandidates(
+        entityType,
+        externalIds,
+        assetTypes
+      );
 
       // All returned assets should match requested types
       results.forEach((asset) => {
