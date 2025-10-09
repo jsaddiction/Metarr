@@ -18,6 +18,8 @@ export * from '../../types/providers/index.js';
 
 // Concrete Providers
 export * from './tmdb/TMDBProvider.js';
+export * from './tvdb/TVDBProvider.js';
 
 // Register all providers (imports trigger self-registration)
 import './tmdb/register.js';
+import './tvdb/register.js';
