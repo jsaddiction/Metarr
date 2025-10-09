@@ -2,16 +2,20 @@
  * CircuitBreaker Tests
  */
 
-import { CircuitBreaker, CircuitState } from '../../src/services/providers/utils/CircuitBreaker';
+import { CircuitBreaker, CircuitState } from '../../src/services/providers/utils/CircuitBreaker.js';
 
 describe('CircuitBreaker', () => {
   let circuitBreaker: CircuitBreaker;
-  let mockOnOpen: jest.Mock;
-  let mockOnClose: jest.Mock;
+  let mockOnOpen: () => void;
+  let mockOnClose: () => void;
+  let openCalled: boolean;
+  let closeCalled: boolean;
 
   beforeEach(() => {
-    mockOnOpen = jest.fn();
-    mockOnClose = jest.fn();
+    openCalled = false;
+    closeCalled = false;
+    mockOnOpen = () => { openCalled = true; };
+    mockOnClose = () => { closeCalled = true; };
 
     circuitBreaker = new CircuitBreaker({
       threshold: 3,
@@ -50,7 +54,7 @@ describe('CircuitBreaker', () => {
 
     expect(circuitBreaker.getState()).toBe(CircuitState.OPEN);
     expect(circuitBreaker.isOpen()).toBe(true);
-    expect(mockOnOpen).toHaveBeenCalled();
+    expect(openCalled).toBe(true);
   });
 
   it('should reject requests when circuit is open', async () => {
@@ -113,7 +117,7 @@ describe('CircuitBreaker', () => {
     await circuitBreaker.execute(async () => 'success');
 
     expect(circuitBreaker.getState()).toBe(CircuitState.CLOSED);
-    expect(mockOnClose).toHaveBeenCalled();
+    expect(closeCalled).toBe(true);
   });
 
   it('should reopen circuit if recovery fails', async () => {

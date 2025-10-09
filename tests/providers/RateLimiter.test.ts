@@ -2,7 +2,7 @@
  * RateLimiter Tests
  */
 
-import { RateLimiter } from '../../src/services/providers/utils/RateLimiter';
+import { RateLimiter } from '../../src/services/providers/utils/RateLimiter.js';
 
 describe('RateLimiter', () => {
   let rateLimiter: RateLimiter;
@@ -34,16 +34,15 @@ describe('RateLimiter', () => {
   it('should delay requests exceeding limit', async () => {
     const start = Date.now();
 
-    // Make 11 requests (exceeds limit of 10/sec)
-    const promises = [];
+    // Make 11 requests sequentially (exceeds limit of 10/sec)
+    // The 11th request should be delayed until the window slides
     for (let i = 0; i < 11; i++) {
-      promises.push(rateLimiter.execute(async () => i));
+      await rateLimiter.execute(async () => i);
     }
 
-    await Promise.all(promises);
     const elapsed = Date.now() - start;
 
-    // Should take > 1 second due to rate limiting
+    // Should take > 900ms due to rate limiting (11th request delayed)
     expect(elapsed).toBeGreaterThan(900); // Allow some timing variance
   });
 

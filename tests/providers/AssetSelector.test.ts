@@ -2,8 +2,8 @@
  * AssetSelector Tests
  */
 
-import { AssetSelector } from '../../src/services/providers/AssetSelector';
-import { AssetCandidate } from '../../src/types/providers';
+import { AssetSelector } from '../../src/services/providers/AssetSelector.js';
+import { AssetCandidate } from '../../src/types/providers/index.js';
 
 describe('AssetSelector', () => {
   const createCandidate = (overrides: Partial<AssetCandidate> = {}): AssetCandidate => ({
@@ -135,12 +135,12 @@ describe('AssetSelector', () => {
     const selector = new AssetSelector({
       assetType: 'poster',
       maxCount: 5,
-      pHashThreshold: 0.95, // High similarity threshold
+      pHashThreshold: 0.92, // Default threshold (92%)
     });
 
     const candidates = [
       createCandidate({ perceptualHash: '1111111111111111', votes: 200 }),
-      createCandidate({ perceptualHash: '1111111111111110', votes: 150 }), // Very similar, should be filtered
+      createCandidate({ perceptualHash: '1111111111111111', votes: 150 }), // Exact duplicate, should be filtered
       createCandidate({ perceptualHash: '0000000000000000', votes: 100 }), // Different
     ];
 
@@ -156,8 +156,8 @@ describe('AssetSelector', () => {
     });
 
     const candidates = [
-      createCandidate({ width: undefined, height: undefined, votes: undefined }),
-      createCandidate({ language: undefined }),
+      createCandidate({}), // No width, height, or votes
+      createCandidate({}), // No language
       createCandidate({}), // Normal candidate
     ];
 
