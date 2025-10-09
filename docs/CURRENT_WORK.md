@@ -1,12 +1,12 @@
 # Current Work - Provider Implementation
 
 **Last Updated:** 2025-10-09
-**Status:** Local Provider Complete - Ready for Next Provider
-**Next Session:** IMDb Provider (or as directed)
+**Status:** IMDb Provider Complete - Music Providers Remaining
+**Next Session:** MusicBrainz or TheAudioDB (Phase 2)
 
 ## Provider Implementation Progress
 
-**Completed: 4/7 Providers (57%)**
+**Completed: 5/7 Providers (71%)**
 
 ### ✅ Implemented Providers
 
@@ -48,28 +48,34 @@
      - Kodi naming convention support for asset discovery
    - Files: `src/services/providers/local/`, `src/utils/imageHash.ts`
 
-## Remaining Providers
-
-### 📋 Next Up (Priority Order)
-
-1. **IMDb (Web Scraping)** - Priority: MEDIUM
+5. **IMDb (Internet Movie Database)** - Merged to master
    - Category: Metadata only
    - Entities: movie, series, episode
-   - Purpose: Ratings, reviews via direct web scraping
-   - Note: OMDb API implementation was removed (not direct scraping)
-   - Complexity: High (web scraping requires careful maintenance)
+   - Rate Limit: 1 req/sec (very conservative, web scraping)
+   - Authentication: None required
+   - Technology: Web scraping with cheerio (HTML parsing)
+   - **LEGAL WARNING**: Violates IMDb ToS - disabled by default, use at own risk
+   - Data: Ratings, vote counts, plot, cast, crew, genres, certification
+   - No assets provided (ToS compliance)
+   - Files: `src/services/providers/imdb/`
 
-2. **MusicBrainz** - Priority: LOW
+## Remaining Providers
+
+### 📋 Phase 2: Music Providers
+
+1. **MusicBrainz** - Priority: LOW (Phase 2)
    - Category: Both (metadata + images)
    - Entities: artist, album, track
    - Purpose: Music metadata
-   - Status: Phase 2 (music support)
+   - Status: Requires music entity support implementation first
 
-3. **TheAudioDB** - Priority: LOW
+2. **TheAudioDB** - Priority: LOW (Phase 2)
    - Category: Images only
    - Entities: artist, album
    - Purpose: Music artwork
-   - Status: Phase 2 (music support)
+   - Status: Requires music entity support implementation first
+
+**Note**: Music providers are deferred to Phase 2 as Metarr currently focuses on movie/TV metadata management.
 
 ## Key Architecture Documents
 
@@ -141,10 +147,25 @@ All providers follow this structure:
 - `register.ts` - Self-registration with ProviderRegistry
 - Export and import in `src/services/providers/index.ts`
 
-### Next Provider: IMDb Considerations
+### IMDb Provider Implementation Notes
 
-- **Web Scraping:** Requires HTML parsing (cheerio or similar)
-- **Rate Limiting:** Must be conservative to avoid IP blocking
-- **Maintenance:** Web scraping is fragile, requires monitoring for page structure changes
-- **Data Quality:** Focus on ratings and vote counts, core IMDb strengths
-- **Fallback:** Consider OMDb API as backup if direct scraping becomes problematic
+- **Library Choice:** cheerio (8x faster than JSDOM, jQuery-like API)
+- **Legal Disclaimer:** Extensive ToS warnings in code, disabled by default
+- **Rate Limiting:** 1 req/sec (very conservative to avoid IP bans)
+- **HTML Selectors:** Uses modern `data-testid` attributes where possible
+- **Browser Emulation:** Comprehensive headers to avoid 403 blocks
+- **Type Safety:** Fixed `exactOptionalPropertyTypes` issues with spread operators
+- **Metadata Structure:** Uses `fields` object in MetadataResponse per spec
+- **Search:** Supports both title search and direct IMDb ID lookup
+- **Maintenance Risk:** Web scraping is fragile, may break if IMDb changes HTML structure
+
+### Next Steps
+
+With 5/7 providers complete (71%), all movie/TV providers are implemented:
+- ✅ TMDB - Primary metadata & images
+- ✅ TVDB - TV-specific metadata & images
+- ✅ FanArt.tv - High-quality curated artwork
+- ✅ Local - NFO parsing & backup cache
+- ✅ IMDb - Ratings & supplementary metadata
+
+**Recommended next work**: Integration testing and ProviderOrchestrator implementation to verify all providers work together correctly before proceeding to Phase 2 (music).
