@@ -1390,12 +1390,173 @@ export class InitialSchemaMigration {
         last_test_at DATETIME,
         last_test_status VARCHAR(20),
         last_test_error TEXT,
+
+        -- Provider Framework Authentication
+        personal_api_key TEXT,
+        token TEXT,
+        token_expires_at DATETIME,
+
+        -- Provider Framework Configuration
+        language VARCHAR(10) DEFAULT 'en',
+        region VARCHAR(10) DEFAULT 'US',
+        options TEXT DEFAULT '{}',
+        priority INTEGER DEFAULT 50,
+
+        -- Provider Framework Usage Flags
+        use_for_metadata BOOLEAN DEFAULT 1,
+        use_for_images BOOLEAN DEFAULT 1,
+        use_for_search BOOLEAN DEFAULT 1,
+
+        -- Provider Framework Health Tracking
+        consecutive_failures INTEGER DEFAULT 0,
+        circuit_breaker_until DATETIME,
+
+        -- Provider Framework Statistics
+        total_requests INTEGER DEFAULT 0,
+        failed_requests INTEGER DEFAULT 0,
+        avg_response_time_ms INTEGER,
+        last_request_at DATETIME,
+
         created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
       )
     `);
 
     await db.execute(`CREATE INDEX idx_provider_configs_enabled ON provider_configs(enabled)`);
+    await db.execute(`CREATE INDEX idx_provider_priority ON provider_configs(priority DESC)`);
+    await db.execute(`CREATE INDEX idx_provider_usage ON provider_configs(enabled, use_for_metadata, use_for_images)`);
+
+    // Asset Selection Presets - defines how many of each asset type to collect
+    await db.execute(`
+      CREATE TABLE asset_selection_presets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name VARCHAR(50) NOT NULL UNIQUE,
+        description TEXT,
+        is_default BOOLEAN DEFAULT 0,
+
+        -- Asset counts (JSON: { "poster": 1, "fanart": 3, "clearlogo": 1 })
+        asset_counts TEXT NOT NULL DEFAULT '{}',
+
+        -- Provider priority (JSON array: ["fanart_tv", "tmdb", "tvdb"])
+        provider_priority TEXT,
+
+        -- Quality filters
+        min_poster_width INTEGER DEFAULT 1000,
+        min_poster_height INTEGER DEFAULT 1500,
+        min_fanart_width INTEGER DEFAULT 1920,
+        min_fanart_height INTEGER DEFAULT 1080,
+
+        -- Deduplication
+        phash_threshold REAL DEFAULT 0.92,
+
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Library Provider Configuration - links libraries to asset presets
+    await db.execute(`
+      CREATE TABLE library_provider_config (
+        library_id INTEGER PRIMARY KEY,
+        preset_id INTEGER NOT NULL,
+
+        -- Orchestration strategy
+        strategy VARCHAR(50) DEFAULT 'preferred_first',
+        preferred_metadata_provider VARCHAR(50),
+        fill_metadata_gaps BOOLEAN DEFAULT 1,
+
+        -- Custom field mapping (JSON, only if strategy = 'field_mapping')
+        field_mapping TEXT,
+
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+        FOREIGN KEY (library_id) REFERENCES libraries(id) ON DELETE CASCADE,
+        FOREIGN KEY (preset_id) REFERENCES asset_selection_presets(id)
+      )
+    `);
+
+    // Insert default asset selection presets
+    // Minimal preset
+    await db.execute(`
+      INSERT INTO asset_selection_presets (
+        name,
+        description,
+        is_default,
+        asset_counts,
+        provider_priority,
+        min_poster_width,
+        min_poster_height,
+        min_fanart_width,
+        min_fanart_height,
+        phash_threshold
+      ) VALUES (
+        'minimal',
+        'Essential assets only. Fastest setup, smallest library size.',
+        0,
+        '{"poster": 1, "fanart": 2}',
+        '["tmdb"]',
+        1000,
+        1500,
+        1920,
+        1080,
+        0.92
+      )
+    `);
+
+    // Recommended preset (default)
+    await db.execute(`
+      INSERT INTO asset_selection_presets (
+        name,
+        description,
+        is_default,
+        asset_counts,
+        provider_priority,
+        min_poster_width,
+        min_poster_height,
+        min_fanart_width,
+        min_fanart_height,
+        phash_threshold
+      ) VALUES (
+        'recommended',
+        'Balanced visual experience. Recommended for most users.',
+        1,
+        '{"poster": 1, "fanart": 3, "clearlogo": 1}',
+        '["fanart_tv", "tmdb"]',
+        1500,
+        2250,
+        1920,
+        1080,
+        0.92
+      )
+    `);
+
+    // Maximum preset
+    await db.execute(`
+      INSERT INTO asset_selection_presets (
+        name,
+        description,
+        is_default,
+        asset_counts,
+        provider_priority,
+        min_poster_width,
+        min_poster_height,
+        min_fanart_width,
+        min_fanart_height,
+        phash_threshold
+      ) VALUES (
+        'maximum',
+        'All available artwork. Best for large screens and advanced skins.',
+        0,
+        '{"poster": 3, "fanart": 10, "clearlogo": 1, "clearart": 1, "banner": 1, "discart": 1, "landscape": 1}',
+        '["fanart_tv", "tmdb", "tvdb"]',
+        2000,
+        3000,
+        1920,
+        1080,
+        0.90
+      )
+    `);
 
     // ========================================
     // PHASE 1: TRIGGERS
