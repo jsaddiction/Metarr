@@ -1,12 +1,12 @@
 # Current Work - Provider Implementation
 
-**Last Updated:** 2025-01-09
-**Status:** In Progress - Local Provider Planning Phase
-**Next Session:** Implement Local Provider
+**Last Updated:** 2025-10-09
+**Status:** Local Provider Complete - Ready for Next Provider
+**Next Session:** IMDb Provider (or as directed)
 
 ## Provider Implementation Progress
 
-**Completed: 3/7 Providers (43%)**
+**Completed: 4/7 Providers (57%)**
 
 ### ✅ Implemented Providers
 
@@ -33,219 +33,43 @@
    - Special: High-quality curated artwork, multi-language, community voting
    - Files: `src/services/providers/fanart/`
 
-### 📋 Next: Local Provider
+4. **Local Provider** - Merged to master
+   - Category: Both (metadata + images)
+   - Entities: movie, series, season, episode
+   - Rate Limit: 1000 req/sec (effectively unlimited for filesystem)
+   - Authentication: None required
+   - Search: NFO parsing for external IDs (TMDB, IMDB, TVDB)
+   - Assets: All Kodi-compatible types (poster, fanart, banner, clearlogo, etc.)
+   - Special Features:
+     - Backup cache system (stores originals before enrichment)
+     - Perceptual hash (pHash) for image deduplication
+     - Content hash (SHA256) for file integrity
+     - Automatic backup cleanup (90-day retention)
+     - Kodi naming convention support for asset discovery
+   - Files: `src/services/providers/local/`, `src/utils/imageHash.ts`
 
-**Status:** Architecture designed, ready to implement
+## Remaining Providers
 
-**Purpose:** NFO parsing, local asset discovery, filesystem scanning
+### 📋 Next Up (Priority Order)
 
-**Key Decisions Made:**
-
-1. **Local Provider as Real Provider**
-   - Extends BaseProvider like remote providers
-   - No rate limits (filesystem access is instant)
-   - "Search" = Parse NFO files for IDs
-   - "GetAssets" = Discover local files using Kodi naming conventions
-
-2. **Backup Cache System** (CRITICAL FEATURE)
-   - Before enrichment, backup all local assets to `data/backup/`
-   - Store in `backup_assets` table with metadata (dimensions, pHash, etc.)
-   - User can restore backed-up assets later via UI
-   - Auto-cleanup after retention period (default: 90 days)
-
-3. **Asset Deduplication via pHash**
-   - Compute perceptual hash for all images
-   - If local asset pHash matches remote asset pHash = same image
-   - Use local copy, inherit remote metadata (votes, ratings)
-   - Skip download, save bandwidth
-
-4. **Default Behavior: Replace Local Assets**
-   - Like MediaElch: Replace local assets with web sources
-   - Provides clean, trackable, known-provenance assets
-   - User settings allow different policies (supplement, compete, preserve)
-
-## Implementation Tasks (Next Session)
-
-### 1. Database Migration for Backup Cache
-
-Create migration file: `src/database/migrations/YYYYMMDD_HHmmss_add_backup_assets.ts`
-
-```sql
-CREATE TABLE backup_assets (
-  id INTEGER PRIMARY KEY,
-  movie_id INTEGER NOT NULL,
-  type TEXT NOT NULL,
-
-  -- Original location
-  original_path TEXT NOT NULL,
-  original_filename TEXT NOT NULL,
-  original_hash TEXT,
-
-  -- Backup location
-  backup_path TEXT NOT NULL,
-  backed_up_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-
-  -- File properties
-  file_size INTEGER,
-  width INTEGER,
-  height INTEGER,
-  phash TEXT,
-
-  -- Restoration tracking
-  restored BOOLEAN DEFAULT FALSE,
-  restored_at TIMESTAMP,
-
-  FOREIGN KEY (movie_id) REFERENCES movies(id) ON DELETE CASCADE
-);
-
-CREATE INDEX idx_backup_assets_movie_type ON backup_assets(movie_id, type);
-CREATE INDEX idx_backup_assets_phash ON backup_assets(phash);
-```
-
-### 2. Implement Perceptual Hash (pHash)
-
-**Library:** Use `sharp` with image fingerprinting or `phash` npm package
-
-**Location:** `src/utils/imageHash.ts`
-
-```typescript
-export async function computePerceptualHash(imagePath: string): Promise<string> {
-  // Resize to 8x8, convert to grayscale, compute DCT, generate hash
-  // Returns 64-bit hash as hex string
-}
-```
-
-### 3. Create LocalProvider
-
-**Files to create:**
-- `src/services/providers/local/LocalProvider.ts`
-- `src/services/providers/local/LocalScanner.ts` (reuse existing scan services)
-- `src/services/providers/local/BackupService.ts` (new)
-- `src/services/providers/local/register.ts`
-
-**Key methods:**
-
-```typescript
-export class LocalProvider extends BaseProvider {
-  defineCapabilities(): ProviderCapabilities {
-    return {
-      id: 'local',
-      name: 'Local Files',
-      category: 'both',
-      supportedEntityTypes: ['movie', 'series', 'season', 'episode'],
-
-      // Special: No API, no rate limits
-      rateLimit: {
-        requestsPerSecond: 999999,
-        enforcementType: 'client'
-      },
-
-      search: {
-        supported: true,
-        fuzzyMatching: false,
-        externalIdLookup: ['tmdb', 'imdb', 'tvdb']
-      }
-    };
-  }
-
-  async search(request: SearchRequest): Promise<SearchResult[]> {
-    // Parse NFO files in directory
-    // Extract IDs (TMDB, IMDB, TVDB)
-    // Return search results with extracted IDs
-  }
-
-  async getAssets(request: AssetRequest): Promise<AssetCandidate[]> {
-    // Discover local assets using Kodi naming conventions
-    // Measure dimensions with Sharp
-    // Compute pHash for deduplication
-    // Return candidates with localPath flag
-  }
-}
-```
-
-### 4. Implement Backup Service
-
-**Location:** `src/services/providers/local/BackupService.ts`
-
-```typescript
-export class BackupService {
-  async backupAssets(movieId: number, libraryPath: string): Promise<void> {
-    // Discover all local assets
-    // Copy each to data/backup/{type}/{movieId}/
-    // Measure dimensions, compute pHash
-    // Store in backup_assets table
-  }
-
-  async restoreAsset(backupId: number): Promise<void> {
-    // Copy from backup to main cache
-    // Create asset_candidate entry
-    // Mark as selected
-    // Publish to library
-    // Rebalance selection
-  }
-
-  async cleanupOldBackups(retentionDays: number): Promise<void> {
-    // Delete backups older than retention period
-  }
-}
-```
-
-### 5. Integration Points
-
-**Existing code to leverage:**
-- `src/services/nfo/nfoParser.ts` - Already parses NFO files
-- `src/services/media/assetDiscovery.ts` - Already discovers local assets
-- `src/services/scan/unifiedScanService.ts` - Orchestrates scanning
-
-**Update unifiedScanService.ts to:**
-1. Call BackupService before enrichment
-2. Use LocalProvider for NFO parsing
-3. Use LocalProvider for asset discovery
-
-### 6. Add User Settings
-
-**Location:** `src/config/settings.ts` or settings table
-
-```typescript
-interface BackupSettings {
-  enabled: boolean;              // Default: true
-  retentionDays: number;         // Default: 90
-  autoCleanup: boolean;          // Default: true
-  backupSubtitles: boolean;      // Default: false
-  backupTrailers: boolean;       // Default: false
-}
-```
-
-### 7. Testing
-
-Create tests:
-- `tests/services/providers/local/LocalProvider.test.ts`
-- `tests/services/providers/local/BackupService.test.ts`
-
-Test scenarios:
-- NFO parsing (XML and URL formats)
-- Local asset discovery (all Kodi naming variants)
-- Backup creation and restoration
-- pHash deduplication
-- Cleanup of old backups
-
-## Remaining Providers (After Local)
-
-4. **IMDb (Web Scraping)** - Not started
+1. **IMDb (Web Scraping)** - Priority: MEDIUM
    - Category: Metadata only
    - Entities: movie, series, episode
    - Purpose: Ratings, reviews via direct web scraping
    - Note: OMDb API implementation was removed (not direct scraping)
+   - Complexity: High (web scraping requires careful maintenance)
 
-5. **MusicBrainz** - Not started
+2. **MusicBrainz** - Priority: LOW
    - Category: Both (metadata + images)
    - Entities: artist, album, track
    - Purpose: Music metadata
+   - Status: Phase 2 (music support)
 
-6. **TheAudioDB** - Not started
+3. **TheAudioDB** - Priority: LOW
    - Category: Images only
    - Entities: artist, album
    - Purpose: Music artwork
+   - Status: Phase 2 (music support)
 
 ## Key Architecture Documents
 
@@ -262,55 +86,65 @@ Test scenarios:
 ## Git Status
 
 - Current branch: `master`
-- Commits ahead of origin: 12
-- Last commit: "Add FanArt.tv provider implementation"
-- Ready to push after committing documentation updates
+- Last commit: "feat(providers): implement Local provider with backup cache system"
+- Local Provider merged and feature branch deleted
+- Ready for next provider implementation
 
-## Questions/Decisions for Next Session
+## Implementation Decisions Made
 
-1. **pHash Library Choice:**
-   - Use `sharp` with custom DCT implementation?
-   - Use `phash` npm package?
-   - Use `blockhash` for simpler perceptual hashing?
-
-2. **Backup Directory Structure:**
-   - Flat: `data/backup/images/{movieId}_{type}_{timestamp}.jpg`
-   - Nested: `data/backup/images/{movieId}/{type}_{timestamp}.jpg` (preferred)
-
-3. **NFO Writing:**
-   - Should LocalProvider also handle NFO writing/generation?
-   - Or keep that separate in existing nfoGenerator service?
-
-4. **UI for Asset Review:**
-   - New route: `/metadata/movies/{id}/assets` or `/metadata/movies/{id}/asset-review`?
-   - Show thumbnails or just metadata?
-   - Inline restoration or modal dialog?
+1. **pHash Library:** Using `sharp` with average hash algorithm (8x8 resize + grayscale)
+2. **Backup Directory Structure:** Nested structure: `data/backup/{entityType}/{entityId}/{type}_{timestamp}.ext`
+3. **Database Schema:** Added `backup_assets` table to initial migration (development phase)
+4. **Settings Storage:** Backup configuration stored in `settings` table with `backup_*` keys
 
 ## Commands for Next Session
 
 ```bash
-# Continue implementation
+# Start development
 npm run dev:all
 
-# Run type checking frequently
+# Type checking (run frequently)
 npm run typecheck
 
-# Build to verify compilation
+# Build verification
 npm run build
 
 # Run tests
 npm test
 
-# Commit when ready
+# Git workflow for next provider (example: IMDb)
+git checkout -b feature/provider-imdb
+# ... implement provider ...
 git add -A
-git commit -m "feat(providers): implement Local provider with backup cache system"
-git push origin master
+git commit -m "feat(providers): implement IMDb provider"
+git checkout master
+git merge --no-ff feature/provider-imdb
+git branch -d feature/provider-imdb
 ```
 
-## Notes
+## Implementation Notes
 
-- All provider implementations follow the same pattern (Client → Provider → register.ts)
-- Rate limiting is abstracted in BaseProvider, LocalProvider can skip it
-- Backup cache is user-controlled feature, can be disabled entirely
-- pHash deduplication prevents unnecessary re-downloads
-- Focus on making LocalProvider fit the existing provider framework consistently
+### Local Provider Lessons Learned
+
+1. **Type Safety:** TypeScript's `exactOptionalPropertyTypes` requires careful handling of optional fields
+2. **Metadata Storage:** Use `metadata` object in SearchResult/AssetCandidate for provider-specific fields
+3. **Database Changes:** During development, add schema changes directly to initial migration
+4. **Git Workflow:** User prefers to review commit messages before execution
+5. **Commit Attribution:** Do not include Co-Authored-By or email addresses
+6. **Backup Architecture:** Successfully implemented nested directory structure with comprehensive metadata tracking
+
+### Provider Implementation Pattern
+
+All providers follow this structure:
+- `{Provider}Client.ts` - API/filesystem access layer (if needed)
+- `{Provider}Provider.ts` - Extends BaseProvider, implements capabilities
+- `register.ts` - Self-registration with ProviderRegistry
+- Export and import in `src/services/providers/index.ts`
+
+### Next Provider: IMDb Considerations
+
+- **Web Scraping:** Requires HTML parsing (cheerio or similar)
+- **Rate Limiting:** Must be conservative to avoid IP blocking
+- **Maintenance:** Web scraping is fragile, requires monitoring for page structure changes
+- **Data Quality:** Focus on ratings and vote counts, core IMDb strengths
+- **Fallback:** Consider OMDb API as backup if direct scraping becomes problematic
