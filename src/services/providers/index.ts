@@ -19,7 +19,9 @@ export * from '../../types/providers/index.js';
 // Concrete Providers
 export * from './tmdb/TMDBProvider.js';
 export * from './tvdb/TVDBProvider.js';
+export * from './fanart/FanArtProvider.js';
 
 // Register all providers (imports trigger self-registration)
 import './tmdb/register.js';
 import './tvdb/register.js';
+import './fanart/register.js';
