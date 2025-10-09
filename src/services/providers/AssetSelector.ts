@@ -6,7 +6,6 @@
  */
 
 import { AssetCandidate, AssetType, ProviderId } from '../../types/providers/index.js';
-import { ProviderRegistry } from './ProviderRegistry.js';
 import { logger } from '../../middleware/logging.js';
 
 /**
@@ -68,7 +67,6 @@ const IDEAL_ASPECT_RATIOS: Record<string, number> = {
 export class AssetSelector {
   private readonly config: AssetSelectionConfig;
   private readonly weights: ScoringWeights;
-  private readonly providerRegistry: ProviderRegistry;
 
   constructor(config: AssetSelectionConfig) {
     this.config = {
@@ -86,8 +84,6 @@ export class AssetSelector {
       provider: 0.15,
       aspectRatio: 0.10,
     };
-
-    this.providerRegistry = ProviderRegistry.getInstance();
   }
 
   /**

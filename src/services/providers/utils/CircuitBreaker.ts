@@ -30,9 +30,9 @@ export class CircuitBreaker {
 
   private readonly threshold: number;
   private readonly resetTimeoutMs: number;
-  private readonly onOpen?: () => void;
-  private readonly onClose?: () => void;
-  private readonly onHalfOpen?: () => void;
+  private readonly onOpen: (() => void) | undefined;
+  private readonly onClose: (() => void) | undefined;
+  private readonly onHalfOpen: (() => void) | undefined;
 
   constructor(config: CircuitBreakerConfig) {
     this.threshold = config.threshold;

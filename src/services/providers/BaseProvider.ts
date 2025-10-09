@@ -18,7 +18,7 @@ import {
   TestConnectionResponse,
   ProviderOptions,
 } from '../../types/providers/index.js';
-import { RateLimiter, CircuitBreaker, CircuitState } from './utils/index.js';
+import { RateLimiter, CircuitBreaker } from './utils/index.js';
 import { logger } from '../../middleware/logging.js';
 
 export abstract class BaseProvider {
@@ -59,7 +59,7 @@ export abstract class BaseProvider {
    * Search for entities
    * Override if provider supports search (capabilities.search.supported = true)
    */
-  async search(request: SearchRequest): Promise<SearchResult[]> {
+  async search(_request: SearchRequest): Promise<SearchResult[]> {
     throw new Error(`${this.capabilities.id} does not support search`);
   }
 
@@ -67,7 +67,7 @@ export abstract class BaseProvider {
    * Get metadata for an entity
    * Override if provider supports metadata retrieval
    */
-  async getMetadata(request: MetadataRequest): Promise<MetadataResponse> {
+  async getMetadata(_request: MetadataRequest): Promise<MetadataResponse> {
     throw new Error(`${this.capabilities.id} does not support metadata retrieval`);
   }
 
@@ -75,7 +75,7 @@ export abstract class BaseProvider {
    * Get asset candidates for an entity
    * Override if provider supports asset retrieval
    */
-  async getAssets(request: AssetRequest): Promise<AssetCandidate[]> {
+  async getAssets(_request: AssetRequest): Promise<AssetCandidate[]> {
     throw new Error(`${this.capabilities.id} does not support asset retrieval`);
   }
 

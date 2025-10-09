@@ -9,14 +9,11 @@ import { ProviderRegistry } from './ProviderRegistry.js';
 import { BaseProvider } from './BaseProvider.js';
 import { AssetSelector, AssetSelectionConfig } from './AssetSelector.js';
 import { ProviderConfigService } from '../providerConfigService.js';
-import { DatabaseConnection } from '../../types/database.js';
 import { ProviderConfig } from '../../types/provider.js';
 import {
   SearchRequest,
   SearchResult,
-  MetadataRequest,
   MetadataResponse,
-  AssetRequest,
   AssetCandidate,
   EntityType,
   AssetType,
@@ -41,8 +38,7 @@ export interface OrchestrationConfig {
 export class ProviderOrchestrator {
   constructor(
     private registry: ProviderRegistry,
-    private configService: ProviderConfigService,
-    private db: DatabaseConnection
+    private configService: ProviderConfigService
   ) {}
 
   /**
@@ -53,7 +49,8 @@ export class ProviderOrchestrator {
     const enabledConfigs = await this.getEnabledProviders();
     const searchProviders = enabledConfigs.filter(config => {
       const caps = this.registry.getCapabilities(config.providerName as ProviderId);
-      return caps?.search.supported && config.use_for_search;
+      // Check if provider supports search (use_for_search will be added in Phase 2)
+      return caps?.search.supported;
     });
 
     logger.info(`Searching across ${searchProviders.length} providers`, {
@@ -111,7 +108,8 @@ export class ProviderOrchestrator {
 
     // Fetch from all metadata providers
     const enabledConfigs = await this.getEnabledProviders();
-    const metadataProviders = enabledConfigs.filter(c => c.use_for_metadata);
+    // For now, use all enabled providers (use_for_metadata will be added in Phase 2)
+    const metadataProviders = enabledConfigs;
 
     logger.info(`Fetching metadata from ${metadataProviders.length} providers`, {
       entityType,
@@ -169,7 +167,8 @@ export class ProviderOrchestrator {
     assetTypes: AssetType[]
   ): Promise<AssetCandidate[]> {
     const enabledConfigs = await this.getEnabledProviders();
-    const assetProviders = enabledConfigs.filter(c => c.use_for_images);
+    // For now, use all enabled providers (use_for_images will be added in Phase 2)
+    const assetProviders = enabledConfigs;
 
     logger.info(`Fetching assets from ${assetProviders.length} providers`, {
       entityType,
@@ -389,7 +388,7 @@ export class ProviderOrchestrator {
    */
   private mergeAggregateAll(
     responses: MetadataResponse[],
-    strategy: OrchestrationConfig
+    _strategy: OrchestrationConfig
   ): MetadataResponse {
     const merged: MetadataResponse = {
       providerId: 'aggregated' as ProviderId,

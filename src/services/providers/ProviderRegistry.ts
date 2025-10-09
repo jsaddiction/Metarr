@@ -13,18 +13,24 @@ import {
   EntityType,
   AssetType,
   MetadataField,
+  ProviderOptions,
 } from '../../types/providers/index.js';
 import { logger } from '../../middleware/logging.js';
 
+/**
+ * Type for constructable provider classes (excludes abstract BaseProvider)
+ */
+type ProviderConstructor = new (config: ProviderConfig, options?: ProviderOptions) => BaseProvider;
+
 export class ProviderRegistry {
   private static instance: ProviderRegistry;
-  private providerClasses: Map<ProviderId, typeof BaseProvider> = new Map();
+  private providerClasses: Map<ProviderId, ProviderConstructor> = new Map();
   private capabilities: Map<ProviderId, ProviderCapabilities> = new Map();
   private instances: Map<string, BaseProvider> = new Map(); // Cache provider instances
 
   private constructor() {
     // Private constructor for singleton
-    // Providers will be registered by calling register()
+    // Providers will register themselves via registerProvider()
   }
 
   /**
@@ -38,32 +44,17 @@ export class ProviderRegistry {
   }
 
   /**
-   * Register a provider class
+   * Register a provider with its capabilities
+   * Should be called by concrete provider classes (not BaseProvider)
    */
-  register(providerClass: typeof BaseProvider): void {
-    // Create temporary instance to extract capabilities
-    const tempConfig: ProviderConfig = {
-      id: 0,
-      providerName: 'temp',
-      enabled: false,
-      enabledAssetTypes: [],
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-
-    try {
-      const tempInstance = new providerClass(tempConfig);
-      const caps = tempInstance.getCapabilities();
-
-      this.providerClasses.set(caps.id, providerClass);
-      this.capabilities.set(caps.id, caps);
-
-      logger.info(`Registered provider: ${caps.name} (${caps.id})`);
-    } catch (error: any) {
-      logger.error(`Failed to register provider class`, {
-        error: error.message,
-      });
-    }
+  registerProvider(
+    providerId: ProviderId,
+    providerClass: ProviderConstructor,
+    capabilities: ProviderCapabilities
+  ): void {
+    this.providerClasses.set(providerId, providerClass);
+    this.capabilities.set(providerId, capabilities);
+    logger.info(`Registered provider: ${capabilities.name} (${providerId})`);
   }
 
   /**
@@ -89,8 +80,15 @@ export class ProviderRegistry {
       throw new Error(`Unknown provider: ${config.providerName}`);
     }
 
+    // Create instance of concrete provider class
+    // ProviderClass is guaranteed to be constructable (not abstract) via ProviderConstructor type
     const instance = new ProviderClass(config, options);
     this.instances.set(cacheKey, instance);
+
+    // Cache capabilities if not already cached
+    if (!this.capabilities.has(config.providerName as ProviderId)) {
+      this.capabilities.set(config.providerName as ProviderId, instance.getCapabilities());
+    }
 
     logger.debug(`Created provider instance: ${config.providerName}`, {
       configId: config.id,
@@ -104,7 +102,7 @@ export class ProviderRegistry {
    */
   invalidateCache(providerId: ProviderId): void {
     let invalidatedCount = 0;
-    for (const [key, instance] of this.instances.entries()) {
+    for (const [key] of this.instances.entries()) {
       if (key.startsWith(providerId)) {
         this.instances.delete(key);
         invalidatedCount++;
