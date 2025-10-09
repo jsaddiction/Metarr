@@ -1376,6 +1376,28 @@ export class InitialSchemaMigration {
     await db.execute(`CREATE INDEX idx_episodes_unpublished ON episodes(has_unpublished_changes) WHERE has_unpublished_changes = 1`);
 
     // ========================================
+    // PROVIDER CONFIGURATIONS
+    // ========================================
+
+    // Provider configs table - stores API keys and settings for metadata providers
+    await db.execute(`
+      CREATE TABLE provider_configs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        provider_name VARCHAR(50) NOT NULL UNIQUE,
+        enabled BOOLEAN NOT NULL DEFAULT 0,
+        api_key TEXT,
+        enabled_asset_types TEXT NOT NULL DEFAULT '[]',
+        last_test_at DATETIME,
+        last_test_status VARCHAR(20),
+        last_test_error TEXT,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await db.execute(`CREATE INDEX idx_provider_configs_enabled ON provider_configs(enabled)`);
+
+    // ========================================
     // PHASE 1: TRIGGERS
     // ========================================
 

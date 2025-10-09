@@ -121,38 +121,48 @@ export class ScheduledEnrichmentService {
       return [];
     }
 
-    // Select columns based on entity type
-    // Movies: tmdb_id, imdb_id (no tvdb_id)
-    // Series/Episodes: tmdb_id, tvdb_id, imdb_id
-    let selectColumns = 'id, state, enrichment_priority, tmdb_id';
-    if (entityType === 'movie') {
-      selectColumns += ', imdb_id';
-    } else {
-      selectColumns += ', tvdb_id, imdb_id';
+    try {
+      // Select columns based on entity type
+      // Movies: tmdb_id, imdb_id (no tvdb_id)
+      // Series/Episodes: tmdb_id, tvdb_id, imdb_id
+      let selectColumns = 'id, state, enrichment_priority, tmdb_id';
+      if (entityType === 'movie') {
+        selectColumns += ', imdb_id';
+      } else {
+        selectColumns += ', tvdb_id, imdb_id';
+      }
+
+      // Get entities that:
+      // 1. Are in 'discovered' state (never enriched), OR
+      // 2. Have enrichment_priority > 0 (need re-enrichment), OR
+      // 3. Were enriched more than 30 days ago (stale metadata)
+      const entities = await this.db.query<{
+        id: number;
+        state: string;
+        enrichment_priority: number;
+        tmdb_id?: number;
+        tvdb_id?: number;
+        imdb_id?: string;
+      }>(
+        `SELECT ${selectColumns}
+         FROM ${table}
+         WHERE state = 'discovered'
+            OR enrichment_priority > 0
+            OR (enriched_at IS NOT NULL AND enriched_at < datetime('now', '-30 days'))
+         ORDER BY enrichment_priority DESC, id ASC
+         LIMIT 50`
+      );
+
+      return entities;
+    } catch (error: any) {
+      // Handle cases where table doesn't exist or schema is not ready
+      if (error.message?.includes('no such table') || error.message?.includes('no such column')) {
+        logger.debug(`Table ${table} not ready for enrichment query: ${error.message}`);
+        return [];
+      }
+      // Re-throw other errors
+      throw error;
     }
-
-    // Get entities that:
-    // 1. Are in 'discovered' state (never enriched), OR
-    // 2. Have enrichment_priority > 0 (need re-enrichment), OR
-    // 3. Were enriched more than 30 days ago (stale metadata)
-    const entities = await this.db.query<{
-      id: number;
-      state: string;
-      enrichment_priority: number;
-      tmdb_id?: number;
-      tvdb_id?: number;
-      imdb_id?: string;
-    }>(
-      `SELECT ${selectColumns}
-       FROM ${table}
-       WHERE state = 'discovered'
-          OR enrichment_priority > 0
-          OR (enriched_at IS NOT NULL AND enriched_at < datetime('now', '-30 days'))
-       ORDER BY enrichment_priority DESC, id ASC
-       LIMIT 50`
-    );
-
-    return entities;
   }
 
   /**

@@ -19,6 +19,9 @@ import { JobQueueService } from '../services/jobQueueService.js';
 import { JobHandlers } from '../services/jobHandlers.js';
 import { ScheduledEnrichmentService } from '../services/scheduledEnrichmentService.js';
 import { AutomationConfigService } from '../services/automationConfigService.js';
+import { tmdbService } from '../services/providers/TMDBService.js';
+import { ProviderConfigService } from '../services/providerConfigService.js';
+import { ProviderConfigController } from '../controllers/providerConfigController.js';
 
 // Initialize router factory function
 export const createApiRouter = (
@@ -53,7 +56,11 @@ export const createApiRouter = (
   // Initialize job queue and handlers
   const db = dbManager.getConnection();
   const jobQueue = new JobQueueService(db);
-  const jobHandlers = new JobHandlers(db, './data/cache');
+
+  // Get TMDB client if available
+  const tmdbClient = tmdbService.isEnabled() ? tmdbService.getClient() : undefined;
+
+  const jobHandlers = new JobHandlers(db, './data/cache', tmdbClient);
   jobHandlers.registerHandlers(jobQueue);
   jobQueue.start(); // Start processing jobs
 
@@ -64,6 +71,10 @@ export const createApiRouter = (
   // Initialize automation config service and controller
   const automationConfigService = new AutomationConfigService(db);
   const automationConfigController = new AutomationConfigController(automationConfigService);
+
+  // Initialize provider config service and controller
+  const providerConfigService = new ProviderConfigService(db);
+  const providerConfigController = new ProviderConfigController(providerConfigService);
 
   // Initialize asset and job controllers
   const assetController = new AssetController(db);
@@ -308,13 +319,26 @@ export const createApiRouter = (
   router.delete('/automation/:libraryId', automationConfigController.deleteAutomationConfig);
 
   // Placeholder routes for future implementation
-  router.get('/providers', (_req, res) => {
-    res.json({ message: 'Providers endpoint coming soon' });
-  });
-
   router.get('/series', (_req, res) => {
     res.json({ message: 'Series endpoint coming soon' });
   });
+
+  // Provider config routes
+  router.get('/providers', (req, res) =>
+    providerConfigController.getAllProviders(req, res)
+  );
+  router.get('/providers/:name', (req, res) =>
+    providerConfigController.getProvider(req, res)
+  );
+  router.post('/providers/:name', (req, res) =>
+    providerConfigController.updateProvider(req, res)
+  );
+  router.post('/providers/:name/test', (req, res) =>
+    providerConfigController.testProvider(req, res)
+  );
+  router.delete('/providers/:name', (req, res) =>
+    providerConfigController.deleteProvider(req, res)
+  );
 
   return router;
 };

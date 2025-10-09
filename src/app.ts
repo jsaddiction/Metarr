@@ -5,7 +5,7 @@ import { fileURLToPath } from 'url';
 import { createServer, Server as HttpServer } from 'http';
 import { ConfigManager } from './config/ConfigManager.js';
 import { DatabaseManager } from './database/DatabaseManager.js';
-import { MigrationRunner } from './database/MigrationRunner.js';
+import { MigrationRunner } from './database/migrationRunner.js';
 import { MediaPlayerConnectionManager } from './services/mediaPlayerConnectionManager.js';
 import { GarbageCollectionService } from './services/garbageCollectionService.js';
 import { MetarrWebSocketServer } from './services/websocketServer.js';
@@ -56,7 +56,7 @@ export class App {
     this.initializeMiddleware();
     this.initializeRoutes(); // Basic routes (health, frontend)
     // API routes will be initialized in start() after database connection
-    this.initializeErrorHandling();
+    // Error handling will be initialized AFTER API routes in start()
   }
 
   private initializeMiddleware(): void {
@@ -144,6 +144,10 @@ export class App {
       // Initialize API routes (now that DB is connected)
       this.initializeApiRoutes();
       logger.info('API routes initialized');
+
+      // Initialize error handling (MUST be after all routes)
+      this.initializeErrorHandling();
+      logger.info('Error handlers initialized');
 
       // Initialize WebSocket server
       this.wsServer.attach(this.httpServer);

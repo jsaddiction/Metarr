@@ -15,6 +15,14 @@ import {
   ScanFailedEvent,
 } from '../types/library';
 import { Movie, MovieListResult } from '../types/movie';
+import {
+  ProviderWithMetadata,
+  UpdateProviderRequest,
+  TestProviderResponse,
+  GetAllProvidersResponse,
+  GetProviderResponse,
+  UpdateProviderResponse,
+} from '../types/provider';
 
 const API_BASE_URL = '/api';
 
@@ -395,6 +403,53 @@ export const movieApi = {
     return () => {
       eventSource.close();
     };
+  },
+};
+
+export const providerApi = {
+  /**
+   * Get all providers with their metadata
+   */
+  async getAll(): Promise<ProviderWithMetadata[]> {
+    const response = await fetchApi<GetAllProvidersResponse>('/providers');
+    return response.providers;
+  },
+
+  /**
+   * Get a single provider by name
+   */
+  async getByName(name: string): Promise<{ config: any; metadata: any }> {
+    return fetchApi<GetProviderResponse>(`/providers/${name}`);
+  },
+
+  /**
+   * Update provider configuration
+   */
+  async update(name: string, data: UpdateProviderRequest): Promise<ProviderWithMetadata> {
+    const response = await fetchApi<UpdateProviderResponse>(`/providers/${name}`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return response.provider;
+  },
+
+  /**
+   * Test provider connection
+   */
+  async test(name: string, apiKey?: string): Promise<TestProviderResponse> {
+    return fetchApi<TestProviderResponse>(`/providers/${name}/test`, {
+      method: 'POST',
+      body: JSON.stringify({ apiKey }),
+    });
+  },
+
+  /**
+   * Disable provider (delete configuration)
+   */
+  async disable(name: string): Promise<void> {
+    return fetchApi<void>(`/providers/${name}`, {
+      method: 'DELETE',
+    });
   },
 };
 
