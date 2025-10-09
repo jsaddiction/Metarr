@@ -283,6 +283,190 @@ export class InitialSchemaMigration {
     `);
 
     // ========================================
+    // MUSIC ENTITIES TABLES
+    // ========================================
+
+    // Artists table
+    await db.execute(`
+      CREATE TABLE artists (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+        -- Library relationship
+        library_id INTEGER NOT NULL,
+
+        -- File path (root directory for artist)
+        path VARCHAR(1000) NOT NULL,
+
+        -- Basic metadata
+        name VARCHAR(500) NOT NULL,
+        sort_name VARCHAR(500),
+        disambiguation VARCHAR(255),
+
+        -- Provider IDs
+        musicbrainz_id VARCHAR(36),
+        theaudiodb_id INTEGER,
+
+        -- Description
+        biography TEXT,
+        formed VARCHAR(10),
+        disbanded VARCHAR(10),
+
+        -- Classification
+        type VARCHAR(50),
+        country VARCHAR(100),
+
+        -- Hash columns
+        directory_hash VARCHAR(64),
+
+        -- Field locking
+        name_locked BOOLEAN NOT NULL DEFAULT 0,
+        sort_name_locked BOOLEAN NOT NULL DEFAULT 0,
+        biography_locked BOOLEAN NOT NULL DEFAULT 0,
+
+        -- State tracking
+        scan_state VARCHAR(50) NOT NULL DEFAULT 'discovered',
+        enrichment_state VARCHAR(50) NOT NULL DEFAULT 'pending',
+        has_unpublished_changes BOOLEAN NOT NULL DEFAULT 0,
+
+        -- Timestamps
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        scanned_at DATETIME,
+        enriched_at DATETIME,
+        published_at DATETIME,
+
+        FOREIGN KEY (library_id) REFERENCES libraries(id) ON DELETE CASCADE
+      )
+    `);
+
+    await db.execute(`CREATE INDEX idx_artists_library ON artists(library_id)`);
+    await db.execute(`CREATE INDEX idx_artists_musicbrainz ON artists(musicbrainz_id)`);
+    await db.execute(`CREATE INDEX idx_artists_scan_state ON artists(scan_state)`);
+    await db.execute(`CREATE INDEX idx_artists_enrichment_state ON artists(enrichment_state)`);
+
+    // Albums table
+    await db.execute(`
+      CREATE TABLE albums (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+        -- Library and artist relationship
+        library_id INTEGER NOT NULL,
+        artist_id INTEGER NOT NULL,
+
+        -- File path (root directory for album)
+        path VARCHAR(1000) NOT NULL,
+
+        -- Basic metadata
+        title VARCHAR(500) NOT NULL,
+        sort_title VARCHAR(500),
+        disambiguation VARCHAR(255),
+
+        -- Provider IDs
+        musicbrainz_id VARCHAR(36),
+        theaudiodb_id INTEGER,
+
+        -- Release info
+        release_date DATE,
+        year INTEGER,
+        label VARCHAR(255),
+        type VARCHAR(50),
+
+        -- Description
+        description TEXT,
+        review TEXT,
+
+        -- Album art
+        thumb_url VARCHAR(1000),
+
+        -- Hash columns
+        directory_hash VARCHAR(64),
+
+        -- Field locking
+        title_locked BOOLEAN NOT NULL DEFAULT 0,
+        sort_title_locked BOOLEAN NOT NULL DEFAULT 0,
+        description_locked BOOLEAN NOT NULL DEFAULT 0,
+
+        -- State tracking
+        scan_state VARCHAR(50) NOT NULL DEFAULT 'discovered',
+        enrichment_state VARCHAR(50) NOT NULL DEFAULT 'pending',
+        has_unpublished_changes BOOLEAN NOT NULL DEFAULT 0,
+
+        -- Timestamps
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        scanned_at DATETIME,
+        enriched_at DATETIME,
+        published_at DATETIME,
+
+        FOREIGN KEY (library_id) REFERENCES libraries(id) ON DELETE CASCADE,
+        FOREIGN KEY (artist_id) REFERENCES artists(id) ON DELETE CASCADE
+      )
+    `);
+
+    await db.execute(`CREATE INDEX idx_albums_library ON albums(library_id)`);
+    await db.execute(`CREATE INDEX idx_albums_artist ON albums(artist_id)`);
+    await db.execute(`CREATE INDEX idx_albums_musicbrainz ON albums(musicbrainz_id)`);
+    await db.execute(`CREATE INDEX idx_albums_scan_state ON albums(scan_state)`);
+    await db.execute(`CREATE INDEX idx_albums_enrichment_state ON albums(enrichment_state)`);
+
+    // Tracks table
+    await db.execute(`
+      CREATE TABLE tracks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+        -- Library, album, and artist relationship
+        library_id INTEGER NOT NULL,
+        album_id INTEGER NOT NULL,
+        artist_id INTEGER NOT NULL,
+
+        -- File path
+        file_path VARCHAR(1000) NOT NULL UNIQUE,
+
+        -- Basic metadata
+        title VARCHAR(500) NOT NULL,
+        track_number INTEGER,
+        disc_number INTEGER,
+
+        -- Provider IDs
+        musicbrainz_id VARCHAR(36),
+
+        -- Audio info
+        duration INTEGER,
+        comment TEXT,
+
+        -- Hash columns
+        file_hash VARCHAR(64),
+        audio_hash VARCHAR(64),
+
+        -- Field locking
+        title_locked BOOLEAN NOT NULL DEFAULT 0,
+
+        -- State tracking
+        scan_state VARCHAR(50) NOT NULL DEFAULT 'discovered',
+        enrichment_state VARCHAR(50) NOT NULL DEFAULT 'pending',
+        has_unpublished_changes BOOLEAN NOT NULL DEFAULT 0,
+
+        -- Timestamps
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        scanned_at DATETIME,
+        enriched_at DATETIME,
+        published_at DATETIME,
+
+        FOREIGN KEY (library_id) REFERENCES libraries(id) ON DELETE CASCADE,
+        FOREIGN KEY (album_id) REFERENCES albums(id) ON DELETE CASCADE,
+        FOREIGN KEY (artist_id) REFERENCES artists(id) ON DELETE CASCADE
+      )
+    `);
+
+    await db.execute(`CREATE INDEX idx_tracks_library ON tracks(library_id)`);
+    await db.execute(`CREATE INDEX idx_tracks_album ON tracks(album_id)`);
+    await db.execute(`CREATE INDEX idx_tracks_artist ON tracks(artist_id)`);
+    await db.execute(`CREATE INDEX idx_tracks_musicbrainz ON tracks(musicbrainz_id)`);
+    await db.execute(`CREATE INDEX idx_tracks_scan_state ON tracks(scan_state)`);
+    await db.execute(`CREATE INDEX idx_tracks_enrichment_state ON tracks(enrichment_state)`);
+
+    // ========================================
     // MEDIA STREAMS TABLES
     // ========================================
 

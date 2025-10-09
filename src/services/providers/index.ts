@@ -22,6 +22,8 @@ export * from './tvdb/TVDBProvider.js';
 export * from './fanart/FanArtProvider.js';
 export * from './local/LocalProvider.js';
 export * from './imdb/IMDbProvider.js';
+export * from './musicbrainz/MusicBrainzProvider.js';
+export * from './theaudiodb/TheAudioDBProvider.js';
 
 // Register all providers (imports trigger self-registration)
 import './tmdb/register.js';
@@ -29,3 +31,5 @@ import './tvdb/register.js';
 import './fanart/register.js';
 import './local/register.js';
 import './imdb/register.js';
+import './musicbrainz/register.js';
+import './theaudiodb/register.js';
