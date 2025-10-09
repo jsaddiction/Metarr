@@ -20,8 +20,10 @@ export * from '../../types/providers/index.js';
 export * from './tmdb/TMDBProvider.js';
 export * from './tvdb/TVDBProvider.js';
 export * from './fanart/FanArtProvider.js';
+export * from './local/LocalProvider.js';
 
 // Register all providers (imports trigger self-registration)
 import './tmdb/register.js';
 import './tvdb/register.js';
 import './fanart/register.js';
+import './local/register.js';

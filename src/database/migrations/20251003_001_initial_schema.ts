@@ -1132,6 +1132,60 @@ export class InitialSchemaMigration {
     await db.execute(`CREATE INDEX idx_cache_perceptual_hash ON cache_inventory(perceptual_hash)`);
     await db.execute(`CREATE INDEX idx_cache_gc ON cache_inventory(orphaned_at) WHERE orphaned_at IS NOT NULL`);
 
+    // Backup Assets (Local Provider - preserves original local assets before enrichment)
+    await db.execute(`
+      CREATE TABLE backup_assets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+        -- Entity reference (one of these must be set)
+        movie_id INTEGER,
+        series_id INTEGER,
+        season_id INTEGER,
+        episode_id INTEGER,
+
+        -- Asset type (poster, fanart, banner, etc.)
+        type TEXT NOT NULL,
+
+        -- Original location
+        original_path TEXT NOT NULL,
+        original_filename TEXT NOT NULL,
+        original_hash TEXT,                -- SHA256 content hash
+
+        -- Backup location
+        backup_path TEXT NOT NULL,
+        backed_up_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+        -- File properties
+        file_size INTEGER,
+        width INTEGER,
+        height INTEGER,
+        phash TEXT,                        -- Perceptual hash for deduplication
+
+        -- Restoration tracking
+        restored BOOLEAN DEFAULT 0,
+        restored_at TIMESTAMP,
+
+        FOREIGN KEY (movie_id) REFERENCES movies(id) ON DELETE CASCADE,
+        FOREIGN KEY (series_id) REFERENCES series(id) ON DELETE CASCADE,
+        FOREIGN KEY (episode_id) REFERENCES episodes(id) ON DELETE CASCADE,
+
+        -- At least one entity reference is required
+        CHECK (
+          (movie_id IS NOT NULL) OR
+          (series_id IS NOT NULL) OR
+          (season_id IS NOT NULL) OR
+          (episode_id IS NOT NULL)
+        )
+      )
+    `);
+
+    await db.execute(`CREATE INDEX idx_backup_assets_movie ON backup_assets(movie_id, type)`);
+    await db.execute(`CREATE INDEX idx_backup_assets_series ON backup_assets(series_id, type)`);
+    await db.execute(`CREATE INDEX idx_backup_assets_season ON backup_assets(season_id, type)`);
+    await db.execute(`CREATE INDEX idx_backup_assets_episode ON backup_assets(episode_id, type)`);
+    await db.execute(`CREATE INDEX idx_backup_assets_phash ON backup_assets(phash) WHERE phash IS NOT NULL`);
+    await db.execute(`CREATE INDEX idx_backup_assets_backed_up_at ON backup_assets(backed_up_at)`);
+
     // Asset Selection Configuration
     await db.execute(`
       CREATE TABLE asset_selection_config (
@@ -1556,6 +1610,30 @@ export class InitialSchemaMigration {
         1080,
         0.90
       )
+    `);
+
+    // ========================================
+    // SETTINGS TABLE
+    // ========================================
+
+    await db.execute(`
+      CREATE TABLE settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        description TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Insert backup settings
+    await db.execute(`
+      INSERT INTO settings (key, value, description) VALUES
+      ('backup_enabled', 'true', 'Enable automatic backup of local assets before enrichment'),
+      ('backup_retention_days', '90', 'Number of days to retain backed-up assets'),
+      ('backup_auto_cleanup', 'true', 'Automatically cleanup old backups'),
+      ('backup_subtitles', 'false', 'Include subtitles in backup (can be large)'),
+      ('backup_trailers', 'false', 'Include trailers in backup (can be huge)')
     `);
 
     // ========================================
