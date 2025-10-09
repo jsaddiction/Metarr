@@ -46,7 +46,7 @@ describe('IMDbProvider', () => {
   describe('Search', () => {
     it('should search for titles', async () => {
       mockSearch.mockResolvedValue([
-        { id: 'tt0133093', title: 'The Matrix', year: 1999 },
+        { imdbId: 'tt0133093', title: 'The Matrix', year: 1999, type: 'movie' },
       ]);
 
       const results = await provider.search({ query: 'The Matrix', entityType: 'movie' });
