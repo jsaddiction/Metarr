@@ -1735,6 +1735,48 @@ export class InitialSchemaMigration {
       ['quality_first', 1]
     );
 
+    // Pre-populate default asset type priorities (quality-first order)
+    const defaultAssetPriorities = [
+      { assetType: 'poster', order: ['fanart_tv', 'tmdb', 'tvdb', 'theaudiodb'] },
+      { assetType: 'fanart', order: ['fanart_tv', 'tmdb', 'tvdb', 'theaudiodb'] },
+      { assetType: 'banner', order: ['fanart_tv', 'tvdb', 'tmdb', 'theaudiodb'] },
+      { assetType: 'clearlogo', order: ['fanart_tv', 'theaudiodb', 'tmdb', 'tvdb'] },
+      { assetType: 'clearart', order: ['fanart_tv', 'theaudiodb', 'tmdb', 'tvdb'] },
+      { assetType: 'landscape', order: ['fanart_tv', 'tvdb', 'tmdb', 'theaudiodb'] },
+      { assetType: 'characterart', order: ['fanart_tv', 'tmdb', 'tvdb', 'theaudiodb'] },
+      { assetType: 'discart', order: ['fanart_tv', 'theaudiodb', 'tmdb', 'tvdb'] },
+      { assetType: 'thumb', order: ['fanart_tv', 'tvdb', 'tmdb', 'theaudiodb'] },
+      { assetType: 'trailer', order: ['tmdb', 'tvdb'] },
+      { assetType: 'theme', order: ['theaudiodb'] },
+    ];
+
+    for (const { assetType, order } of defaultAssetPriorities) {
+      await db.execute(
+        `INSERT INTO asset_type_priorities (asset_type, provider_order) VALUES (?, ?)`,
+        [assetType, JSON.stringify(order)]
+      );
+    }
+
+    // Pre-populate default metadata field priorities
+    const defaultMetadataPriorities = [
+      { field: 'rating', order: ['imdb', 'tmdb', 'tvdb'] },
+      { field: 'plot', order: ['tmdb', 'tvdb', 'imdb'] },
+      { field: 'title', order: ['tmdb', 'tvdb'] },
+      { field: 'original_title', order: ['tmdb', 'tvdb'] },
+      { field: 'tagline', order: ['tmdb', 'tvdb'] },
+      { field: 'release_date', order: ['tmdb', 'tvdb'] },
+      { field: 'genres', order: ['tmdb', 'tvdb', 'musicbrainz'] },
+      { field: 'cast', order: ['tmdb', 'tvdb', 'imdb'] },
+      { field: 'crew', order: ['tmdb', 'tvdb', 'imdb'] },
+    ];
+
+    for (const { field, order } of defaultMetadataPriorities) {
+      await db.execute(
+        `INSERT INTO metadata_field_priorities (field_name, provider_order) VALUES (?, ?)`,
+        [field, JSON.stringify(order)]
+      );
+    }
+
     // Asset Selection Presets - defines how many of each asset type to collect
     await db.execute(`
       CREATE TABLE asset_selection_presets (
