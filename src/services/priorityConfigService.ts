@@ -11,7 +11,9 @@ import {
   getPriorityPreset,
   getAllPriorityPresets,
   FORCED_LOCAL_FIELDS,
-  PriorityPreset
+  PriorityPreset,
+  providerSupportsAssetType,
+  getProvidersForAssetType
 } from '../config/providerMetadata.js';
 
 /**
@@ -78,6 +80,19 @@ export class PriorityConfigService {
    * Update or create asset type priority
    */
   async upsertAssetTypePriority(data: UpdateAssetTypePriorityRequest): Promise<AssetTypePriority> {
+    // Validate that all providers in the order support this asset type
+    const invalidProviders = data.providerOrder.filter(
+      provider => provider !== 'local' && !providerSupportsAssetType(provider, data.assetType)
+    );
+
+    if (invalidProviders.length > 0) {
+      const supportedProviders = getProvidersForAssetType(data.assetType);
+      throw new Error(
+        `Provider(s) ${invalidProviders.join(', ')} do not support asset type '${data.assetType}'. ` +
+        `Supported providers: ${supportedProviders.join(', ')}`
+      );
+    }
+
     const existing = await this.getAssetTypePriority(data.assetType);
 
     if (existing) {

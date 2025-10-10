@@ -1736,18 +1736,27 @@ export class InitialSchemaMigration {
     );
 
     // Pre-populate default asset type priorities (quality-first order)
+    // Based on actual provider support from providerMetadata.ts
     const defaultAssetPriorities = [
-      { assetType: 'poster', order: ['fanart_tv', 'tmdb', 'tvdb', 'theaudiodb'] },
-      { assetType: 'fanart', order: ['fanart_tv', 'tmdb', 'tvdb', 'theaudiodb'] },
-      { assetType: 'banner', order: ['fanart_tv', 'tvdb', 'tmdb', 'theaudiodb'] },
-      { assetType: 'clearlogo', order: ['fanart_tv', 'theaudiodb', 'tmdb', 'tvdb'] },
-      { assetType: 'clearart', order: ['fanart_tv', 'theaudiodb', 'tmdb', 'tvdb'] },
-      { assetType: 'landscape', order: ['fanart_tv', 'tvdb', 'tmdb', 'theaudiodb'] },
-      { assetType: 'characterart', order: ['fanart_tv', 'tmdb', 'tvdb', 'theaudiodb'] },
-      { assetType: 'discart', order: ['fanart_tv', 'theaudiodb', 'tmdb', 'tvdb'] },
-      { assetType: 'thumb', order: ['fanart_tv', 'tvdb', 'tmdb', 'theaudiodb'] },
-      { assetType: 'trailer', order: ['tmdb', 'tvdb'] },
-      { assetType: 'theme', order: ['theaudiodb'] },
+      // Common movie/TV assets
+      { assetType: 'poster', order: ['fanart_tv', 'tmdb', 'tvdb'] },  // All 3 support posters
+      { assetType: 'fanart', order: ['fanart_tv', 'tmdb', 'tvdb'] },  // All 3 support fanart/backdrops
+      { assetType: 'banner', order: ['fanart_tv', 'tvdb'] },          // Only FanArt.tv and TVDB support banners
+      { assetType: 'trailer', order: ['tmdb'] },                      // Only TMDB supports trailers
+
+      // FanArt.tv exclusive assets (high quality curated)
+      { assetType: 'clearlogo', order: ['fanart_tv'] },               // FanArt.tv only
+      { assetType: 'clearart', order: ['fanart_tv'] },                // FanArt.tv only
+      { assetType: 'characterart', order: ['fanart_tv'] },            // FanArt.tv only
+      { assetType: 'discart', order: ['fanart_tv'] },                 // FanArt.tv only (cdart)
+      { assetType: 'landscape', order: ['fanart_tv'] },               // FanArt.tv only
+      { assetType: 'thumb', order: ['fanart_tv'] },                   // FanArt.tv only (tvthumb)
+
+      // Music-specific assets (TheAudioDB)
+      { assetType: 'artist_thumb', order: ['theaudiodb'] },
+      { assetType: 'artist_logo', order: ['theaudiodb'] },
+      { assetType: 'artist_fanart', order: ['theaudiodb'] },
+      { assetType: 'album_thumb', order: ['theaudiodb'] },
     ];
 
     for (const { assetType, order } of defaultAssetPriorities) {

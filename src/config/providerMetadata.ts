@@ -165,6 +165,31 @@ export function isProviderSupported(providerName: string): boolean {
 }
 
 /**
+ * Check if a provider supports a specific asset type
+ */
+export function providerSupportsAssetType(providerName: string, assetType: string): boolean {
+  const metadata = getProviderMetadata(providerName);
+  if (!metadata) return false;
+
+  return metadata.supportedAssetTypes.some(
+    asset => asset.type === assetType && asset.available
+  );
+}
+
+/**
+ * Get all providers that support a specific asset type
+ */
+export function getProvidersForAssetType(assetType: string): string[] {
+  return Object.values(PROVIDER_METADATA)
+    .filter(provider =>
+      provider.supportedAssetTypes.some(
+        asset => asset.type === assetType && asset.available
+      )
+    )
+    .map(provider => provider.name);
+}
+
+/**
  * Priority Presets
  *
  * Predefined provider ordering configurations for common use cases.
