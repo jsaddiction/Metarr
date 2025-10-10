@@ -453,4 +453,89 @@ export const providerApi = {
   },
 };
 
+/**
+ * Priority Configuration API
+ */
+export const priorityApi = {
+  /**
+   * Get all available priority presets
+   */
+  async getPresets(): Promise<import('../types/provider').PriorityPreset[]> {
+    const response = await fetchApi<import('../types/provider').GetPresetsResponse>('/priorities/presets');
+    return response.presets;
+  },
+
+  /**
+   * Get the currently active preset
+   */
+  async getActivePreset(): Promise<import('../types/provider').PriorityPresetSelection | null> {
+    const response = await fetchApi<import('../types/provider').GetActivePresetResponse>('/priorities/active');
+    return response.activePreset;
+  },
+
+  /**
+   * Apply a priority preset
+   */
+  async applyPreset(presetId: string): Promise<void> {
+    return fetchApi<void>('/priorities/apply', {
+      method: 'POST',
+      body: JSON.stringify({ presetId }),
+    });
+  },
+
+  /**
+   * Get all asset type priorities
+   */
+  async getAssetTypePriorities(): Promise<import('../types/provider').AssetTypePriority[]> {
+    const response = await fetchApi<import('../types/provider').GetAssetTypePrioritiesResponse>('/priorities/asset-types');
+    return response.priorities;
+  },
+
+  /**
+   * Get priority for a specific asset type
+   */
+  async getAssetTypePriority(assetType: string): Promise<import('../types/provider').AssetTypePriority> {
+    const response = await fetchApi<{ priority: import('../types/provider').AssetTypePriority }>(`/priorities/asset-types/${assetType}`);
+    return response.priority;
+  },
+
+  /**
+   * Update priority for a specific asset type
+   */
+  async updateAssetTypePriority(assetType: string, providerOrder: string[]): Promise<import('../types/provider').AssetTypePriority> {
+    const response = await fetchApi<{ success: boolean; priority: import('../types/provider').AssetTypePriority }>(`/priorities/asset-types/${assetType}`, {
+      method: 'POST',
+      body: JSON.stringify({ providerOrder }),
+    });
+    return response.priority;
+  },
+
+  /**
+   * Get all metadata field priorities
+   */
+  async getMetadataFieldPriorities(): Promise<import('../types/provider').MetadataFieldPriority[]> {
+    const response = await fetchApi<import('../types/provider').GetMetadataFieldPrioritiesResponse>('/priorities/metadata-fields');
+    return response.priorities;
+  },
+
+  /**
+   * Get priority for a specific metadata field
+   */
+  async getMetadataFieldPriority(fieldName: string): Promise<import('../types/provider').MetadataFieldPriority> {
+    const response = await fetchApi<{ priority: import('../types/provider').MetadataFieldPriority }>(`/priorities/metadata-fields/${fieldName}`);
+    return response.priority;
+  },
+
+  /**
+   * Update priority for a specific metadata field
+   */
+  async updateMetadataFieldPriority(fieldName: string, providerOrder: string[]): Promise<import('../types/provider').MetadataFieldPriority> {
+    const response = await fetchApi<{ success: boolean; priority: import('../types/provider').MetadataFieldPriority }>(`/priorities/metadata-fields/${fieldName}`, {
+      method: 'POST',
+      body: JSON.stringify({ providerOrder }),
+    });
+    return response.priority;
+  },
+};
+
 export { ApiError };
