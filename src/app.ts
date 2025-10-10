@@ -5,7 +5,7 @@ import { fileURLToPath } from 'url';
 import { createServer, Server as HttpServer } from 'http';
 import { ConfigManager } from './config/ConfigManager.js';
 import { DatabaseManager } from './database/DatabaseManager.js';
-import { MigrationRunner } from './database/MigrationRunner.js';
+import { MigrationRunner } from './database/migrationRunner.js';
 import { MediaPlayerConnectionManager } from './services/mediaPlayerConnectionManager.js';
 import { GarbageCollectionService } from './services/garbageCollectionService.js';
 import { MetarrWebSocketServer } from './services/websocketServer.js';

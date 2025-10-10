@@ -3,8 +3,14 @@ import { ProviderConfigService } from '../services/providerConfigService.js';
 import { getProviderMetadata, getAllProviderMetadata } from '../config/providerMetadata.js';
 import { ProviderConfig, ProviderWithMetadata, TestConnectionRequest, UpdateProviderRequest } from '../types/provider.js';
 import { TMDBClient } from '../services/providers/tmdb/TMDBClient.js';
+import { TVDBClient } from '../services/providers/tvdb/TVDBClient.js';
+import { FanArtClient } from '../services/providers/fanart/FanArtClient.js';
+import { IMDbClient } from '../services/providers/imdb/IMDbClient.js';
+import { MusicBrainzClient } from '../services/providers/musicbrainz/MusicBrainzClient.js';
+import { TheAudioDBClient } from '../services/providers/theaudiodb/TheAudioDBClient.js';
 import { logger } from '../middleware/logging.js';
 import { tmdbService } from '../services/providers/TMDBService.js';
+import fs from 'fs/promises';
 
 /**
  * Provider Configuration Controller
@@ -205,31 +211,59 @@ export class ProviderConfigController {
       const data: TestConnectionRequest = req.body;
 
       // Test connection based on provider type
-      if (name === 'tmdb') {
-        await this.testTMDBConnection(data.apiKey);
-        await this.providerConfigService.updateTestStatus(name, 'success');
-        res.json({
-          success: true,
-          message: 'Successfully connected to TMDB API'
-        });
-      } else if (name === 'tvdb') {
-        // TODO: Implement TVDB test
-        res.status(501).json({
-          success: false,
-          error: 'TVDB provider not yet implemented'
-        });
-      } else if (name === 'fanart_tv') {
-        // TODO: Implement FanArt.tv test
-        res.status(501).json({
-          success: false,
-          error: 'FanArt.tv provider not yet implemented'
-        });
-      } else {
-        res.status(501).json({
-          success: false,
-          error: `Provider '${name}' test not implemented`
-        });
+      let message: string;
+
+      switch (name) {
+        case 'tmdb':
+          await this.testTMDBConnection(data.apiKey);
+          message = 'Successfully connected to TMDB API';
+          break;
+
+        case 'tvdb':
+          await this.testTVDBConnection(data.apiKey);
+          message = 'Successfully connected to TVDB API';
+          break;
+
+        case 'fanart_tv':
+          await this.testFanArtConnection(data.apiKey);
+          message = data.apiKey
+            ? 'Successfully connected to FanArt.tv with personal API key'
+            : 'Successfully connected to FanArt.tv (using project key)';
+          break;
+
+        case 'imdb':
+          await this.testIMDbConnection();
+          message = 'Successfully connected to IMDb (web scraping)';
+          break;
+
+        case 'musicbrainz':
+          await this.testMusicBrainzConnection();
+          message = 'Successfully connected to MusicBrainz API';
+          break;
+
+        case 'theaudiodb':
+          await this.testTheAudioDBConnection(data.apiKey);
+          message = 'Successfully connected to TheAudioDB API';
+          break;
+
+        case 'local':
+          await this.testLocalConnection();
+          message = 'Local filesystem access verified';
+          break;
+
+        default:
+          res.status(501).json({
+            success: false,
+            error: `Provider '${name}' test not implemented`
+          });
+          return;
       }
+
+      await this.providerConfigService.updateTestStatus(name, 'success');
+      res.json({
+        success: true,
+        message
+      });
     } catch (error: any) {
       logger.error(`Error testing provider ${req.params.name}:`, error);
       await this.providerConfigService.updateTestStatus(
@@ -294,6 +328,142 @@ export class ProviderConfigController {
         throw new Error('Invalid TMDB API key. Please check your credentials.');
       }
       throw new Error(`TMDB API test failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Test TVDB connection
+   */
+  private async testTVDBConnection(apiKey?: string): Promise<void> {
+    if (!apiKey) {
+      throw new Error('TVDB API key is required');
+    }
+
+    // Create temporary client
+    const testClient = new TVDBClient({
+      apiKey,
+      baseUrl: 'https://api4.thetvdb.com/v4'
+    });
+
+    // Test API call - login to get JWT token
+    try {
+      await testClient.login();
+    } catch (error: any) {
+      if (error.response?.status === 401) {
+        throw new Error('Invalid TVDB API key. Please check your credentials.');
+      }
+      throw new Error(`TVDB API test failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Test FanArt.tv connection
+   */
+  private async testFanArtConnection(apiKey?: string): Promise<void> {
+    // FanArt.tv works without API key (using project key)
+    // Personal key just provides higher rate limits
+
+    const testClient = new FanArtClient({
+      apiKey: apiKey || 'project-key', // Uses project key if no personal key
+      baseUrl: 'https://webservice.fanart.tv/v3'
+    });
+
+    // Test API call - get movie images for a known ID (The Matrix)
+    try {
+      await testClient.getMovieImages(603); // tmdbId for The Matrix (number, not string)
+    } catch (error: any) {
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        throw new Error('Invalid FanArt.tv API key. Please check your credentials.');
+      }
+      if (error.response?.status === 404) {
+        // 404 is acceptable - means API is accessible but no images found
+        return;
+      }
+      throw new Error(`FanArt.tv API test failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Test IMDb connection
+   */
+  private async testIMDbConnection(): Promise<void> {
+    // IMDb uses web scraping, no API key needed
+    const testClient = new IMDbClient();
+
+    // Test scraping - get movie details for a known ID (The Matrix)
+    try {
+      await testClient.getMovieDetails('tt0133093'); // IMDb ID for The Matrix
+    } catch (error: any) {
+      if (error.response?.status === 403 || error.response?.status === 429) {
+        throw new Error('IMDb blocked the request. You may be rate-limited or your IP may be banned.');
+      }
+      throw new Error(`IMDb connection test failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Test MusicBrainz connection
+   */
+  private async testMusicBrainzConnection(): Promise<void> {
+    // MusicBrainz doesn't require API key
+    const testClient = new MusicBrainzClient({
+      appName: 'Metarr',
+      appVersion: '1.0.0',
+      contact: 'test@localhost'
+    });
+
+    // Test API call - search for a known artist (The Beatles)
+    try {
+      await testClient.searchArtists('The Beatles', 1); // Method is searchArtists, not searchArtist
+    } catch (error: any) {
+      if (error.response?.status === 503) {
+        throw new Error('MusicBrainz rate limit exceeded. Please wait before testing again.');
+      }
+      throw new Error(`MusicBrainz API test failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Test TheAudioDB connection
+   */
+  private async testTheAudioDBConnection(apiKey?: string): Promise<void> {
+    if (!apiKey) {
+      throw new Error('TheAudioDB API key is required');
+    }
+
+    const testClient = new TheAudioDBClient(apiKey); // Constructor takes string, not object
+
+    // Test API call - search for a known artist (The Beatles)
+    try {
+      await testClient.searchArtist('The Beatles');
+    } catch (error: any) {
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        throw new Error('Invalid TheAudioDB API key. Please check your credentials.');
+      }
+      if (error.response?.status === 429) {
+        throw new Error('TheAudioDB rate limit exceeded. Free tier allows 30 requests per minute.');
+      }
+      throw new Error(`TheAudioDB API test failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Test Local provider connection
+   */
+  private async testLocalConnection(): Promise<void> {
+    // Test filesystem access by checking data directory
+    const testPaths = [
+      './data',
+      './data/cache',
+      './data/backup'
+    ];
+
+    try {
+      for (const testPath of testPaths) {
+        await fs.access(testPath);
+      }
+    } catch (error: any) {
+      throw new Error(`Local filesystem access test failed: ${error.message}. Ensure data directories exist.`);
     }
   }
 }

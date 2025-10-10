@@ -19,7 +19,11 @@ export class ProviderConfigService {
       provider_name: string;
       enabled: number;
       api_key?: string;
+      personal_api_key?: string;
       enabled_asset_types: string;
+      language?: string;
+      region?: string;
+      options?: string;
       last_test_at?: string;
       last_test_status?: string;
       last_test_error?: string;
@@ -41,7 +45,11 @@ export class ProviderConfigService {
       provider_name: string;
       enabled: number;
       api_key?: string;
+      personal_api_key?: string;
       enabled_asset_types: string;
+      language?: string;
+      region?: string;
+      options?: string;
       last_test_at?: string;
       last_test_status?: string;
       last_test_error?: string;
@@ -71,13 +79,21 @@ export class ProviderConfigService {
         `UPDATE provider_configs
          SET enabled = ?,
              api_key = ?,
+             personal_api_key = ?,
              enabled_asset_types = ?,
+             language = ?,
+             region = ?,
+             options = ?,
              updated_at = CURRENT_TIMESTAMP
          WHERE provider_name = ?`,
         [
           data.enabled ? 1 : 0,
           data.apiKey || null,
+          data.personalApiKey || null,
           JSON.stringify(data.enabledAssetTypes),
+          data.language || null,
+          data.region || null,
+          data.options ? JSON.stringify(data.options) : null,
           providerName
         ]
       );
@@ -90,14 +106,22 @@ export class ProviderConfigService {
           provider_name,
           enabled,
           api_key,
+          personal_api_key,
           enabled_asset_types,
+          language,
+          region,
+          options,
           last_test_status
-        ) VALUES (?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           providerName,
           data.enabled ? 1 : 0,
           data.apiKey || null,
+          data.personalApiKey || null,
           JSON.stringify(data.enabledAssetTypes),
+          data.language || null,
+          data.region || null,
+          data.options ? JSON.stringify(data.options) : null,
           'never_tested'
         ]
       );
@@ -158,7 +182,11 @@ export class ProviderConfigService {
     provider_name: string;
     enabled: number;
     api_key?: string;
+    personal_api_key?: string;
     enabled_asset_types: string;
+    language?: string;
+    region?: string;
+    options?: string;
     last_test_at?: string;
     last_test_status?: string;
     last_test_error?: string;
@@ -177,6 +205,18 @@ export class ProviderConfigService {
     // Add optional fields only if they exist
     if (row.api_key) {
       config.apiKey = row.api_key;
+    }
+    if (row.personal_api_key) {
+      config.personalApiKey = row.personal_api_key;
+    }
+    if (row.language) {
+      config.language = row.language;
+    }
+    if (row.region) {
+      config.region = row.region;
+    }
+    if (row.options) {
+      config.options = JSON.parse(row.options);
     }
     if (row.last_test_at) {
       config.lastTestAt = new Date(row.last_test_at);

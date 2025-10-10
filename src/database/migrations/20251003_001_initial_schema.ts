@@ -1664,6 +1664,77 @@ export class InitialSchemaMigration {
     await db.execute(`CREATE INDEX idx_provider_priority ON provider_configs(priority DESC)`);
     await db.execute(`CREATE INDEX idx_provider_usage ON provider_configs(enabled, use_for_metadata, use_for_images)`);
 
+    // ========================================
+    // PROVIDER PRIORITY CONFIGURATION
+    // ========================================
+
+    // Asset Type Priorities - defines provider ordering for each asset type (poster, fanart, etc.)
+    await db.execute(`
+      CREATE TABLE asset_type_priorities (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        asset_type VARCHAR(50) NOT NULL UNIQUE,
+        provider_order TEXT NOT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+        UNIQUE(asset_type)
+      )
+    `);
+
+    // Metadata Field Priorities - defines provider ordering for metadata fields (rating, plot, etc.)
+    await db.execute(`
+      CREATE TABLE metadata_field_priorities (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        field_name VARCHAR(50) NOT NULL UNIQUE,
+        provider_order TEXT NOT NULL,
+        forced_provider VARCHAR(50),
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+        UNIQUE(field_name)
+      )
+    `);
+
+    // Priority Presets - tracks which preset is currently active
+    await db.execute(`
+      CREATE TABLE priority_presets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        preset_id VARCHAR(50) NOT NULL,
+        is_active BOOLEAN NOT NULL DEFAULT 0,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Insert forced local fields (runtime, codecs, etc.)
+    const forcedFields = [
+      'runtime',
+      'video_codec',
+      'audio_codec',
+      'resolution',
+      'aspect_ratio',
+      'bitrate',
+      'framerate',
+      'audio_channels',
+      'duration',
+      'file_size',
+      'container_format'
+    ];
+
+    for (const field of forcedFields) {
+      await db.execute(
+        `INSERT INTO metadata_field_priorities (field_name, provider_order, forced_provider)
+         VALUES (?, ?, ?)`,
+        [field, JSON.stringify(['local']), 'local']
+      );
+    }
+
+    // Insert default preset (quality_first)
+    await db.execute(
+      `INSERT INTO priority_presets (preset_id, is_active) VALUES (?, ?)`,
+      ['quality_first', 1]
+    );
+
     // Asset Selection Presets - defines how many of each asset type to collect
     await db.execute(`
       CREATE TABLE asset_selection_presets (
