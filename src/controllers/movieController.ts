@@ -426,17 +426,51 @@ export class MovieController {
    *     fanart: { provider: 'tmdb', url: '...', assetType: 'fanart', metadata: {...} }
    *   },
    *   metadata?: { title: '...', year: 2023, ... },
-   *   unlocks?: ['clearlogo', 'banner'],
    *   publish?: true
    * }
    */
   async saveAssets(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      // TODO: Phase 3 - Implement asset saving with new CacheService architecture
-      res.status(501).json({
-        error: 'Not Implemented',
-        message: 'Asset saving will be implemented in Phase 3 with the new CacheService architecture',
+      const movieId = parseInt(req.params.id);
+      const { selections, metadata } = req.body;
+
+      // Validate request
+      if (!selections || typeof selections !== 'object') {
+        res.status(400).json({
+          error: 'Invalid request',
+          message: 'selections object is required'
+        });
+        return;
+      }
+
+      // Validate movie exists
+      const movie = await this.movieService.getById(movieId);
+      if (!movie) {
+        res.status(404).json({ error: 'Movie not found' });
+        return;
+      }
+
+      logger.info('Saving asset selections', {
+        movieId,
+        assetCount: Object.keys(selections).length,
+        hasMetadata: !!metadata
       });
+
+      // Delegate to MovieService for the actual work
+      const result = await this.movieService.saveAssets(movieId, selections, metadata);
+
+      // Broadcast WebSocket update for cross-tab sync
+      websocketBroadcaster.broadcastMoviesUpdated([movieId]);
+
+      // Return result
+      res.status(200).json(result);
+
+      logger.info('Asset save complete', {
+        movieId,
+        savedCount: result.savedAssets?.length || 0,
+        errorCount: result.errors?.length || 0
+      });
+
     } catch (error: any) {
       logger.error('Asset save failed', {
         movieId: req.params.id,

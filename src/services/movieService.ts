@@ -3,10 +3,14 @@ import { scanMovieDirectory } from './scan/unifiedScanService.js';
 import { getDirectoryPath } from './pathMappingService.js';
 import { logger } from '../middleware/logging.js';
 import fs from 'fs/promises';
+import * as fsSync from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import sharp from 'sharp';
 import { hashSmallFile } from './hash/hashService.js';
+import { cacheService } from './cacheService.js';
+import https from 'https';
+import http from 'http';
 
 export type AssetStatus = 'none' | 'partial' | 'complete';
 
@@ -858,6 +862,230 @@ export class MovieService {
       });
       throw error;
     }
+  }
+
+  /**
+   * Save asset selections for a movie
+   * Downloads assets from provider URLs, stores in cache, creates library copies
+   */
+  async saveAssets(movieId: number, selections: any, metadata?: any): Promise<any> {
+    const conn = this.db.getConnection();
+
+    try {
+      const results = {
+        success: true,
+        savedAssets: [] as any[],
+        errors: [] as string[],
+      };
+
+      // Get movie details
+      const movieResults = await conn.query(
+        'SELECT id, file_path, title, year FROM movies WHERE id = ?',
+        [movieId]
+      );
+
+      if (!movieResults || movieResults.length === 0) {
+        throw new Error('Movie not found');
+      }
+
+      const movie = movieResults[0];
+      const movieDir = path.dirname(movie.file_path);
+      const movieFileName = path.parse(movie.file_path).name;
+
+      // Update metadata if provided
+      if (metadata) {
+        await this.updateMetadata(movieId, metadata);
+      }
+
+      // Process each asset selection
+      for (const [assetType, assetData] of Object.entries(selections)) {
+        try {
+          const asset = assetData as any;
+
+          if (!asset.url) {
+            results.errors.push(`Asset ${assetType}: No URL provided`);
+            continue;
+          }
+
+          // Download asset to temporary location
+          const tempFilePath = path.join(process.cwd(), 'data', 'temp', `${crypto.randomBytes(16).toString('hex')}${path.extname(asset.url)}`);
+          await fs.mkdir(path.dirname(tempFilePath), { recursive: true });
+
+          await this.downloadFile(asset.url, tempFilePath);
+
+          // Get image dimensions
+          let width: number | undefined;
+          let height: number | undefined;
+
+          try {
+            const imageMetadata = await sharp(tempFilePath).metadata();
+            width = imageMetadata.width;
+            height = imageMetadata.height;
+          } catch (error) {
+            logger.warn('Could not get image dimensions', { assetType, url: asset.url });
+          }
+
+          // Store in cache using CacheService
+          const cacheMetadata: any = {
+            mimeType: asset.metadata?.mimeType || 'image/jpeg',
+            sourceType: 'provider' as const,
+            sourceUrl: asset.url,
+            providerName: asset.provider,
+          };
+
+          if (width !== undefined) cacheMetadata.width = width;
+          if (height !== undefined) cacheMetadata.height = height;
+
+          const cacheResult = await cacheService.addAsset(tempFilePath, cacheMetadata);
+
+          // Create library copy with Kodi naming convention
+          const libraryFileName = `${movieFileName}-${assetType}${path.extname(tempFilePath)}`;
+          const libraryPath = path.join(movieDir, libraryFileName);
+
+          await fs.copyFile(cacheResult.cachePath, libraryPath);
+
+          // Insert or update image record in database
+          const existing = await conn.get(
+            'SELECT id FROM images WHERE entity_type = ? AND entity_id = ? AND type = ?',
+            ['movie', movieId, assetType]
+          );
+
+          if (existing) {
+            // Update existing
+            await conn.execute(
+              `UPDATE images SET
+                cache_path = ?,
+                library_path = ?,
+                provider_url = ?,
+                url = ?,
+                width = ?,
+                height = ?,
+                file_size = ?
+              WHERE id = ?`,
+              [
+                cacheResult.cachePath,
+                libraryPath,
+                asset.provider,
+                asset.url,
+                width,
+                height,
+                cacheResult.fileSize,
+                existing.id
+              ]
+            );
+          } else {
+            // Insert new
+            await conn.execute(
+              `INSERT INTO images (
+                entity_type, entity_id, type,
+                cache_path, library_path, provider_url, url,
+                width, height, file_size
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              [
+                'movie',
+                movieId,
+                assetType,
+                cacheResult.cachePath,
+                libraryPath,
+                asset.provider,
+                asset.url,
+                width,
+                height,
+                cacheResult.fileSize
+              ]
+            );
+          }
+
+          // Clean up temp file
+          try {
+            await fs.unlink(tempFilePath);
+          } catch (error) {
+            // Ignore cleanup errors
+          }
+
+          results.savedAssets.push({
+            assetType,
+            cacheAssetId: cacheResult.id,
+            cachePath: cacheResult.cachePath,
+            libraryPath,
+            isNew: cacheResult.isNew,
+          });
+
+          logger.info('Saved asset', {
+            movieId,
+            assetType,
+            provider: asset.provider,
+            cacheAssetId: cacheResult.id,
+            isNew: cacheResult.isNew,
+          });
+
+        } catch (error: any) {
+          results.errors.push(`Asset ${assetType}: ${error.message}`);
+          logger.error('Failed to save asset', {
+            movieId,
+            assetType,
+            error: error.message,
+          });
+        }
+      }
+
+      logger.info('Asset save complete', {
+        movieId,
+        savedCount: results.savedAssets.length,
+        errorCount: results.errors.length,
+      });
+
+      return results;
+
+    } catch (error: any) {
+      logger.error('Failed to save assets', {
+        movieId,
+        error: error.message,
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Download file from URL
+   */
+  private async downloadFile(url: string, destPath: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const protocol = url.startsWith('https') ? https : http;
+
+      protocol.get(url, (response) => {
+        if (response.statusCode === 301 || response.statusCode === 302) {
+          // Handle redirect
+          if (response.headers.location) {
+            this.downloadFile(response.headers.location, destPath)
+              .then(resolve)
+              .catch(reject);
+            return;
+          }
+        }
+
+        if (response.statusCode !== 200) {
+          reject(new Error(`Failed to download: HTTP ${response.statusCode}`));
+          return;
+        }
+
+        const fileStream = fsSync.createWriteStream(destPath);
+        response.pipe(fileStream);
+
+        fileStream.on('finish', () => {
+          fileStream.close();
+          resolve();
+        });
+
+        fileStream.on('error', (err: Error) => {
+          fs.unlink(destPath).catch(() => {});
+          reject(err);
+        });
+
+      }).on('error', (err) => {
+        reject(err);
+      });
+    });
   }
 
   /**
