@@ -15,6 +15,8 @@ import { cacheService } from './services/cacheService.js';
 import { JobQueueService } from './services/jobQueueService.js';
 import { FileScannerScheduler } from './services/schedulers/FileScannerScheduler.js';
 import { ProviderUpdaterScheduler } from './services/schedulers/ProviderUpdaterScheduler.js';
+import { createScheduledFileScanHandler } from './services/jobHandlers/scheduledFileScanHandler.js';
+import { createScheduledProviderUpdateHandler } from './services/jobHandlers/scheduledProviderUpdateHandler.js';
 import { securityMiddleware, rateLimitByIp } from './middleware/security.js';
 import { requestLoggingMiddleware, errorLoggingMiddleware, logger } from './middleware/logging.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
@@ -176,6 +178,18 @@ export class App {
 
       // Initialize and start job queue service
       this.jobQueueService = new JobQueueService(this.dbManager.getConnection());
+
+      // Register job handlers
+      this.jobQueueService.registerHandler(
+        'scheduled-file-scan',
+        createScheduledFileScanHandler(this.dbManager)
+      );
+      this.jobQueueService.registerHandler(
+        'scheduled-provider-update',
+        createScheduledProviderUpdateHandler(this.dbManager)
+      );
+      logger.info('Job handlers registered');
+
       this.jobQueueService.start();
       logger.info('Job queue service initialized and started');
 
@@ -190,6 +204,7 @@ export class App {
       // Initialize and start file scanner scheduler
       this.fileScannerScheduler = new FileScannerScheduler(
         this.dbManager,
+        this.jobQueueService,
         60000 // Check every 60 seconds
       );
       this.fileScannerScheduler.start();
@@ -198,6 +213,7 @@ export class App {
       // Initialize and start provider updater scheduler
       this.providerUpdaterScheduler = new ProviderUpdaterScheduler(
         this.dbManager,
+        this.jobQueueService,
         300000 // Check every 5 minutes
       );
       this.providerUpdaterScheduler.start();

@@ -1,5 +1,6 @@
 import { DatabaseConnection } from '../types/database.js';
 import { logger } from '../middleware/logging.js';
+import { websocketBroadcaster } from './websocketBroadcaster.js';
 
 /**
  * Job Queue Service
@@ -19,7 +20,9 @@ import { logger } from '../middleware/logging.js';
  * - enrich-metadata: Fetch metadata from providers
  * - select-assets: Auto-select assets (YOLO/Hybrid mode)
  * - publish: Publish entity to library
- * - library-scan: Full library scan
+ * - library-scan: Full library scan (user-initiated)
+ * - scheduled-file-scan: Scheduled filesystem scan (automatic)
+ * - scheduled-provider-update: Scheduled provider metadata/asset update (automatic)
  *
  * Job States:
  * - pending: Waiting to be processed
@@ -50,7 +53,9 @@ export type JobType =
   | 'enrich-metadata'
   | 'select-assets'
   | 'publish'
-  | 'library-scan';
+  | 'library-scan'
+  | 'scheduled-file-scan'
+  | 'scheduled-provider-update';
 
 export type JobState = 'pending' | 'processing' | 'completed' | 'failed' | 'retrying';
 
@@ -172,6 +177,9 @@ export class JobQueueService {
         retryCount: job.retry_count
       });
 
+      // Broadcast job status update
+      this.broadcastJobStatus(job.id!, job.type, 'processing', job.payload);
+
       // Execute job handler
       const handler = this.handlers.get(job.type);
       if (!handler) {
@@ -192,6 +200,9 @@ export class JobQueueService {
       );
 
       logger.info(`Job ${job.id} completed successfully`);
+
+      // Broadcast job completion
+      this.broadcastJobStatus(job.id!, job.type, 'completed', job.payload);
 
     } catch (error: any) {
       logger.error('Error processing job:', error);
@@ -372,5 +383,39 @@ export class JobQueueService {
     }
 
     return jobs;
+  }
+
+  /**
+   * Broadcast job status update via WebSocket
+   */
+  private broadcastJobStatus(
+    jobId: number,
+    jobType: JobType,
+    status: JobState,
+    payload?: any,
+    error?: string
+  ): void {
+    try {
+      websocketBroadcaster.broadcastJobStatus(jobId, jobType, status, payload, error);
+    } catch (error: any) {
+      logger.error('Failed to broadcast job status', {
+        jobId,
+        error: error.message
+      });
+    }
+  }
+
+  /**
+   * Broadcast queue statistics via WebSocket
+   */
+  async broadcastQueueStats(): Promise<void> {
+    try {
+      const stats = await this.getStats();
+      websocketBroadcaster.broadcastJobQueueStats(stats);
+    } catch (error: any) {
+      logger.error('Failed to broadcast queue stats', {
+        error: error.message
+      });
+    }
   }
 }

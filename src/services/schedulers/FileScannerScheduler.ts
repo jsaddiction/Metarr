@@ -1,31 +1,31 @@
 import { DatabaseManager } from '../../database/DatabaseManager.js';
 import { LibrarySchedulerConfigService } from '../librarySchedulerConfigService.js';
-import { LibraryScanService } from '../libraryScanService.js';
+import { JobQueueService } from '../jobQueueService.js';
 import { logger } from '../../middleware/logging.js';
 
 /**
  * File Scanner Scheduler
  *
  * Periodically checks for libraries that need filesystem scanning
- * and triggers scans to detect new/moved/deleted files by *arr.
+ * and submits jobs to the queue for processing.
  *
+ * Jobs are submitted with priority 9 (low priority, automated).
  * Does NOT make any provider API calls.
  */
 export class FileScannerScheduler {
-  private dbManager: DatabaseManager;
   private schedulerConfigService: LibrarySchedulerConfigService;
-  private libraryScanService: LibraryScanService;
+  private jobQueueService: JobQueueService;
   private intervalId: NodeJS.Timeout | null = null;
   private checkIntervalMs: number;
   private isRunning = false;
 
   constructor(
     dbManager: DatabaseManager,
+    jobQueueService: JobQueueService,
     checkIntervalMs: number = 60000 // Default: check every 60 seconds
   ) {
-    this.dbManager = dbManager;
     this.schedulerConfigService = new LibrarySchedulerConfigService(dbManager.getConnection());
-    this.libraryScanService = new LibraryScanService(dbManager);
+    this.jobQueueService = jobQueueService;
     this.checkIntervalMs = checkIntervalMs;
   }
 
@@ -43,7 +43,7 @@ export class FileScannerScheduler {
     });
 
     // Run immediately on start
-    this.checkAndProcessLibraries().catch(error => {
+    this.checkAndQueueJobs().catch(error => {
       logger.error('FileScannerScheduler initial check failed', {
         error: error instanceof Error ? error.message : String(error),
       });
@@ -51,7 +51,7 @@ export class FileScannerScheduler {
 
     // Schedule periodic checks
     this.intervalId = setInterval(() => {
-      this.checkAndProcessLibraries().catch(error => {
+      this.checkAndQueueJobs().catch(error => {
         logger.error('FileScannerScheduler periodic check failed', {
           error: error instanceof Error ? error.message : String(error),
         });
@@ -71,9 +71,9 @@ export class FileScannerScheduler {
   }
 
   /**
-   * Check for libraries needing scans and process them
+   * Check for libraries needing scans and queue jobs
    */
-  private async checkAndProcessLibraries(): Promise<void> {
+  private async checkAndQueueJobs(): Promise<void> {
     if (this.isRunning) {
       logger.debug('FileScannerScheduler check already in progress, skipping');
       return;
@@ -95,12 +95,25 @@ export class FileScannerScheduler {
         count: libraryIds.length,
       });
 
-      // Process each library
+      // Queue a job for each library
       for (const libraryId of libraryIds) {
         try {
-          await this.processLibrary(libraryId);
+          const jobId = await this.jobQueueService.addJob({
+            type: 'scheduled-file-scan',
+            priority: 9, // Low priority (automated maintenance)
+            payload: { libraryId },
+          });
+
+          logger.info('Queued file scan job for library', {
+            libraryId,
+            jobId,
+          });
+
+          // Update last_run timestamp IMMEDIATELY when job is queued
+          // This ensures the next run is based on the START time, not completion time
+          await this.schedulerConfigService.updateFileScannerLastRun(libraryId);
         } catch (error) {
-          logger.error('Failed to process library for file scanning', {
+          logger.error('Failed to queue file scan job for library', {
             libraryId,
             error: error instanceof Error ? error.message : String(error),
           });
@@ -112,45 +125,23 @@ export class FileScannerScheduler {
   }
 
   /**
-   * Process a single library
+   * Manually trigger a file scan for a specific library
+   * (Used when user clicks "Force Scan" button)
    */
-  private async processLibrary(libraryId: number): Promise<void> {
-    logger.info('Starting file scan for library', { libraryId });
+  async triggerScan(libraryId: number): Promise<number> {
+    logger.info('Manually triggering file scan', { libraryId });
 
-    try {
-      // Get library details
-      const library = await this.dbManager.getConnection().get<{
-        id: number;
-        name: string;
-        type: string;
-        root_path: string;
-      }>('SELECT id, name, type, root_path FROM libraries WHERE id = ?', [libraryId]);
+    // Queue job with higher priority for manual triggers
+    const jobId = await this.jobQueueService.addJob({
+      type: 'scheduled-file-scan',
+      priority: 4, // Higher priority for manual triggers
+      payload: { libraryId, manual: true },
+    });
 
-      if (!library) {
-        logger.error('Library not found', { libraryId });
-        return;
-      }
+    // Update last_run timestamp so next scheduled scan waits full interval
+    await this.schedulerConfigService.updateFileScannerLastRun(libraryId);
 
-      // Trigger library scan
-      const scanResult = await this.libraryScanService.startScan(library.id);
-
-      logger.info('File scan completed for library', {
-        libraryId,
-        libraryName: library.name,
-        scanJobId: scanResult.id,
-      });
-
-      // Update last run timestamp
-      await this.schedulerConfigService.updateFileScannerLastRun(libraryId);
-
-      logger.info('Updated file scanner last run timestamp', { libraryId });
-    } catch (error) {
-      logger.error('File scan failed for library', {
-        libraryId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      throw error;
-    }
+    return jobId;
   }
 
   /**
