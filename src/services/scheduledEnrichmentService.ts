@@ -1,6 +1,9 @@
 import { DatabaseConnection } from '../types/database.js';
 import { JobQueueService } from './jobQueueService.js';
+import { EnrichmentDecisionService } from './enrichmentDecisionService.js';
+import { TMDBClient } from './providers/tmdb/TMDBClient.js';
 import { logger } from '../middleware/logging.js';
+import { EnrichmentConfig } from '../config/types.js';
 
 /**
  * Scheduled Enrichment Service
@@ -17,12 +20,29 @@ import { logger } from '../middleware/logging.js';
 export class ScheduledEnrichmentService {
   private db: DatabaseConnection;
   private jobQueue: JobQueueService;
+  private enrichmentDecisionService: EnrichmentDecisionService;
+  private tmdbClient: TMDBClient | null = null;
   private enrichmentInterval: NodeJS.Timeout | null = null;
   private isRunning: boolean = false;
 
-  constructor(db: DatabaseConnection, jobQueue: JobQueueService) {
+  constructor(
+    db: DatabaseConnection,
+    jobQueue: JobQueueService,
+    enrichmentConfig: EnrichmentConfig,
+    tmdbApiKey?: string
+  ) {
     this.db = db;
     this.jobQueue = jobQueue;
+    this.enrichmentDecisionService = new EnrichmentDecisionService(db, enrichmentConfig);
+
+    // Initialize TMDB client if API key provided (for change detection)
+    if (tmdbApiKey) {
+      this.tmdbClient = new TMDBClient({
+        apiKey: tmdbApiKey,
+        baseUrl: 'https://api.themoviedb.org/3',
+        language: 'en-US',
+      });
+    }
   }
 
   /**
@@ -172,6 +192,50 @@ export class ScheduledEnrichmentService {
     entity: { id: number; tmdb_id?: number; tvdb_id?: number },
     entityType: 'movie' | 'series' | 'episode'
   ): Promise<void> {
+    // Check if enrichment is needed (with TMDB change detection for movies)
+    let shouldEnrich = true;
+    let enrichmentReason = 'default';
+
+    if (entityType === 'movie' && this.tmdbClient) {
+      const decision = await this.enrichmentDecisionService.shouldEnrichMovie(
+        entity.id,
+        this.tmdbClient
+      );
+      shouldEnrich = decision.shouldEnrich;
+      enrichmentReason = decision.reason;
+
+      logger.info('Enrichment decision for movie', {
+        movieId: entity.id,
+        tmdbId: entity.tmdb_id,
+        shouldEnrich,
+        reason: enrichmentReason,
+        changedFields: decision.changedFields,
+      });
+
+      if (!shouldEnrich) {
+        // Skip enrichment - data is up to date
+        return;
+      }
+    } else if (entityType === 'series' && this.tmdbClient) {
+      const decision = await this.enrichmentDecisionService.shouldEnrichSeries(
+        entity.id,
+        this.tmdbClient
+      );
+      shouldEnrich = decision.shouldEnrich;
+      enrichmentReason = decision.reason;
+
+      logger.info('Enrichment decision for series', {
+        seriesId: entity.id,
+        tmdbId: entity.tmdb_id,
+        shouldEnrich,
+        reason: enrichmentReason,
+      });
+
+      if (!shouldEnrich) {
+        return;
+      }
+    }
+
     // 1. Enrich metadata from TMDB/TVDB
     if (entity.tmdb_id) {
       await this.jobQueue.addJob({
@@ -181,7 +245,8 @@ export class ScheduledEnrichmentService {
           entityType,
           entityId: entity.id,
           provider: 'tmdb',
-          providerId: entity.tmdb_id
+          providerId: entity.tmdb_id,
+          enrichmentReason, // Track why we're enriching
         }
       });
 

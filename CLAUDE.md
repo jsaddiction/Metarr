@@ -24,7 +24,7 @@ Metarr is a web-based metadata management application inspired by MediaElch, des
 - **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** - System design, data flow, technology stack
 - **[DATABASE_SCHEMA.md](docs/DATABASE_SCHEMA.md)** - Complete schema with new tables (asset_candidates, cache_inventory, publish_log)
 - **[WORKFLOWS.md](docs/WORKFLOWS.md)** - Two-phase scanning, enrichment pipeline, operational workflows
-- **[API_ARCHITECTURE.md](docs/API_ARCHITECTURE.md)** - REST API + SSE endpoints
+- **[API_ARCHITECTURE.md](docs/API_ARCHITECTURE.md)** - REST API + WebSocket communication
 
 **Feature Areas**:
 - **[ASSET_MANAGEMENT.md](docs/ASSET_MANAGEMENT.md)** - Three-tier asset system (Candidates → Cache → Library)
@@ -114,7 +114,7 @@ DISCOVERED → IDENTIFIED → ENRICHING → ENRICHED → SELECTED → PUBLISHED
 - **Disaster Recovery**: Restore from cache when Radarr/Sonarr deletes assets during upgrades
 - **Background Jobs**: Priority queue (webhooks > user actions > auto-enrichment > library scans)
 - **Rate Limiting**: Respect provider quotas (50/sec TMDB, 1/sec TVDB), reserved capacity for webhooks
-- **Real-Time Updates**: SSE for progress tracking, cache invalidation
+- **Real-Time Updates**: WebSocket for progress tracking, connection state awareness
 - **Scale-Aware**: Virtual scrolling, pagination, indexed queries (target: 32k items)
 
 ## Technology Stack
@@ -123,13 +123,13 @@ DISCOVERED → IDENTIFIED → ENRICHING → ENRICHED → SELECTED → PUBLISHED
 - **Runtime**: Node.js with TypeScript
 - **Web Framework**: Express.js
 - **Database**: Multi-database support (SQLite3 for development, PostgreSQL for production)
-- **Communication**: REST API + Server-Sent Events (SSE)
+- **Communication**: REST API + WebSocket
 
 ### Frontend
 - **Framework**: React with Vite
 - **Language**: TypeScript
 - **Styling**: Tailwind CSS with purple theme (matching Sonarr/Radarr design patterns)
-- **State Management**: React hooks + EventSource for real-time updates
+- **State Management**: React hooks + WebSocket for real-time updates
 
 ### Integrations
 - **Media Players**: Kodi (WebSocket + HTTP), Jellyfin (REST), Plex (future)
@@ -332,8 +332,9 @@ DB_USER=metarr                     # For postgres/mysql
 DB_PASSWORD=password               # For postgres/mysql
 DB_FILE=./data/metarr.sqlite       # For SQLite3
 
-# API Keys
-TMDB_API_KEY=your_tmdb_key
+# API Keys (Optional - defaults provided)
+# TMDB_API_KEY=your_personal_tmdb_key  # Optional: Uses default project key if not set
+# FANART_TV_API_KEY=your_personal_key  # Optional: Uses default project key if not set
 
 # Media Players
 KODI_HOST=192.168.1.100
@@ -345,6 +346,45 @@ JELLYFIN_HOST=192.168.1.101
 JELLYFIN_PORT=8096
 JELLYFIN_API_KEY=your_jellyfin_key
 ```
+
+### Zero-Configuration Philosophy
+
+**Metarr works completely out-of-the-box with ZERO required environment variables for local development.**
+
+The application includes embedded default API keys for services that offer free project-level keys. This means:
+- Clone the repo → `npm install` → `npm run dev` → **It just works!**
+- No API key signup required to start developing
+- No configuration files to create
+- Environment variables are **optional** and only needed for Docker deployment or personal preferences
+
+**Providers with Embedded Keys:**
+
+- **TMDB (The Movie Database)**
+  - Embedded: Project API key (40 requests per 10 seconds)
+  - Override: Set `TMDB_API_KEY` environment variable for personal usage tracking
+  - Get yours: https://www.themoviedb.org/settings/api
+
+- **TVDB (The TV Database)**
+  - Embedded: Project API key (30 requests per 10 seconds)
+  - Override: Set `TVDB_API_KEY` environment variable for personal usage tracking
+  - Get yours: https://thetvdb.com/api-information
+
+- **FanArt.tv**
+  - Embedded: Project API key (10 requests per second)
+  - Override: Set `FANART_TV_API_KEY` for 2x faster rate limits (20 req/sec)
+  - Get yours: https://fanart.tv/get-an-api-key/
+
+**Why Override with Your Own Key?**
+- Track your personal API usage and analytics
+- Support the provider services by registering as a user
+- Get higher rate limits (FanArt.tv: 20 req/sec vs 10 req/sec)
+- All keys are completely free for personal/open-source use
+
+**Implementation:**
+- Default keys: `src/config/providerDefaults.ts`
+- Fallback logic: `src/config/ConfigManager.ts`
+- User overrides via environment variables take precedence
+- Logs indicate which key type is being used (default vs user-provided)
 
 ## Development Notes
 

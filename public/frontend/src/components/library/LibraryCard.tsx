@@ -1,7 +1,9 @@
 import React from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faFilm, faTv, faMusic, faCheck, faTimes, faFolder, faRefresh } from '@fortawesome/free-solid-svg-icons';
+import { faFilm, faTv, faMusic, faFolder, faRefresh } from '@fortawesome/free-solid-svg-icons';
 import { Library } from '../../types/library';
+import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 
 interface LibraryCardProps {
   library: Library;
@@ -54,11 +56,11 @@ export const LibraryCard: React.FC<LibraryCardProps> = ({
   };
 
   return (
-    <div
+    <Card
       onClick={onClick}
-      className="card cursor-pointer hover:border-primary-500 transition-all duration-200 relative"
+      className="cursor-pointer hover:outline hover:outline-2 hover:outline-primary hover:border-primary hover:bg-primary/5 transition-all duration-200 relative"
     >
-      <div className="card-body">
+      <CardContent className="p-6">
         <div className="flex items-start mb-3">
           <FontAwesomeIcon icon={getTypeIcon()} className="text-primary-500 text-2xl mr-3 mt-1" />
           <div className="flex-1">
@@ -73,57 +75,37 @@ export const LibraryCard: React.FC<LibraryCardProps> = ({
             <span className="text-white font-mono text-xs break-all">{library.path}</span>
           </div>
 
-          {/* Progress Bar (only shown when scanning) */}
-          {isScanning && scanProgress && (
-            <div className="pt-2">
-              <div className="flex justify-between text-xs mb-1">
-                <span className="text-primary-400">Scanning...</span>
-                <span className="text-neutral-400">
-                  {scanProgress.current} / {scanProgress.total}
-                </span>
-              </div>
-              <div className="w-full bg-neutral-700 rounded-full h-2 overflow-hidden">
-                <div
-                  className="bg-primary-500 h-full transition-all duration-300 rounded-full"
-                  style={{ width: `${getProgressPercentage()}%` }}
-                ></div>
-              </div>
-              {scanProgress.currentFile && (
-                <p className="text-xs text-neutral-500 mt-1 truncate">
-                  {scanProgress.currentFile}
-                </p>
-              )}
+          {/* Progress Bar (always rendered to prevent layout shift) */}
+          <div className={`pt-2 transition-opacity duration-200 ${isScanning && scanProgress ? 'opacity-100' : 'opacity-0 invisible'}`}>
+            <div className="flex justify-between text-xs mb-1">
+              <span className="text-primary-400">Scanning...</span>
+              <span className="text-neutral-400">
+                {scanProgress ? `${scanProgress.current} / ${scanProgress.total}` : '0 / 0'}
+              </span>
             </div>
-          )}
-
-          <div className="flex justify-between items-center pt-2 border-t border-neutral-700">
-            <span className="text-neutral-400">Status:</span>
-            <span className="flex items-center">
-              {library.enabled ? (
-                <>
-                  <FontAwesomeIcon icon={faCheck} className="text-success mr-1" />
-                  <span className="text-success">Enabled</span>
-                </>
-              ) : (
-                <>
-                  <FontAwesomeIcon icon={faTimes} className="text-neutral-500 mr-1" />
-                  <span className="text-neutral-500">Disabled</span>
-                </>
-              )}
-            </span>
+            <div className="w-full bg-neutral-700 rounded-full h-2 overflow-hidden">
+              <div
+                className="bg-primary-500 h-full transition-all duration-300 rounded-full"
+                style={{ width: `${getProgressPercentage()}%` }}
+              ></div>
+            </div>
+            <p className="text-xs text-neutral-500 mt-1 truncate">
+              {scanProgress?.currentFile || '\u00A0'}
+            </p>
           </div>
 
           {/* Scan Button */}
-          <button
+          <Button
             onClick={onScan}
-            disabled={isScanning || !library.enabled}
-            className="btn btn-secondary w-full mt-2"
+            disabled={isScanning}
+            variant="outline"
+            className="w-full mt-2"
           >
             <FontAwesomeIcon icon={faRefresh} className={`mr-2 ${isScanning ? 'animate-spin' : ''}`} />
             {isScanning ? 'Scanning...' : 'Scan Library'}
-          </button>
+          </Button>
         </div>
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 };

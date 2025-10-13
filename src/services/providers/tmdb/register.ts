@@ -22,7 +22,6 @@ registry.registerProvider(
       providerName: 'tmdb',
       enabled: true,
       apiKey: '', // Temporary for capabilities only
-      enabledAssetTypes: [],
       createdAt: new Date(),
       updatedAt: new Date(),
     },

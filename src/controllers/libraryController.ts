@@ -59,7 +59,7 @@ export class LibraryController {
    */
   async create(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const { name, type, path, enabled } = req.body;
+      const { name, type, path } = req.body;
 
       if (!name || !type || !path) {
         res.status(400).json({ error: 'Missing required fields: name, type, path' });
@@ -75,7 +75,6 @@ export class LibraryController {
         name,
         type,
         path,
-        enabled: enabled ?? true,
       });
 
       res.status(201).json(library);
@@ -100,13 +99,12 @@ export class LibraryController {
         return;
       }
 
-      const { name, type, path, enabled } = req.body;
+      const { name, type, path } = req.body;
 
       const library = await this.libraryService.update(id, {
         name,
         type,
         path,
-        enabled,
       });
 
       res.json(library);
@@ -130,6 +128,25 @@ export class LibraryController {
     try {
       const drives = await this.libraryService.getAvailableDrives();
       res.json(drives);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Get server platform info (OS type)
+   */
+  async getPlatform(_req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const platform = process.platform; // 'win32', 'darwin', 'linux', etc.
+      const isWindows = platform === 'win32';
+      const separator = isWindows ? '\\' : '/';
+
+      res.json({
+        platform,
+        isWindows,
+        separator,
+      });
     } catch (error) {
       next(error);
     }

@@ -21,7 +21,6 @@ registry.registerProvider(
       id: 0,
       providerName: 'local',
       enabled: true,
-      enabledAssetTypes: [],
       createdAt: new Date(),
       updatedAt: new Date(),
     },

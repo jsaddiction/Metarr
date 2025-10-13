@@ -25,7 +25,6 @@ registry.registerProvider(
       id: 0,
       providerName: 'imdb',
       enabled: false, // Disabled by default due to ToS concerns
-      enabledAssetTypes: [], // No assets provided
       createdAt: new Date(),
       updatedAt: new Date(),
     },

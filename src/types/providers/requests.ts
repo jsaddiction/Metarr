@@ -166,3 +166,41 @@ export interface TestConnectionResponse {
   message?: string;
   error?: string;
 }
+
+/**
+ * Provider fetch results for orchestration
+ */
+export interface ProviderAssets {
+  metadata?: Record<string, any>;
+  images?: {
+    [key: string]: AssetCandidate[]; // Dynamic keys for asset types (poster, fanart, etc.)
+  };
+  videos?: {
+    [key: string]: AssetCandidate[]; // Dynamic keys for video types (trailer, teaser, etc.)
+  };
+}
+
+/**
+ * Failed provider information
+ */
+export interface FailedProvider {
+  name: string;
+  error: string;
+  retryable: boolean;
+}
+
+/**
+ * Orchestrator fetch results
+ */
+export interface ProviderResults {
+  providers: {
+    [providerName: string]: ProviderAssets | null;
+  };
+  metadata: {
+    fetchedAt: Date;
+    completedProviders: string[];
+    failedProviders: FailedProvider[];
+    timedOutProviders: string[];
+  };
+  allFailed: boolean; // true if ALL providers failed
+}

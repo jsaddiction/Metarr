@@ -9,7 +9,6 @@ export interface ProviderConfig {
   enabled: boolean;
   apiKey?: string;
   personalApiKey?: string;
-  enabledAssetTypes: string[];
   language?: string;
   region?: string;
   options?: Record<string, any>;
@@ -51,7 +50,6 @@ export interface UpdateProviderRequest {
   enabled: boolean;
   apiKey?: string;
   personalApiKey?: string;
-  enabledAssetTypes: string[];
   language?: string;
   region?: string;
   options?: Record<string, any>;
@@ -142,4 +140,74 @@ export interface GetAssetTypePrioritiesResponse {
 
 export interface GetMetadataFieldPrioritiesResponse {
   priorities: MetadataFieldPriority[];
+}
+
+// Auto-Selection Strategy Types
+
+export type AutoSelectionStrategy = 'balanced' | 'custom';
+
+export interface AutoSelectionSettings {
+  strategy: AutoSelectionStrategy;
+  updatedAt: string; // ISO date string
+}
+
+export interface GetAutoSelectionStrategyResponse {
+  success: boolean;
+  strategy: AutoSelectionStrategy;
+  updatedAt: string;
+}
+
+export interface SetAutoSelectionStrategyRequest {
+  strategy: AutoSelectionStrategy;
+}
+
+export interface SetAutoSelectionStrategyResponse {
+  success: boolean;
+  strategy: AutoSelectionStrategy;
+  message: string;
+}
+
+// Data Selection Configuration Types
+
+export interface FieldPriorityConfig {
+  providerOrder: string[];
+  disabled: string[];
+}
+
+export interface DataSelectionConfig {
+  id: number;
+  mode: 'balanced' | 'custom';
+  customMetadataPriorities: Record<string, FieldPriorityConfig>;
+  customImagePriorities: Record<string, FieldPriorityConfig>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface UpdateDataSelectionModeRequest {
+  mode: 'balanced' | 'custom';
+}
+
+export interface UpdateDataSelectionModeResponse {
+  success: boolean;
+  config: DataSelectionConfig;
+}
+
+export interface UpdateFieldPriorityRequest {
+  mediaType: 'movies' | 'tvshows' | 'music';
+  category: 'metadata' | 'images';
+  fieldName: string;
+  providerOrder: string[];
+  disabled?: string[];
+}
+
+export interface UpdateFieldPriorityResponse {
+  success: boolean;
+  config: DataSelectionConfig;
+}
+
+export interface GetProviderOrderResponse {
+  category: string;
+  mediaType: string;
+  fieldName: string;
+  providerOrder: string[];
 }

@@ -47,15 +47,11 @@ interface Movie {
 interface MovieTableViewProps {
   movies: Movie[];
   onMovieClick?: (movie: Movie) => void;
-  onEditClick?: (movie: Movie) => void;
-  onDeleteClick?: (movie: Movie) => void;
 }
 
 export const MovieTableView: React.FC<MovieTableViewProps> = ({
   movies,
-  onMovieClick,
-  onEditClick,
-  onDeleteClick
+  onMovieClick
 }) => {
   const getStatusClass = (status: string) => {
     switch (status) {
@@ -105,6 +101,7 @@ export const MovieTableView: React.FC<MovieTableViewProps> = ({
           className={`w-4 h-4 ${
             hasAsset ? 'text-success' : 'text-neutral-600'
           }`}
+          aria-hidden="true"
         />
         {canHaveMultiple && count > 1 && (
           <span className="absolute -top-1 -right-1 bg-primary-500 text-white text-xs rounded-full px-1 min-w-[16px] h-4 flex items-center justify-center">
@@ -123,7 +120,7 @@ export const MovieTableView: React.FC<MovieTableViewProps> = ({
             <th className="text-left py-3 px-4 font-medium text-neutral-200 w-1/4">Movie Title</th>
             <th className="text-left py-3 px-4 font-medium text-neutral-200 flex-1">Metadata</th>
             <th className="text-center py-3 px-4 font-medium text-neutral-200 w-20">
-              <FontAwesomeIcon icon={faBolt} title="Actions" />
+              <FontAwesomeIcon icon={faBolt} title="Actions" aria-label="Actions" />
             </th>
           </tr>
         </thead>
@@ -154,6 +151,7 @@ export const MovieTableView: React.FC<MovieTableViewProps> = ({
                         className={`w-4 h-4 ${
                           movie.metadata.nfoProgress > 70 ? 'text-success' : 'text-neutral-600'
                         }`}
+                        aria-hidden="true"
                       />
                     </div>
 
@@ -174,6 +172,7 @@ export const MovieTableView: React.FC<MovieTableViewProps> = ({
                         className={`w-4 h-4 ${
                           movie.metadata.trailers > 0 ? 'text-success' : 'text-neutral-600'
                         }`}
+                        aria-hidden="true"
                       />
                       {movie.metadata.trailers > 1 && (
                         <span className="absolute -top-1 -right-1 bg-primary-500 text-white text-xs rounded-full px-1 min-w-[16px] h-4 flex items-center justify-center">
@@ -187,6 +186,7 @@ export const MovieTableView: React.FC<MovieTableViewProps> = ({
                         className={`w-4 h-4 ${
                           movie.metadata.subtitles > 0 ? 'text-success' : 'text-neutral-600'
                         }`}
+                        aria-hidden="true"
                       />
                       {movie.metadata.subtitles > 1 && (
                         <span className="absolute -top-1 -right-1 bg-primary-500 text-white text-xs rounded-full px-1 min-w-[16px] h-4 flex items-center justify-center">
@@ -200,6 +200,7 @@ export const MovieTableView: React.FC<MovieTableViewProps> = ({
                         className={`w-4 h-4 ${
                           movie.metadata.tunes > 0 ? 'text-success' : 'text-neutral-600'
                         }`}
+                        aria-hidden="true"
                       />
                       {movie.metadata.tunes > 1 && (
                         <span className="absolute -top-1 -right-1 bg-primary-500 text-white text-xs rounded-full px-1 min-w-[16px] h-4 flex items-center justify-center">
@@ -215,13 +216,14 @@ export const MovieTableView: React.FC<MovieTableViewProps> = ({
                 <button
                   className="btn btn-ghost p-2"
                   title="Refresh Metadata"
+                  aria-label="Refresh metadata"
                   onClick={(e) => {
                     e.stopPropagation();
                     console.log('Refreshing metadata for:', movie.title);
                     // TODO: Implement metadata refresh
                   }}
                 >
-                  <FontAwesomeIcon icon={faRefresh} />
+                  <FontAwesomeIcon icon={faRefresh} aria-hidden="true" />
                 </button>
               </td>
             </tr>

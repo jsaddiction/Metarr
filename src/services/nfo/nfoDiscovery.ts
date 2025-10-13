@@ -141,8 +141,19 @@ export async function validateDirectory(dirPath: string): Promise<boolean> {
       return false;
     }
 
-    // Try to read the directory to check permissions
+    // Try to read the directory to check read permissions
     await fs.readdir(dirPath);
+
+    // Try to write a temporary file to check write permissions
+    const testFilePath = path.join(dirPath, '.metarr-write-test');
+    try {
+      await fs.writeFile(testFilePath, 'test', 'utf8');
+      await fs.unlink(testFilePath);
+    } catch (writeError: any) {
+      logger.debug(`Directory write test failed for ${dirPath}`, { error: writeError.message });
+      return false;
+    }
+
     return true;
   } catch (error: any) {
     logger.debug(`Directory validation failed for ${dirPath}`, { error: error.message });

@@ -95,7 +95,7 @@ export const ViewControls: React.FC<ViewControlsProps> = ({
         <div className="flex items-center space-x-4">
           <div className="relative">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <FontAwesomeIcon icon={faSearch} className="h-4 w-4 text-neutral-400" />
+              <FontAwesomeIcon icon={faSearch} className="h-4 w-4 text-neutral-400" aria-hidden="true" />
             </div>
             <input
               type="text"
@@ -116,8 +116,9 @@ export const ViewControls: React.FC<ViewControlsProps> = ({
                 className="btn btn-ghost p-2"
                 title="Refresh"
                 onClick={onRefresh}
+                aria-label="Refresh view"
               >
-                <FontAwesomeIcon icon={faRefresh} />
+                <FontAwesomeIcon icon={faRefresh} aria-hidden="true" />
               </button>
             )}
 
@@ -127,13 +128,15 @@ export const ViewControls: React.FC<ViewControlsProps> = ({
                   className="btn btn-ghost p-2 flex items-center space-x-1"
                   title="View Options"
                   onClick={() => setShowViewDropdown(!showViewDropdown)}
+                  aria-label="View options"
+                  aria-expanded={showViewDropdown}
                 >
-                  <FontAwesomeIcon icon={faEye} />
-                  <FontAwesomeIcon icon={faChevronDown} className="h-3 w-3" />
+                  <FontAwesomeIcon icon={faEye} aria-hidden="true" />
+                  <FontAwesomeIcon icon={faChevronDown} className="h-3 w-3" aria-hidden="true" />
                 </button>
 
                 {showViewDropdown && (
-                  <div className="absolute right-0 mt-2 w-48 bg-neutral-800 border border-neutral-700 rounded-md shadow-lg z-50">
+                  <div className="absolute right-0 mt-2 w-48 bg-neutral-800 border border-neutral-700 rounded-md shadow-lg z-50" role="menu">
                     <div className="py-1">
                       <button
                         className={`w-full text-left px-4 py-2 text-sm flex items-center space-x-2 hover:bg-neutral-700 ${
@@ -142,8 +145,9 @@ export const ViewControls: React.FC<ViewControlsProps> = ({
                             : 'text-neutral-300'
                         }`}
                         onClick={() => handleViewModeSelect('table')}
+                        role="menuitem"
                       >
-                        <FontAwesomeIcon icon={faTableList} />
+                        <FontAwesomeIcon icon={faTableList} aria-hidden="true" />
                         <span>Table</span>
                       </button>
                       <button
@@ -153,8 +157,9 @@ export const ViewControls: React.FC<ViewControlsProps> = ({
                             : 'text-neutral-300'
                         }`}
                         onClick={() => handleViewModeSelect('poster')}
+                        role="menuitem"
                       >
-                        <FontAwesomeIcon icon={faTableCells} />
+                        <FontAwesomeIcon icon={faTableCells} aria-hidden="true" />
                         <span>Posters</span>
                       </button>
                       <button
@@ -164,8 +169,9 @@ export const ViewControls: React.FC<ViewControlsProps> = ({
                             : 'text-neutral-300'
                         }`}
                         onClick={() => handleViewModeSelect('overview')}
+                        role="menuitem"
                       >
-                        <FontAwesomeIcon icon={faListUl} />
+                        <FontAwesomeIcon icon={faListUl} aria-hidden="true" />
                         <span>Overview</span>
                       </button>
                     </div>
@@ -179,8 +185,9 @@ export const ViewControls: React.FC<ViewControlsProps> = ({
                 className="btn btn-ghost p-2"
                 title="Sort Options"
                 onClick={() => onSortChange?.('toggle')}
+                aria-label="Sort options"
               >
-                <FontAwesomeIcon icon={faSort} />
+                <FontAwesomeIcon icon={faSort} aria-hidden="true" />
               </button>
             )}
 
@@ -189,8 +196,9 @@ export const ViewControls: React.FC<ViewControlsProps> = ({
                 className="btn btn-ghost p-2"
                 title="Filter Options"
                 onClick={() => onFilterChange?.('toggle')}
+                aria-label="Filter options"
               >
-                <FontAwesomeIcon icon={faFilter} />
+                <FontAwesomeIcon icon={faFilter} aria-hidden="true" />
               </button>
             )}
           </div>

@@ -20,6 +20,14 @@ import {
 } from '../../types/providers/index.js';
 import { RateLimiter, CircuitBreaker } from './utils/index.js';
 import { logger } from '../../middleware/logging.js';
+import {
+  RateLimitError,
+  NotFoundError,
+  ServerError,
+  AuthenticationError,
+  NetworkError,
+  ProviderError,
+} from '../../errors/providerErrors.js';
 
 export abstract class BaseProvider {
   protected capabilities: ProviderCapabilities;
@@ -27,6 +35,13 @@ export abstract class BaseProvider {
   protected options: ProviderOptions;
   protected rateLimiter: RateLimiter;
   protected circuitBreaker: CircuitBreaker;
+
+  // Rate limit backoff state
+  private lastRequestTime: number = 0;
+  private rateLimitBackoffMs: number = 0;
+  private consecutiveRateLimits: number = 0;
+  private readonly MAX_BACKOFF_MS = 30000; // 30 seconds
+  private readonly BASE_BACKOFF_MS = 1000; // 1 second
 
   constructor(config: ProviderConfig, options: ProviderOptions = {}) {
     this.config = config;
@@ -138,6 +153,18 @@ export abstract class BaseProvider {
   }
 
   /**
+   * Get rate limit backoff statistics
+   */
+  getRateLimitBackoffStats() {
+    return {
+      consecutiveRateLimits: this.consecutiveRateLimits,
+      currentBackoffMs: this.rateLimitBackoffMs,
+      lastRequestTime: this.lastRequestTime > 0 ? new Date(this.lastRequestTime).toISOString() : null,
+      isInBackoff: this.rateLimitBackoffMs > 0 && (Date.now() - this.lastRequestTime) < this.rateLimitBackoffMs,
+    };
+  }
+
+  /**
    * Check if provider is healthy
    */
   isHealthy(): boolean {
@@ -150,13 +177,15 @@ export abstract class BaseProvider {
   getHealthStatus() {
     const cbStats = this.circuitBreaker.getStats();
     const rlStats = this.rateLimiter.getStats();
+    const backoffStats = this.getRateLimitBackoffStats();
 
     return {
-      healthy: !this.circuitBreaker.isOpen(),
+      healthy: !this.circuitBreaker.isOpen() && !backoffStats.isInBackoff,
       circuitState: cbStats.state,
       failureCount: cbStats.failureCount,
       rateLimitRemaining: rlStats.remainingRequests,
       rateLimitTotal: rlStats.maxRequests,
+      rateLimitBackoff: backoffStats,
     };
   }
 
@@ -211,6 +240,146 @@ export abstract class BaseProvider {
   }
 
   /**
+   * Check if we need to wait due to rate limit backoff
+   * Called before making any request
+   */
+  private async checkRateLimitBackoff(): Promise<void> {
+    if (this.rateLimitBackoffMs === 0) {
+      return; // No backoff needed
+    }
+
+    const timeSinceLastRequest = Date.now() - this.lastRequestTime;
+    const remainingBackoff = this.rateLimitBackoffMs - timeSinceLastRequest;
+
+    if (remainingBackoff > 0) {
+      this.log('warn', `Rate limit backoff active, waiting ${remainingBackoff}ms`, {
+        consecutiveRateLimits: this.consecutiveRateLimits,
+        totalBackoff: this.rateLimitBackoffMs,
+      });
+      await this.delay(remainingBackoff);
+    }
+  }
+
+  /**
+   * Handle a 429 rate limit response
+   * Sets exponential backoff based on consecutive rate limits
+   */
+  private handleRateLimitResponse(retryAfter?: number): void {
+    this.consecutiveRateLimits++;
+
+    if (retryAfter !== undefined && retryAfter > 0) {
+      // Provider specified a Retry-After value (in seconds), use it
+      this.rateLimitBackoffMs = retryAfter * 1000;
+      this.log('warn', `Rate limit hit, using Retry-After: ${retryAfter}s`, {
+        consecutiveRateLimits: this.consecutiveRateLimits,
+      });
+    } else {
+      // Calculate exponential backoff: 1s, 2s, 4s, 8s, 30s (capped)
+      const backoffMs = Math.min(
+        this.BASE_BACKOFF_MS * Math.pow(2, this.consecutiveRateLimits - 1),
+        this.MAX_BACKOFF_MS
+      );
+      this.rateLimitBackoffMs = backoffMs;
+      this.log('warn', `Rate limit hit, applying exponential backoff: ${backoffMs}ms`, {
+        consecutiveRateLimits: this.consecutiveRateLimits,
+      });
+    }
+
+    this.lastRequestTime = Date.now();
+  }
+
+  /**
+   * Reset rate limit backoff state on successful request
+   */
+  private resetRateLimitBackoff(): void {
+    if (this.consecutiveRateLimits > 0) {
+      this.log('info', 'Rate limit backoff reset after successful request', {
+        previousConsecutiveRateLimits: this.consecutiveRateLimits,
+      });
+    }
+    this.consecutiveRateLimits = 0;
+    this.rateLimitBackoffMs = 0;
+  }
+
+  /**
+   * Parse HTTP error response into appropriate error class
+   * Concrete providers should use this to standardize error handling
+   *
+   * @param error - The error object (typically from axios or fetch)
+   * @param resourceId - Optional resource identifier for context
+   * @returns Standardized ProviderError subclass
+   */
+  protected parseHttpError(error: any, resourceId?: string | number): ProviderError {
+    const providerName = this.capabilities.id;
+
+    // Check if it's already a ProviderError
+    if (error instanceof ProviderError) {
+      return error;
+    }
+
+    // Handle axios-style errors
+    if (error.response) {
+      const status = error.response.status;
+      const message = error.response.data?.message || error.response.data?.status_message || error.message;
+
+      switch (status) {
+        case 429: {
+          // Rate limit exceeded
+          // Try to extract Retry-After header (can be in seconds or HTTP date)
+          const retryAfter = error.response.headers['retry-after'];
+          let retryAfterSeconds: number | undefined;
+
+          if (retryAfter) {
+            const parsed = parseInt(retryAfter, 10);
+            if (!isNaN(parsed)) {
+              retryAfterSeconds = parsed;
+            } else {
+              // Try parsing as HTTP date
+              const retryDate = new Date(retryAfter);
+              if (!isNaN(retryDate.getTime())) {
+                retryAfterSeconds = Math.ceil((retryDate.getTime() - Date.now()) / 1000);
+              }
+            }
+          }
+
+          return new RateLimitError(providerName, retryAfterSeconds, message);
+        }
+
+        case 404:
+          // Not found
+          return new NotFoundError(providerName, resourceId || 'unknown', message);
+
+        case 401:
+        case 403:
+          // Authentication/authorization error
+          return new AuthenticationError(providerName, message);
+
+        case 500:
+        case 502:
+        case 503:
+        case 504:
+          // Server error
+          return new ServerError(providerName, status, message);
+
+        default:
+          // Generic provider error
+          return new ProviderError(message || `HTTP ${status} error`, providerName, status);
+      }
+    }
+
+    // Handle network errors (no response received)
+    if (error.request) {
+      return new NetworkError(providerName, error);
+    }
+
+    // Generic error
+    return new ProviderError(
+      error.message || 'Unknown error',
+      providerName
+    );
+  }
+
+  /**
    * Execute a request with rate limiting and circuit breaker
    * Concrete providers should use this for all API calls
    */
@@ -219,13 +388,26 @@ export abstract class BaseProvider {
     operation: string,
     priority: 'webhook' | 'user' | 'background' = 'background'
   ): Promise<T> {
+    // Check if we need to wait due to previous rate limits
+    await this.checkRateLimitBackoff();
+
     try {
-      return await this.circuitBreaker.execute(async () => {
+      const result = await this.circuitBreaker.execute(async () => {
         return await this.rateLimiter.execute(fn, priority);
       });
+
+      // Success - reset rate limit backoff
+      this.resetRateLimitBackoff();
+      return result;
     } catch (error: any) {
+      // Handle rate limit errors specially
+      if (error instanceof RateLimitError) {
+        this.handleRateLimitResponse(error.retryAfter);
+      }
+
       logger.error(`Provider request failed: ${this.capabilities.id} - ${operation}`, {
         error: error.message,
+        errorType: error.name,
         priority,
       });
       throw error;

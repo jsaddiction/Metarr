@@ -21,6 +21,8 @@ import {
   TMDBImageType,
   TMDBImage,
   TMDBVideo,
+  TMDBChangesAPIResponse,
+  TMDBChangesResponse,
 } from '../../../types/providers/tmdb.js';
 
 export class TMDBClient {
@@ -158,6 +160,79 @@ export class TMDBClient {
       language: language || this.language,
     };
     return this.request(`/movie/${movieId}/videos`, { params });
+  }
+
+  /**
+   * Get changes for a movie since a specific date
+   * @param tmdbId TMDB movie ID
+   * @param sinceDate Date to check for changes since
+   * @returns Object indicating if changes exist and which fields changed
+   */
+  async getMovieChanges(tmdbId: number, sinceDate: Date): Promise<TMDBChangesResponse> {
+    try {
+      // Format date as YYYY-MM-DD for TMDB API
+      const startDate = this.formatDate(sinceDate);
+      const endDate = this.formatDate(new Date());
+
+      const params = {
+        start_date: startDate,
+        end_date: endDate,
+      };
+
+      const response = await this.request<TMDBChangesAPIResponse>(
+        `/movie/${tmdbId}/changes`,
+        { params }
+      );
+
+      // Process the response
+      const changedFields = new Set<string>();
+      let lastChangeDate: Date | undefined;
+
+      for (const change of response.changes) {
+        changedFields.add(change.key);
+
+        // Find the most recent change timestamp
+        for (const item of change.items) {
+          const changeTime = new Date(item.time);
+          if (!lastChangeDate || changeTime > lastChangeDate) {
+            lastChangeDate = changeTime;
+          }
+        }
+      }
+
+      const hasChanges = changedFields.size > 0;
+
+      logger.debug('TMDB changes check complete', {
+        tmdbId,
+        sinceDate: startDate,
+        hasChanges,
+        changedFields: Array.from(changedFields),
+        lastChangeDate,
+      });
+
+      const result: TMDBChangesResponse = {
+        hasChanges,
+        changedFields: Array.from(changedFields),
+      };
+
+      if (lastChangeDate) {
+        result.lastChangeDate = lastChangeDate;
+      }
+
+      return result;
+    } catch (error: any) {
+      // If the movie doesn't exist or changes endpoint fails, assume we should re-scrape
+      logger.warn('TMDB changes check failed, assuming changes exist', {
+        tmdbId,
+        error: error.message,
+      });
+
+      return {
+        hasChanges: true,
+        changedFields: ['unknown'],
+        lastChangeDate: new Date(),
+      };
+    }
   }
 
   /**
@@ -371,5 +446,15 @@ export class TMDBClient {
    */
   private delay(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Format date as YYYY-MM-DD for TMDB API
+   */
+  private formatDate(date: Date): string {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   }
 }

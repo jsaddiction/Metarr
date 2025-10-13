@@ -21,6 +21,16 @@ export const defaultConfig: AppConfig = {
       rateLimit: 40,
       rateLimitWindow: 10, // 40 requests per 10 seconds
     },
+    tvdb: {
+      baseUrl: 'https://api4.thetvdb.com/v4',
+      rateLimit: 30,
+      rateLimitWindow: 10, // 30 requests per 10 seconds
+    },
+    fanart_tv: {
+      baseUrl: 'https://webservice.fanart.tv/v3',
+      rateLimit: 10,
+      rateLimitWindow: 1, // 10 requests per second (20 with personal key)
+    },
     imdb: {
       baseUrl: 'https://imdb-api.com/en/API',
       rateLimit: 100,
@@ -64,5 +74,11 @@ export const defaultConfig: AppConfig = {
     retryDelays: [1000, 5000, 30000], // 1s, 5s, 30s
     batchSize: 10,
     processingTimeout: 300000, // 5 minutes
+  },
+  enrichment: {
+    checkForChanges: true, // Use TMDB changes API
+    staleDataThresholdDays: 7, // Check for changes if data is less than 7 days old
+    forceRescrapeAfterDays: 30, // Force re-scrape after 30 days regardless
+    enableChangeDetection: true, // Master switch
   },
 };

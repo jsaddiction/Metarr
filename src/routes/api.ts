@@ -20,10 +20,20 @@ import { JobHandlers } from '../services/jobHandlers.js';
 import { ScheduledEnrichmentService } from '../services/scheduledEnrichmentService.js';
 import { AutomationConfigService } from '../services/automationConfigService.js';
 import { tmdbService } from '../services/providers/TMDBService.js';
+import { defaultConfig } from '../config/defaults.js';
 import { ProviderConfigService } from '../services/providerConfigService.js';
 import { ProviderConfigController } from '../controllers/providerConfigController.js';
+import { ProviderConfig } from '../types/provider.js';
 import { PriorityConfigService } from '../services/priorityConfigService.js';
 import { PriorityConfigController } from '../controllers/priorityConfigController.js';
+import { AutoSelectionService } from '../services/autoSelectionService.js';
+import { AutoSelectionController } from '../controllers/autoSelectionController.js';
+import { DataSelectionService } from '../services/dataSelectionService.js';
+import { DataSelectionController } from '../controllers/dataSelectionController.js';
+import { ProviderRegistry } from '../services/providers/ProviderRegistry.js';
+import { FetchOrchestrator } from '../services/providers/FetchOrchestrator.js';
+// Import provider index to trigger provider registrations
+import '../services/providers/index.js';
 
 // Initialize router factory function
 export const createApiRouter = (
@@ -41,9 +51,33 @@ export const createApiRouter = (
   const libraryScanService = new LibraryScanService(dbManager);
   const libraryController = new LibraryController(libraryService, libraryScanService);
 
+  // Get database connection for services that need it
+  const db = dbManager.getConnection();
+
+  // Initialize provider config service (needed by FetchOrchestrator)
+  const providerConfigService = new ProviderConfigService(db);
+  const providerConfigController = new ProviderConfigController(providerConfigService);
+
+  // Initialize data selection service (needed by auto-selection)
+  const dataSelectionService = new DataSelectionService(db);
+  const dataSelectionController = new DataSelectionController(dataSelectionService);
+
+  // Initialize auto-selection service
+  const autoSelectionService = new AutoSelectionService(db, dataSelectionService);
+  const autoSelectionController = new AutoSelectionController(autoSelectionService);
+
+  // Initialize provider registry and fetch orchestrator
+  const providerRegistry = ProviderRegistry.getInstance();
+  const fetchOrchestrator = new FetchOrchestrator(providerRegistry, providerConfigService);
+
   // Initialize movie service and controller
   const movieService = new MovieService(dbManager);
-  const movieController = new MovieController(movieService, libraryScanService);
+  const movieController = new MovieController(
+    movieService,
+    libraryScanService,
+    fetchOrchestrator,
+    autoSelectionService
+  );
 
   // Initialize ignore pattern service and controller
   const ignorePatternService = new IgnorePatternService(dbManager);
@@ -56,7 +90,6 @@ export const createApiRouter = (
   imageService.initialize().catch(err => console.error('Failed to initialize image service:', err));
 
   // Initialize job queue and handlers
-  const db = dbManager.getConnection();
   const jobQueue = new JobQueueService(db);
 
   // Get TMDB client if available
@@ -66,17 +99,34 @@ export const createApiRouter = (
   jobHandlers.registerHandlers(jobQueue);
   jobQueue.start(); // Start processing jobs
 
-  // Initialize scheduled enrichment service
-  const scheduledEnrichment = new ScheduledEnrichmentService(db, jobQueue);
-  scheduledEnrichment.start(3600000); // Run every hour (3600000ms)
+  // Initialize scheduled enrichment service with enrichment config
+  // Get TMDB API key from provider config service
+  const getTmdbApiKey = async (): Promise<string | undefined> => {
+    try {
+      const providers = await providerConfigService.getAll();
+      const tmdbProvider = providers.find((p: ProviderConfig) => p.providerName === 'tmdb');
+      return tmdbProvider?.apiKey || undefined;
+    } catch (error) {
+      console.error('Failed to get TMDB API key for enrichment service:', error);
+      return undefined;
+    }
+  };
+
+  getTmdbApiKey().then(tmdbApiKey => {
+    const scheduledEnrichment = new ScheduledEnrichmentService(
+      db,
+      jobQueue,
+      defaultConfig.enrichment,
+      tmdbApiKey
+    );
+    scheduledEnrichment.start(3600000); // Run every hour (3600000ms)
+  }).catch(err => {
+    console.error('Failed to start scheduled enrichment service:', err);
+  });
 
   // Initialize automation config service and controller
   const automationConfigService = new AutomationConfigService(db);
   const automationConfigController = new AutomationConfigController(automationConfigService);
-
-  // Initialize provider config service and controller
-  const providerConfigService = new ProviderConfigService(db);
-  const providerConfigController = new ProviderConfigController(providerConfigService);
 
   // Initialize priority config service and controller
   const priorityConfigService = new PriorityConfigService(db);
@@ -142,6 +192,7 @@ export const createApiRouter = (
   router.get('/libraries', (req, res, next) => libraryController.getAll(req, res, next));
   router.get('/libraries/scan-status', (req, res) => libraryController.streamScanStatus(req, res));
   router.get('/libraries/drives', (req, res, next) => libraryController.getDrives(req, res, next));
+  router.get('/libraries/platform', (req, res, next) => libraryController.getPlatform(req, res, next));
   router.get('/libraries/browse', (req, res, next) => libraryController.browsePath(req, res, next));
   router.post('/libraries/validate-path', (req, res, next) =>
     libraryController.validatePath(req, res, next)
@@ -191,6 +242,16 @@ export const createApiRouter = (
   });
 
   // Movie detail sub-routes (MUST come before /movies/:id)
+  router.get('/movies/:id/provider-results', (req, res, next) => {
+    console.log('[Route Hit] /movies/:id/provider-results with id:', req.params.id);
+    movieController.getProviderResults(req, res, next);
+  });
+
+  router.post('/movies/:id/assets', (req, res, next) => {
+    console.log('[Route Hit] /movies/:id/assets with id:', req.params.id);
+    movieController.saveAssets(req, res, next);
+  });
+
   router.get('/movies/:id/unknown-files', (req, res, next) => {
     console.log('[Route Hit] /movies/:id/unknown-files with id:', req.params.id);
     movieController.getUnknownFiles(req, res, next);
@@ -346,6 +407,16 @@ export const createApiRouter = (
     providerConfigController.deleteProvider(req, res)
   );
 
+  // Data selection config routes
+  router.get('/data-selection', (req, res) => dataSelectionController.getConfig(req, res));
+  router.put('/data-selection/mode', (req, res) => dataSelectionController.updateMode(req, res));
+  router.put('/data-selection/priority', (req, res) =>
+    dataSelectionController.updateFieldPriority(req, res)
+  );
+  router.get('/data-selection/provider-order/:category/:mediaType/:fieldName', (req, res) =>
+    dataSelectionController.getProviderOrder(req, res)
+  );
+
   // Priority config routes
   router.get('/priorities/presets', (req, res) =>
     priorityConfigController.getAvailablePresets(req, res)
@@ -374,6 +445,10 @@ export const createApiRouter = (
   router.post('/priorities/metadata-fields/:field', (req, res) =>
     priorityConfigController.updateMetadataFieldPriority(req, res)
   );
+
+  // Auto-selection strategy routes
+  router.get('/auto-selection/strategy', autoSelectionController.getStrategy);
+  router.post('/auto-selection/strategy', autoSelectionController.setStrategy);
 
   return router;
 };

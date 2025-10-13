@@ -19,6 +19,7 @@ coverage/
 *.lcov
 
 .claude
+examples
 
 # nyc test coverage
 .nyc_output
@@ -38,6 +39,9 @@ logs
 *.sqlite
 *.sqlite3
 *.db
+
+# MCP Data
+.playwright-mcp
 
 # Runtime data directory (SOURCE OF TRUTH - DO NOT COMMIT)
 data/
@@ -64,4 +68,6 @@ Thumbs.db
 
 # Temporary files
 tmp/
-temp/.claude/settings.local.json
+temp/
+nul
+.claude/settings.local.json

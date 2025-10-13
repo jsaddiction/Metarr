@@ -4,18 +4,15 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { WebSocketProvider } from './contexts/WebSocketContext';
 import { Layout } from './components/layout/Layout';
-import { Dashboard } from './pages/Dashboard';
 import { Movies } from './pages/metadata/Movies';
 import { MovieEdit } from './pages/metadata/MovieEdit';
 import { Series } from './pages/Series';
 import { Music } from './pages/Music';
 import { Actors } from './pages/Actors';
 import { Artists } from './pages/Artists';
-import { Activity } from './pages/Activity';
 import { History } from './pages/activity/History';
 import { RunningJobs } from './pages/activity/RunningJobs';
 import { BlockedAssets } from './pages/activity/BlockedAssets';
-import { Settings } from './pages/Settings';
 import { System } from './pages/System';
 import { Status } from './pages/system/Status';
 import { Tasks } from './pages/system/Tasks';
@@ -24,6 +21,7 @@ import { Events } from './pages/system/Events';
 import { LogFiles } from './pages/system/LogFiles';
 import { General } from './pages/settings/General';
 import { Providers } from './pages/settings/Providers';
+import { DataSelection } from './pages/settings/DataSelection';
 import { Files } from './pages/settings/Files';
 import { Libraries } from './pages/settings/Libraries';
 import { MediaPlayers } from './pages/settings/MediaPlayers';
@@ -61,6 +59,7 @@ function usePageTitle() {
     '/activity/blocked-assets': 'Blocked Assets',
     '/settings/general': 'General Settings',
     '/settings/providers': 'Providers',
+    '/settings/data-selection': 'Data Selection',
     '/settings/files': 'Files',
     '/settings/libraries': 'Libraries',
     '/settings/media-players': 'Media Players',
@@ -111,6 +110,7 @@ function AppRoutes() {
         {/* Settings sub-routes */}
         <Route path="/settings/general" element={<General />} />
         <Route path="/settings/providers" element={<Providers />} />
+        <Route path="/settings/data-selection" element={<DataSelection />} />
         <Route path="/settings/files" element={<Files />} />
         <Route path="/settings/libraries" element={<Libraries />} />
         <Route path="/settings/media-players" element={<MediaPlayers />} />

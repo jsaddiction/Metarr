@@ -111,7 +111,7 @@ describe('Provider Config API Endpoints', () => {
       expect(response.body).toHaveProperty('config');
       expect(response.body).toHaveProperty('metadata');
       expect(response.body.metadata.name).toBe('tmdb');
-      expect(response.body.metadata.displayName).toBe('TMDB (The Movie Database)');
+      expect(response.body.metadata.displayName).toBe('TMDB');
     });
 
     it('should return 404 for unknown provider', async () => {

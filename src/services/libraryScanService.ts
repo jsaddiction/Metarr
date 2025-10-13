@@ -36,14 +36,9 @@ export class LibraryScanService extends EventEmitter {
         name: row.name,
         type: row.type,
         path: row.path,
-        enabled: Boolean(row.enabled),
         createdAt: new Date(row.created_at),
         updatedAt: new Date(row.updated_at),
       };
-
-      if (!library.enabled) {
-        throw new Error('Library is disabled');
-      }
 
       // Check for existing running scan
       const existingScans = await db.query<any[]>(

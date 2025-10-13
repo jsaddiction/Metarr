@@ -25,7 +25,7 @@ class TMDBService {
     const tmdbConfig = fullConfig?.providers?.tmdb;
 
     if (!tmdbConfig || !tmdbConfig.apiKey) {
-      logger.warn('TMDB API key not provided - TMDB provider will be disabled');
+      logger.error('TMDB API key not available - this should not happen as default key should be loaded');
       this.enabled = false;
       return;
     }
@@ -39,7 +39,15 @@ class TMDBService {
       });
 
       this.enabled = true;
-      logger.info('TMDB provider initialized successfully');
+
+      // Check if using default key (from environment variable check)
+      const isDefaultKey = !process.env.TMDB_API_KEY;
+      if (isDefaultKey) {
+        logger.info('TMDB provider initialized with default project API key');
+        logger.info('For personal usage tracking, get your own free API key at https://www.themoviedb.org/settings/api');
+      } else {
+        logger.info('TMDB provider initialized with user-provided API key');
+      }
     } catch (error: any) {
       logger.error('Failed to initialize TMDB provider', { error: error.message });
       this.enabled = false;

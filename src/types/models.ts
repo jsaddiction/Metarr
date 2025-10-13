@@ -143,7 +143,6 @@ export interface Library {
   name: string;
   type: MediaLibraryType;
   path: string;
-  enabled: boolean;
   createdAt: Date;
   updatedAt: Date;
 }

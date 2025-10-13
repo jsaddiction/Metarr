@@ -59,6 +59,22 @@ export default defineConfig({
         target: 'ws://127.0.0.1:3000',
         ws: true,
         changeOrigin: true,
+        configure: (proxy, _options) => {
+          // Suppress common WebSocket proxy errors (connection resets are normal)
+          proxy.on('error', (err, _req, _res) => {
+            if (err.code !== 'ECONNRESET') {
+              console.error('[Vite WS Proxy] Error:', err.message);
+            }
+          });
+          proxy.on('proxyReqWs', (_proxyReq, _req, socket) => {
+            socket.on('error', (err) => {
+              // ECONNRESET is normal when connections close - suppress these
+              if (err.code !== 'ECONNRESET') {
+                console.error('[Vite WS Proxy] Socket error:', err.message);
+              }
+            });
+          });
+        },
       },
       '/webhooks': {
         target: 'http://127.0.0.1:3000',

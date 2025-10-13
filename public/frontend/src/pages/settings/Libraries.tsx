@@ -5,6 +5,7 @@ import { LibraryCard } from '../../components/library/LibraryCard';
 import { LibraryConfigModal } from '../../components/library/LibraryConfigModal';
 import { ScannerSettings } from '../../components/library/ScannerSettings';
 import { useLibraries, useActiveScans, useCreateLibrary, useUpdateLibrary, useDeleteLibrary, useStartLibraryScan } from '../../hooks/useLibraryScans';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 export const Libraries: React.FC = () => {
   // Use TanStack Query hooks for data fetching
@@ -53,7 +54,7 @@ export const Libraries: React.FC = () => {
         const newLibrary = await createLibrary.mutateAsync(data);
 
         // Trigger scan if requested
-        if (scanAfterSave && newLibrary.enabled) {
+        if (scanAfterSave) {
           // Start scan via POST request only (no WebSocket)
           // The backend will handle any conflicts (e.g., if scan is already running)
           await startScan.mutateAsync(newLibrary.id).catch((scanError: any) => {
@@ -68,7 +69,9 @@ export const Libraries: React.FC = () => {
           });
         }
       }
-      handleCloseConfigModal();
+      // Don't close the modal here - let the modal handle its own closing
+      // after displaying the success/error result to the user
+      // handleCloseConfigModal();
     } catch (error) {
       console.error('Failed to save library:', error);
       throw error;
@@ -121,35 +124,60 @@ export const Libraries: React.FC = () => {
         </p>
       </div>
 
-      {loading ? (
-        <div className="text-center py-12">
-          <p className="text-neutral-400">Loading libraries...</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          <AddLibraryCard onClick={handleAddClick} />
-          {libraries.map((library) => (
-            <LibraryCard
-              key={library.id}
-              library={library}
-              onClick={() => handleLibraryClick(library)}
-              onScan={(e) => handleScan(e, library.id)}
-              isScanning={scanningLibraries.has(library.id)}
-              scanProgress={
-                scanProgress.has(library.id)
-                  ? {
-                      current: scanProgress.get(library.id)!.progressCurrent,
-                      total: scanProgress.get(library.id)!.progressTotal,
-                      currentFile: scanProgress.get(library.id)!.currentFile,
-                    }
-                  : undefined
-              }
-            />
-          ))}
-        </div>
-      )}
+      <Tabs defaultValue="libraries" className="space-y-6">
+        <TabsList>
+          <TabsTrigger value="libraries">
+            Libraries
+          </TabsTrigger>
+          <TabsTrigger value="scanner">
+            Scanner Settings
+          </TabsTrigger>
+        </TabsList>
 
-      <ScannerSettings />
+        <TabsContent value="libraries" className="space-y-6">
+          {loading ? (
+            <div className="text-center py-12">
+              <p className="text-neutral-400">Loading libraries...</p>
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <AddLibraryCard onClick={handleAddClick} />
+                {libraries.map((library) => (
+                  <LibraryCard
+                    key={library.id}
+                    library={library}
+                    onClick={() => handleLibraryClick(library)}
+                    onScan={(e) => handleScan(e, library.id)}
+                    isScanning={scanningLibraries.has(library.id)}
+                    scanProgress={
+                      scanProgress.has(library.id)
+                        ? {
+                            current: scanProgress.get(library.id)!.progressCurrent,
+                            total: scanProgress.get(library.id)!.progressTotal,
+                            currentFile: scanProgress.get(library.id)!.currentFile,
+                          }
+                        : undefined
+                    }
+                  />
+                ))}
+              </div>
+
+              {libraries.length === 0 && (
+                <div className="text-center py-12">
+                  <p className="text-neutral-400">
+                    No libraries configured. Click "Add Library" to get started.
+                  </p>
+                </div>
+              )}
+            </>
+          )}
+        </TabsContent>
+
+        <TabsContent value="scanner" className="space-y-6">
+          <ScannerSettings />
+        </TabsContent>
+      </Tabs>
 
       <LibraryConfigModal
         isOpen={showConfigModal}

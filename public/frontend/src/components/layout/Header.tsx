@@ -1,15 +1,14 @@
 import React from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faBars, faHeart, faGlobe, faUser, faSun, faMoon } from '@fortawesome/free-solid-svg-icons';
+import { faBars, faHeart, faGlobe, faSun, faMoon } from '@fortawesome/free-solid-svg-icons';
 import { useTheme } from '../../contexts/ThemeContext';
 
 interface HeaderProps {
   title: string;
   onToggleSidebar?: () => void;
-  children?: React.ReactNode;
 }
 
-export const Header: React.FC<HeaderProps> = ({ title, onToggleSidebar, children }) => {
+export const Header: React.FC<HeaderProps> = ({ title, onToggleSidebar }) => {
   const { theme, toggleTheme } = useTheme();
 
   return (
@@ -34,27 +33,24 @@ export const Header: React.FC<HeaderProps> = ({ title, onToggleSidebar, children
         <button
           className="btn btn-ghost p-2"
           title="Health"
+          aria-label="System health"
         >
-          <FontAwesomeIcon icon={faHeart} />
+          <FontAwesomeIcon icon={faHeart} aria-hidden="true" />
         </button>
         <button
           className="btn btn-ghost p-2"
           onClick={toggleTheme}
           title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
         >
-          <FontAwesomeIcon icon={theme === 'dark' ? faSun : faMoon} />
+          <FontAwesomeIcon icon={theme === 'dark' ? faSun : faMoon} aria-hidden="true" />
         </button>
         <button
           className="btn btn-ghost p-2"
           title="Translate"
+          aria-label="Change language"
         >
-          <FontAwesomeIcon icon={faGlobe} />
-        </button>
-        <button
-          className="btn btn-ghost p-2"
-          title="Profile"
-        >
-          <FontAwesomeIcon icon={faUser} />
+          <FontAwesomeIcon icon={faGlobe} aria-hidden="true" />
         </button>
       </div>
     </header>

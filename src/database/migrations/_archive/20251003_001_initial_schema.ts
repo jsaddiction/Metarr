@@ -5,6 +5,8 @@ export class InitialSchemaMigration {
   static migrationName = 'initial_schema';
 
   static async up(db: DatabaseConnection): Promise<void> {
+    console.log('🚀 Running initial schema migration...');
+
     // ========================================
     // NORMALIZED ENTITY TABLES
     // ========================================
@@ -919,7 +921,6 @@ export class InitialSchemaMigration {
         name VARCHAR(255) NOT NULL,
         type VARCHAR(50) NOT NULL,
         path VARCHAR(1000) NOT NULL,
-        enabled BOOLEAN NOT NULL DEFAULT 1,
         scan_on_startup BOOLEAN NOT NULL DEFAULT 0,
         auto_scan_interval INTEGER,
         last_scanned_at DATETIME,
@@ -1179,7 +1180,6 @@ export class InitialSchemaMigration {
 
     // System table indexes
     await db.execute('CREATE INDEX idx_libraries_type ON libraries(type)');
-    await db.execute('CREATE INDEX idx_libraries_enabled ON libraries(enabled)');
     await db.execute('CREATE INDEX idx_scan_jobs_library_id ON scan_jobs(library_id)');
     await db.execute('CREATE INDEX idx_scan_jobs_status ON scan_jobs(status)');
     await db.execute('CREATE INDEX idx_media_players_type ON media_players(type)');
@@ -1618,13 +1618,13 @@ export class InitialSchemaMigration {
     // ========================================
 
     // Provider configs table - stores API keys and settings for metadata providers
+    // NOTE: Providers always fetch everything they support. Filtering happens in data_selection_config.
     await db.execute(`
       CREATE TABLE provider_configs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         provider_name VARCHAR(50) NOT NULL UNIQUE,
         enabled BOOLEAN NOT NULL DEFAULT 0,
         api_key TEXT,
-        enabled_asset_types TEXT NOT NULL DEFAULT '[]',
         last_test_at DATETIME,
         last_test_status VARCHAR(20),
         last_test_error TEXT,
@@ -1638,12 +1638,6 @@ export class InitialSchemaMigration {
         language VARCHAR(10) DEFAULT 'en',
         region VARCHAR(10) DEFAULT 'US',
         options TEXT DEFAULT '{}',
-        priority INTEGER DEFAULT 50,
-
-        -- Provider Framework Usage Flags
-        use_for_metadata BOOLEAN DEFAULT 1,
-        use_for_images BOOLEAN DEFAULT 1,
-        use_for_search BOOLEAN DEFAULT 1,
 
         -- Provider Framework Health Tracking
         consecutive_failures INTEGER DEFAULT 0,
@@ -1651,6 +1645,7 @@ export class InitialSchemaMigration {
 
         -- Provider Framework Statistics
         total_requests INTEGER DEFAULT 0,
+        successful_requests INTEGER DEFAULT 0,
         failed_requests INTEGER DEFAULT 0,
         avg_response_time_ms INTEGER,
         last_request_at DATETIME,
@@ -1661,8 +1656,28 @@ export class InitialSchemaMigration {
     `);
 
     await db.execute(`CREATE INDEX idx_provider_configs_enabled ON provider_configs(enabled)`);
-    await db.execute(`CREATE INDEX idx_provider_priority ON provider_configs(priority DESC)`);
-    await db.execute(`CREATE INDEX idx_provider_usage ON provider_configs(enabled, use_for_metadata, use_for_images)`);
+
+    // Data Selection Config - separates filtering/prioritization from provider connection
+    await db.execute(`
+      CREATE TABLE data_selection_config (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        mode VARCHAR(20) NOT NULL DEFAULT 'balanced' CHECK(mode IN ('balanced', 'custom')),
+
+        -- Custom mode configuration (JSON)
+        custom_metadata_priorities TEXT DEFAULT '{}',
+        custom_image_priorities TEXT DEFAULT '{}',
+
+        -- Timestamps
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Insert default balanced mode
+    await db.execute(`
+      INSERT INTO data_selection_config (mode, custom_metadata_priorities, custom_image_priorities)
+      VALUES ('balanced', '{}', '{}')
+    `);
 
     // ========================================
     // PROVIDER PRIORITY CONFIGURATION
@@ -1695,14 +1710,14 @@ export class InitialSchemaMigration {
       )
     `);
 
-    // Priority Presets - tracks which preset is currently active
+    // Auto-Selection Strategy - user's choice between balanced preset or custom rules
     await db.execute(`
-      CREATE TABLE priority_presets (
+      CREATE TABLE auto_selection_strategy (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        preset_id VARCHAR(50) NOT NULL,
-        is_active BOOLEAN NOT NULL DEFAULT 0,
+        strategy VARCHAR(50) NOT NULL DEFAULT 'balanced',
         created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT check_strategy CHECK (strategy IN ('balanced', 'custom'))
       )
     `);
 
@@ -1729,34 +1744,42 @@ export class InitialSchemaMigration {
       );
     }
 
-    // Insert default preset (quality_first)
+    // Insert default auto-selection strategy (balanced)
     await db.execute(
-      `INSERT INTO priority_presets (preset_id, is_active) VALUES (?, ?)`,
-      ['quality_first', 1]
+      `INSERT INTO auto_selection_strategy (strategy) VALUES (?)`,
+      ['balanced']
     );
 
     // Pre-populate default asset type priorities (quality-first order)
     // Based on actual provider support from providerMetadata.ts
+    // Separated by media type: movies, TV shows, and music
     const defaultAssetPriorities = [
-      // Common movie/TV assets
-      { assetType: 'poster', order: ['fanart_tv', 'tmdb', 'tvdb'] },  // All 3 support posters
-      { assetType: 'fanart', order: ['fanart_tv', 'tmdb', 'tvdb'] },  // All 3 support fanart/backdrops
-      { assetType: 'banner', order: ['fanart_tv', 'tvdb'] },          // Only FanArt.tv and TVDB support banners
-      { assetType: 'trailer', order: ['tmdb'] },                      // Only TMDB supports trailers
+      // ===== MOVIES =====
+      { assetType: 'movie_poster', order: ['fanart_tv', 'tmdb'] },
+      { assetType: 'movie_fanart', order: ['fanart_tv', 'tmdb'] },
+      { assetType: 'movie_clearlogo', order: ['fanart_tv'] },
+      { assetType: 'movie_clearart', order: ['fanart_tv'] },
+      { assetType: 'movie_discart', order: ['fanart_tv'] },
+      { assetType: 'movie_trailer', order: ['tmdb'] },
 
-      // FanArt.tv exclusive assets (high quality curated)
-      { assetType: 'clearlogo', order: ['fanart_tv'] },               // FanArt.tv only
-      { assetType: 'clearart', order: ['fanart_tv'] },                // FanArt.tv only
-      { assetType: 'characterart', order: ['fanart_tv'] },            // FanArt.tv only
-      { assetType: 'discart', order: ['fanart_tv'] },                 // FanArt.tv only (cdart)
-      { assetType: 'landscape', order: ['fanart_tv'] },               // FanArt.tv only
-      { assetType: 'thumb', order: ['fanart_tv'] },                   // FanArt.tv only (tvthumb)
+      // ===== TV SHOWS =====
+      { assetType: 'tv_poster', order: ['fanart_tv', 'tmdb', 'tvdb'] },
+      { assetType: 'tv_fanart', order: ['fanart_tv', 'tmdb', 'tvdb'] },
+      { assetType: 'tv_banner', order: ['fanart_tv', 'tvdb'] },
+      { assetType: 'tv_clearlogo', order: ['fanart_tv'] },
+      { assetType: 'tv_clearart', order: ['fanart_tv'] },
+      { assetType: 'tv_characterart', order: ['fanart_tv'] },
+      { assetType: 'tv_landscape', order: ['fanart_tv'] },
+      { assetType: 'tv_thumb', order: ['fanart_tv'] },
 
-      // Music-specific assets (TheAudioDB)
+      // ===== MUSIC =====
       { assetType: 'artist_thumb', order: ['theaudiodb'] },
       { assetType: 'artist_logo', order: ['theaudiodb'] },
       { assetType: 'artist_fanart', order: ['theaudiodb'] },
+      { assetType: 'artist_banner', order: ['theaudiodb'] },
       { assetType: 'album_thumb', order: ['theaudiodb'] },
+      { assetType: 'album_cdart', order: ['theaudiodb'] },
+      { assetType: 'album_spine', order: ['theaudiodb'] },
     ];
 
     for (const { assetType, order } of defaultAssetPriorities) {
@@ -1774,7 +1797,8 @@ export class InitialSchemaMigration {
       { field: 'original_title', order: ['tmdb', 'tvdb'] },
       { field: 'tagline', order: ['tmdb', 'tvdb'] },
       { field: 'release_date', order: ['tmdb', 'tvdb'] },
-      { field: 'genres', order: ['tmdb', 'tvdb', 'musicbrainz'] },
+      { field: 'genre_video', order: ['tmdb', 'tvdb'] },          // Movies/TV genres
+      { field: 'genre_music', order: ['musicbrainz', 'theaudiodb'] },  // Music genres
       { field: 'cast', order: ['tmdb', 'tvdb', 'imdb'] },
       { field: 'crew', order: ['tmdb', 'tvdb', 'imdb'] },
     ];
@@ -1941,6 +1965,66 @@ export class InitialSchemaMigration {
       ('backup_subtitles', 'false', 'Include subtitles in backup (can be large)'),
       ('backup_trailers', 'false', 'Include trailers in backup (can be huge)')
     `);
+
+    // ========================================
+    // DEFAULT PROVIDER CONFIGURATIONS
+    // ========================================
+
+    console.log('📦 Adding default provider configurations...');
+
+    // Enable TMDB by default with project API key
+    await db.execute(`
+      INSERT INTO provider_configs (
+        provider_name,
+        enabled,
+        api_key,
+        language,
+        region
+      ) VALUES (
+        'tmdb',
+        1,
+        'eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiI3YjI3NGU4NGMxYTcwMmI0MjgwNzE1NGYzMDY5YTM5YSIsIm5iZiI6MTc1OTcxMjU2My42MjgsInN1YiI6IjY4ZTMxNTMzM2EwMTA1Njk4ZTljYWUwMiIsInNjb3BlcyI6WyJhcGlfcmVhZCJdLCJ2ZXJzaW9uIjoxfQ.QlDaF3o1hiiaWCecMZMqPARjlPKE_qY5v7jtvIbWOss',
+        'en',
+        'US'
+      )
+    `);
+
+    // Enable FanArt.tv by default with project API key
+    await db.execute(`
+      INSERT INTO provider_configs (
+        provider_name,
+        enabled,
+        api_key
+      ) VALUES (
+        'fanart_tv',
+        1,
+        '3eb0a83d9ff87da93a7759ed855f8027'
+      )
+    `);
+
+    // Enable Local provider by default (no API key required)
+    await db.execute(`
+      INSERT INTO provider_configs (
+        provider_name,
+        enabled
+      ) VALUES (
+        'local',
+        1
+      )
+    `);
+
+    // Enable MusicBrainz by default (no API key required, metadata only)
+    await db.execute(`
+      INSERT INTO provider_configs (
+        provider_name,
+        enabled
+      ) VALUES (
+        'musicbrainz',
+        1
+      )
+    `);
+
+    console.log('✅ Default providers added: TMDB, FanArt.tv, Local, MusicBrainz');
 
     // ========================================
     // PHASE 1: TRIGGERS

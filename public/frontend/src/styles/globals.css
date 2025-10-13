@@ -3,6 +3,93 @@
 @source "./public/frontend/src/**/*.{js,ts,jsx,tsx}";
 @source "./public/frontend/index.html";
 
+/**
+ * shadcn/ui CSS Variables
+ * These variables power the shadcn/ui component system with dark/light theme support
+ */
+@layer base {
+  :root {
+    /* Background colors */
+    --background: 0 0% 100%;
+    --foreground: 0 0% 11.8%;
+
+    /* Card colors */
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 11.8%;
+
+    /* Popover colors */
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 11.8%;
+
+    /* Primary colors (using our purple theme) */
+    --primary: 274 35% 45%;        /* #6a4c93 */
+    --primary-foreground: 0 0% 100%;
+
+    /* Secondary colors */
+    --secondary: 0 0% 96.1%;
+    --secondary-foreground: 0 0% 9%;
+
+    /* Muted colors */
+    --muted: 0 0% 96.1%;
+    --muted-foreground: 0 0% 45.1%;
+
+    /* Accent colors */
+    --accent: 0 0% 96.1%;
+    --accent-foreground: 0 0% 9%;
+
+    /* Destructive colors */
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+
+    /* Border colors */
+    --border: 0 0% 89.8%;
+    --input: 0 0% 89.8%;
+    --ring: 274 35% 45%;           /* matches primary */
+
+    /* Radius */
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    /* Background colors */
+    --background: 0 0% 11.8%;      /* #1e1e1e */
+    --foreground: 0 0% 98%;
+
+    /* Card colors */
+    --card: 0 0% 17.6%;            /* #2d2d2d */
+    --card-foreground: 0 0% 98%;
+
+    /* Popover colors */
+    --popover: 0 0% 17.6%;
+    --popover-foreground: 0 0% 98%;
+
+    /* Primary colors (using our purple theme) */
+    --primary: 274 35% 45%;        /* #6a4c93 */
+    --primary-foreground: 0 0% 100%;
+
+    /* Secondary colors */
+    --secondary: 0 0% 22.7%;
+    --secondary-foreground: 0 0% 98%;
+
+    /* Muted colors */
+    --muted: 0 0% 22.7%;
+    --muted-foreground: 0 0% 63.9%;
+
+    /* Accent colors */
+    --accent: 0 0% 22.7%;
+    --accent-foreground: 0 0% 98%;
+
+    /* Destructive colors */
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+
+    /* Border colors */
+    --border: 0 0% 22.7%;
+    --input: 0 0% 22.7%;
+    --ring: 274 35% 45%;           /* matches primary */
+  }
+}
+
 @theme {
   --color-primary-50: #f3f0fa;
   --color-primary-100: #e7e1f5;
@@ -268,25 +355,414 @@
   .text-error { @apply text-red-500; }
   .text-info { @apply text-blue-500; }
 
-  /* Light mode theme override */
+  /* ===== COMPREHENSIVE LIGHT MODE THEME ===== */
   .light {
     --tw-bg-opacity: 1;
     --tw-text-opacity: 1;
   }
 
+  /* --- BACKGROUNDS --- */
+  .light .bg-neutral-950 { @apply bg-white; }
   .light .bg-neutral-900 { @apply bg-white; }
   .light .bg-neutral-800 { @apply bg-neutral-50; }
   .light .bg-neutral-700 { @apply bg-neutral-100; }
   .light .bg-neutral-600 { @apply bg-neutral-200; }
+  .light .bg-neutral-500 { @apply bg-neutral-300; }
 
+  /* --- TEXT COLORS --- */
   .light .text-white { @apply text-neutral-900; }
+  .light .text-neutral-100 { @apply text-neutral-800; }
+  .light .text-neutral-200 { @apply text-neutral-700; }
   .light .text-neutral-300 { @apply text-neutral-600; }
   .light .text-neutral-400 { @apply text-neutral-500; }
-  .light .text-neutral-200 { @apply text-neutral-700; }
 
-  .light .border-neutral-700 { @apply border-neutral-200; }
-  .light .border-neutral-600 { @apply border-neutral-300; }
-  .light .border-neutral-200 { @apply border-neutral-700; }
+  /* --- BORDER COLORS --- */
+  .light .border-neutral-900 { @apply border-neutral-200; }
+  .light .border-neutral-800 { @apply border-neutral-300; }
+  .light .border-neutral-700 { @apply border-neutral-300; }
+  .light .border-neutral-600 { @apply border-neutral-400; }
+
+  /* --- MODALS --- */
+  .light .modal-overlay {
+    @apply bg-black/30 backdrop-blur-sm;
+  }
+
+  .light .modal-container {
+    @apply bg-white border-neutral-300 shadow-2xl;
+  }
+
+  .light .modal-header,
+  .light .modal-footer {
+    @apply border-neutral-300;
+  }
+
+  .light .modal-close-btn {
+    @apply text-neutral-600 hover:text-neutral-900;
+  }
+
+  /* --- CARDS --- */
+  .light .card {
+    @apply bg-white border-neutral-300;
+  }
+
+  .light .card-header,
+  .light .card-footer {
+    @apply border-neutral-300;
+  }
+
+  /* --- FORMS --- */
+  .light .form-input,
+  .light .input {
+    @apply bg-white border-neutral-400 text-neutral-900;
+  }
+
+  .light .form-input:focus,
+  .light .input:focus {
+    @apply border-primary-600;
+    box-shadow: 0 0 0 3px rgba(106, 76, 147, 0.15);
+  }
+
+  .light .form-input::placeholder,
+  .light .input::placeholder {
+    @apply text-neutral-400;
+  }
+
+  .light .form-label {
+    @apply text-neutral-900;
+  }
+
+  /* --- BUTTONS --- */
+  .light .btn-secondary {
+    @apply bg-neutral-200 text-neutral-900 border-neutral-400;
+  }
+
+  .light .btn-secondary:hover:not(:disabled) {
+    @apply bg-neutral-300 border-neutral-500;
+  }
+
+  .light .btn-ghost {
+    @apply text-neutral-700 bg-transparent;
+  }
+
+  .light .btn-ghost:hover:not(:disabled) {
+    @apply bg-neutral-100 text-neutral-900;
+  }
+
+  /* --- HEADER --- */
+  .light header {
+    @apply bg-white border-b border-neutral-300;
+  }
+
+  /* --- LINKS --- */
+  .light a {
+    @apply text-primary-700;
+  }
+
+  .light a:hover {
+    @apply text-primary-800;
+  }
+
+  /* --- PROGRESS BARS --- */
+  .light .progress-bar {
+    @apply bg-neutral-200;
+  }
+
+  /* --- TABLE STYLING --- */
+  .light table tbody tr {
+    @apply border-b border-neutral-200;
+  }
+
+  .light table tbody tr:hover {
+    @apply bg-neutral-50;
+  }
+
+  /* --- SHADOWS (enhanced for light mode) --- */
+  .light .shadow-sm {
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  }
+
+  .light .shadow {
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+  }
+
+  .light .shadow-md {
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  }
+
+  .light .shadow-lg {
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  }
+
+  .light .shadow-2xl {
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15);
+  }
+
+  /* --- COMPONENT-SPECIFIC OVERRIDES --- */
+
+  /* Sidebar - white background for parent items */
+  .light aside {
+    @apply bg-white border-r border-neutral-300;
+  }
+
+  /* Parent menu buttons - active/expanded get light background */
+  .light aside > nav > ul > li > button.bg-neutral-800 {
+    @apply bg-neutral-100;
+  }
+
+  /* Child menu container - very light grey */
+  .light aside ul .bg-neutral-800 {
+    @apply bg-neutral-100;
+  }
+
+  /* Active child item - slightly darker grey */
+  .light aside .bg-neutral-700 {
+    @apply bg-neutral-200;
+  }
+
+  /* Sidebar text colors */
+  .light aside .text-neutral-300 {
+    @apply text-neutral-600;
+  }
+
+  .light aside .text-neutral-400 {
+    @apply text-neutral-600;
+  }
+
+  /* Child item hover - slightly darker than container */
+  .light aside a:hover:not(.bg-neutral-700) {
+    background-color: #d8d8d8; /* Between neutral-100 (#e5e5e5) and neutral-200 (#cccccc) */
+  }
+
+  /* Active child item hover - keep active background */
+  .light aside .bg-neutral-700:hover {
+    @apply bg-neutral-200;
+  }
+
+  /* ViewControls specific styling */
+  .light .sticky {
+    @apply bg-white border-b border-neutral-300;
+  }
+
+  /* ViewControls dropdown menu */
+  .light .absolute.right-0 {
+    @apply bg-white border-neutral-300;
+  }
+
+  /* Hover states for dropdown items */
+  .light .hover\:bg-neutral-700:hover {
+    @apply bg-neutral-100;
+  }
+
+  /* No results message */
+  .light .no-results {
+    @apply text-neutral-500;
+  }
+
+  /* Placeholder text in inputs */
+  .light .placeholder-neutral-400::placeholder {
+    @apply text-neutral-400;
+  }
+
+  /* --- PRIMARY COLOR ADJUSTMENTS --- */
+  /* Primary buttons - keep strong contrast in light mode */
+  .light .bg-primary-500 {
+    @apply bg-primary-600;
+  }
+
+  .light .bg-primary-500:hover {
+    @apply bg-primary-700;
+  }
+
+  .light .bg-primary-600 {
+    @apply bg-primary-600;
+  }
+
+  /* Exception: Keep white text on primary backgrounds (buttons, badges) */
+  .light [class*="bg-primary"][class*="text-white"] {
+    color: white !important;
+  }
+
+  /* Primary text colors - keep purple visible in light mode */
+  .light .text-primary-300 {
+    @apply text-primary-600;
+  }
+
+  .light .text-primary-400 {
+    @apply text-primary-600;
+  }
+
+  /* Code blocks with primary text - use neutral text for better contrast */
+  .light code.text-primary-400 {
+    @apply text-neutral-800 bg-neutral-200;
+  }
+
+  .light code.text-primary-300 {
+    @apply text-neutral-800 bg-neutral-200;
+  }
+
+  /* Primary backgrounds for pills and info boxes - use white with purple border for clarity */
+  .light .bg-primary-900\/20 {
+    @apply bg-white;
+  }
+
+  .light .bg-primary-900\/30 {
+    @apply bg-white;
+  }
+
+  .light .border-primary-700 {
+    @apply border-primary-500;
+  }
+
+  /* Dark primary backgrounds (info boxes) - convert to light purple in light mode */
+  .light .bg-primary-950 {
+    @apply bg-primary-50;
+  }
+
+  .light .bg-primary-900 {
+    @apply bg-primary-100;
+  }
+
+  .light .border-primary-800 {
+    @apply border-primary-300;
+  }
+
+  .light .border-primary-900 {
+    @apply border-primary-400;
+  }
+
+  /* --- WARNING/ALERT BADGES & NOTIFICATIONS --- */
+  /* Yellow warnings need special treatment for light mode readability */
+  .light .bg-yellow-900\/20 {
+    @apply bg-orange-50;
+  }
+
+  .light .bg-yellow-900\/30 {
+    @apply bg-orange-100;
+  }
+
+  .light .text-yellow-400 {
+    @apply text-orange-800;
+  }
+
+  .light .border-yellow-800 {
+    @apply border-orange-300;
+  }
+
+  /* Success badges (keep semantic green, adjust for contrast) */
+  .light .bg-green-900\/20 {
+    @apply bg-green-50;
+  }
+
+  .light .bg-green-900\/30 {
+    @apply bg-green-100;
+  }
+
+  .light .text-green-400 {
+    @apply text-green-700;
+  }
+
+  .light .border-green-800 {
+    @apply border-green-300;
+  }
+
+  /* Error badges (keep semantic red, adjust for contrast) */
+  .light .bg-red-900\/20 {
+    @apply bg-red-50;
+  }
+
+  .light .bg-red-900\/30 {
+    @apply bg-red-100;
+  }
+
+  .light .text-red-400 {
+    @apply text-red-700;
+  }
+
+  .light .border-red-800 {
+    @apply border-red-300;
+  }
+
+  /* Info badges (adjust blue for contrast) */
+  .light .bg-blue-900\/20 {
+    @apply bg-blue-50;
+  }
+
+  .light .bg-blue-900\/30 {
+    @apply bg-blue-100;
+  }
+
+  .light .text-blue-400 {
+    @apply text-blue-700;
+  }
+
+  .light .border-blue-800 {
+    @apply border-blue-300;
+  }
+
+  /* Status indicators - keep original colors for semantic meaning */
+  /* (success/warning/error/info dot colors remain unchanged) */
+
+  /* --- SHADCN COMPONENT OVERRIDES --- */
+  /* Card hover effects - outline + border approach (no layout shift) */
+  [class*="hover:outline-primary"]:hover {
+    outline-color: hsl(var(--primary)) !important;
+  }
+
+  [class*="hover:border-primary"]:hover {
+    border-color: hsl(var(--primary)) !important;
+  }
+
+  /* Ensure outline offset looks good */
+  [class*="hover:outline"]:hover {
+    outline-offset: 0px;
+  }
+
+  /* Dark mode specific */
+  .dark [class*="hover:outline-primary"]:hover {
+    outline-color: hsl(var(--primary)) !important;
+  }
+
+  .dark [class*="hover:border-primary"]:hover {
+    border-color: hsl(var(--primary)) !important;
+  }
+
+  /* Light mode specific */
+  .light [class*="hover:outline-primary"]:hover {
+    outline-color: hsl(var(--primary)) !important;
+  }
+
+  .light [class*="hover:border-primary"]:hover {
+    border-color: hsl(var(--primary)) !important;
+  }
+
+  /* Shadcn tabs - simple styling */
+  /* Remove rounded corners and side/top borders */
+  [role="tab"] {
+    border-radius: 0;
+    border-left: 0;
+    border-right: 0;
+    border-top: 0;
+    box-shadow: none !important;
+    border-bottom: 2px solid transparent; /* All tabs have 2px border to prevent layout shift */
+  }
+
+  /* Dark mode - purple styling */
+  .dark [role="tab"][data-state="active"] {
+    border-bottom-color: hsl(var(--primary));
+  }
+
+  .dark [role="tab"]:hover:not([data-state="active"]) {
+    background-color: rgba(139, 95, 191, 0.1);
+  }
+
+  /* Light mode - black styling */
+  .light [role="tab"][data-state="active"] {
+    border-bottom-color: #000;
+  }
+
+  .light [role="tab"]:hover:not([data-state="active"]) {
+    background-color: rgba(0, 0, 0, 0.05);
+  }
 
   /* Page content layout utilities */
   /* Breaks out of parent padding to span full width */

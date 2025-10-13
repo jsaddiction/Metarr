@@ -311,3 +311,32 @@ export type TMDBImageSize =
   | 'original';
 
 export type TMDBImageType = 'poster' | 'backdrop' | 'logo' | 'profile' | 'still';
+
+// ============================================
+// Changes API Types
+// ============================================
+
+export interface TMDBChangeItem {
+  id: string;
+  action: 'added' | 'updated' | 'deleted';
+  time: string; // ISO 8601 timestamp
+  iso_639_1?: string;
+  iso_3166_1?: string;
+  value?: any;
+  original_value?: any;
+}
+
+export interface TMDBChange {
+  key: string; // Field that changed (e.g., 'images', 'videos', 'title')
+  items: TMDBChangeItem[];
+}
+
+export interface TMDBChangesAPIResponse {
+  changes: TMDBChange[];
+}
+
+export interface TMDBChangesResponse {
+  hasChanges: boolean;
+  changedFields: string[];
+  lastChangeDate?: Date;
+}

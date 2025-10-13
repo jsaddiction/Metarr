@@ -120,17 +120,6 @@ export const Dashboard: React.FC = () => {
   const partialMovies = filteredMovies.filter(m => m.metadata.overall >= 50 && m.metadata.overall < 90).length;
   const incompleteMovies = filteredMovies.filter(m => m.metadata.overall < 50).length;
 
-  const headerActions = (
-    <>
-      <button className="btn btn-primary">
-        Refresh Metadata
-      </button>
-      <button className="btn btn-secondary">
-        Update Images
-      </button>
-    </>
-  );
-
   const handleRefresh = () => {
     console.log('Refreshing movie metadata...');
   };
