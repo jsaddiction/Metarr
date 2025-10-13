@@ -13,6 +13,8 @@ import { websocketBroadcaster } from './services/websocketBroadcaster.js';
 import { WebSocketController } from './controllers/websocketController.js';
 import { cacheService } from './services/cacheService.js';
 import { JobQueueService } from './services/jobQueueService.js';
+import { FileScannerScheduler } from './services/schedulers/FileScannerScheduler.js';
+import { ProviderUpdaterScheduler } from './services/schedulers/ProviderUpdaterScheduler.js';
 import { securityMiddleware, rateLimitByIp } from './middleware/security.js';
 import { requestLoggingMiddleware, errorLoggingMiddleware, logger } from './middleware/logging.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
@@ -34,6 +36,8 @@ export class App {
   private wsServer: MetarrWebSocketServer;
   private wsController: WebSocketController;
   private jobQueueService?: JobQueueService;
+  private fileScannerScheduler?: FileScannerScheduler;
+  private providerUpdaterScheduler?: ProviderUpdaterScheduler;
 
   constructor() {
     this.express = express();
@@ -183,6 +187,22 @@ export class App {
       this.garbageCollector.start();
       logger.info('Garbage collection scheduler started');
 
+      // Initialize and start file scanner scheduler
+      this.fileScannerScheduler = new FileScannerScheduler(
+        this.dbManager,
+        60000 // Check every 60 seconds
+      );
+      this.fileScannerScheduler.start();
+      logger.info('File scanner scheduler started');
+
+      // Initialize and start provider updater scheduler
+      this.providerUpdaterScheduler = new ProviderUpdaterScheduler(
+        this.dbManager,
+        300000 // Check every 5 minutes
+      );
+      this.providerUpdaterScheduler.start();
+      logger.info('Provider updater scheduler started');
+
       // Start server
       const { port, host } = this.config.server;
       this.httpServer.listen(port, host, () => {
@@ -203,6 +223,17 @@ export class App {
       if (this.jobQueueService) {
         this.jobQueueService.stop();
         logger.info('Job queue service stopped');
+      }
+
+      // Stop schedulers
+      if (this.fileScannerScheduler) {
+        this.fileScannerScheduler.stop();
+        logger.info('File scanner scheduler stopped');
+      }
+
+      if (this.providerUpdaterScheduler) {
+        this.providerUpdaterScheduler.stop();
+        logger.info('Provider updater scheduler stopped');
       }
 
       // Stop garbage collection scheduler
