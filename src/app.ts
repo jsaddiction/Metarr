@@ -119,7 +119,12 @@ export class App {
 
   private initializeApiRoutes(): void {
     // API routes (with dependency injection) - requires DB connection
-    const apiRoutes = createApiRouter(this.dbManager, this.connectionManager);
+    const apiRoutes = createApiRouter(
+      this.dbManager,
+      this.connectionManager,
+      this.fileScannerScheduler,
+      this.providerUpdaterScheduler
+    );
     this.express.use('/api', apiRoutes);
 
     // Webhook routes (with dependency injection) - requires DB connection and connection manager
@@ -151,14 +156,6 @@ export class App {
       const migrationRunner = new MigrationRunner(this.dbManager.getConnection());
       await migrationRunner.migrate();
       logger.info('Database migrations completed');
-
-      // Initialize API routes (now that DB is connected)
-      this.initializeApiRoutes();
-      logger.info('API routes initialized');
-
-      // Initialize error handling (MUST be after all routes)
-      this.initializeErrorHandling();
-      logger.info('Error handlers initialized');
 
       // Initialize WebSocket server
       this.wsServer.attach(this.httpServer);
@@ -193,15 +190,7 @@ export class App {
       this.jobQueueService.start();
       logger.info('Job queue service initialized and started');
 
-      // Reconnect all enabled media players
-      await this.connectionManager.reconnectAll();
-      logger.info('Media player connections initialized');
-
-      // Start garbage collection scheduler
-      this.garbageCollector.start();
-      logger.info('Garbage collection scheduler started');
-
-      // Initialize and start file scanner scheduler
+      // Initialize schedulers (BEFORE API routes so they can be injected)
       this.fileScannerScheduler = new FileScannerScheduler(
         this.dbManager,
         this.jobQueueService,
@@ -210,7 +199,6 @@ export class App {
       this.fileScannerScheduler.start();
       logger.info('File scanner scheduler started');
 
-      // Initialize and start provider updater scheduler
       this.providerUpdaterScheduler = new ProviderUpdaterScheduler(
         this.dbManager,
         this.jobQueueService,
@@ -218,6 +206,22 @@ export class App {
       );
       this.providerUpdaterScheduler.start();
       logger.info('Provider updater scheduler started');
+
+      // Initialize API routes (now that DB is connected and schedulers are ready)
+      this.initializeApiRoutes();
+      logger.info('API routes initialized');
+
+      // Initialize error handling (MUST be after all routes)
+      this.initializeErrorHandling();
+      logger.info('Error handlers initialized');
+
+      // Reconnect all enabled media players
+      await this.connectionManager.reconnectAll();
+      logger.info('Media player connections initialized');
+
+      // Start garbage collection scheduler
+      this.garbageCollector.start();
+      logger.info('Garbage collection scheduler started');
 
       // Start server
       const { port, host } = this.config.server;
