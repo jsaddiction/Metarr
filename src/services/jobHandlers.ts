@@ -426,12 +426,103 @@ export class JobHandlers {
   /**
    * Get automation config for entity
    */
-  private async getAutomationConfig(_entityId: number, _entityType: string): Promise<{
+  private async getAutomationConfig(entityId: number, entityType: string): Promise<{
     mode: 'manual' | 'yolo' | 'hybrid';
+    autoDiscoverAssets: boolean;
+    autoFetchProviderAssets: boolean;
+    autoEnrichMetadata: boolean;
+    autoSelectAssets: boolean;
+    autoPublish: boolean;
   } | null> {
-    // For now, return default config (can be per-library later)
-    // TODO: Query library_automation_config table
-    return { mode: 'manual' }; // Default to manual
+    try {
+      // Get library ID for entity
+      let libraryId: number | null = null;
+
+      if (entityType === 'movie') {
+        const result = await this.db.query<{ library_id: number }>(
+          `SELECT library_id FROM movies WHERE id = ?`,
+          [entityId]
+        );
+        if (result.length > 0) {
+          libraryId = result[0].library_id;
+        }
+      } else if (entityType === 'series') {
+        const result = await this.db.query<{ library_id: number }>(
+          `SELECT library_id FROM series WHERE id = ?`,
+          [entityId]
+        );
+        if (result.length > 0) {
+          libraryId = result[0].library_id;
+        }
+      }
+
+      if (!libraryId) {
+        logger.warn(`No library found for ${entityType} ${entityId}, using manual mode`);
+        return {
+          mode: 'manual',
+          autoDiscoverAssets: false,
+          autoFetchProviderAssets: false,
+          autoEnrichMetadata: false,
+          autoSelectAssets: false,
+          autoPublish: false
+        };
+      }
+
+      // Query automation config for library
+      const config = await this.db.query<{
+        mode: 'manual' | 'yolo' | 'hybrid';
+        auto_discover_assets: number;
+        auto_fetch_provider_assets: number;
+        auto_enrich_metadata: number;
+        auto_select_assets: number;
+        auto_publish: number;
+      }>(
+        `SELECT mode, auto_discover_assets, auto_fetch_provider_assets,
+                auto_enrich_metadata, auto_select_assets, auto_publish
+         FROM library_automation_config
+         WHERE library_id = ?`,
+        [libraryId]
+      );
+
+      if (config.length === 0) {
+        // No config found, use defaults (manual mode)
+        logger.debug(`No automation config for library ${libraryId}, using manual mode`);
+        return {
+          mode: 'manual',
+          autoDiscoverAssets: false,
+          autoFetchProviderAssets: false,
+          autoEnrichMetadata: false,
+          autoSelectAssets: false,
+          autoPublish: false
+        };
+      }
+
+      const row = config[0];
+      return {
+        mode: row.mode,
+        autoDiscoverAssets: row.auto_discover_assets === 1,
+        autoFetchProviderAssets: row.auto_fetch_provider_assets === 1,
+        autoEnrichMetadata: row.auto_enrich_metadata === 1,
+        autoSelectAssets: row.auto_select_assets === 1,
+        autoPublish: row.auto_publish === 1
+      };
+
+    } catch (error: any) {
+      logger.error('Failed to get automation config', {
+        entityId,
+        entityType,
+        error: error.message
+      });
+      // Return manual mode on error (safe default)
+      return {
+        mode: 'manual',
+        autoDiscoverAssets: false,
+        autoFetchProviderAssets: false,
+        autoEnrichMetadata: false,
+        autoSelectAssets: false,
+        autoPublish: false
+      };
+    }
   }
 
   /**
