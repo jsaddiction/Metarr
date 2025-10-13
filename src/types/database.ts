@@ -18,6 +18,7 @@ export interface DatabaseConfig {
 export interface DatabaseConnection {
   connect?(): Promise<void>;
   query<T = any>(sql: string, params?: any[]): Promise<T[]>;
+  get<T = any>(sql: string, params?: any[]): Promise<T | undefined>;
   execute(sql: string, params?: any[]): Promise<{ affectedRows: number; insertId?: number }>;
   close(): Promise<void>;
   beginTransaction(): Promise<void>;

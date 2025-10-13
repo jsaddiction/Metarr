@@ -49,6 +49,22 @@ export class SqliteConnection implements DatabaseConnection {
     });
   }
 
+  async get<T = any>(sql: string, params: any[] = []): Promise<T | undefined> {
+    if (!this.db) {
+      throw new Error('Database not connected');
+    }
+
+    return new Promise((resolve, reject) => {
+      this.db!.get(sql, params, (err, row) => {
+        if (err) {
+          reject(new Error(`Get query failed: ${err.message}`));
+        } else {
+          resolve(row as T | undefined);
+        }
+      });
+    });
+  }
+
   async execute(
     sql: string,
     params: any[] = []

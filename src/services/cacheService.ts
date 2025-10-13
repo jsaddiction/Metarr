@@ -123,7 +123,7 @@ export class CacheService {
 
       if (existingAsset) {
         // Asset already exists - increment reference count
-        await this.db.run(
+        await this.db.execute(
           'UPDATE cache_assets SET reference_count = reference_count + 1, last_accessed_at = CURRENT_TIMESTAMP WHERE id = ?',
           [existingAsset.id]
         );
@@ -159,7 +159,7 @@ export class CacheService {
       const fileSize = stats.size;
 
       // Insert cache_asset record
-      const result = await this.db.run(
+      const result = await this.db.execute(
         `INSERT INTO cache_assets (
           content_hash, file_path, file_size, mime_type,
           width, height, perceptual_hash,
@@ -181,7 +181,7 @@ export class CacheService {
       );
 
       logger.info('Added new asset to cache', {
-        id: result.lastID,
+        id: result.insertId,
         contentHash,
         cachePath,
         fileSize,
@@ -189,7 +189,7 @@ export class CacheService {
       });
 
       return {
-        id: result.lastID!,
+        id: result.insertId!,
         contentHash,
         cachePath,
         fileSize,
@@ -234,7 +234,7 @@ export class CacheService {
     }
 
     // Update last accessed timestamp
-    await this.db.run(
+    await this.db.execute(
       'UPDATE cache_assets SET last_accessed_at = CURRENT_TIMESTAMP WHERE id = ?',
       [asset.id]
     );
@@ -280,7 +280,7 @@ export class CacheService {
     }
 
     // Update last accessed timestamp
-    await this.db.run(
+    await this.db.execute(
       'UPDATE cache_assets SET last_accessed_at = CURRENT_TIMESTAMP WHERE id = ?',
       [id]
     );
@@ -303,7 +303,7 @@ export class CacheService {
       throw new Error('Cache service not initialized');
     }
 
-    await this.db.run(
+    await this.db.execute(
       'UPDATE cache_assets SET reference_count = reference_count + 1, last_accessed_at = CURRENT_TIMESTAMP WHERE id = ?',
       [cacheAssetId]
     );
@@ -319,7 +319,7 @@ export class CacheService {
       throw new Error('Cache service not initialized');
     }
 
-    await this.db.run(
+    await this.db.execute(
       'UPDATE cache_assets SET reference_count = MAX(0, reference_count - 1) WHERE id = ?',
       [cacheAssetId]
     );
@@ -341,7 +341,7 @@ export class CacheService {
     }
 
     // Find orphaned assets
-    const orphans = await this.db.all<{
+    const orphans = await this.db.query<{
       id: number;
       file_path: string;
       file_size: number;
@@ -353,7 +353,7 @@ export class CacheService {
     logger.info(`Found ${orphans.length} orphaned cache assets`, { dryRun });
 
     if (dryRun) {
-      const totalSize = orphans.reduce((sum, asset) => sum + asset.file_size, 0);
+      const totalSize = orphans.reduce((sum: number, asset: any) => sum + asset.file_size, 0);
       return {
         deleted: orphans.length,
         freedBytes: totalSize,
@@ -371,7 +371,7 @@ export class CacheService {
         await fs.unlink(orphan.file_path);
 
         // Delete database record
-        await this.db.run('DELETE FROM cache_assets WHERE id = ?', [orphan.id]);
+        await this.db.execute('DELETE FROM cache_assets WHERE id = ?', [orphan.id]);
 
         deleted++;
         freedBytes += orphan.file_size;
@@ -445,7 +445,7 @@ export class CacheService {
       throw new Error('Cache service not initialized');
     }
 
-    const assets = await this.db.all<{
+    const assets = await this.db.query<{
       id: number;
       content_hash: string;
       file_path: string;

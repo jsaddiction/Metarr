@@ -11,7 +11,7 @@ import { GarbageCollectionService } from './services/garbageCollectionService.js
 import { MetarrWebSocketServer } from './services/websocketServer.js';
 import { websocketBroadcaster } from './services/websocketBroadcaster.js';
 import { WebSocketController } from './controllers/websocketController.js';
-// import { cacheService } from './services/cacheService.js'; // TODO: Phase 3
+import { cacheService } from './services/cacheService.js';
 import { JobQueueService } from './services/jobQueueService.js';
 import { securityMiddleware, rateLimitByIp } from './middleware/security.js';
 import { requestLoggingMiddleware, errorLoggingMiddleware, logger } from './middleware/logging.js';
@@ -166,9 +166,9 @@ export class App {
       this.wsController.initialize();
       logger.info('WebSocket controller initialized');
 
-      // TODO: Phase 3 - Initialize cache service (needs DatabaseConnection interface updates)
-      // await cacheService.initialize(this.dbManager);
-      // logger.info('Cache service initialized');
+      // Initialize cache service
+      await cacheService.initialize(this.dbManager);
+      logger.info('Cache service initialized');
 
       // Initialize and start job queue service
       this.jobQueueService = new JobQueueService(this.dbManager.getConnection());

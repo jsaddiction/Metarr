@@ -54,6 +54,20 @@ export class MySqlConnection implements DatabaseConnection {
     }
   }
 
+  async get<T = any>(sql: string, params: any[] = []): Promise<T | undefined> {
+    if (!this.pool) {
+      throw new Error('Database not connected');
+    }
+
+    try {
+      const [rows] = await this.pool.execute(sql, params);
+      const rowArray = rows as T[];
+      return rowArray[0];
+    } catch (error) {
+      throw new Error(`Get query failed: ${error}`);
+    }
+  }
+
   async execute(
     sql: string,
     params: any[] = []

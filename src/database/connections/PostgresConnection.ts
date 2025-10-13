@@ -44,6 +44,19 @@ export class PostgresConnection implements DatabaseConnection {
     }
   }
 
+  async get<T = any>(sql: string, params: any[] = []): Promise<T | undefined> {
+    if (!this.pool) {
+      throw new Error('Database not connected');
+    }
+
+    try {
+      const result = await this.pool.query(sql, params);
+      return result.rows[0] as T | undefined;
+    } catch (error) {
+      throw new Error(`Get query failed: ${error}`);
+    }
+  }
+
   async execute(
     sql: string,
     params: any[] = []
