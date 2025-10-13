@@ -1,4 +1,4 @@
-import { DatabaseConnection } from '../../types/database.js';
+import { DatabaseConnection } from '../../../types/database.js';
 
 export class InitialSchemaMigration {
   static version = '20251003_001';

@@ -1,5 +1,5 @@
 import { DatabaseManager } from './DatabaseManager.js';
-import { MigrationRunner } from './migrationRunner.js';
+import { MigrationRunner } from './MigrationRunner.js';
 import dotenv from 'dotenv';
 import path from 'path';
 
@@ -10,15 +10,25 @@ async function runMigrations() {
   console.log('🔧 Starting database migration...');
 
   // Create database configuration
-  const dbConfig = {
+  const dbConfig: any = {
     type: (process.env.DB_TYPE as 'sqlite3' | 'postgres' | 'mysql') || 'sqlite3',
-    host: process.env.DB_HOST,
-    port: process.env.DB_PORT ? parseInt(process.env.DB_PORT, 10) : undefined,
     database: process.env.DB_NAME || 'metarr',
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
     filename: process.env.DB_FILE || path.join(process.cwd(), 'data', 'metarr.sqlite'),
   };
+
+  // Add optional properties only if they exist (exactOptionalPropertyTypes compliance)
+  if (process.env.DB_HOST) {
+    dbConfig.host = process.env.DB_HOST;
+  }
+  if (process.env.DB_PORT) {
+    dbConfig.port = parseInt(process.env.DB_PORT, 10);
+  }
+  if (process.env.DB_USER) {
+    dbConfig.username = process.env.DB_USER;
+  }
+  if (process.env.DB_PASSWORD) {
+    dbConfig.password = process.env.DB_PASSWORD;
+  }
 
   console.log(`📊 Database type: ${dbConfig.type}`);
   console.log(`📁 Database location: ${dbConfig.filename || `${dbConfig.host}:${dbConfig.port}/${dbConfig.database}`}`);

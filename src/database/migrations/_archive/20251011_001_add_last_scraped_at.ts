@@ -1,4 +1,4 @@
-import { DatabaseConnection } from '../../types/database.js';
+import { DatabaseConnection } from '../../../types/database.js';
 
 /**
  * Migration: Add last_scraped_at column for TMDB changes API optimization
