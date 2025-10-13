@@ -71,6 +71,13 @@ export class JobQueueService {
   private readonly POLL_INTERVAL = 1000; // 1 second
   private readonly MAX_RETRIES = 3;
 
+  // Circuit breaker state
+  private consecutiveFailures: number = 0;
+  private readonly MAX_CONSECUTIVE_FAILURES = 5;
+  private circuitBroken: boolean = false;
+  private circuitResetTimeout: NodeJS.Timeout | null = null;
+  private readonly CIRCUIT_RESET_DELAY_MS = 60000; // 1 minute
+
   constructor(db: DatabaseConnection) {
     this.db = db;
     this.handlers = new Map();
@@ -118,8 +125,17 @@ export class JobQueueService {
 
     this.isProcessing = true;
     this.processingInterval = setInterval(() => {
+      // Check circuit breaker state
+      if (this.circuitBroken) {
+        logger.warn('Job queue circuit breaker is OPEN - not processing jobs', {
+          consecutiveFailures: this.consecutiveFailures,
+        });
+        return;
+      }
+
       this.processNextJob().catch(error => {
         logger.error('Error in job processing loop:', error);
+        this.handleProcessingLoopError(error);
       });
     }, this.POLL_INTERVAL);
 
@@ -204,11 +220,16 @@ export class JobQueueService {
       // Broadcast job completion
       this.broadcastJobStatus(job.id!, job.type, 'completed', job.payload);
 
+      // Record success (reset circuit breaker failure counter)
+      this.recordSuccess();
+
     } catch (error: any) {
       logger.error('Error processing job:', error);
       if (job) {
         await this.handleJobError(job, error);
       }
+      // Note: Don't increment consecutiveFailures here - that's for loop errors only
+      // Individual job failures are handled by retry logic
     }
   }
 
@@ -417,6 +438,67 @@ export class JobQueueService {
       logger.error('Failed to broadcast queue stats', {
         error: error.message
       });
+    }
+  }
+
+  /**
+   * Handle error in processing loop (circuit breaker)
+   */
+  private handleProcessingLoopError(error: Error): void {
+    this.consecutiveFailures++;
+
+    logger.error('Job processing loop error', {
+      consecutiveFailures: this.consecutiveFailures,
+      maxConsecutiveFailures: this.MAX_CONSECUTIVE_FAILURES,
+      error: error.message,
+      stack: error.stack,
+    });
+
+    // Open circuit breaker if threshold reached
+    if (this.consecutiveFailures >= this.MAX_CONSECUTIVE_FAILURES && !this.circuitBroken) {
+      this.openCircuitBreaker();
+    }
+  }
+
+  /**
+   * Open circuit breaker (stop processing jobs temporarily)
+   */
+  private openCircuitBreaker(): void {
+    this.circuitBroken = true;
+    logger.error('Job queue circuit breaker OPENED - stopping job processing', {
+      consecutiveFailures: this.consecutiveFailures,
+      resetDelayMs: this.CIRCUIT_RESET_DELAY_MS,
+    });
+
+    // Schedule circuit reset
+    if (this.circuitResetTimeout) {
+      clearTimeout(this.circuitResetTimeout);
+    }
+
+    this.circuitResetTimeout = setTimeout(() => {
+      this.resetCircuitBreaker();
+    }, this.CIRCUIT_RESET_DELAY_MS);
+  }
+
+  /**
+   * Reset circuit breaker (allow jobs to process again)
+   */
+  private resetCircuitBreaker(): void {
+    logger.info('Job queue circuit breaker RESET - resuming job processing');
+    this.circuitBroken = false;
+    this.consecutiveFailures = 0;
+    this.circuitResetTimeout = null;
+  }
+
+  /**
+   * Record successful job processing (reset failure counter)
+   */
+  private recordSuccess(): void {
+    if (this.consecutiveFailures > 0) {
+      logger.debug('Job processed successfully, resetting failure counter', {
+        previousFailures: this.consecutiveFailures,
+      });
+      this.consecutiveFailures = 0;
     }
   }
 }
