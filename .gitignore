@@ -39,6 +39,9 @@ logs
 *.sqlite3
 *.db
 
+# MCP Data
+.playwright-mcp/
+
 # Runtime data directory (SOURCE OF TRUTH - DO NOT COMMIT)
 data/
 !data/.gitkeep
