@@ -11,7 +11,7 @@ import { GarbageCollectionService } from './services/garbageCollectionService.js
 import { MetarrWebSocketServer } from './services/websocketServer.js';
 import { websocketBroadcaster } from './services/websocketBroadcaster.js';
 import { WebSocketController } from './controllers/websocketController.js';
-import { cacheService } from './services/cacheService.js';
+// import { cacheService } from './services/cacheService.js'; // TODO: Phase 3
 import { JobQueueService } from './services/jobQueueService.js';
 import { securityMiddleware, rateLimitByIp } from './middleware/security.js';
 import { requestLoggingMiddleware, errorLoggingMiddleware, logger } from './middleware/logging.js';
@@ -33,7 +33,7 @@ export class App {
   private garbageCollector: GarbageCollectionService;
   private wsServer: MetarrWebSocketServer;
   private wsController: WebSocketController;
-  private jobQueueService: JobQueueService;
+  private jobQueueService?: JobQueueService;
 
   constructor() {
     this.express = express();
@@ -55,6 +55,8 @@ export class App {
       this.connectionManager,
       this.wsServer
     );
+
+    // Note: JobQueueService will be initialized in start() after database connection
 
     this.initializeMiddleware();
     this.initializeRoutes(); // Basic routes (health, frontend)
@@ -164,6 +166,15 @@ export class App {
       this.wsController.initialize();
       logger.info('WebSocket controller initialized');
 
+      // TODO: Phase 3 - Initialize cache service (needs DatabaseConnection interface updates)
+      // await cacheService.initialize(this.dbManager);
+      // logger.info('Cache service initialized');
+
+      // Initialize and start job queue service
+      this.jobQueueService = new JobQueueService(this.dbManager.getConnection());
+      this.jobQueueService.start();
+      logger.info('Job queue service initialized and started');
+
       // Reconnect all enabled media players
       await this.connectionManager.reconnectAll();
       logger.info('Media player connections initialized');
@@ -188,6 +199,12 @@ export class App {
 
   public async stop(): Promise<void> {
     try {
+      // Stop job queue processing
+      if (this.jobQueueService) {
+        this.jobQueueService.stop();
+        logger.info('Job queue service stopped');
+      }
+
       // Stop garbage collection scheduler
       this.garbageCollector.stop();
       logger.info('Garbage collection scheduler stopped');

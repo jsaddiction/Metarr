@@ -3,19 +3,14 @@ import { MovieService } from '../services/movieService.js';
 import { LibraryScanService } from '../services/libraryScanService.js';
 import { websocketBroadcaster } from '../services/websocketBroadcaster.js';
 import { FetchOrchestrator, ProgressCallback } from '../services/providers/FetchOrchestrator.js';
-import { AutoSelectionService } from '../services/autoSelectionService.js';
-import { AssetSaveService } from '../services/assetSaveService.js';
 import { AssetType } from '../types/providers/capabilities.js';
 import { logger } from '../middleware/logging.js';
 
 export class MovieController {
-  private assetSaveService?: AssetSaveService;
-
   constructor(
     private movieService: MovieService,
     private scanService: LibraryScanService,
-    private fetchOrchestrator?: FetchOrchestrator,
-    private autoSelectionService?: AutoSelectionService
+    private fetchOrchestrator?: FetchOrchestrator
   ) {}
 
   async getAll(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -273,10 +268,10 @@ export class MovieController {
       const assetTypesParam = req.query.assetTypes as string | undefined;
 
       // Check if dependencies are available
-      if (!this.fetchOrchestrator || !this.autoSelectionService) {
+      if (!this.fetchOrchestrator) {
         res.status(503).json({
           error: 'Provider scraping service not available',
-          message: 'FetchOrchestrator or AutoSelectionService not initialized',
+          message: 'FetchOrchestrator not initialized',
         });
         return;
       }
@@ -356,62 +351,9 @@ export class MovieController {
         return;
       }
 
-      // Auto-selection for webhook/automated workflows only
-      // User-initiated searches let the user pick manually
-      let recommendations: any = {};
-      const isAutomated = force || req.query.force === 'true'; // Webhook or background job
-
-      if (isAutomated && this.autoSelectionService) {
-        // Convert provider results for auto-selection
-        const assetCandidatesByProvider: import('../services/autoSelectionService.js').AssetCandidatesByProvider = {};
-
-        for (const [providerName, assets] of Object.entries(providerResults.providers)) {
-          if (!assets || !assets.images) continue;
-
-          const candidates: import('../types/providers/requests.js').AssetCandidate[] = [];
-
-          // Flatten all image categories into single array
-          for (const assetList of Object.values(assets.images)) {
-            if (Array.isArray(assetList)) {
-              candidates.push(...assetList);
-            }
-          }
-
-          if (candidates.length > 0) {
-            assetCandidatesByProvider[providerName] = candidates;
-          }
-        }
-
-        try {
-          const selectedAssets = await this.autoSelectionService.selectBestAssets(
-            assetCandidatesByProvider,
-            'movie',
-            {
-              respectLocks: false,
-              preferredLanguage: 'en',
-            }
-          );
-
-          // Convert to recommendations format
-          recommendations = selectedAssets.reduce((acc, selected) => {
-            acc[selected.assetType] = {
-              asset: selected.asset,
-              provider: selected.providerName,
-              score: selected.score,
-              reason: selected.reason,
-            };
-            return acc;
-          }, {} as Record<string, any>);
-
-          logger.info('Auto-selected assets for automated workflow', {
-            movieId,
-            assetCount: Object.keys(recommendations).length,
-          });
-        } catch (error) {
-          logger.error('Auto-selection failed', { error, movieId });
-          // Continue without recommendations
-        }
-      }
+      // TODO: Phase 3 - Implement auto-selection with new architecture
+      // For now, return provider results without recommendations
+      const recommendations: any = {};
 
       // Broadcast completion
       websocketBroadcaster.broadcastProviderScrapeComplete(
@@ -475,19 +417,6 @@ export class MovieController {
   }
 
   /**
-   * Initialize asset save service (lazy initialization)
-   */
-  private getAssetSaveService(db: any): AssetSaveService {
-    if (!this.assetSaveService) {
-      this.assetSaveService = new AssetSaveService(db);
-      this.assetSaveService.initialize().catch(err =>
-        logger.error('Failed to initialize asset save service:', err)
-      );
-    }
-    return this.assetSaveService;
-  }
-
-  /**
    * Save asset selections for a movie
    * Endpoint: POST /api/movies/:id/assets
    * Body:
@@ -503,66 +432,11 @@ export class MovieController {
    */
   async saveAssets(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const movieId = parseInt(req.params.id);
-      const { selections, metadata, unlocks, publish } = req.body;
-
-      // Validate request
-      if (!selections || typeof selections !== 'object') {
-        res.status(400).json({
-          error: 'Invalid request',
-          message: 'selections object is required'
-        });
-        return;
-      }
-
-      // Validate movie exists
-      const movie = await this.movieService.getById(movieId);
-      if (!movie) {
-        res.status(404).json({ error: 'Movie not found' });
-        return;
-      }
-
-      logger.info('Saving asset selections', {
-        movieId,
-        assetCount: Object.keys(selections).length,
-        hasMetadata: !!metadata,
-        unlockCount: unlocks?.length || 0,
-        publish: !!publish
+      // TODO: Phase 3 - Implement asset saving with new CacheService architecture
+      res.status(501).json({
+        error: 'Not Implemented',
+        message: 'Asset saving will be implemented in Phase 3 with the new CacheService architecture',
       });
-
-      // Get database connection from movieService
-      const db = (this.movieService as any).db?.getConnection();
-      if (!db) {
-        res.status(500).json({ error: 'Database connection not available' });
-        return;
-      }
-
-      // Process asset save
-      const assetSaveService = this.getAssetSaveService(db);
-      const result = await assetSaveService.saveMovieAssets(movieId, {
-        selections,
-        metadata,
-        unlocks,
-        publish,
-      });
-
-      // Broadcast WebSocket update for cross-tab sync
-      websocketBroadcaster.broadcastMoviesUpdated([movieId]);
-
-      // Return result
-      if (result.success) {
-        res.status(200).json(result);
-      } else {
-        res.status(400).json(result);
-      }
-
-      logger.info('Asset save complete', {
-        movieId,
-        success: result.success,
-        savedCount: result.savedAssets.length,
-        errorCount: result.errors.length
-      });
-
     } catch (error: any) {
       logger.error('Asset save failed', {
         movieId: req.params.id,

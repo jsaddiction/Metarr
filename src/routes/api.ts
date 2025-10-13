@@ -17,19 +17,12 @@ import { IgnorePatternService } from '../services/ignorePatternService.js';
 import { ImageService } from '../services/imageService.js';
 import { JobQueueService } from '../services/jobQueueService.js';
 import { JobHandlers } from '../services/jobHandlers.js';
-import { ScheduledEnrichmentService } from '../services/scheduledEnrichmentService.js';
 import { AutomationConfigService } from '../services/automationConfigService.js';
 import { tmdbService } from '../services/providers/TMDBService.js';
-import { defaultConfig } from '../config/defaults.js';
 import { ProviderConfigService } from '../services/providerConfigService.js';
 import { ProviderConfigController } from '../controllers/providerConfigController.js';
-import { ProviderConfig } from '../types/provider.js';
 import { PriorityConfigService } from '../services/priorityConfigService.js';
 import { PriorityConfigController } from '../controllers/priorityConfigController.js';
-import { AutoSelectionService } from '../services/autoSelectionService.js';
-import { AutoSelectionController } from '../controllers/autoSelectionController.js';
-import { DataSelectionService } from '../services/dataSelectionService.js';
-import { DataSelectionController } from '../controllers/dataSelectionController.js';
 import { ProviderRegistry } from '../services/providers/ProviderRegistry.js';
 import { FetchOrchestrator } from '../services/providers/FetchOrchestrator.js';
 // Import provider index to trigger provider registrations
@@ -58,14 +51,6 @@ export const createApiRouter = (
   const providerConfigService = new ProviderConfigService(db);
   const providerConfigController = new ProviderConfigController(providerConfigService);
 
-  // Initialize data selection service (needed by auto-selection)
-  const dataSelectionService = new DataSelectionService(db);
-  const dataSelectionController = new DataSelectionController(dataSelectionService);
-
-  // Initialize auto-selection service
-  const autoSelectionService = new AutoSelectionService(db, dataSelectionService);
-  const autoSelectionController = new AutoSelectionController(autoSelectionService);
-
   // Initialize provider registry and fetch orchestrator
   const providerRegistry = ProviderRegistry.getInstance();
   const fetchOrchestrator = new FetchOrchestrator(providerRegistry, providerConfigService);
@@ -75,8 +60,7 @@ export const createApiRouter = (
   const movieController = new MovieController(
     movieService,
     libraryScanService,
-    fetchOrchestrator,
-    autoSelectionService
+    fetchOrchestrator
   );
 
   // Initialize ignore pattern service and controller
@@ -98,31 +82,6 @@ export const createApiRouter = (
   const jobHandlers = new JobHandlers(db, './data/cache', tmdbClient);
   jobHandlers.registerHandlers(jobQueue);
   jobQueue.start(); // Start processing jobs
-
-  // Initialize scheduled enrichment service with enrichment config
-  // Get TMDB API key from provider config service
-  const getTmdbApiKey = async (): Promise<string | undefined> => {
-    try {
-      const providers = await providerConfigService.getAll();
-      const tmdbProvider = providers.find((p: ProviderConfig) => p.providerName === 'tmdb');
-      return tmdbProvider?.apiKey || undefined;
-    } catch (error) {
-      console.error('Failed to get TMDB API key for enrichment service:', error);
-      return undefined;
-    }
-  };
-
-  getTmdbApiKey().then(tmdbApiKey => {
-    const scheduledEnrichment = new ScheduledEnrichmentService(
-      db,
-      jobQueue,
-      defaultConfig.enrichment,
-      tmdbApiKey
-    );
-    scheduledEnrichment.start(3600000); // Run every hour (3600000ms)
-  }).catch(err => {
-    console.error('Failed to start scheduled enrichment service:', err);
-  });
 
   // Initialize automation config service and controller
   const automationConfigService = new AutomationConfigService(db);
@@ -407,16 +366,6 @@ export const createApiRouter = (
     providerConfigController.deleteProvider(req, res)
   );
 
-  // Data selection config routes
-  router.get('/data-selection', (req, res) => dataSelectionController.getConfig(req, res));
-  router.put('/data-selection/mode', (req, res) => dataSelectionController.updateMode(req, res));
-  router.put('/data-selection/priority', (req, res) =>
-    dataSelectionController.updateFieldPriority(req, res)
-  );
-  router.get('/data-selection/provider-order/:category/:mediaType/:fieldName', (req, res) =>
-    dataSelectionController.getProviderOrder(req, res)
-  );
-
   // Priority config routes
   router.get('/priorities/presets', (req, res) =>
     priorityConfigController.getAvailablePresets(req, res)
@@ -445,10 +394,6 @@ export const createApiRouter = (
   router.post('/priorities/metadata-fields/:field', (req, res) =>
     priorityConfigController.updateMetadataFieldPriority(req, res)
   );
-
-  // Auto-selection strategy routes
-  router.get('/auto-selection/strategy', autoSelectionController.getStrategy);
-  router.post('/auto-selection/strategy', autoSelectionController.setStrategy);
 
   return router;
 };

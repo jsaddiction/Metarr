@@ -4,6 +4,7 @@ import path from 'path';
 import { createReadStream } from 'fs';
 import { logger } from '../middleware/logging.js';
 import { DatabaseManager } from '../database/DatabaseManager.js';
+import { DatabaseConnection } from '../types/database.js';
 
 /**
  * Cache Service
@@ -12,7 +13,7 @@ import { DatabaseManager } from '../database/DatabaseManager.js';
 export class CacheService {
   private static instance: CacheService | null = null;
   private cacheBasePath: string;
-  private db: DatabaseManager | null = null;
+  private db: DatabaseConnection | null = null;
 
   private constructor(cacheBasePath?: string) {
     // Default to data/cache/assets if not specified
@@ -32,8 +33,8 @@ export class CacheService {
   /**
    * Initialize cache service with database connection
    */
-  public async initialize(db: DatabaseManager): Promise<void> {
-    this.db = db;
+  public async initialize(dbManager: DatabaseManager): Promise<void> {
+    this.db = dbManager.getConnection();
     await this.ensureCacheDirectory();
     logger.info('Cache service initialized', { cacheBasePath: this.cacheBasePath });
   }
