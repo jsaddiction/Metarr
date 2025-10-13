@@ -4,13 +4,15 @@ import { LibraryScanService } from '../services/libraryScanService.js';
 import { websocketBroadcaster } from '../services/websocketBroadcaster.js';
 import { FetchOrchestrator, ProgressCallback } from '../services/providers/FetchOrchestrator.js';
 import { AssetType } from '../types/providers/capabilities.js';
+import { AssetSelectionService } from '../services/assetSelectionService.js';
 import { logger } from '../middleware/logging.js';
 
 export class MovieController {
   constructor(
     private movieService: MovieService,
     private scanService: LibraryScanService,
-    private fetchOrchestrator?: FetchOrchestrator
+    private fetchOrchestrator?: FetchOrchestrator,
+    private assetSelectionService?: AssetSelectionService
   ) {}
 
   async getAll(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -351,9 +353,44 @@ export class MovieController {
         return;
       }
 
-      // TODO: Phase 3 - Implement auto-selection with new architecture
-      // For now, return provider results without recommendations
-      const recommendations: any = {};
+      // Generate recommendations based on asset selection service
+      const recommendations: Record<string, any> = {};
+
+      if (this.assetSelectionService) {
+        // Generate recommendations for each asset type that has candidates
+        for (const assetType of assetTypes) {
+          // Collect all assets of this type from all providers
+          const providerAssets: any[] = [];
+          const providerEntries = Object.values(providerResults.providers);
+          for (const provider of providerEntries) {
+            if (provider && provider.images?.[assetType]) {
+              providerAssets.push(...provider.images[assetType]);
+            }
+          }
+
+          if (providerAssets.length > 0) {
+            // Get the highest scored asset (providers already score their assets)
+            const sortedAssets = [...providerAssets].sort((a: any, b: any) => {
+              const scoreA = a.score || 0;
+              const scoreB = b.score || 0;
+              return scoreB - scoreA;
+            });
+
+            recommendations[assetType] = {
+              recommendedAsset: sortedAssets[0],
+              confidence: sortedAssets[0] ? 'high' : 'none',
+              reason: sortedAssets[0] ? 'Highest quality from provider' : 'No assets available',
+              alternativeCount: sortedAssets.length - 1
+            };
+          }
+        }
+
+        logger.debug('Generated asset recommendations', {
+          movieId,
+          assetTypes,
+          recommendationCount: Object.keys(recommendations).length
+        });
+      }
 
       // Broadcast completion
       websocketBroadcaster.broadcastProviderScrapeComplete(

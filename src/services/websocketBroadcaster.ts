@@ -195,6 +195,16 @@ export class WebSocketBroadcaster {
     });
   }
 
+  /**
+   * Broadcast scan cancelled
+   */
+  public broadcastScanCancelled(scanId: number, libraryId: number): void {
+    this.broadcastScanStatus(scanId, libraryId, 'cancelled', {
+      current: 0,
+      total: 0,
+    });
+  }
+
   // ============================================================================
   // Movie Data Broadcasts
   // ============================================================================

@@ -9,6 +9,8 @@ import { websocketBroadcaster } from './websocketBroadcaster.js';
 import path from 'path';
 
 export class LibraryScanService extends EventEmitter {
+  private activeScansCancellationFlags: Map<number, boolean> = new Map();
+
   constructor(private dbManager: DatabaseManager) {
     super();
   }
@@ -75,6 +77,9 @@ export class LibraryScanService extends EventEmitter {
         { current: 0, total: 0 }
       );
 
+      // Initialize cancellation flag
+      this.activeScansCancellationFlags.set(scanJobId, false);
+
       // Process scan asynchronously
       this.processScan(scanJob, library).catch(error => {
         logger.error(`Scan process failed for library ${libraryId}`, { error: error.message });
@@ -125,11 +130,51 @@ export class LibraryScanService extends EventEmitter {
   }
 
   /**
+   * Cancel a running scan job
+   */
+  async cancelScan(scanJobId: number): Promise<boolean> {
+    try {
+      // Check if scan exists and is running
+      const scanJob = await this.getScanJob(scanJobId);
+      if (!scanJob) {
+        logger.warn(`Cannot cancel scan: Scan job ${scanJobId} not found`);
+        return false;
+      }
+
+      if (scanJob.status !== 'running') {
+        logger.warn(`Cannot cancel scan: Scan job ${scanJobId} is not running (status: ${scanJob.status})`);
+        return false;
+      }
+
+      // Set cancellation flag
+      this.activeScansCancellationFlags.set(scanJobId, true);
+
+      logger.info(`Cancellation requested for scan job ${scanJobId}`, {
+        libraryId: scanJob.libraryId
+      });
+
+      // The actual cancellation will be handled in processScan/scanMovieLibrary
+      // when they check the cancellation flag between file processing
+
+      return true;
+    } catch (error: any) {
+      logger.error(`Failed to cancel scan ${scanJobId}`, { error: error.message });
+      return false;
+    }
+  }
+
+  /**
+   * Check if a scan has been cancelled
+   */
+  private isScanCancelled(scanJobId: number): boolean {
+    return this.activeScansCancellationFlags.get(scanJobId) === true;
+  }
+
+  /**
    * Process a library scan
    */
   private async processScan(scanJob: ScanJob, library: Library): Promise<void> {
     const db = this.dbManager.getConnection();
-    // Track active scan (for future use)
 
     try {
       logger.info(`Processing scan for ${library.name}`, {
@@ -143,6 +188,25 @@ export class LibraryScanService extends EventEmitter {
         await this.scanTVShowLibrary(scanJob, library);
       } else {
         throw new Error(`Unsupported library type: ${library.type}`);
+      }
+
+      // Check if scan was cancelled during processing
+      if (this.isScanCancelled(scanJob.id)) {
+        // Mark scan as cancelled
+        await db.execute(
+          'UPDATE scan_jobs SET status = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ?',
+          ['cancelled', scanJob.id]
+        );
+
+        logger.info(`Scan cancelled for ${library.name}`, { scanJobId: scanJob.id });
+
+        // Broadcast scan cancellation via WebSocket
+        websocketBroadcaster.broadcastScanCancelled(scanJob.id, library.id);
+
+        // Emit cancellation event
+        this.emit('scanCancelled', { scanJobId: scanJob.id, libraryId: library.id });
+
+        return;
       }
 
       // Mark scan as completed
@@ -191,7 +255,8 @@ export class LibraryScanService extends EventEmitter {
         error: error.message,
       });
     } finally {
-      // Clear active scan tracking
+      // Clean up cancellation flag
+      this.activeScansCancellationFlags.delete(scanJob.id);
     }
   }
 
@@ -223,6 +288,16 @@ export class LibraryScanService extends EventEmitter {
 
     // Process all movie directories found on filesystem using unified scan
     for (let i = 0; i < movieDirs.length; i++) {
+      // Check for cancellation before processing each directory
+      if (this.isScanCancelled(scanJob.id)) {
+        logger.info(`Scan cancelled, stopping directory processing`, {
+          scanJobId: scanJob.id,
+          processed: i,
+          total: movieDirs.length
+        });
+        break;
+      }
+
       const movieDir = movieDirs[i];
       const movieName = path.basename(movieDir);
       scannedDirs.add(movieDir);

@@ -18,6 +18,7 @@ import { ImageService } from '../services/imageService.js';
 import { JobQueueService } from '../services/jobQueueService.js';
 import { JobHandlers } from '../services/jobHandlers.js';
 import { AutomationConfigService } from '../services/automationConfigService.js';
+import { AssetSelectionService } from '../services/assetSelectionService.js';
 import { tmdbService } from '../services/providers/TMDBService.js';
 import { ProviderConfigService } from '../services/providerConfigService.js';
 import { ProviderConfigController } from '../controllers/providerConfigController.js';
@@ -55,12 +56,16 @@ export const createApiRouter = (
   const providerRegistry = ProviderRegistry.getInstance();
   const fetchOrchestrator = new FetchOrchestrator(providerRegistry, providerConfigService);
 
+  // Initialize asset selection service
+  const assetSelectionService = new AssetSelectionService(db);
+
   // Initialize movie service and controller
   const movieService = new MovieService(dbManager);
   const movieController = new MovieController(
     movieService,
     libraryScanService,
-    fetchOrchestrator
+    fetchOrchestrator,
+    assetSelectionService
   );
 
   // Initialize ignore pattern service and controller

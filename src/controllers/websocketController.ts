@@ -192,15 +192,16 @@ export class WebSocketController {
         return;
       }
 
-      // TODO: Implement movie update logic in MovieService
-      // For now, just acknowledge the request
-      logger.warn('Movie update not yet implemented', {
+      // Update movie metadata using MovieService
+      await this.movieService.updateMetadata(message.movieId, message.updates);
+
+      logger.info('Movie updated successfully via WebSocket', {
         movieId: message.movieId,
-        updates: message.updates,
+        updatedFields: Object.keys(message.updates)
       });
 
       // Send acknowledgment
-      this.sendAck(clientId, message.type, message.requestId, 'Movie update queued (not yet implemented)');
+      this.sendAck(clientId, message.type, message.requestId, 'Movie updated successfully');
 
       // Broadcast change to all clients
       websocketBroadcaster.broadcastMoviesUpdated([message.movieId]);
@@ -349,17 +350,27 @@ export class WebSocketController {
     });
 
     try {
-      // TODO: Implement cancelScan method in LibraryScanService
-      logger.warn('Library scan cancellation not yet implemented', {
-        scanId: message.scanId,
-      });
+      // Cancel the scan
+      const cancelled = await this.libraryScanService.cancelScan(message.scanId);
+
+      if (!cancelled) {
+        this.wsServer.sendError(
+          clientId,
+          `Failed to cancel scan ${message.scanId}`,
+          'SCAN_CANCEL_FAILED',
+          message.type
+        );
+        return;
+      }
+
+      logger.info('Scan cancellation requested', { scanId: message.scanId });
 
       // Send acknowledgment
       this.sendAck(
         clientId,
         message.type,
         message.requestId,
-        'Library scan cancellation not yet implemented'
+        `Scan ${message.scanId} cancellation requested`
       );
 
       // Broadcast is handled by LibraryScanService events
