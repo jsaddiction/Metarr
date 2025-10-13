@@ -296,6 +296,35 @@ export interface ProviderScrapeErrorMessage extends BaseServerMessage {
 }
 
 /**
+ * Job Status - Generic job progress update
+ */
+export interface JobStatusMessage extends BaseServerMessage {
+  type: 'jobStatus';
+  jobId: number;
+  jobType: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed' | 'retrying';
+  progress?: {
+    current: number;
+    total: number;
+    message?: string;
+  };
+  error?: string;
+  payload?: any;
+}
+
+/**
+ * Job Queue Stats - Queue statistics update
+ */
+export interface JobQueueStatsMessage extends BaseServerMessage {
+  type: 'jobQueueStats';
+  pending: number;
+  processing: number;
+  completed: number;
+  failed: number;
+  retrying: number;
+}
+
+/**
  * Union type of all server messages
  */
 export type ServerMessage =
@@ -315,7 +344,9 @@ export type ServerMessage =
   | ProviderScrapeProviderRetryMessage
   | ProviderScrapeProviderTimeoutMessage
   | ProviderScrapeCompleteMessage
-  | ProviderScrapeErrorMessage;
+  | ProviderScrapeErrorMessage
+  | JobStatusMessage
+  | JobQueueStatsMessage;
 
 // ============================================================================
 // WebSocket Connection Types

@@ -492,6 +492,58 @@ export class WebSocketBroadcaster {
   }
 
   // ============================================================================
+  // Job Queue Broadcasts
+  // ============================================================================
+
+  /**
+   * Broadcast job status update
+   */
+  public broadcastJobStatus(
+    jobId: number,
+    jobType: string,
+    status: 'pending' | 'processing' | 'completed' | 'failed' | 'retrying',
+    payload?: any,
+    error?: string
+  ): void {
+    if (!this.isReady()) return;
+
+    const message: import('../types/websocket.js').JobStatusMessage = {
+      type: 'jobStatus',
+      timestamp: new Date().toISOString(),
+      jobId,
+      jobType,
+      status,
+      ...(payload !== undefined && { payload }),
+      ...(error !== undefined && { error }),
+    };
+
+    this.wsServer!.broadcastToAll(message);
+    logger.debug('Broadcasted job status update', { jobId, jobType, status });
+  }
+
+  /**
+   * Broadcast job queue statistics
+   */
+  public broadcastJobQueueStats(stats: {
+    pending: number;
+    processing: number;
+    completed: number;
+    failed: number;
+    retrying: number;
+  }): void {
+    if (!this.isReady()) return;
+
+    const message: import('../types/websocket.js').JobQueueStatsMessage = {
+      type: 'jobQueueStats',
+      timestamp: new Date().toISOString(),
+      ...stats,
+    };
+
+    this.wsServer!.broadcastToAll(message);
+    logger.debug('Broadcasted job queue stats', stats);
+  }
+
+  // ============================================================================
   // Utility Methods
   // ============================================================================
 

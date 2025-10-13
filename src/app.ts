@@ -13,6 +13,10 @@ import { websocketBroadcaster } from './services/websocketBroadcaster.js';
 import { WebSocketController } from './controllers/websocketController.js';
 import { cacheService } from './services/cacheService.js';
 import { JobQueueService } from './services/jobQueueService.js';
+import { FileScannerScheduler } from './services/schedulers/FileScannerScheduler.js';
+import { ProviderUpdaterScheduler } from './services/schedulers/ProviderUpdaterScheduler.js';
+import { createScheduledFileScanHandler } from './services/jobHandlers/scheduledFileScanHandler.js';
+import { createScheduledProviderUpdateHandler } from './services/jobHandlers/scheduledProviderUpdateHandler.js';
 import { securityMiddleware, rateLimitByIp } from './middleware/security.js';
 import { requestLoggingMiddleware, errorLoggingMiddleware, logger } from './middleware/logging.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
@@ -34,6 +38,8 @@ export class App {
   private wsServer: MetarrWebSocketServer;
   private wsController: WebSocketController;
   private jobQueueService?: JobQueueService;
+  private fileScannerScheduler?: FileScannerScheduler;
+  private providerUpdaterScheduler?: ProviderUpdaterScheduler;
 
   constructor() {
     this.express = express();
@@ -113,7 +119,12 @@ export class App {
 
   private initializeApiRoutes(): void {
     // API routes (with dependency injection) - requires DB connection
-    const apiRoutes = createApiRouter(this.dbManager, this.connectionManager);
+    const apiRoutes = createApiRouter(
+      this.dbManager,
+      this.connectionManager,
+      this.fileScannerScheduler,
+      this.providerUpdaterScheduler
+    );
     this.express.use('/api', apiRoutes);
 
     // Webhook routes (with dependency injection) - requires DB connection and connection manager
@@ -146,14 +157,6 @@ export class App {
       await migrationRunner.migrate();
       logger.info('Database migrations completed');
 
-      // Initialize API routes (now that DB is connected)
-      this.initializeApiRoutes();
-      logger.info('API routes initialized');
-
-      // Initialize error handling (MUST be after all routes)
-      this.initializeErrorHandling();
-      logger.info('Error handlers initialized');
-
       // Initialize WebSocket server
       this.wsServer.attach(this.httpServer);
       logger.info('WebSocket server attached to HTTP server');
@@ -172,8 +175,45 @@ export class App {
 
       // Initialize and start job queue service
       this.jobQueueService = new JobQueueService(this.dbManager.getConnection());
+
+      // Register job handlers
+      this.jobQueueService.registerHandler(
+        'scheduled-file-scan',
+        createScheduledFileScanHandler(this.dbManager)
+      );
+      this.jobQueueService.registerHandler(
+        'scheduled-provider-update',
+        createScheduledProviderUpdateHandler(this.dbManager)
+      );
+      logger.info('Job handlers registered');
+
       this.jobQueueService.start();
       logger.info('Job queue service initialized and started');
+
+      // Initialize schedulers (BEFORE API routes so they can be injected)
+      this.fileScannerScheduler = new FileScannerScheduler(
+        this.dbManager,
+        this.jobQueueService,
+        60000 // Check every 60 seconds
+      );
+      this.fileScannerScheduler.start();
+      logger.info('File scanner scheduler started');
+
+      this.providerUpdaterScheduler = new ProviderUpdaterScheduler(
+        this.dbManager,
+        this.jobQueueService,
+        300000 // Check every 5 minutes
+      );
+      this.providerUpdaterScheduler.start();
+      logger.info('Provider updater scheduler started');
+
+      // Initialize API routes (now that DB is connected and schedulers are ready)
+      this.initializeApiRoutes();
+      logger.info('API routes initialized');
+
+      // Initialize error handling (MUST be after all routes)
+      this.initializeErrorHandling();
+      logger.info('Error handlers initialized');
 
       // Reconnect all enabled media players
       await this.connectionManager.reconnectAll();
@@ -203,6 +243,17 @@ export class App {
       if (this.jobQueueService) {
         this.jobQueueService.stop();
         logger.info('Job queue service stopped');
+      }
+
+      // Stop schedulers
+      if (this.fileScannerScheduler) {
+        this.fileScannerScheduler.stop();
+        logger.info('File scanner scheduler stopped');
+      }
+
+      if (this.providerUpdaterScheduler) {
+        this.providerUpdaterScheduler.stop();
+        logger.info('Provider updater scheduler stopped');
       }
 
       // Stop garbage collection scheduler

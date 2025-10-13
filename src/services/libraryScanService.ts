@@ -182,10 +182,14 @@ export class LibraryScanService extends EventEmitter {
         path: library.path,
       });
 
+      // Execute the scan and capture statistics
+      let stats = { added: 0, updated: 0, deleted: 0, failed: 0 };
+
       if (library.type === 'movies') {
-        await this.scanMovieLibrary(scanJob, library);
+        stats = await this.scanMovieLibrary(scanJob, library);
       } else if (library.type === 'tvshows') {
         await this.scanTVShowLibrary(scanJob, library);
+        // TV shows don't return stats yet
       } else {
         throw new Error(`Unsupported library type: ${library.type}`);
       }
@@ -215,18 +219,16 @@ export class LibraryScanService extends EventEmitter {
         ['completed', scanJob.id]
       );
 
-      logger.info(`Completed scan for ${library.name}`, { scanJobId: scanJob.id });
-
-      // Broadcast scan completion via WebSocket
-      websocketBroadcaster.broadcastScanCompleted(scanJob.id, library.id, {
-        added: 0, // TODO: Track these stats during scan
-        updated: 0,
-        deleted: 0,
-        failed: 0,
+      logger.info(`Completed scan for ${library.name}`, {
+        scanJobId: scanJob.id,
+        stats
       });
 
+      // Broadcast scan completion via WebSocket with actual statistics
+      websocketBroadcaster.broadcastScanCompleted(scanJob.id, library.id, stats);
+
       // Emit completion event
-      this.emit('scanCompleted', { scanJobId: scanJob.id, libraryId: library.id });
+      this.emit('scanCompleted', { scanJobId: scanJob.id, libraryId: library.id, stats });
     } catch (error: any) {
       logger.error(`Scan failed for ${library.name}`, {
         error: error.message,
@@ -263,7 +265,12 @@ export class LibraryScanService extends EventEmitter {
   /**
    * Scan a movie library
    */
-  private async scanMovieLibrary(scanJob: ScanJob, library: Library): Promise<void> {
+  private async scanMovieLibrary(scanJob: ScanJob, library: Library): Promise<{
+    added: number;
+    updated: number;
+    deleted: number;
+    failed: number;
+  }> {
     const db = this.dbManager.getConnection();
     const movieDirs = await getSubdirectories(library.path);
 
@@ -284,6 +291,9 @@ export class LibraryScanService extends EventEmitter {
 
     this.emitProgress(scanJob.id, library.id, 0, movieDirs.length, '');
 
+    // Statistics tracking
+    let addedCount = 0;
+    let updatedCount = 0;
     let totalErrors = 0;
 
     // Process all movie directories found on filesystem using unified scan
@@ -318,6 +328,7 @@ export class LibraryScanService extends EventEmitter {
 
         // Log result and broadcast WebSocket updates for real-time UI updates
         if (scanResult.isNewMovie && scanResult.movieId !== undefined) {
+          addedCount++;
           logger.info(`Added new movie: ${movieName}`, {
             movieId: scanResult.movieId,
             assetsFound: scanResult.assetsFound,
@@ -326,6 +337,7 @@ export class LibraryScanService extends EventEmitter {
           // Broadcast movie added immediately
           websocketBroadcaster.broadcastMoviesAdded([scanResult.movieId]);
         } else if (scanResult.directoryChanged && scanResult.movieId !== undefined) {
+          updatedCount++;
           logger.info(`Updated movie: ${movieName}`, {
             movieId: scanResult.movieId,
             nfoRegenerated: scanResult.nfoRegenerated,
@@ -387,9 +399,18 @@ export class LibraryScanService extends EventEmitter {
     logger.info(`Completed movie library scan`, {
       libraryId: library.id,
       scanned: movieDirs.length,
-      markedForDeletion: markedForDeletionCount,
+      added: addedCount,
+      updated: updatedCount,
+      deleted: markedForDeletionCount,
       errors: totalErrors,
     });
+
+    return {
+      added: addedCount,
+      updated: updatedCount,
+      deleted: markedForDeletionCount,
+      failed: totalErrors,
+    };
   }
 
   /**

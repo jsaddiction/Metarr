@@ -26,13 +26,18 @@ import { PriorityConfigService } from '../services/priorityConfigService.js';
 import { PriorityConfigController } from '../controllers/priorityConfigController.js';
 import { ProviderRegistry } from '../services/providers/ProviderRegistry.js';
 import { FetchOrchestrator } from '../services/providers/FetchOrchestrator.js';
+import { SchedulerController } from '../controllers/schedulerController.js';
+import { FileScannerScheduler } from '../services/schedulers/FileScannerScheduler.js';
+import { ProviderUpdaterScheduler } from '../services/schedulers/ProviderUpdaterScheduler.js';
 // Import provider index to trigger provider registrations
 import '../services/providers/index.js';
 
 // Initialize router factory function
 export const createApiRouter = (
   dbManager: DatabaseManager,
-  connectionManager: MediaPlayerConnectionManager
+  connectionManager: MediaPlayerConnectionManager,
+  fileScannerScheduler?: FileScannerScheduler,
+  providerUpdaterScheduler?: ProviderUpdaterScheduler
 ): Router => {
   const router = Router();
 
@@ -99,6 +104,12 @@ export const createApiRouter = (
   // Initialize asset and job controllers
   const assetController = new AssetController(db);
   const jobController = new JobController(jobQueue);
+
+  // Initialize scheduler controller (optional - only if schedulers provided)
+  const schedulerController =
+    fileScannerScheduler && providerUpdaterScheduler
+      ? new SchedulerController(dbManager, fileScannerScheduler, providerUpdaterScheduler)
+      : null;
 
   // Health check endpoint
   router.get('/health', (_req, res) => {
@@ -399,6 +410,32 @@ export const createApiRouter = (
   router.post('/priorities/metadata-fields/:field', (req, res) =>
     priorityConfigController.updateMetadataFieldPriority(req, res)
   );
+
+  // Scheduler routes (only if scheduler controller is available)
+  if (schedulerController) {
+    console.log('[API Router] Registering scheduler routes');
+
+    // Scheduler status
+    router.get('/scheduler/status', (req, res, next) =>
+      schedulerController.getStatus(req, res, next)
+    );
+
+    // Library scheduler configuration
+    router.get('/libraries/:libraryId/scheduler', (req, res, next) =>
+      schedulerController.getLibraryConfig(req, res, next)
+    );
+    router.put('/libraries/:libraryId/scheduler', (req, res, next) =>
+      schedulerController.updateLibraryConfig(req, res, next)
+    );
+
+    // Manual job triggers
+    router.post('/libraries/:libraryId/scheduler/file-scan/trigger', (req, res, next) =>
+      schedulerController.triggerFileScan(req, res, next)
+    );
+    router.post('/libraries/:libraryId/scheduler/provider-update/trigger', (req, res, next) =>
+      schedulerController.triggerProviderUpdate(req, res, next)
+    );
+  }
 
   return router;
 };
