@@ -5,6 +5,7 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import axios from 'axios';
 import sharp from 'sharp';
+import { logger } from '../middleware/logging.js';
 
 export interface Image {
   id: number;
@@ -218,7 +219,7 @@ export class ImageService {
           ...dimensions,
         });
       } catch (error) {
-        console.error(`Failed to download candidate image: ${candidate.url}`, error);
+        logger.error(`Failed to download candidate image: ${candidate.url}`, error);
       }
     }
 
