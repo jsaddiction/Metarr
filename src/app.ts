@@ -152,6 +152,10 @@ export class App {
       await this.dbManager.connect();
       logger.info('Database connected successfully');
 
+      // Start database health checks (every 30 seconds)
+      this.dbManager.startHealthCheck(30000);
+      logger.info('Database health checks started');
+
       // Run migrations
       const migrationRunner = new MigrationRunner(this.dbManager.getConnection());
       await migrationRunner.migrate();
