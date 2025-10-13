@@ -303,7 +303,8 @@ export class JobQueueService {
     const result = await this.db.execute(
       `DELETE FROM job_queue
        WHERE state = 'completed'
-       AND completed_at < datetime('now', '-${daysOld} days')`
+       AND completed_at < datetime('now', '-' || ? || ' days')`,
+      [daysOld]
     );
 
     logger.info(`Cleared ${result.affectedRows} old completed jobs`);

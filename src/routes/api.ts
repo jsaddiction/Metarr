@@ -29,6 +29,10 @@ import { FetchOrchestrator } from '../services/providers/FetchOrchestrator.js';
 import { SchedulerController } from '../controllers/schedulerController.js';
 import { FileScannerScheduler } from '../services/schedulers/FileScannerScheduler.js';
 import { ProviderUpdaterScheduler } from '../services/schedulers/ProviderUpdaterScheduler.js';
+// Import validation middleware
+import { validateRequest, commonSchemas } from '../middleware/validation.js';
+import { createLibrarySchema, updateLibrarySchema } from '../validation/librarySchemas.js';
+import { updateSchedulerConfigSchema } from '../validation/schedulerSchemas.js';
 // Import provider index to trigger provider registrations
 import '../services/providers/index.js';
 
@@ -172,12 +176,26 @@ export const createApiRouter = (
   router.post('/libraries/validate-path', (req, res, next) =>
     libraryController.validatePath(req, res, next)
   );
-  router.get('/libraries/:id', (req, res, next) => libraryController.getById(req, res, next));
-  router.post('/libraries', (req, res, next) => libraryController.create(req, res, next));
-  router.put('/libraries/:id', (req, res, next) => libraryController.update(req, res, next));
-  router.delete('/libraries/:id', (req, res, next) => libraryController.delete(req, res, next));
-  router.post('/libraries/:id/scan', (req, res, next) =>
-    libraryController.startScan(req, res, next)
+  router.get('/libraries/:id',
+    validateRequest(commonSchemas.idParam, 'params'),
+    (req, res, next) => libraryController.getById(req, res, next)
+  );
+  router.post('/libraries',
+    validateRequest(createLibrarySchema, 'body'),
+    (req, res, next) => libraryController.create(req, res, next)
+  );
+  router.put('/libraries/:id',
+    validateRequest(commonSchemas.idParam, 'params'),
+    validateRequest(updateLibrarySchema, 'body'),
+    (req, res, next) => libraryController.update(req, res, next)
+  );
+  router.delete('/libraries/:id',
+    validateRequest(commonSchemas.idParam, 'params'),
+    (req, res, next) => libraryController.delete(req, res, next)
+  );
+  router.post('/libraries/:id/scan',
+    validateRequest(commonSchemas.idParam, 'params'),
+    (req, res, next) => libraryController.startScan(req, res, next)
   );
 
   // Ignore Pattern Routes
@@ -421,19 +439,24 @@ export const createApiRouter = (
     );
 
     // Library scheduler configuration
-    router.get('/libraries/:libraryId/scheduler', (req, res, next) =>
-      schedulerController.getLibraryConfig(req, res, next)
+    router.get('/libraries/:libraryId/scheduler',
+      validateRequest(commonSchemas.libraryIdParam, 'params'),
+      (req, res, next) => schedulerController.getLibraryConfig(req, res, next)
     );
-    router.put('/libraries/:libraryId/scheduler', (req, res, next) =>
-      schedulerController.updateLibraryConfig(req, res, next)
+    router.put('/libraries/:libraryId/scheduler',
+      validateRequest(commonSchemas.libraryIdParam, 'params'),
+      validateRequest(updateSchedulerConfigSchema, 'body'),
+      (req, res, next) => schedulerController.updateLibraryConfig(req, res, next)
     );
 
     // Manual job triggers
-    router.post('/libraries/:libraryId/scheduler/file-scan/trigger', (req, res, next) =>
-      schedulerController.triggerFileScan(req, res, next)
+    router.post('/libraries/:libraryId/scheduler/file-scan/trigger',
+      validateRequest(commonSchemas.libraryIdParam, 'params'),
+      (req, res, next) => schedulerController.triggerFileScan(req, res, next)
     );
-    router.post('/libraries/:libraryId/scheduler/provider-update/trigger', (req, res, next) =>
-      schedulerController.triggerProviderUpdate(req, res, next)
+    router.post('/libraries/:libraryId/scheduler/provider-update/trigger',
+      validateRequest(commonSchemas.libraryIdParam, 'params'),
+      (req, res, next) => schedulerController.triggerProviderUpdate(req, res, next)
     );
   }
 

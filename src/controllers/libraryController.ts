@@ -34,12 +34,8 @@ export class LibraryController {
    */
   async getById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const id = parseInt(req.params.id, 10);
-
-      if (isNaN(id)) {
-        res.status(400).json({ error: 'Invalid library ID' });
-        return;
-      }
+      // ID validation handled by middleware
+      const id = req.params.id as unknown as number;
 
       const library = await this.libraryService.getById(id);
 
@@ -59,17 +55,8 @@ export class LibraryController {
    */
   async create(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
+      // Validation handled by middleware
       const { name, type, path } = req.body;
-
-      if (!name || !type || !path) {
-        res.status(400).json({ error: 'Missing required fields: name, type, path' });
-        return;
-      }
-
-      if (!['movies', 'tvshows', 'music'].includes(type)) {
-        res.status(400).json({ error: 'Invalid library type. Must be: movies, tvshows, or music' });
-        return;
-      }
 
       const library = await this.libraryService.create({
         name,
