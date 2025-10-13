@@ -11,6 +11,8 @@ import { GarbageCollectionService } from './services/garbageCollectionService.js
 import { MetarrWebSocketServer } from './services/websocketServer.js';
 import { websocketBroadcaster } from './services/websocketBroadcaster.js';
 import { WebSocketController } from './controllers/websocketController.js';
+import { cacheService } from './services/cacheService.js';
+import { JobQueueService } from './services/jobQueueService.js';
 import { securityMiddleware, rateLimitByIp } from './middleware/security.js';
 import { requestLoggingMiddleware, errorLoggingMiddleware, logger } from './middleware/logging.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
@@ -31,6 +33,7 @@ export class App {
   private garbageCollector: GarbageCollectionService;
   private wsServer: MetarrWebSocketServer;
   private wsController: WebSocketController;
+  private jobQueueService: JobQueueService;
 
   constructor() {
     this.express = express();
