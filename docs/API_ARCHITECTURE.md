@@ -2,10 +2,10 @@
 
 ## Communication Architecture
 
-Metarr uses a **hybrid communication architecture** combining REST API for configuration/CRUD operations and Server-Sent Events (SSE) for real-time state updates.
+Metarr uses a **hybrid communication architecture** combining REST API for configuration/CRUD operations and WebSockets for real-time bidirectional communication.
 
 ### Design Principle
-**All configuration changes and CRUD operations use REST API. All backend state changes are communicated to the frontend over Server-Sent Events (SSE).**
+**All configuration changes and CRUD operations use REST API. All backend state changes are communicated to the frontend over WebSocket connections.**
 
 ## REST API - Request/Response Pattern
 
@@ -42,62 +42,83 @@ POST   /webhooks/sonarr                // Receive download notification
 POST   /webhooks/radarr                // Receive download notification
 ```
 
-## Server-Sent Events (SSE) - Event Streaming Pattern
+## WebSocket - Bidirectional Event Streaming
 
-Used for pushing real-time backend state changes and long-running operation updates to the frontend.
+Used for pushing real-time backend state changes to the frontend and monitoring client connection state.
 
-### When to Use SSE:
+### When to Use WebSocket:
 1. **Connection Status Updates** - Media player connect/disconnect/error
 2. **Job Processing Updates** - Background task progress and completion
 3. **Library Scan Progress** - Long-running scan operations
 4. **Media Player Notifications** - Playback events, library updates from Kodi/Jellyfin
 5. **Activity Streams** - Real-time activity feed and monitoring
+6. **Client Connection State** - Monitor frontend connectivity with ping/pong heartbeat
 
-### SSE Endpoint Examples:
+### WebSocket Event Types:
 ```typescript
-// Media Player Status (Implemented ✅)
-GET /api/media-players/status          // SSE stream
-// Events: playerConnected, playerDisconnected, playerError
+// Server → Client Events
+interface ServerEvents {
+  // Media Player Status
+  'player:connected': { playerId: number; name: string; timestamp: string };
+  'player:disconnected': { playerId: number; reason: string };
+  'player:error': { playerId: number; error: string };
 
-// Library Scanning (Implemented ✅)
-GET /api/libraries/scan-status         // SSE stream
-// Events: scanProgress, scanCompleted, scanFailed, activeScans
+  // Library Scanning
+  'scan:started': { libraryId: number; totalFiles: number };
+  'scan:progress': { libraryId: number; current: number; total: number; currentFile: string };
+  'scan:completed': { libraryId: number; filesProcessed: number; duration: number };
+  'scan:failed': { libraryId: number; error: string };
 
-// Job Processing (Future)
-GET /api/jobs/stream                   // SSE stream
-// Events: jobStarted, jobProgress, jobCompleted, jobFailed
+  // Job Processing
+  'job:started': { jobId: number; type: string; priority: number };
+  'job:progress': { jobId: number; percent: number; message: string };
+  'job:completed': { jobId: number; result: any };
+  'job:failed': { jobId: number; error: string };
 
-// Media Player Notifications (Future)
-GET /api/notifications/stream          // SSE stream
-// Events: playbackStarted, playbackStopped, libraryUpdated
+  // Media Player Notifications
+  'playback:started': { playerId: number; title: string; mediaType: string };
+  'playback:stopped': { playerId: number; position: number };
+  'library:updated': { playerId: number; changeType: string };
 
-// Activity Log (Future)
-GET /api/activity/stream               // SSE stream
-// Events: downloadComplete, metadataUpdated, errorOccurred
+  // Activity Log
+  'activity:new': { type: string; message: string; entityId?: number };
+
+  // Connection Management
+  'connection:established': { clientId: string; timestamp: string };
+  'pong': { timestamp: string };
+}
+
+// Client → Server Events
+interface ClientEvents {
+  // Connection Management
+  'ping': { timestamp: string };
+  'subscribe': { channels: string[] };
+  'unsubscribe': { channels: string[] };
+}
 ```
 
 ## Backend Event Flow
 
-The backend uses EventEmitter to propagate state changes from services to the SSE endpoints:
+The backend uses EventEmitter to propagate state changes from services to the WebSocket server:
 
 ```
-Service Layer                Controller Layer               Frontend
+Service Layer                WebSocket Server               Frontend
 ─────────────                ────────────────               ────────
-MediaPlayerConnectionManager  → mediaPlayerController.streamStatus() → EventSource
-├─ emit('playerConnected')    ├─ listen for events                    ├─ onmessage
-├─ emit('playerDisconnected') ├─ forward via SSE                      ├─ addEventListener
-└─ emit('playerError')         └─ send as named events                └─ handle updates
+MediaPlayerConnectionManager  → WebSocketBroadcaster        → WebSocket Client
+├─ emit('playerConnected')    ├─ listen for events          ├─ onmessage
+├─ emit('playerDisconnected') ├─ broadcast to subscribed    ├─ handle 'player:*'
+└─ emit('playerError')         └─ clients as typed events   └─ update UI state
 
-LibraryScanService            → libraryController.streamScanStatus() → EventSource
-├─ emit('scanProgress')       ├─ listen for events                    ├─ onmessage
-├─ emit('scanCompleted')      ├─ forward via SSE                      ├─ addEventListener
-└─ emit('scanFailed')          └─ send as named events                └─ handle updates
+LibraryScanService            → WebSocketBroadcaster        → WebSocket Client
+├─ emit('scanProgress')       ├─ listen for events          ├─ onmessage
+├─ emit('scanCompleted')      ├─ broadcast to subscribed    ├─ handle 'scan:*'
+└─ emit('scanFailed')          └─ clients as typed events   └─ show progress bar
 
-KodiWebSocketClient           MediaPlayerConnectionManager   SSE Stream
-├─ emit('connected')      →   ├─ emit('playerConnected')  → Frontend
-├─ emit('disconnected')   →   ├─ emit('playerDisconnected')→ Frontend
-├─ emit('notification')   →   ├─ emit('playerNotification')→ Frontend
-└─ emit('stateChange')    →   └─ emit('playerStateChange') → Frontend
+KodiWebSocketClient           MediaPlayerConnectionManager   WebSocket Stream
+├─ emit('connected')      →   ├─ emit('playerConnected')  → broadcast('player:connected')
+├─ emit('disconnected')   →   ├─ emit('playerDisconnected')→ broadcast('player:disconnected')
+├─ emit('notification')   →   ├─ emit('playerNotification')→ broadcast('playback:*')
+└─ emit('stateChange')    →   └─ emit('playerStateChange') → broadcast('player:*')
 ```
 
 ## Frontend Implementation Pattern
@@ -116,169 +137,222 @@ const handleDelete = async (id: number) => {
 };
 ```
 
-### SSE Subscriptions (Real-time Updates):
+### WebSocket Subscriptions (Real-time Updates):
 ```typescript
-// Subscribe to real-time status updates
-useEffect(() => {
-  const cleanup = mediaPlayerApi.subscribeToStatus((statuses) => {
-    // Update UI in real-time as backend state changes
-    setPlayers(prev => updatePlayerStatuses(prev, statuses));
-  });
+import { useWebSocket } from '@/hooks/useWebSocket';
 
-  return cleanup; // Cleanup on unmount
-}, []);
+// Subscribe to real-time status updates
+function MediaPlayersPage() {
+  const { subscribe, isConnected } = useWebSocket();
+  const [players, setPlayers] = useState<MediaPlayer[]>([]);
+
+  useEffect(() => {
+    // Subscribe to player events
+    const unsubscribe = subscribe({
+      'player:connected': (data) => {
+        setPlayers(prev => updatePlayerStatus(prev, data.playerId, 'connected'));
+      },
+      'player:disconnected': (data) => {
+        setPlayers(prev => updatePlayerStatus(prev, data.playerId, 'disconnected'));
+      },
+      'player:error': (data) => {
+        showErrorNotification(`Player ${data.playerId} error: ${data.error}`);
+      }
+    });
+
+    return unsubscribe; // Cleanup on unmount
+  }, [subscribe]);
+
+  // Show connection status indicator in UI
+  return (
+    <div>
+      <ConnectionIndicator connected={isConnected} />
+      {/* ... rest of UI ... */}
+    </div>
+  );
+}
 ```
 
 ## Why Hybrid Over Alternatives?
-
-### ❌ Full WebSocket Architecture:
-- **Cons**: Complex, loses HTTP semantics (status codes, caching), overkill for CRUD, harder to debug
-- **Not Needed**: Bi-directional communication not required for Metarr's use cases
 
 ### ❌ Pure REST with Polling:
 - **Cons**: High latency (5-10s delays), inefficient resource usage, poor UX for real-time updates
 - **Not Suitable**: Can't provide instant feedback for connection status or job progress
 
-### ✅ Hybrid Approach (REST + SSE):
-- **Pros**: Best of both worlds, standard HTTP benefits, simple implementation, efficient resource usage
-- **Perfect Fit**: Transactional operations use REST, streaming updates use SSE
+### ✅ Hybrid Approach (REST + WebSocket):
+- **Pros**: Best of both worlds, real-time bidirectional communication, connection state awareness
+- **Perfect Fit**: Transactional operations use REST, streaming updates use WebSocket
+- **Connection State**: Client knows immediately when disconnected (no stale data)
+- **Simple Troubleshooting**: Network tab shows single WebSocket connection for all events
+- **Ping/Pong**: Client sends ping, server replies pong for connection health monitoring
 
-## Technology Stack
-- **Backend**: Express.js REST endpoints + SSE via `res.write()` with EventEmitter
-- **Frontend**: `fetch()` API for REST + `EventSource` API for SSE subscriptions
-- **Already Installed**: No additional dependencies required (`ws` library only for Kodi backend communication)
+## WebSocket Connection State Management
 
-## Current Implementation Status
-✅ **Implemented**:
-- REST API for media player CRUD operations
-- SSE endpoint for media player status (`/api/media-players/status`)
-- Frontend `subscribeToStatus()` function in `api.ts`
-- Backend EventEmitter in `MediaPlayerConnectionManager`
+### Connection Status Awareness
 
-⏳ **Pending**:
-- Connect frontend `MediaPlayers.tsx` page to SSE endpoint
-- Add SSE endpoints for jobs, library scans, and notifications
-- Implement activity stream for monitoring
-
-## Development Guidelines
-
-### Adding New REST Endpoints:
-1. Define route in `src/routes/api.ts`
-2. Implement controller method in `src/controllers/`
-3. Add service logic in `src/services/`
-4. Follow RESTful conventions (GET, POST, PUT, DELETE)
-5. Return proper HTTP status codes and JSON responses
-
-### Adding New SSE Endpoints:
-1. Create SSE endpoint in controller: `streamXYZ(req: Request, res: Response)`
-2. Set SSE headers: `Content-Type: text/event-stream`, `Cache-Control: no-cache`
-3. Listen to EventEmitter events from service layer
-4. Send events: `res.write(`event: eventName\ndata: ${JSON.stringify(data)}\n\n`)`
-5. Clean up on client disconnect: `req.on('close', ...)`
-6. Add frontend subscription function in `utils/api.ts`
-
-### Testing:
-- **REST**: Use Postman, curl, or browser DevTools Network tab
-- **SSE**: Use EventSource in browser console or SSE testing tools
-- **Integration**: Test that configuration changes (REST) trigger status updates (SSE)
-
----
-
-## SSE Reconnection Strategy
-
-EventSource API automatically reconnects on connection loss, but Metarr implements additional logic for robust recovery.
-
-### Automatic Reconnection
+Unlike SSE (unidirectional), WebSocket provides **immediate connection state detection** through ping/pong heartbeat:
 
 ```typescript
-class SSEConnection {
-  private eventSource: EventSource | null = null;
+class WebSocketManager {
+  private ws: WebSocket | null = null;
+  private pingInterval: NodeJS.Timeout | null = null;
+  private pongTimeout: NodeJS.Timeout | null = null;
+  private connectionState: 'connected' | 'disconnected' | 'reconnecting' = 'disconnected';
+
+  connect(url: string): void {
+    this.ws = new WebSocket(url);
+
+    this.ws.onopen = () => {
+      this.connectionState = 'connected';
+      this.startHeartbeat();
+      this.emit('connection:established');
+    };
+
+    this.ws.onclose = () => {
+      this.connectionState = 'disconnected';
+      this.stopHeartbeat();
+      this.handleReconnect(url);
+    };
+
+    this.ws.onerror = (error) => {
+      console.error('WebSocket error:', error);
+      this.connectionState = 'disconnected';
+    };
+
+    this.ws.onmessage = (event) => {
+      const message = JSON.parse(event.data);
+
+      if (message.type === 'pong') {
+        this.handlePong();
+      } else {
+        this.handleEvent(message);
+      }
+    };
+  }
+
+  // Ping every 30 seconds, expect pong within 5 seconds
+  private startHeartbeat(): void {
+    this.pingInterval = setInterval(() => {
+      this.sendPing();
+
+      // Set timeout for pong response
+      this.pongTimeout = setTimeout(() => {
+        console.error('Pong timeout - connection lost');
+        this.connectionState = 'disconnected';
+        this.ws?.close();
+      }, 5000);
+    }, 30000);
+  }
+
+  private sendPing(): void {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({
+        type: 'ping',
+        timestamp: Date.now()
+      }));
+    }
+  }
+
+  private handlePong(): void {
+    if (this.pongTimeout) {
+      clearTimeout(this.pongTimeout);
+      this.pongTimeout = null;
+    }
+    // Connection is healthy
+    this.connectionState = 'connected';
+  }
+
+  private stopHeartbeat(): void {
+    if (this.pingInterval) {
+      clearInterval(this.pingInterval);
+      this.pingInterval = null;
+    }
+    if (this.pongTimeout) {
+      clearTimeout(this.pongTimeout);
+      this.pongTimeout = null;
+    }
+  }
+
+  getConnectionState(): 'connected' | 'disconnected' | 'reconnecting' {
+    return this.connectionState;
+  }
+
+  isConnected(): boolean {
+    return this.connectionState === 'connected' && this.ws?.readyState === WebSocket.OPEN;
+  }
+}
+```
+
+### User-Facing Connection Indicator
+
+```typescript
+function ConnectionIndicator({ connected }: { connected: boolean }) {
+  return (
+    <div className="flex items-center gap-2">
+      <div className={`w-2 h-2 rounded-full ${
+        connected ? 'bg-green-500' : 'bg-red-500'
+      }`} />
+      <span className="text-sm">
+        {connected ? 'Connected' : 'Disconnected - Data may be stale'}
+      </span>
+    </div>
+  );
+}
+```
+
+### Why This Matters:
+
+1. **User Awareness**: User immediately knows if their UI is showing stale data
+2. **Debugging**: Network tab shows single WebSocket connection with all events
+3. **Reliability**: Ping/pong detects silent connection failures (firewall, proxy, network switch)
+4. **UX**: Client can show "reconnecting..." state instead of silently displaying outdated info
+
+## Technology Stack
+
+- **Backend**: Express.js REST endpoints + WebSocket server (`ws` library)
+- **Frontend**: `fetch()` API for REST + native `WebSocket` API for real-time updates
+- **Already Installed**: `ws` library already in dependencies (used for Kodi communication)
+
+## Reconnection Strategy
+
+### Automatic Reconnection with Exponential Backoff
+
+```typescript
+class WebSocketConnection {
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 10;
   private baseDelay = 1000; // 1 second
 
-  connect(url: string, onMessage: (event: MessageEvent) => void): void {
-    this.eventSource = new EventSource(url);
-
-    this.eventSource.onmessage = onMessage;
-
-    this.eventSource.onerror = (error) => {
-      console.error('SSE connection error:', error);
-      this.handleReconnect(url, onMessage);
-    };
-
-    this.eventSource.onopen = () => {
-      console.log('SSE connection established');
-      this.reconnectAttempts = 0; // Reset on successful connection
-    };
-  }
-
-  private handleReconnect(url: string, onMessage: (event: MessageEvent) => void): void {
+  private handleReconnect(url: string): void {
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
       console.error('Max reconnection attempts reached');
+      this.emit('reconnection:failed');
       return;
     }
 
     this.reconnectAttempts++;
+    this.connectionState = 'reconnecting';
+
     const delay = Math.min(
       this.baseDelay * Math.pow(2, this.reconnectAttempts - 1),
       30000 // Max 30 seconds
     );
 
     console.log(`Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`);
+    this.emit('reconnecting', { attempt: this.reconnectAttempts, delay });
 
     setTimeout(() => {
       this.disconnect();
-      this.connect(url, onMessage);
+      this.connect(url);
     }, delay);
   }
 
-  disconnect(): void {
-    if (this.eventSource) {
-      this.eventSource.close();
-      this.eventSource = null;
-    }
+  // Reset reconnect attempts on successful connection
+  private onConnectionEstablished(): void {
+    this.reconnectAttempts = 0;
+    this.connectionState = 'connected';
+    this.emit('connection:established');
   }
-}
-```
-
-### Backend SSE Implementation
-
-```typescript
-export function streamSSE(
-  req: Request,
-  res: Response,
-  eventEmitter: EventEmitter,
-  eventName: string
-): void {
-  // Set SSE headers
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  res.setHeader('X-Accel-Buffering', 'no'); // Disable nginx buffering
-
-  // Send initial connection message
-  res.write(`data: ${JSON.stringify({ type: 'connected' })}\n\n`);
-
-  // Send keepalive every 30 seconds to prevent timeout
-  const keepaliveInterval = setInterval(() => {
-    res.write(`:keepalive\n\n`);
-  }, 30000);
-
-  // Listen for events and forward to client
-  const eventHandler = (data: any) => {
-    res.write(`event: ${eventName}\n`);
-    res.write(`data: ${JSON.stringify(data)}\n\n`);
-  };
-
-  eventEmitter.on(eventName, eventHandler);
-
-  // Cleanup on client disconnect
-  req.on('close', () => {
-    clearInterval(keepaliveInterval);
-    eventEmitter.off(eventName, eventHandler);
-    res.end();
-  });
 }
 ```
 
@@ -293,7 +367,157 @@ export function streamSSE(
 | 5 | 16s | 31s |
 | 6+ | 30s (max) | 61s+ |
 
-**After 10 failed attempts:** Stop reconnecting, display error to user
+**After 10 failed attempts:** Stop reconnecting, display error to user with manual reconnect button
+
+## Backend WebSocket Implementation
+
+### WebSocket Server Setup
+
+```typescript
+import { WebSocketServer, WebSocket } from 'ws';
+import { Server } from 'http';
+import { EventEmitter } from 'events';
+
+export class WebSocketBroadcaster extends EventEmitter {
+  private wss: WebSocketServer;
+  private clients: Map<string, WebSocket> = new Map();
+
+  constructor(httpServer: Server) {
+    super();
+    this.wss = new WebSocketServer({
+      server: httpServer,
+      path: '/ws'
+    });
+
+    this.wss.on('connection', (ws: WebSocket) => {
+      const clientId = this.generateClientId();
+      this.clients.set(clientId, ws);
+
+      // Send connection confirmation
+      this.sendToClient(ws, {
+        type: 'connection:established',
+        clientId,
+        timestamp: new Date().toISOString()
+      });
+
+      // Handle ping messages
+      ws.on('message', (data) => {
+        const message = JSON.parse(data.toString());
+
+        if (message.type === 'ping') {
+          this.sendToClient(ws, {
+            type: 'pong',
+            timestamp: new Date().toISOString()
+          });
+        }
+      });
+
+      // Handle client disconnect
+      ws.on('close', () => {
+        this.clients.delete(clientId);
+        console.log(`Client ${clientId} disconnected`);
+      });
+
+      ws.on('error', (error) => {
+        console.error(`WebSocket error for client ${clientId}:`, error);
+        this.clients.delete(clientId);
+      });
+    });
+  }
+
+  // Broadcast event to all connected clients
+  broadcast(eventType: string, data: any): void {
+    const message = JSON.stringify({
+      type: eventType,
+      data,
+      timestamp: new Date().toISOString()
+    });
+
+    this.clients.forEach((client) => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(message);
+      }
+    });
+  }
+
+  // Send to specific client
+  private sendToClient(client: WebSocket, message: any): void {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(JSON.stringify(message));
+    }
+  }
+
+  private generateClientId(): string {
+    return `client_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  // Clean up
+  close(): void {
+    this.clients.forEach((client) => client.close());
+    this.clients.clear();
+    this.wss.close();
+  }
+}
+```
+
+### Integrating with Services
+
+```typescript
+// In src/index.ts
+import { WebSocketBroadcaster } from './services/websocketBroadcaster.js';
+
+const server = http.createServer(app);
+const wsBroadcaster = new WebSocketBroadcaster(server);
+
+// Services emit events, broadcaster forwards to clients
+libraryScanService.on('scanProgress', (data) => {
+  wsBroadcaster.broadcast('scan:progress', data);
+});
+
+mediaPlayerConnectionManager.on('playerConnected', (data) => {
+  wsBroadcaster.broadcast('player:connected', data);
+});
+
+jobQueueService.on('jobCompleted', (data) => {
+  wsBroadcaster.broadcast('job:completed', data);
+});
+```
+
+## Current Implementation Status
+
+✅ **Implemented**:
+- REST API for media player CRUD operations
+- WebSocket infrastructure (`ws` library already installed)
+- Backend EventEmitter in services
+
+⏳ **Pending**:
+- Create `WebSocketBroadcaster` service
+- Connect service EventEmitters to WebSocket broadcaster
+- Create frontend `useWebSocket` hook
+- Implement ping/pong heartbeat
+- Add connection state indicator to UI
+
+## Development Guidelines
+
+### Adding New REST Endpoints:
+1. Define route in `src/routes/api.ts`
+2. Implement controller method in `src/controllers/`
+3. Add service logic in `src/services/`
+4. Follow RESTful conventions (GET, POST, PUT, DELETE)
+5. Return proper HTTP status codes and JSON responses
+
+### Adding New WebSocket Events:
+1. Define event type in service layer EventEmitter
+2. Emit event with typed data: `this.emit('eventName', data)`
+3. WebSocketBroadcaster automatically forwards to connected clients
+4. Update TypeScript interfaces for type safety
+5. Add event handler in frontend `useWebSocket` hook
+
+### Testing:
+- **REST**: Use Postman, curl, or browser DevTools Network tab
+- **WebSocket**: Use browser console (`new WebSocket('ws://localhost:3000/ws')`)
+- **Integration**: Test that configuration changes (REST) trigger status updates (WebSocket)
+- **Connection State**: Test reconnection by killing server or using DevTools network throttling
 
 ---
 
@@ -326,7 +550,7 @@ interface ErrorResponse {
     "value": "relative/path",
     "constraint": "must start with / or drive letter"
   },
-  "timestamp": "2025-10-04T10:30:00Z",
+  "timestamp": "2025-10-05T10:30:00Z",
   "path": "/api/libraries",
   "statusCode": 400
 }
@@ -337,7 +561,7 @@ interface ErrorResponse {
 {
   "error": "NotFound",
   "message": "Movie with ID 12345 not found",
-  "timestamp": "2025-10-04T10:30:00Z",
+  "timestamp": "2025-10-05T10:30:00Z",
   "path": "/api/movies/12345",
   "statusCode": 404
 }
@@ -352,7 +576,7 @@ interface ErrorResponse {
     "existingId": 67890,
     "path": "/movies/The Matrix (1999)/"
   },
-  "timestamp": "2025-10-04T10:30:00Z",
+  "timestamp": "2025-10-05T10:30:00Z",
   "path": "/api/movies",
   "statusCode": 409
 }
@@ -367,7 +591,7 @@ interface ErrorResponse {
     "provider": "tmdb",
     "originalError": "ECONNREFUSED"
   },
-  "timestamp": "2025-10-04T10:30:00Z",
+  "timestamp": "2025-10-05T10:30:00Z",
   "path": "/api/movies/12345/refresh",
   "statusCode": 500
 }
@@ -504,7 +728,6 @@ async function fetchMovies(): Promise<Movie[]> {
 - `PUT /api/libraries/:id` - Update library configuration
 - `DELETE /api/libraries/:id` - Delete library and associated media entries
 - `POST /api/libraries/:id/scan` - Start library scan
-- `GET /api/libraries/scan-status` - SSE stream for scan progress
 - `GET /api/libraries/drives` - Get available drives (Windows)
 - `GET /api/libraries/browse?path=` - Browse filesystem directories
 - `POST /api/libraries/validate-path` - Validate directory path
@@ -519,7 +742,6 @@ async function fetchMovies(): Promise<Movie[]> {
 - `POST /api/media-players/:id/test` - Test connection (saved player)
 - `POST /api/media-players/:id/connect` - Manually connect player
 - `POST /api/media-players/:id/disconnect` - Manually disconnect player
-- `GET /api/media-players/status` - SSE stream for player status
 
 ### Metadata Management
 - `GET /api/movies` - List all movies with filtering/sorting
@@ -532,10 +754,6 @@ async function fetchMovies(): Promise<Movie[]> {
 - `GET /api/movies/:id/completeness` - Get completeness percentage
 - `GET /api/movies/monitored` - List monitored movies (computed state)
 - `POST /api/movies/:id/refresh` - Trigger metadata refresh from providers
-
-### Completeness Configuration
-- `GET /api/completeness/:mediaType` - Get completeness config for media type
-- `PUT /api/completeness/:mediaType` - Update completeness requirements
 
 ### Image Management
 - `GET /api/images/:entityType/:entityId` - Get all images for entity
@@ -567,7 +785,6 @@ async function fetchMovies(): Promise<Movie[]> {
 ### Activity Log & Monitoring
 - `GET /api/activity` - List recent activity (paginated)
 - `GET /api/activity/:entityType/:entityId` - Get activity for specific entity
-- `GET /api/activity/stream` - SSE stream for real-time activity feed
 - `DELETE /api/activity/:id` - Delete specific activity log entry
 - `POST /api/activity/cleanup` - Manually trigger retention cleanup
 
@@ -592,7 +809,9 @@ async function fetchMovies(): Promise<Movie[]> {
 - `GET /api/jobs/:id` - Get job details
 - `POST /api/jobs/:id/retry` - Retry failed job
 - `DELETE /api/jobs/:id` - Cancel pending job
-- `GET /api/jobs/stream` - SSE stream for job status updates
+
+### WebSocket Connection
+- `WS /ws` - WebSocket endpoint for real-time bidirectional communication
 
 ## Movie Metadata Update Endpoint
 
@@ -602,8 +821,8 @@ Updates movie metadata with automatic field locking. When a field is manually up
 
 #### Request
 
-**Method:** `PATCH`  
-**Path:** `/api/movies/:id/metadata`  
+**Method:** `PATCH`
+**Path:** `/api/movies/:id/metadata`
 **Content-Type:** `application/json`
 
 **Path Parameters:**
@@ -627,7 +846,7 @@ interface MovieMetadataUpdate {
   premiered?: string;          // YYYY-MM-DD format
   user_rating?: number;        // 0-10
   trailer_url?: string;
-  
+
   // Explicit lock fields (optional)
   title_locked?: boolean;
   original_title_locked?: boolean;
@@ -770,4 +989,3 @@ Update multiple fields at once with selective locking.
 - The endpoint returns the full movie object after update for immediate UI sync
 - Frontend should optimistically update UI and rollback on error
 - Lock state changes trigger completeness and monitoring recalculation
-

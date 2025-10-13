@@ -1,538 +1,473 @@
-# Metarr Architecture Overview
+# Metarr Architecture
 
-**Last Updated**: 2025-10-08
-**Status**: Design Phase - Pre-Implementation
-
-This document provides the comprehensive architectural vision for Metarr, a web-based metadata management application for media libraries. This architecture reflects the refined design based on MediaElch's workflow principles while maintaining automation capabilities through webhooks.
+**Last Updated**: 2025-01-13
+**Status**: Design Phase - Ready for Implementation
 
 ---
 
 ## Table of Contents
 
-1. [Core Philosophy](#core-philosophy)
-2. [Design Principles](#design-principles)
+1. [Executive Summary](#executive-summary)
+2. [Core Principle](#core-principle)
 3. [System Architecture](#system-architecture)
-4. [Data State Machine](#data-state-machine)
-5. [Three-Tier Asset System](#three-tier-asset-system)
-6. [Two-Phase Scanning Strategy](#two-phase-scanning-strategy)
-7. [Automation Levels](#automation-levels)
-8. [Technology Stack](#technology-stack)
-9. [Scale & Performance](#scale--performance)
-10. [Related Documentation](#related-documentation)
+4. [Core Workflows](#core-workflows)
+5. [Technology Stack](#technology-stack)
+6. [Directory Structure](#directory-structure)
+7. [Key Concepts](#key-concepts)
+8. [Related Documentation](#related-documentation)
 
 ---
 
-## Core Philosophy
+## Executive Summary
+
+**What Metarr Does:**
+
+Metarr is an intelligent bridge between the *arr stack (Radarr/Sonarr/Lidarr) and media players (Kodi/Jellyfin/Plex). It automatically enriches media libraries with high-quality metadata and artwork from multiple providers (TMDB, TVDB, Fanart.tv, MusicBrainz, etc.), maintains a local cache to protect against data loss, and gives users authoritative control to override any automatically-selected content.
+
+**The Problem Metarr Solves:**
+
+1. **Limited Metadata Sources**: *arr stack only uses TMDB, missing high-quality artwork from Fanart.tv and other providers
+2. **Data Loss**: *arr stack deletes artwork during quality upgrades
+3. **No User Control**: Can't manually select better artwork without external tools
+4. **Provider Availability**: Online resources can remove images, breaking libraries
+5. **Manual Management**: MediaElch requires full manual curation for every item
+
+**How Metarr Works:**
+
+- **Webhook-Driven Automation**: *arr downloads media → webhook → Metarr enriches automatically → notifies players
+- **Cache Protection**: All assets stored locally with content-addressable naming (SHA256 hashing)
+- **Manual Override**: Don't like the poster? Click and replace it. Your choice is locked from future automation
+- **Disaster Recovery**: *arr upgrades media → Metarr detects and restores your cached selections
+- **Scheduled Realignment**: Daily/weekly scans ensure library stays in sync with Metarr's database
+- **Standalone Mode**: Works without *arr stack using filesystem watchers or scheduled scans
+
+---
+
+## Core Principle
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  "Intelligent Defaults with Manual Override Capability"     │
+│         "Automate Everything, Override Anything"             │
 └─────────────────────────────────────────────────────────────┘
 ```
 
+**Primary Use Case (95%)**: Hands-off automation via webhooks
+**Secondary Use Case (5%)**: Manual asset replacement when auto-selection isn't perfect
+
 ### Key Tenets
 
-1. **User Control First**
-   - Initial setup: User chooses automation level (Conservative, YOLO, or Hybrid)
-   - Manual edits are sacred: Any user change locks that field/asset permanently
-   - Locked items never modified by automation
-
-2. **Webhooks = Full Automation**
-   - User enabled webhooks because they want automation
-   - New downloads: Scan → Enrich → Select → Publish → Notify players (fully automated)
-   - Upgrades: Detect → Restore cache → Republish (seamless)
-   - User can manually fix mistakes later
-
-3. **Cache as Single Source of Truth**
-   - All assets stored in immutable, content-addressed cache
-   - Library directory is ephemeral (can be regenerated from cache + database)
-   - Disaster recovery: Rebuild entire library from cache even if providers are offline
-
-4. **Scan Fast, Enrich Lazily**
-   - Initial scan: Filesystem + FFprobe only (no provider API calls)
-   - Enrichment: Background jobs, rate-limited, low priority
-   - User sees library immediately, enrichment happens in background
-
-5. **Resilient by Default**
-   - Content-addressed storage (deduplication, corruption detection)
-   - Transactional publishing (atomic writes, rollback on failure)
-   - Soft deletes with grace periods (90-day recovery window)
-   - NFO hash validation (detect external modifications)
-
----
-
-## Design Principles
-
-### Separation of Concerns
-
-**Current Problem**: Monolithic scan process combines discovery, enrichment, and publishing
-
-**Solution**: Clear separation of operational phases
-
-| Phase | Purpose | Duration | Blocks User |
-|-------|---------|----------|-------------|
-| **Discovery** | Scan filesystem, parse NFO, FFprobe | Minutes to hours | No (background) |
-| **Enrichment** | Fetch provider metadata, download assets | Hours to days | No (background) |
-| **Selection** | Algorithm chooses or user picks assets | Instant | No |
-| **Publishing** | Write NFO + assets to library, notify players | Seconds | No |
-
-### Immutable Cache Architecture
-
-**Principles**:
-- Files named by SHA256 hash of content (content-addressable storage)
-- Automatic deduplication (same file used 10x = stored 1x)
-- Never delete immediately (move to orphaned, garbage collect after 90 days)
-- Metadata stored in database, not filesystem
-
-**Structure**:
-```
-data/cache/assets/
-  {sha256_hash}.jpg         ← Immutable asset file
-  {sha256_hash}.jpg.meta    ← JSON metadata (optional, or DB-only)
-```
-
-### Field Locking Strategy
-
-**Rule**: Manual edit = permanent lock, automation respects locks
-
-**Implementation**:
-```sql
--- User manually changes plot
-UPDATE movies SET
-  plot = 'My custom description',
-  plot_locked = 1,           -- Lock the field
-  has_unpublished_changes = 1
-WHERE id = 123;
-
--- Future enrichment queries
-SELECT * FROM movies WHERE plot_locked = 0;  -- Only update unlocked
-```
-
-**Asset Locking**: Per-asset granularity
-```sql
-UPDATE asset_candidates
-SET is_selected = 1,
-    selected_by = 'manual'  -- 'auto' or 'manual'
-WHERE id = 456;
-
-UPDATE movies SET poster_locked = 1 WHERE id = 123;
-```
+1. **Automation First**: Webhooks trigger immediate, fully-automated enrichment
+2. **Manual Override Capability**: User can replace any asset at any time
+3. **Field Locking**: Manual edits are sacred - automation never overwrites them
+4. **Cache as Source of Truth**: All assets cached locally, library is ephemeral
+5. **Disaster Recovery**: Restore from cache when *arr deletes assets during upgrades
+6. **Concurrent Processing**: Download assets in parallel (10+ concurrent workers)
+7. **Path Mapping**: Support different paths between Metarr and media players
+8. **Multi-Media Support**: Movies, TV Shows, Music with specialized workers
 
 ---
 
 ## System Architecture
 
-### High-Level Component Diagram
+### High-Level Overview
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                        METARR SYSTEM                         │
 └─────────────────────────────────────────────────────────────┘
 
+INPUT SOURCES:
+├─ Webhooks (*arr stack) ──────► Process immediately (priority queue)
+├─ Manual Library Scan ─────────► User-triggered full scan
+├─ Scheduled Realignment ───────► Daily/weekly verification
+└─ Filesystem Watcher ──────────► Standalone mode (no *arr)
+
+PROCESSING PIPELINE:
+├─ 1. Identify Media (TMDB ID via NFO → *arr API → filename parsing)
+├─ 2. Scrape Providers (TMDB, TVDB, Fanart.tv, MusicBrainz)
+├─ 3. Score & Select Best Assets (configurable algorithm)
+├─ 4. Download to Cache (concurrent workers, content-addressed)
+└─ 5. Deploy to Library (Kodi naming conventions, path mapping)
+
+OUTPUT:
+├─ Library Assets (poster.jpg, fanart.jpg, etc.)
+├─ NFO Files (Kodi-compatible XML with metadata)
+└─ Player Notifications (Kodi JSON-RPC, Jellyfin API, Plex API)
+```
+
+### Component Diagram
+
+```
 ┌──────────────┐
-│   Frontend   │  React + Vite + TailwindCSS
+│   Frontend   │  React + Vite + TailwindCSS + shadcn/ui
 │   (Port      │  - Virtual scrolling (react-window)
-│    3001)     │  - Real-time SSE updates
-└──────┬───────┘  - TanStack Query (cache management)
+│    3001)     │  - Real-time progress (WebSocket)
+└──────┬───────┘  - Manual asset selection
        │
-       │ REST API + SSE
+       │ REST API
        ↓
 ┌──────────────┐
 │   Backend    │  Node.js + Express + TypeScript
 │   (Port      │  - API routes
-│    3000)     │  - SSE event stream
+│    3000)     │  - Webhook receivers
 └──────┬───────┘  - Background job processor
        │
-       ├─────────────┬─────────────┬─────────────┐
-       ↓             ↓             ↓             ↓
-┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐
-│ Database │  │  Cache   │  │ Library  │  │ External │
-│(SQLite3/ │  │(Content  │  │(Media    │  │(TMDB,    │
-│Postgres) │  │Address)  │  │Files +   │  │TVDB,     │
-│          │  │          │  │Assets)   │  │Players)  │
-└──────────┘  └──────────┘  └──────────┘  └──────────┘
+       ├─────────────┬─────────────┬─────────────┬─────────────┐
+       ↓             ↓             ↓             ↓             ↓
+┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐
+│ Database │  │  Cache   │  │ Library  │  │ External │  │  Job     │
+│(SQLite3/ │  │(Content  │  │(Media    │  │(TMDB,    │  │  Queue   │
+│Postgres) │  │Address)  │  │Files +   │  │TVDB,     │  │(Database)│
+│          │  │          │  │Assets)   │  │Players)  │  │          │
+└──────────┘  └──────────┘  └──────────┘  └──────────┘  └──────────┘
 ```
 
 ### Core Services
 
 ```typescript
-┌─────────────────────────────────────────────────────────────┐
-│                     SERVICE ARCHITECTURE                     │
-└─────────────────────────────────────────────────────────────┘
-
 ScanService
-  ├─ discoverDirectories()      // Find all media directories
-  ├─ scanDirectory()            // Parse NFO, FFprobe, find local assets
-  ├─ detectChanges()            // NFO hash comparison
-  └─ emitProgress()             // SSE events
+  ├─ scanLibrary(libraryId)          // Full library scan
+  ├─ scanDirectory(path)             // Single directory
+  ├─ discoverLocalAssets()           // Find existing posters/fanart
+  └─ parseNFO()                      // Extract metadata from NFO
 
 EnrichmentService
-  ├─ fetchMetadata()            // TMDB/TVDB API calls
-  ├─ fetchAssetCandidates()     // Get poster/fanart URLs
-  ├─ respectLocks()             // Skip locked fields
-  └─ rateLimiter                // Prevent API hammering
+  ├─ enrichMovie(movieId)            // Fetch from providers
+  ├─ enrichSeries(seriesId)          // TV show enrichment
+  ├─ enrichAlbum(albumId)            // Music enrichment
+  ├─ fetchAssetURLs()                // Get candidate URLs
+  └─ respectLocks()                  // Skip locked fields
 
 AssetSelectionService
-  ├─ autoSelectAssets()         // Algorithm-based selection
-  ├─ scoreCandidate()           // Resolution + votes + language
-  ├─ filterDuplicates()         // pHash similarity check
-  └─ respectRejections()        // Skip globally rejected assets
-
-PublishService
-  ├─ generateNFO()              // Build NFO from database state
-  ├─ copyAssetsToLibrary()      // Cache → Library (transactional)
-  ├─ updateDatabase()           // Mark as published
-  └─ notifyPlayers()            // Trigger Kodi/Jellyfin scan
-
-DisasterRecoveryService
-  ├─ detectMissingAssets()      // Check for deleted files
-  ├─ restoreFromCache()         // Copy cache → library
-  ├─ regenerateNFO()            // Rebuild from database
-  └─ validateIntegrity()        // Hash verification
+  ├─ autoSelectAssets()              // Algorithm-based selection
+  ├─ scoreCandidate()                // Resolution + votes + language + provider
+  ├─ filterDuplicates()              // pHash similarity check
+  └─ downloadAssets()                // Concurrent downloads
 
 CacheService
-  ├─ storeAsset()               // Save with content-addressed naming
-  ├─ retrieveAsset()            // Lookup by hash
-  ├─ deduplicateAsset()         // Check if already exists
-  ├─ orphanAsset()              // Move to orphaned (soft delete)
-  └─ garbageCollect()           // Delete orphaned > 90 days
+  ├─ storeAsset()                    // Save with SHA256 naming
+  ├─ retrieveAsset()                 // Get by hash
+  ├─ getCachePath()                  // /cache/assets/{ab}/{cd}/{hash}.ext
+  └─ deduplicateAsset()              // Check if hash exists
+
+PublishService
+  ├─ publishMovie(movieId)           // Copy cache → library
+  ├─ publishSeries(seriesId)         // Handle seasons/episodes
+  ├─ publishAlbum(albumId)           // Music deployment
+  ├─ generateNFO()                   // Build NFO from database
+  ├─ applyPathMapping()              // Convert local → player paths
+  └─ notifyPlayers()                 // Trigger library scans
+
+DisasterRecoveryService
+  ├─ detectMissingAssets()           // Check for deleted files
+  ├─ restoreFromCache()              // Copy cache → library
+  └─ validateIntegrity()             // Verify file hashes
 
 WebhookService
-  ├─ parsePayload()             // Radarr/Sonarr webhook data
-  ├─ determineEventType()       // Download, Upgrade, Delete, Rename
-  ├─ prioritizeJob()            // Critical priority queue
-  └─ triggerWorkflow()          // Dispatch to appropriate service
+  ├─ handleDownload()                // New media or upgrade
+  ├─ handleDelete()                  // Soft delete (recycling)
+  ├─ handleRename()                  // Update file paths
+  └─ prioritizeJob()                 // Add to high-priority queue
+
+JobQueueService
+  ├─ addJob(type, priority, payload) // Enqueue job
+  ├─ processJobs()                   // Worker loop
+  ├─ retryFailedJob()                // Exponential backoff
+  └─ cancelJob()                     // User cancellation
+
+PathMappingService
+  ├─ detectMappings()                // Auto-detect from Kodi sources
+  ├─ validateMapping()               // Test path with real file
+  ├─ convertPath()                   // local → remote
+  └─ suggestMappings()               // Intelligent recommendations
+
+NotificationService
+  ├─ notifyKodiGroup()               // All Kodi instances in group
+  ├─ notifyJellyfin()                // Single Jellyfin instance
+  ├─ notifyPlex()                    // Single Plex instance
+  └─ handlePlaybackState()           // Pause during upgrades
 ```
 
 ---
 
-## Data State Machine
+## Core Workflows
 
-Media items transition through well-defined states during their lifecycle.
+### 1. Webhook: New Media
 
-### State Definitions
+**Trigger**: Radarr/Sonarr sends webhook when download completes
 
+**Payload**: `{ eventType: "Download", tmdbId: 603, path: "/movies/The Matrix.mkv" }`
+
+**Flow**:
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                   MEDIA ITEM LIFECYCLE                       │
-└─────────────────────────────────────────────────────────────┘
-
-DISCOVERED
-  │ - Found on filesystem
-  │ - NFO parsed (if exists)
-  │ - FFprobe completed
-  │ - Local assets copied to cache
+Webhook received → Add to high-priority job queue
   ↓
-IDENTIFIED
-  │ - Has provider IDs (tmdb_id or imdb_id)
-  │ - Ready for enrichment
+Check database: tmdb_id NOT found → New media
   ↓
-ENRICHING
-  │ - Currently fetching from TMDB/TVDB
-  │ - Rate-limited, queued
+Scan directory:
+  - Locate video file
+  - Parse NFO if exists (extract tmdb_id, basic metadata)
+  - FFprobe video file (stream details: resolution, codecs, audio tracks, subtitles)
+  - Discover local assets (poster.jpg, fanart.jpg if already present)
   ↓
-ENRICHED
-  │ - Provider metadata fetched
-  │ - Asset candidates stored (URLs only, not yet downloaded)
-  │ - Ready for selection
+Scrape providers (concurrent API calls):
+  - TMDB: metadata + 15 poster URLs + 20 fanart URLs
+  - TVDB: additional metadata (for TV shows)
+  - Fanart.tv: high-res clearlogo, clearart, disc art
   ↓
-SELECTED
-  │ - Assets selected (auto or manual)
-  │ - Assets downloaded to cache
-  │ - Ready for publishing
+Auto-select best assets:
+  - Score each candidate: resolution (30%) + votes (40%) + language (20%) + provider (10%)
+  - Filter duplicates (pHash similarity < 90%)
+  - Select: top 1 poster, top 3 fanarts, top 1 logo, etc.
   ↓
-PUBLISHED
-  │ - NFO written to library
-  │ - Assets copied to library
-  │ - Players notified
-  │ - Clean state (has_unpublished_changes = 0)
-
-SPECIAL STATES:
-  - needs_identification: No provider IDs, user must provide
-  - error_*: Various error states (provider_failure, network, etc.)
-```
-
-### State Transitions
-
-```sql
--- Initial discovery
-INSERT INTO movies (state, ...) VALUES ('discovered', ...);
-
--- After parsing NFO with IDs
-UPDATE movies SET state = 'identified' WHERE id = ? AND tmdb_id IS NOT NULL;
-
--- Start enrichment
-UPDATE movies SET state = 'enriching', enriched_at = CURRENT_TIMESTAMP WHERE id = ?;
-
--- Complete enrichment
-UPDATE movies SET state = 'enriched' WHERE id = ?;
-
--- After asset selection
-UPDATE movies SET state = 'selected' WHERE id = ?;
-
--- After publishing
-UPDATE movies SET
-  state = 'published',
-  has_unpublished_changes = 0,
-  last_published_at = CURRENT_TIMESTAMP
-WHERE id = ?;
-
--- User edits (any state → dirty)
-UPDATE movies SET has_unpublished_changes = 1 WHERE id = ?;
-```
-
-### Query Patterns
-
-```sql
--- Items needing enrichment
-SELECT * FROM movies
-WHERE state = 'identified'
-  AND enriched_at IS NULL
-ORDER BY enrichment_priority ASC, created_at DESC;
-
--- Items needing publish
-SELECT * FROM movies
-WHERE has_unpublished_changes = 1
-ORDER BY updated_at DESC;
-
--- Items ready for YOLO auto-publish
-SELECT * FROM movies
-WHERE state = 'selected'
-  AND has_unpublished_changes = 0
-  AND automation_enabled = 1;
+Download assets (concurrent, 10 workers):
+  - Download from provider URLs
+  - Calculate SHA256 hash
+  - Check cache: if hash exists, skip download (deduplication)
+  - Save: /cache/assets/{ab}/{cd}/{hash}.jpg (first 4 chars of hash)
+  - Calculate perceptual hash (pHash) for similarity detection
+  ↓
+Copy cache → library:
+  - Apply path mapping (Metarr path → player path)
+  - poster.jpg (top poster)
+  - fanart.jpg (top fanart)
+  - fanart1.jpg, fanart2.jpg (additional fanarts)
+  - clearlogo.png, clearart.png (if available)
+  ↓
+Generate NFO:
+  - All metadata fields (title, plot, genres, actors, directors, etc.)
+  - <thumb> tags pointing to asset URLs (backup references)
+  - <fileinfo><streamdetails> from FFprobe
+  ↓
+Write to library: movie.nfo
+  ↓
+Notify media players:
+  - Get all Kodi instances in group (even if just 1)
+  - For each Kodi: VideoLibrary.Scan(directory)
+  - Jellyfin: Library.Refresh(libraryId)
+  - Plex: Library.Refresh(sectionId)
+  ↓
+DONE ✓ (User sees new movie in player within 30-60 seconds)
 ```
 
 ---
 
-## Three-Tier Asset System
+### 2. Webhook: Upgrade
 
-Replaces the current two-copy (cache + library) system with a three-tier pipeline.
+**Trigger**: Radarr upgrades quality (720p → 1080p)
 
-### Tier 1: Provider URLs (Candidates)
+**Payload**: `{ eventType: "Download", isUpgrade: true, tmdbId: 603, path: "..." }`
 
-**Storage**: Database only (no files downloaded)
-
-```sql
-CREATE TABLE asset_candidates (
-  id INTEGER PRIMARY KEY,
-  entity_type TEXT NOT NULL,
-  entity_id INTEGER NOT NULL,
-  asset_type TEXT NOT NULL,
-
-  provider TEXT NOT NULL,        -- 'tmdb', 'tvdb', 'fanart.tv', 'local'
-  provider_url TEXT,             -- NULL if local file
-
-  -- Metadata from provider
-  width INTEGER,
-  height INTEGER,
-  vote_average REAL,
-  vote_count INTEGER,
-  language TEXT,
-
-  -- Download state
-  is_downloaded BOOLEAN DEFAULT 0,
-  cache_path TEXT,               -- NULL until downloaded
-  content_hash TEXT,             -- SHA256 of file content
-  perceptual_hash TEXT,          -- pHash for duplicate detection
-
-  -- Selection state
-  is_selected BOOLEAN DEFAULT 0,
-  is_rejected BOOLEAN DEFAULT 0,
-  selected_by TEXT,              -- 'auto', 'manual', 'local'
-  selected_at TIMESTAMP,
-
-  -- Scoring
-  auto_score REAL                -- 0-100 (for algorithm ranking)
-);
+**Flow**:
 ```
-
-**Workflow**:
-1. Enrichment fetches metadata from TMDB → stores 15 poster URLs
-2. No files downloaded yet (lazy loading)
-3. User opens movie → sees grid of 15 thumbnails (lazy-loaded from URLs)
-
-### Tier 2: Cache (Immutable Storage)
-
-**Storage**: Filesystem (content-addressed) + Database (inventory)
-
+Webhook received → High priority
+  ↓
+Check database: tmdb_id=603 FOUND → Existing media
+  ↓
+Check if anyone is watching (Kodi only):
+  - Query each Kodi: Player.GetActivePlayers
+  - If playing this movie:
+      ├─ Get playback position (Player.GetProperties)
+      ├─ Store resume point in database
+      ├─ Stop playback (Player.Stop)
+      └─ Notify user: "Upgrading quality, will resume shortly"
+  ↓
+Get previously selected assets from database:
+  - Load movie_assets records (selected poster, fanarts, etc.)
+  ↓
+FFprobe new video file:
+  - Stream details changed (1080p vs 720p)
+  - Audio tracks may differ
+  - Update video_streams, audio_streams tables
+  ↓
+Copy cache → library:
+  - Use existing cached assets (no re-download!)
+  - poster.jpg, fanart.jpg, fanart1.jpg, etc.
+  - Apply path mapping
+  ↓
+Regenerate NFO:
+  - Use existing metadata
+  - Update <fileinfo><streamdetails> with new video specs
+  ↓
+Write to library: movie.nfo
+  ↓
+Notify media players (same as new media)
+  ↓
+Trigger playback resume (if was watching):
+  - Wait 5 seconds for library scan to complete
+  - Kodi: Player.Open({ movieid, resume: { percentage } })
+  ↓
+DONE ✓ (Seamless upgrade, no data loss, optional resume)
 ```
-data/cache/assets/
-  abc123def456789...xyz.jpg  ← Content-addressed filename (SHA256)
-```
-
-```sql
-CREATE TABLE cache_inventory (
-  id INTEGER PRIMARY KEY,
-  content_hash TEXT UNIQUE NOT NULL,
-  file_path TEXT NOT NULL,
-  file_size BIGINT NOT NULL,
-  asset_type TEXT NOT NULL,
-  mime_type TEXT,
-
-  -- Reference counting
-  reference_count INTEGER DEFAULT 0,
-
-  -- Lifecycle
-  first_used_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  last_used_at TIMESTAMP,
-  orphaned_at TIMESTAMP,
-
-  -- Metadata
-  width INTEGER,
-  height INTEGER,
-  perceptual_hash TEXT
-);
-```
-
-**Workflow**:
-1. User selects poster #3 → downloads from provider URL
-2. Calculate SHA256 hash of downloaded file
-3. Check if hash already exists in cache (deduplication)
-4. If new: save as `{hash}.jpg`, insert into `cache_inventory`
-5. If exists: increment `reference_count`
-6. Store `cache_path` in `asset_candidates` table
-
-**Benefits**:
-- **Deduplication**: Same image used 10x = stored 1x
-- **Integrity**: Hash mismatch = corruption detected
-- **Immutable**: Filename never changes (perfect for caching)
-
-### Tier 3: Library (Published Assets)
-
-**Storage**: Media library directory (Kodi naming conventions)
-
-```
-/movies/The Matrix (1999)/
-  The Matrix.mkv
-  The Matrix.nfo
-  poster.jpg          ← Copied from cache on publish
-  fanart.jpg          ← Copied from cache on publish
-  fanart1.jpg         ← Copied from cache on publish
-```
-
-**Workflow**:
-1. User clicks "Publish"
-2. For each selected asset: Copy `cache/{hash}.jpg` → `library/poster.jpg`
-3. Write NFO to library
-4. Trigger player scan
-
-**Ephemeral**: Library assets can be deleted and regenerated from cache
 
 ---
 
-## Two-Phase Scanning Strategy
+### 3. Manual Library Scan / Scheduled Realignment
 
-Current problem: Monolithic scan blocks UI, hammers provider APIs, takes hours.
+**Trigger**: User clicks "Scan Library" OR daily cron job
 
-**Solution**: Separate discovery from enrichment
-
-### Phase 1: Fast Local Scan (Non-Blocking)
-
-**Purpose**: Populate database with local filesystem state
-
-**Steps**:
-1. Discover all media directories
-2. Parse NFO files (extract IDs, metadata)
-3. FFprobe video files (stream details)
-4. Discover local assets (copy to cache)
-5. Insert to database (state = 'discovered' or 'identified')
-
-**Characteristics**:
-- **No provider API calls**
-- **No network I/O** (except local filesystem)
-- **Fast**: 32k items in 3-5 hours (~0.5 seconds per item)
-- **Progress**: Real-time SSE updates to UI
-- **Result**: User sees library immediately
-
-**Implementation**: See [WORKFLOWS.md](WORKFLOWS.md#two-phase-scanning)
-
-### Phase 2: Lazy Enrichment (Background)
-
-**Purpose**: Fetch provider metadata and asset candidates
-
-**Steps**:
-1. Query items where `state = 'identified'` AND `enriched_at IS NULL`
-2. Priority queue: User-triggered > Webhooks > Auto-enrichment
-3. For each item:
-   - Fetch TMDB/TVDB metadata (respect rate limits)
-   - Store asset candidate URLs (don't download yet)
-   - Run auto-selection algorithm (if YOLO mode)
-   - Download selected assets to cache
-   - Mark `state = 'enriched'` or `'selected'`
-4. If YOLO mode: Auto-publish immediately
-
-**Characteristics**:
-- **Rate-limited**: 50/sec for TMDB, 1/sec for TVDB
-- **Pauseable**: Can be interrupted by high-priority jobs
-- **Resumable**: Crash-safe (state persisted in database)
-- **Slow**: 32k items could take days (respecting rate limits)
-- **Non-blocking**: User can browse/edit while enrichment runs
-
-**Implementation**: See [WORKFLOWS.md](WORKFLOWS.md#lazy-enrichment)
+**Flow**:
+```
+Scan initiated → Add to normal-priority job queue
+  ↓
+Iterate all directories in library:
+  ↓
+  For each directory:
+    ├─ Check if movie exists in database (by file path)
+    │
+    ├─ Movie exists:
+    │   ├─ Compare NFO hash (detect external edits)
+    │   ├─ Check if assets exist in library directory
+    │   ├─ If missing:
+    │   │   ├─ Copy from cache → library (restore)
+    │   │   └─ Regenerate NFO if needed
+    │   └─ Skip if everything matches
+    │
+    └─ Movie not found:
+        ├─ New discovery → Process as new media
+        ├─ Identify (NFO → *arr API → filename parsing)
+        └─ Enrich if identified
+  ↓
+Progress updates (WebSocket):
+  - "Scanning 1234/5000 (Processing: The Matrix)"
+  - "Restored 15 missing assets"
+  - "Found 5 new movies"
+  ↓
+After all directories processed:
+  - Notify media players (single notification per library)
+  ↓
+DONE ✓
+```
 
 ---
 
-## Automation Levels
+### 4. Manual Asset Replacement
 
-User chooses automation level per library during initial setup.
+**Trigger**: User opens movie detail page and clicks "Replace Poster"
 
-### Level 1: Manual (MediaElch-Style)
-
-**Behavior**:
-- Initial scan: Discovery only (no enrichment)
-- User manually triggers enrichment per item
-- User manually selects assets
-- User manually publishes
-- Webhooks disabled or manual mode
-
-**Use Case**: User wants full control, no surprises
-
-### Level 2: YOLO (Full Automation)
-
-**Behavior**:
-- Initial scan: Discovery + automatic enrichment
-- Auto-select assets using algorithm
-- Auto-publish immediately after selection
-- Webhooks trigger full automated pipeline
-- User can manually fix mistakes later (locks protect changes)
-
-**Use Case**: User trusts algorithm, wants hands-off operation
-
-### Level 3: Hybrid (Recommended)
-
-**Behavior**:
-- Initial scan: Discovery + automatic enrichment
-- Auto-select assets using algorithm
-- **Do NOT auto-publish** (user reviews before publish)
-- Show "Pending Review" queue in UI
-- Webhooks auto-publish (user opted in)
-- User can bulk-publish after review
-
-**Use Case**: Best of both worlds (automation + control)
-
-### Configuration
-
-```sql
-CREATE TABLE library_automation_config (
-  library_id INTEGER PRIMARY KEY,
-
-  -- Automation level
-  automation_mode TEXT DEFAULT 'hybrid',  -- 'manual', 'yolo', 'hybrid'
-
-  -- Phase 2 behavior
-  auto_enrich BOOLEAN DEFAULT 1,
-  auto_select_assets BOOLEAN DEFAULT 1,
-  auto_publish BOOLEAN DEFAULT 0,         -- Only true for 'yolo' mode
-
-  -- Webhook behavior
-  webhook_enabled BOOLEAN DEFAULT 1,
-  webhook_auto_publish BOOLEAN DEFAULT 1,  -- Always publish on webhook
-
-  FOREIGN KEY (library_id) REFERENCES libraries(id)
-);
+**Flow**:
+```
+User opens movie detail page
+  ↓
+UI shows current assets with badges:
+  - poster.jpg (badge: "TMDB - Auto Selected")
+  - fanart.jpg (badge: "Fanart.tv - Auto Selected")
+  - fanart1.jpg (badge: "TMDB - Auto Selected")
+  ↓
+User clicks "Replace Poster" button
+  ↓
+Modal opens:
+  - Grid of all available posters from providers
+  - Current poster highlighted
+  - Thumbnails lazy-loaded from provider URLs
+  - "Search More Providers" button
+  - "Let Algorithm Choose" button
+  ↓
+User selects poster #7 (from Fanart.tv)
+  ↓
+Download to cache (if not already cached):
+  - Download from provider URL
+  - Calculate SHA256 hash
+  - Save to cache: /cache/assets/{ab}/{cd}/{hash}.jpg
+  ↓
+Update database:
+  - Mark old poster: is_selected=0
+  - Mark new poster: is_selected=1, selected_by='manual'
+  - Set poster_locked=1 (prevent future automation)
+  ↓
+Copy cache → library:
+  - Replace poster.jpg with new asset
+  - Apply path mapping
+  ↓
+Regenerate NFO:
+  - Update <thumb> tag to new poster URL
+  ↓
+Notify media players:
+  - Kodi: VideoLibrary.Scan(directory)
+  - Or fake scan: VideoLibrary.Scan("/doesNotExist") to refresh UI
+  ↓
+UI updates immediately:
+  - Badge changes to "Fanart.tv - Manual Override 🔒"
+  - New poster displayed
+  ↓
+DONE ✓ (Immediately visible in both Metarr and player)
 ```
 
-**Webhook Override**: Even in manual mode, if webhooks are enabled, they auto-publish (user wants automation for new downloads).
+---
+
+### 5. Delete Webhook → Recycling
+
+**Trigger**: Radarr sends delete webhook
+
+**Payload**: `{ eventType: "MovieDelete", tmdbId: 603 }`
+
+**Flow**:
+```
+Webhook received
+  ↓
+Lookup database: tmdb_id=603 found
+  ↓
+Soft delete (recycling):
+  - UPDATE movies SET deleted_at=NOW(), deleted_reason='arr_delete'
+  - Assets stay in cache
+  - Library files remain (for now)
+  ↓
+Trash Day (scheduled weekly):
+  ├─ Find items deleted > 30 days ago
+  ├─ For each item:
+  │   ├─ Get all associated cache files
+  │   ├─ Delete files from cache
+  │   ├─ DELETE FROM movies (CASCADE deletes movie_assets, etc.)
+  │   └─ Clean up orphaned actors/genres
+  └─ Clean up orphaned cache assets
+  ↓
+DONE ✓ (30-day recovery window)
+```
+
+---
+
+### 6. Unidentified Media Workflow
+
+**Trigger**: Scan finds movie with no NFO and can't auto-identify
+
+**Flow**:
+```
+Scan finds: /movies/SomeObscureMovie/movie.mkv
+  ↓
+Identification attempts:
+  1. Parse NFO → No NFO found
+  2. Query *arr API by path → Not found
+  3. Parse filename: "SomeObscureMovie" → Search TMDB
+     ├─ Single match → Auto-accept, continue enrichment
+     ├─ Multiple matches → Mark needs_identification
+     └─ No matches → Mark needs_identification
+  ↓
+If needs_identification:
+  - INSERT movies (needs_identification=1, file_path, parsed_title)
+  - Skip enrichment
+  ↓
+UI: "Unidentified Media" page shows entry
+  ↓
+User clicks "Identify"
+  ↓
+Modal: Search TMDB by title
+  - Pre-filled with parsed title
+  - User can edit search query
+  ↓
+Results shown (with posters, year, plot)
+  ↓
+User selects correct movie
+  ↓
+Update database:
+  - SET tmdb_id, identified_by='user_manual'
+  - SET needs_identification=0
+  ↓
+Queue enrichment job (high priority)
+  ↓
+Process as normal (scrape → select → download → publish)
+  ↓
+DONE ✓
+```
 
 ---
 
@@ -542,257 +477,643 @@ CREATE TABLE library_automation_config (
 
 | Component | Technology | Rationale |
 |-----------|-----------|-----------|
-| Runtime | Node.js 20+ | Async I/O, large ecosystem |
-| Language | TypeScript | Type safety, better DX |
-| Framework | Express.js | Mature, simple, extensible |
-| Database (Dev) | SQLite3 | Zero-config, single file |
-| Database (Prod) | PostgreSQL | Scalable, transactional, JSON support |
-| Job Queue | Database-backed | No Redis needed, use DB for jobs table |
-| Real-time | Server-Sent Events (SSE) | Simpler than WebSockets, unidirectional |
-| ORM | None (raw SQL) | Full control, no abstraction overhead |
-
-**Rationale for no Redis**:
-- Database already handles transactions
-- Job queue can be database table with polling
-- SSE doesn't require pub/sub (broadcast to all clients)
-- Caching: TanStack Query handles frontend, DB queries fast enough
-- Simplicity: One fewer dependency to manage
-
-**Job Queue Strategy**:
-```sql
-CREATE TABLE job_queue (
-  id INTEGER PRIMARY KEY,
-  job_type TEXT NOT NULL,
-  priority INTEGER NOT NULL,
-  payload TEXT NOT NULL,
-  status TEXT DEFAULT 'pending',
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- Worker polls every 100ms
-SELECT * FROM job_queue
-WHERE status = 'pending'
-ORDER BY priority ASC, created_at ASC
-LIMIT 1;
-```
+| Runtime | Node.js 20+ | Async I/O, concurrent downloads, large ecosystem |
+| Language | TypeScript | Type safety, better DX, refactoring confidence |
+| Framework | Express.js | Mature, simple, extensible, middleware support |
+| Database (Dev) | SQLite3 | Zero-config, single file, perfect for development |
+| Database (Prod) | PostgreSQL | Scalable, JSON support, full-text search, transactions |
+| Job Queue | Database-backed | Simple, no Redis dependency, polling-based |
+| Real-time Updates | WebSocket | Bidirectional communication, connection state awareness, ping/pong heartbeat |
+| HTTP Client | axios | Proven, interceptors, automatic retries |
+| File Hashing | crypto (built-in) | SHA256 for content addressing |
+| Image Processing | sharp | Fast, perceptual hashing, thumbnails |
 
 ### Frontend
 
 | Component | Technology | Rationale |
 |-----------|-----------|-----------|
-| Framework | React 18 | Component model, large ecosystem |
-| Build Tool | Vite | Fast dev server, modern |
+| Framework | React 18 | Component model, hooks, large ecosystem |
+| Build Tool | Vite | Fast dev server, HMR, modern |
 | Language | TypeScript | Type safety, autocomplete |
-| Styling | TailwindCSS | Utility-first, no custom CSS |
-| State | TanStack Query | Server state caching, SSE integration |
-| Routing | React Router 6 | Standard, mature |
-| Virtual Scrolling | react-window | Handle 32k item lists |
+| Styling | TailwindCSS + shadcn/ui | Utility-first, consistent with *arr stack aesthetic |
+| State Management | TanStack Query | Server state caching, automatic refetching |
+| Routing | React Router 6 | Standard, mature, nested routes |
+| Virtual Scrolling | react-window | Handle 10k+ item lists efficiently |
 | Forms | React Hook Form | Performant, simple validation |
 
 ### External Integrations
 
-| Service | Purpose | API Rate Limit |
-|---------|---------|----------------|
-| TMDB | Movie/TV metadata, images | 50 requests/second |
-| TVDB | TV show metadata | 1 request/second |
-| Fanart.tv | High-quality artwork | 2 requests/second (with key) |
-| Kodi | Media player updates | Unlimited (local network) |
-| Jellyfin | Media player updates | Unlimited (local network) |
+| Service | Purpose | API Rate Limit | Notes |
+|---------|---------|----------------|-------|
+| TMDB | Movie/TV metadata, images | 50 requests/second | Primary provider for movies |
+| TVDB | TV show metadata | 1 request/second | Primary for TV shows |
+| Fanart.tv | High-quality artwork | 2 req/sec (with key) | Best for clearlogos, clearart |
+| MusicBrainz | Music metadata | 1 req/sec | Music library support |
+| TheAudioDB | Music artwork | 1 req/sec | Album covers, artist images |
+| Kodi | Media player | Unlimited (local) | JSON-RPC over HTTP/WebSocket |
+| Jellyfin | Media player | Unlimited (local) | REST API |
+| Plex | Media player | Unlimited (local) | XML API |
+| Radarr | Movie manager | Unlimited (local) | REST API (identification helper) |
+| Sonarr | TV manager | Unlimited (local) | REST API (identification helper) |
+| Lidarr | Music manager | Unlimited (local) | REST API (identification helper) |
 
 ---
 
-## Scale & Performance
+## Directory Structure
 
-### Target Scale
+### Application Structure
 
-| Metric | Development | Production |
-|--------|-------------|------------|
-| Movies | 100-500 | 2,000 |
-| TV Episodes | 1,000-5,000 | 30,000 |
-| Total Items | 1,100-5,500 | 32,000 |
-| Assets per Item | 5-10 | 5-10 |
-| Total Assets | 5,500-55,000 | 160,000-320,000 |
-| Database Size | 50-200 MB | 500 MB - 2 GB |
-| Cache Size | 2-10 GB | 50-200 GB |
+```
+metarr/
+├── src/
+│   ├── config/              # Configuration management
+│   │   ├── ConfigManager.ts
+│   │   ├── defaults.ts
+│   │   └── providerDefaults.ts
+│   ├── controllers/         # Request handlers
+│   │   ├── movieController.ts
+│   │   ├── seriesController.ts
+│   │   ├── webhookController.ts
+│   │   └── assetController.ts
+│   ├── database/
+│   │   ├── migrations/      # Schema migrations
+│   │   │   └── 20250113_001_initial_schema.ts
+│   │   └── connection.ts
+│   ├── middleware/          # Express middleware
+│   │   ├── auth.ts
+│   │   └── errorHandler.ts
+│   ├── routes/              # API routes
+│   │   ├── api.ts
+│   │   └── webhooks.ts
+│   ├── services/            # Business logic
+│   │   ├── scanService.ts
+│   │   ├── enrichmentService.ts
+│   │   ├── assetSelectionService.ts
+│   │   ├── cacheService.ts
+│   │   ├── publishService.ts
+│   │   ├── webhookService.ts
+│   │   ├── jobQueueService.ts
+│   │   ├── pathMappingService.ts
+│   │   └── notificationService.ts
+│   ├── workers/             # Media-type specific workers
+│   │   ├── MovieWorker.ts
+│   │   ├── TVShowWorker.ts
+│   │   └── MusicWorker.ts
+│   ├── providers/           # External API clients
+│   │   ├── TMDBClient.ts
+│   │   ├── TVDBClient.ts
+│   │   ├── FanartTVClient.ts
+│   │   └── MusicBrainzClient.ts
+│   ├── players/             # Media player clients
+│   │   ├── KodiClient.ts
+│   │   ├── JellyfinClient.ts
+│   │   └── PlexClient.ts
+│   ├── types/               # TypeScript definitions
+│   │   ├── models.ts
+│   │   ├── provider.ts
+│   │   └── job.ts
+│   └── utils/               # Utility functions
+│       ├── fileHash.ts
+│       ├── perceptualHash.ts
+│       └── pathMapping.ts
+├── public/
+│   └── frontend/            # React application
+│       ├── src/
+│       │   ├── components/  # React components
+│       │   │   ├── layout/
+│       │   │   ├── movie/
+│       │   │   ├── library/
+│       │   │   └── ui/      # shadcn components
+│       │   ├── pages/
+│       │   ├── hooks/
+│       │   └── utils/
+│       └── index.html
+├── data/                    # Runtime data (NOT in git)
+│   ├── cache/
+│   │   └── assets/          # Content-addressed storage
+│   │       ├── 00/
+│   │       │   ├── 01/
+│   │       │   │   └── 0001abc...def.jpg
+│   │       │   └── 02/
+│   │       ├── ab/
+│   │       │   └── cd/
+│   │       │       └── abcdef123...xyz.jpg
+│   │       └── ff/
+│   │           └── fe/
+│   └── metarr.sqlite        # Development database
+├── docs/                    # Documentation
+│   ├── ARCHITECTURE.md      # This file
+│   ├── DATABASE_SCHEMA.md
+│   ├── WORKFLOWS.md
+│   └── IMPLEMENTATION_PLAN.md
+└── tests/
+    ├── unit/
+    └── integration/
+```
 
-### Performance Targets
+### Cache Directory Structure (Content-Addressed)
 
-| Operation | Target | Notes |
-|-----------|--------|-------|
-| Load movie list (50 items) | <500ms | Paginated, indexed query |
-| Load movie detail | <200ms | Single item with joins |
-| Full library scan (Phase 1) | 0.5s per item | 32k items = ~4-5 hours |
-| Enrichment (Phase 2) | 1-2s per item | 32k items = ~18-36 hours (rate-limited) |
-| Publish single item | <2s | Transactional, atomic |
-| Publish bulk (50 items) | <30s | Sequential, non-blocking |
-| Webhook processing | <5s | High priority, immediate |
-| UI responsiveness | Always <100ms | Background jobs don't block |
+```
+data/cache/assets/
+  ab/                        ← First 2 chars of SHA256 hash
+    cd/                      ← Next 2 chars of SHA256 hash
+      abcdef123456789...xyz.jpg  ← Full hash filename
+      abcd9876543210...uvw.png
+  12/
+    34/
+      1234567890abcd...efg.jpg
+  ff/
+    fe/
+      fffedcba098765...432.mp4
 
-### Database Optimization
+Benefits:
+- Even distribution across 65,536 leaf directories (256 × 256)
+- ~100-200 files per directory at scale
+- OS-agnostic, proven approach (Git uses similar structure)
+- No file system limits on single directory file count
+```
 
+---
+
+## Key Concepts
+
+### 1. Content-Addressed Cache
+
+**Purpose**: Ensure integrity, enable deduplication within same media, detect corruption
+
+**How It Works**:
+```typescript
+// Download asset
+const buffer = await downloadFromURL(url);
+
+// Calculate hash
+const contentHash = crypto
+  .createHash('sha256')
+  .update(buffer)
+  .digest('hex');
+// Result: "abcdef1234567890..."
+
+// Generate cache path
+const dir1 = contentHash.substring(0, 2);  // "ab"
+const dir2 = contentHash.substring(2, 4);  // "cd"
+const extension = getExtension(url);        // ".jpg"
+const cachePath = `/data/cache/assets/${dir1}/${dir2}/${contentHash}${extension}`;
+// Result: /data/cache/assets/ab/cd/abcdef1234567890....jpg
+
+// Check if already cached
+if (await fs.exists(cachePath)) {
+  console.log('Already cached, skipping download');
+  return cachePath;
+}
+
+// Create directories and save
+await fs.mkdir(path.dirname(cachePath), { recursive: true });
+await fs.writeFile(cachePath, buffer);
+```
+
+**Deduplication Rules**:
+- Within same media: If user replaces fanart1 with fanart3's image, both cache files remain
+- Cache size grows based on unique selections per media item, not total selections
+- Example: Movie has 1 poster + 3 fanarts = 4 cache files (even if fanarts visually similar)
+
+**Benefits**:
+- Integrity verification: Re-hash file, compare to filename
+- Corruption detection: Hash mismatch = file corrupted
+- Immutable storage: Filename never changes
+- No accidental overwrites: Same hash = same file
+
+### 2. Field Locking (Manual Override Protection)
+
+**Purpose**: Prevent automation from overwriting user's manual edits
+
+**Database Implementation**:
 ```sql
--- Critical indexes (already in schema)
-CREATE INDEX idx_movies_state_unpublished
-  ON movies(state, has_unpublished_changes)
-  WHERE has_unpublished_changes = 1;
+-- Every field/asset has a corresponding lock flag
+CREATE TABLE movies (
+  title TEXT,
+  title_locked BOOLEAN DEFAULT 0,
 
-CREATE INDEX idx_movies_needs_enrichment
-  ON movies(state, enriched_at)
-  WHERE state = 'identified' AND enriched_at IS NULL;
+  plot TEXT,
+  plot_locked BOOLEAN DEFAULT 0,
 
-CREATE INDEX idx_asset_candidates_entity
-  ON asset_candidates(entity_type, entity_id, asset_type);
-
--- Full-text search (Phase 2 feature)
-CREATE VIRTUAL TABLE movies_fts USING fts5(
-  title,
-  original_title,
-  plot,
-  content=movies,
-  content_rowid=id
+  poster_locked BOOLEAN DEFAULT 0,
+  fanart_locked BOOLEAN DEFAULT 0,
+  -- ... etc.
 );
 ```
 
-### Frontend Optimization
-
-**Virtual Scrolling**: Only render visible rows
+**Behavior**:
 ```typescript
-import { FixedSizeList } from 'react-window';
+// User manually changes plot
+await db.execute(`
+  UPDATE movies
+  SET plot = ?, plot_locked = 1
+  WHERE id = ?
+`, [customPlot, movieId]);
 
-<FixedSizeList
-  height={600}
-  itemCount={32000}
-  itemSize={50}
-  width="100%"
->
-  {Row}
-</FixedSizeList>
+// Future automated enrichment
+const tmdbData = await tmdb.getMovieDetails(tmdbId);
+
+// Only update unlocked fields
+await db.execute(`
+  UPDATE movies
+  SET plot = ?
+  WHERE id = ? AND plot_locked = 0
+`, [tmdbData.overview, movieId]);
+// This update won't happen because plot_locked=1
 ```
 
-**Lazy Asset Loading**: Intersection Observer
-```typescript
-const [imageSrc, setImageSrc] = useState(placeholderImage);
+**User Can Unlock**: UI button "Allow Automation" → SET field_locked = 0
 
-useEffect(() => {
-  const observer = new IntersectionObserver(([entry]) => {
-    if (entry.isIntersecting) {
-      setImageSrc(actualImageUrl);
-      observer.disconnect();
-    }
+### 3. Asset Selection Algorithm
+
+**Configurable Scoring Weights**:
+```typescript
+interface ScoringConfig {
+  weight_resolution: number;  // Default: 0.3 (30%)
+  weight_votes: number;       // Default: 0.4 (40%)
+  weight_language: number;    // Default: 0.2 (20%)
+  weight_provider: number;    // Default: 0.1 (10%)
+}
+
+function scoreCandidate(
+  candidate: AssetCandidate,
+  config: ScoringConfig
+): number {
+  let score = 0;
+
+  // Resolution score (0-100)
+  const resScore = Math.min(100, (candidate.width / 2000) * 100);
+  score += resScore * config.weight_resolution;
+
+  // Vote score (0-100)
+  const voteScore = ((candidate.vote_average || 5) / 10) * 100;
+  score += voteScore * config.weight_votes;
+
+  // Language score (0 or 100)
+  const langScore = candidate.language === config.prefer_language ? 100 : 0;
+  score += langScore * config.weight_language;
+
+  // Provider score (0-100)
+  const providerPriority = JSON.parse(config.provider_order);
+  const providerIndex = providerPriority.indexOf(candidate.provider);
+  const provScore = providerIndex >= 0
+    ? 100 - (providerIndex * 20)  // 1st=100, 2nd=80, 3rd=60
+    : 0;
+  score += provScore * config.weight_provider;
+
+  return score; // Total: 0-100
+}
+```
+
+**Duplicate Detection (Perceptual Hashing)**:
+```typescript
+import * as sharp from 'sharp';
+
+// Calculate pHash
+async function calculatePHash(imagePath: string): Promise<string> {
+  const buffer = await sharp(imagePath)
+    .resize(32, 32)      // Normalize size
+    .grayscale()         // Ignore color
+    .raw()
+    .toBuffer();
+
+  // DCT + hashing logic (simplified)
+  const hash = await pHash.compute(buffer);
+  return hash; // "a1b2c3d4e5f6g7h8"
+}
+
+// Compare similarity
+function comparePHashes(hash1: string, hash2: string): number {
+  const distance = hammingDistance(hash1, hash2);
+  const maxDistance = hash1.length * 4;
+  return 1 - (distance / maxDistance); // 0.0 to 1.0
+}
+
+// Filter duplicates
+const unique = [];
+for (const candidate of candidates) {
+  const isDuplicate = unique.some(existing => {
+    const similarity = comparePHashes(
+      candidate.perceptual_hash,
+      existing.perceptual_hash
+    );
+    return similarity >= 0.90; // 90% threshold
   });
 
-  observer.observe(imageRef.current);
-}, []);
+  if (!isDuplicate) {
+    unique.push(candidate);
+  }
+}
 ```
 
-**Incremental Cache Updates**: Don't invalidate entire list
-```typescript
-// Bad: Refetch entire list
-queryClient.invalidateQueries(['movies']);
+### 4. Path Mapping
 
-// Good: Update single item
-queryClient.setQueryData(['movies', movieId], updatedMovie);
-queryClient.invalidateQueries(['movies', 'list'], { exact: false });
+**Problem**: Metarr and media players may see same directory with different paths
+
+**Example**:
+- Metarr: `/movies`
+- Kodi: `/var/nfs/movies`
+- Same directory, different mount points
+
+**Solution**:
+```typescript
+// Auto-detect from Kodi sources
+const kodiSources = await kodi.request('Files.GetSources', { media: 'video' });
+// Returns: [{ label: "Movies", file: "/var/nfs/movies" }, ...]
+
+// Compare with Metarr library
+const library = await db.getLibrary(libraryId);
+// library.path = "/movies"
+
+// Detect common suffix
+const similarity = comparePathSuffixes(library.path, kodiSource.file);
+// High similarity → suggest mapping
+
+// Store mapping
+await db.execute(`
+  INSERT INTO path_mappings (library_id, media_player_id, local_path, remote_path)
+  VALUES (?, ?, ?, ?)
+`, [libraryId, kodiId, '/movies', '/var/nfs/movies']);
+
+// Apply mapping when deploying
+function applyPathMapping(localPath: string, mapping: PathMapping): string {
+  return localPath.replace(mapping.local_path, mapping.remote_path);
+}
+
+// Example:
+// Local:  /movies/The Matrix/poster.jpg
+// Remote: /var/nfs/movies/The Matrix/poster.jpg
+```
+
+**Validation**:
+```typescript
+// Test mapping by asking Kodi about a known movie
+const testMovie = await db.query(`
+  SELECT tmdb_id, file_path
+  FROM movies
+  WHERE library_id = ?
+  LIMIT 1
+`, [libraryId]);
+
+// Ask Kodi: what's your path for this tmdb_id?
+const kodiMovie = await kodi.request('VideoLibrary.GetMovieDetails', {
+  movieid: await findKodiMovieId(kodi, testMovie.tmdb_id),
+  properties: ['file']
+});
+
+// Compare paths (should match after mapping applied)
+const expectedKodiPath = applyPathMapping(testMovie.file_path, mapping);
+if (kodiMovie.file === expectedKodiPath) {
+  console.log('✓ Mapping verified');
+}
+```
+
+### 5. Kodi Groups (Even Standalone Instances)
+
+**Why**: Consistent notification logic, playback state management
+
+**Structure**:
+```sql
+-- Every Kodi belongs to a group (even if group has 1 member)
+CREATE TABLE media_player_groups (
+  id INTEGER PRIMARY KEY,
+  name TEXT,                     -- "Living Room + Bedroom"
+  type TEXT,                     -- 'kodi_shared', 'kodi_standalone'
+  shared_db_host TEXT,           -- MySQL host (if shared)
+  shared_db_name TEXT
+);
+
+CREATE TABLE media_players (
+  id INTEGER PRIMARY KEY,
+  group_id INTEGER NOT NULL,     -- Always required
+  name TEXT,
+  type TEXT,                     -- 'kodi', 'jellyfin', 'plex'
+  host TEXT,
+  port INTEGER,
+  FOREIGN KEY (group_id) REFERENCES media_player_groups(id)
+);
+```
+
+**Notification Strategy**:
+```typescript
+async function notifyPlayers(libraryId: number, directory: string) {
+  const library = await db.getLibrary(libraryId);
+  const groups = await db.getPlayerGroups(libraryId);
+
+  for (const group of groups) {
+    if (group.type.startsWith('kodi')) {
+      // Notify all Kodi instances in group (serial)
+      const kodis = await db.getPlayersInGroup(group.id);
+      for (const kodi of kodis) {
+        const remotePath = applyPathMapping(directory, kodi);
+        await kodi.request('VideoLibrary.Scan', {
+          directory: remotePath
+        });
+      }
+    } else if (group.type === 'jellyfin') {
+      // Single Jellyfin instance
+      const jellyfin = await db.getPlayersInGroup(group.id)[0];
+      await jellyfin.refreshLibrary(library.jellyfin_library_id);
+    }
+  }
+}
+```
+
+**Fake Scan for UI Refresh**:
+```typescript
+// When only metadata/assets changed (no new files)
+await kodi.request('VideoLibrary.Scan', {
+  directory: '/doesNotExist'
+});
+// Scan fails but triggers UI refresh and cache rebuild
+```
+
+### 6. Job Queue (Database-Backed)
+
+**Why No Redis**: Simplicity, one fewer dependency, database already handles transactions
+
+**Priority Levels**:
+```typescript
+enum JobPriority {
+  CRITICAL = 1,   // Webhooks
+  HIGH = 2,       // User-triggered actions
+  NORMAL = 5,     // Scheduled scans
+  LOW = 10        // Background maintenance
+}
+```
+
+**Worker Implementation**:
+```typescript
+class JobWorker {
+  private isRunning = false;
+
+  async start() {
+    this.isRunning = true;
+
+    while (this.isRunning) {
+      // Fetch next job (highest priority first)
+      const job = await db.query(`
+        SELECT * FROM job_queue
+        WHERE status = 'pending'
+          AND (next_retry_at IS NULL OR next_retry_at <= CURRENT_TIMESTAMP)
+        ORDER BY priority ASC, created_at ASC
+        LIMIT 1
+      `);
+
+      if (!job) {
+        await sleep(100); // Poll every 100ms
+        continue;
+      }
+
+      // Mark as processing
+      await db.execute(`
+        UPDATE job_queue
+        SET status = 'processing', started_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `, [job.id]);
+
+      try {
+        await this.executeJob(job);
+
+        // Mark completed
+        await db.execute(`
+          UPDATE job_queue
+          SET status = 'completed', completed_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `, [job.id]);
+      } catch (error) {
+        await this.handleFailure(job, error);
+      }
+    }
+  }
+
+  async handleFailure(job: Job, error: Error) {
+    job.retry_count++;
+
+    if (job.retry_count >= job.max_retries) {
+      // Give up
+      await db.execute(`
+        UPDATE job_queue
+        SET status = 'failed',
+            error_message = ?,
+            completed_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `, [error.message, job.id]);
+    } else {
+      // Retry with exponential backoff
+      const backoffMs = Math.pow(2, job.retry_count) * 1000; // 2s, 4s, 8s, ...
+      await db.execute(`
+        UPDATE job_queue
+        SET status = 'pending',
+            retry_count = ?,
+            next_retry_at = datetime('now', '+${backoffMs} milliseconds')
+        WHERE id = ?
+      `, [job.retry_count, job.id]);
+    }
+  }
+}
+```
+
+### 7. Concurrent Asset Downloads
+
+**Rate Limiting Strategy**:
+```typescript
+class RateLimiter {
+  private requests: Map<string, number[]> = new Map();
+
+  async execute<T>(
+    provider: string,
+    limit: number,
+    windowMs: number,
+    fn: () => Promise<T>
+  ): Promise<T> {
+    // Wait until we can make request
+    while (!this.canMakeRequest(provider, limit, windowMs)) {
+      await sleep(100);
+    }
+
+    // Record request
+    this.recordRequest(provider);
+
+    // Execute
+    return fn();
+  }
+
+  private canMakeRequest(
+    provider: string,
+    limit: number,
+    windowMs: number
+  ): boolean {
+    const now = Date.now();
+    const requests = this.requests.get(provider) || [];
+
+    // Remove old requests outside window
+    const recent = requests.filter(ts => now - ts < windowMs);
+    this.requests.set(provider, recent);
+
+    return recent.length < limit;
+  }
+}
+
+// Usage
+const tmdbLimiter = new RateLimiter();
+const tmdbDownloader = new AssetDownloader();
+
+// API calls: rate-limited
+await tmdbLimiter.execute('tmdb', 50, 1000, async () => {
+  return tmdb.getMovieImages(tmdbId);
+});
+
+// Asset downloads: unlimited concurrency
+const urls = [...posterURLs, ...fanartURLs];
+await Promise.all(urls.map(url => tmdbDownloader.download(url)));
 ```
 
 ---
 
 ## Related Documentation
 
-### Core Architecture
-- **[WORKFLOWS.md](WORKFLOWS.md)** - Detailed operational workflows
-- **[DATABASE_SCHEMA.md](DATABASE_SCHEMA.md)** - Complete schema reference
-- **[API_ARCHITECTURE.md](API_ARCHITECTURE.md)** - REST API endpoints
+### Core Documentation
+- **[DATABASE_SCHEMA.md](DATABASE_SCHEMA.md)** - Complete schema with indexes
+- **[WORKFLOWS.md](WORKFLOWS.md)** - Detailed workflow diagrams
+- **[IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md)** - Phased development plan
 
-### Feature Areas
-- **[ASSET_MANAGEMENT.md](ASSET_MANAGEMENT.md)** - Three-tier asset system
-- **[AUTOMATION_AND_WEBHOOKS.md](AUTOMATION_AND_WEBHOOKS.md)** - Automation levels, webhook handling
-- **[PUBLISHING_WORKFLOW.md](PUBLISHING_WORKFLOW.md)** - Dirty state, publish process
-- **[FIELD_LOCKING.md](FIELD_LOCKING.md)** - Field and asset-level locking system
+### Feature Documentation
+- **[ASSET_SELECTION.md](ASSET_SELECTION.md)** - Scoring algorithm details
+- **[PATH_MAPPING.md](PATH_MAPPING.md)** - Path conversion strategies
+- **[NFO_FORMAT.md](NFO_FORMAT.md)** - Kodi NFO specification
 
-### External Integrations
-- **[METADATA_PROVIDERS.md](METADATA_PROVIDERS.md)** - TMDB, TVDB integration
+### Integration Documentation
+- **[TMDB_API.md](TMDB_API.md)** - TMDB integration guide
 - **[KODI_API.md](KODI_API.md)** - Kodi JSON-RPC reference
-- **[WEBHOOKS.md](WEBHOOKS.md)** - Radarr/Sonarr webhook handling
-- **[NFO_PARSING.md](NFO_PARSING.md)** - Kodi NFO format
-
-### Frontend
-- **[UI_DESIGN.md](UI_DESIGN.md)** - Layout, color scheme
-- **[FRONTEND_COMPONENTS.md](FRONTEND_COMPONENTS.md)** - React components
-
-### System
-- **[PATH_MAPPING.md](PATH_MAPPING.md)** - Path translation
-- **[NOTIFICATIONS_AND_LOGGING.md](NOTIFICATIONS_AND_LOGGING.md)** - Logging, notifications
-- **[STREAM_DETAILS.md](STREAM_DETAILS.md)** - FFprobe integration
+- **[WEBHOOK_SPEC.md](WEBHOOK_SPEC.md)** - *arr webhook payloads
 
 ---
 
-## Implementation Roadmap
+## Migration Notes
 
-See [IMPLEMENTATION_ROADMAP.md](IMPLEMENTATION_ROADMAP.md) for detailed phased implementation plan.
+**Current Status**: Deep development, no production users
 
-**High-Level Phases**:
-1. Database schema migration (new tables, columns)
-2. Core services refactor (two-phase scan, asset selection)
-3. API redesign (pagination, filtering, bulk operations)
-4. Frontend rebuild (virtual scrolling, SSE updates)
-5. Background jobs (enrichment queue, garbage collection)
-6. Testing & polish (load testing, disaster recovery)
+**Approach**: Clean slate - delete old database, implement new schema
 
----
-
-## Migration from Current State
-
-**Current Status**: Application in deep development, no production users
-
-**Migration Strategy**: Database deletion acceptable during development
-
-**Approach**:
-1. Implement new schema alongside old (no migration scripts yet)
-2. Test with small library subset (100-500 items)
-3. Delete and recreate database as needed
-4. Once stable: Design production migration script
-
-**No Data Loss Risk**: Development phase, no production users
-
----
-
-## Design Decisions Log
-
-### Decision 1: Database-Only Job Queue (No Redis)
-**Rationale**: Simplicity, one fewer dependency, database already handles transactions
-**Tradeoff**: Slightly slower than Redis (polling vs pub/sub), but acceptable for scale
-
-### Decision 2: Content-Addressed Cache
-**Rationale**: Deduplication, immutability, integrity verification
-**Tradeoff**: Filenames not human-readable (need metadata in DB)
-
-### Decision 3: Two-Phase Scanning
-**Rationale**: Fast initial feedback, non-blocking enrichment, rate-limit friendly
-**Tradeoff**: More complex workflow, but better UX
-
-### Decision 4: No Intermediate Staging Tables
-**Rationale**: Simpler schema, changes save immediately to main tables
-**Tradeoff**: Harder to preview changes before publish (but `has_unpublished_changes` flag solves this)
-
-### Decision 5: Webhooks Always Auto-Publish
-**Rationale**: User enabled webhooks because they want automation
-**Tradeoff**: Less control, but manual edits can fix mistakes (locks prevent future auto-changes)
+**No Data Loss Risk**: Development phase only
 
 ---
 
 ## Future Enhancements (Out of Scope for v1)
 
-- [ ] Plex media player support
-- [ ] Subtitle extraction from video files
-- [ ] Subtitle sourcing from online providers (OpenSubtitles)
-- [ ] Music library support (Lidarr integration)
-- [ ] Multi-user support (roles, permissions)
+- [ ] Multi-user support with permissions
 - [ ] Mobile companion app
-- [ ] Backup/restore UI
-- [ ] Advanced matching algorithms (fuzzy search)
+- [ ] Advanced search (fuzzy matching, ML-based)
 - [ ] Custom metadata provider plugins
+- [ ] Backup/restore UI
+- [ ] Theme customization beyond *arr purple
+- [ ] Subtitle extraction from video files
+- [ ] Subtitle sourcing (OpenSubtitles API)
+- [ ] Export metadata to other formats (CSV, JSON)
 
 ---
 
-**Next Steps**: Review this architecture document, then proceed to update individual feature docs.
+**Last Updated**: 2025-01-13
+**Next Steps**: Review DATABASE_SCHEMA.md for complete table definitions

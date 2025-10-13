@@ -80,7 +80,6 @@ export class ProviderConfigService {
          SET enabled = ?,
              api_key = ?,
              personal_api_key = ?,
-             enabled_asset_types = ?,
              language = ?,
              region = ?,
              options = ?,
@@ -90,7 +89,6 @@ export class ProviderConfigService {
           data.enabled ? 1 : 0,
           data.apiKey || null,
           data.personalApiKey || null,
-          JSON.stringify(data.enabledAssetTypes),
           data.language || null,
           data.region || null,
           data.options ? JSON.stringify(data.options) : null,
@@ -107,18 +105,16 @@ export class ProviderConfigService {
           enabled,
           api_key,
           personal_api_key,
-          enabled_asset_types,
           language,
           region,
           options,
           last_test_status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           providerName,
           data.enabled ? 1 : 0,
           data.apiKey || null,
           data.personalApiKey || null,
-          JSON.stringify(data.enabledAssetTypes),
           data.language || null,
           data.region || null,
           data.options ? JSON.stringify(data.options) : null,
@@ -183,7 +179,6 @@ export class ProviderConfigService {
     enabled: number;
     api_key?: string;
     personal_api_key?: string;
-    enabled_asset_types: string;
     language?: string;
     region?: string;
     options?: string;
@@ -197,7 +192,6 @@ export class ProviderConfigService {
       id: row.id,
       providerName: row.provider_name,
       enabled: Boolean(row.enabled),
-      enabledAssetTypes: JSON.parse(row.enabled_asset_types),
       createdAt: new Date(row.created_at),
       updatedAt: new Date(row.updated_at)
     };

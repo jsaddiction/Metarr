@@ -34,26 +34,24 @@ export class ProviderConfigController {
         const config = configs.find(c => c.providerName === metadata.name);
 
         if (config) {
-          // Mask API key in response
+          // Don't include API key in response - let frontend field be empty
+          // Backend will use defaults when needed
           const maskedConfig: ProviderConfig = {
             ...config
           };
-          if (config.apiKey) {
-            maskedConfig.apiKey = '***masked***';
-          }
+          delete maskedConfig.apiKey; // Don't send API key to frontend
 
           return {
             config: maskedConfig,
             metadata
           };
-        } else {
+        } else{
           // Provider exists in metadata but not configured yet
           return {
             config: {
               id: 0,
               providerName: metadata.name,
               enabled: false,
-              enabledAssetTypes: [],
               lastTestStatus: 'never_tested',
               createdAt: new Date(),
               updatedAt: new Date()
@@ -90,9 +88,7 @@ export class ProviderConfigController {
         const maskedConfig: ProviderConfig = {
           ...config
         };
-        if (config.apiKey) {
-          maskedConfig.apiKey = '***masked***';
-        }
+        delete maskedConfig.apiKey; // Don't send API key to frontend
 
         res.json({
           config: maskedConfig,
@@ -105,7 +101,6 @@ export class ProviderConfigController {
             id: 0,
             providerName: name,
             enabled: false,
-            enabledAssetTypes: [],
             lastTestStatus: 'never_tested',
             createdAt: new Date(),
             updatedAt: new Date()
@@ -139,25 +134,6 @@ export class ProviderConfigController {
       if (typeof data.enabled !== 'boolean') {
         res.status(400).json({ error: 'enabled must be a boolean' });
         return;
-      }
-
-      if (!Array.isArray(data.enabledAssetTypes)) {
-        res.status(400).json({ error: 'enabledAssetTypes must be an array' });
-        return;
-      }
-
-      // Validate asset types
-      const validAssetTypes = metadata.supportedAssetTypes
-        .filter(at => at.available)
-        .map(at => at.type);
-
-      for (const assetType of data.enabledAssetTypes) {
-        if (!validAssetTypes.includes(assetType)) {
-          res.status(400).json({
-            error: `Invalid asset type '${assetType}' for provider '${name}'`
-          });
-          return;
-        }
       }
 
       // Validate API key if required
@@ -308,13 +284,23 @@ export class ProviderConfigController {
    * Test TMDB connection
    */
   private async testTMDBConnection(apiKey?: string): Promise<void> {
-    if (!apiKey) {
-      throw new Error('TMDB API key is required');
+    // Import default key helper
+    const { getDefaultApiKey } = await import('../config/providerDefaults.js');
+
+    // Use provided key or fall back to default
+    const keyToUse = apiKey || getDefaultApiKey('tmdb');
+
+    console.log('[TMDB Test] User provided key:', apiKey ? 'YES (length: ' + apiKey.length + ')' : 'NO');
+    console.log('[TMDB Test] Default key available:', getDefaultApiKey('tmdb') ? 'YES' : 'NO');
+    console.log('[TMDB Test] Using key (first 20 chars):', keyToUse ? keyToUse.substring(0, 20) + '...' : 'NONE');
+
+    if (!keyToUse) {
+      throw new Error('TMDB API key is required and no default key is available');
     }
 
     // Create temporary client
     const testClient = new TMDBClient({
-      apiKey,
+      apiKey: keyToUse,
       baseUrl: 'https://api.themoviedb.org/3',
       language: 'en-US',
       includeAdult: false
@@ -322,8 +308,11 @@ export class ProviderConfigController {
 
     // Test API call - get configuration endpoint (lightweight)
     try {
+      console.log('[TMDB Test] Attempting API call to TMDB...');
       await testClient.getConfiguration();
+      console.log('[TMDB Test] API call successful!');
     } catch (error: any) {
+      console.error('[TMDB Test] API call failed:', error.response?.status, error.message);
       if (error.response?.status === 401) {
         throw new Error('Invalid TMDB API key. Please check your credentials.');
       }
@@ -335,13 +324,19 @@ export class ProviderConfigController {
    * Test TVDB connection
    */
   private async testTVDBConnection(apiKey?: string): Promise<void> {
-    if (!apiKey) {
-      throw new Error('TVDB API key is required');
+    // Import default key helper
+    const { getDefaultApiKey } = await import('../config/providerDefaults.js');
+
+    // Use provided key or fall back to default
+    const keyToUse = apiKey || getDefaultApiKey('tvdb');
+
+    if (!keyToUse) {
+      throw new Error('TVDB API key is required and no default key is available');
     }
 
     // Create temporary client
     const testClient = new TVDBClient({
-      apiKey,
+      apiKey: keyToUse,
       baseUrl: 'https://api4.thetvdb.com/v4'
     });
 
@@ -363,8 +358,14 @@ export class ProviderConfigController {
     // FanArt.tv works without API key (using project key)
     // Personal key just provides higher rate limits
 
+    // Import default key helper
+    const { getDefaultApiKey } = await import('../config/providerDefaults.js');
+
+    // Use provided key or fall back to default
+    const keyToUse = apiKey || getDefaultApiKey('fanart_tv');
+
     const testClient = new FanArtClient({
-      apiKey: apiKey || 'project-key', // Uses project key if no personal key
+      apiKey: keyToUse || 'project-key', // Fallback to placeholder if nothing available
       baseUrl: 'https://webservice.fanart.tv/v3'
     });
 

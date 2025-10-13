@@ -1,991 +1,928 @@
 # Implementation Roadmap
 
-**Status**: Design Phase - Ready for Implementation
-**Last Updated**: 2025-10-08
+## Overview
 
-This document provides a phased implementation plan for Metarr's revised architecture. See [ARCHITECTURE.md](ARCHITECTURE.md) for the complete architectural vision.
+This document outlines the phased approach to building Metarr from the ground up. Each phase is designed to deliver working functionality while building toward the complete vision.
 
----
+**Development Philosophy**:
+- Ship early and often
+- Each phase is functional and testable
+- Build on solid foundations
+- Test with real-world data (100-500 movies)
 
-## Development Context
+## Phase 0: Foundation (Week 1)
 
-**Current Status**: Deep development, no production users
-**Migration Strategy**: Database deletion acceptable during development
-**Testing Environment**: Small library subset (100-500 items)
-**Production Scale**: 2k movies + 30k TV episodes (32k total items)
+**Goal**: Set up development environment and basic infrastructure
 
----
+### Tasks
 
-## Implementation Phases
+1. **Project Setup**
+   - Initialize TypeScript configuration
+   - Set up ESLint + Prettier
+   - Configure Vite for frontend
+   - Set up dev scripts (`npm run dev:all`)
 
-### Phase 1: Database Schema Migration (Week 1-2)
+2. **Database Infrastructure**
+   - Implement migration system
+   - Create initial schema (core tables only)
+   - Set up SQLite for development
+   - Add PostgreSQL support (for future)
 
-**Goal**: Implement new database schema with content-addressed cache and three-tier asset system.
+3. **Basic Express Server**
+   - Create Express app with TypeScript
+   - Set up middleware (CORS, body-parser, error handler)
+   - Implement health check endpoint
+   - Add request logging
 
-#### New Tables
+4. **React Frontend Skeleton**
+   - Create basic layout (Header, Sidebar, Content)
+   - Set up React Router
+   - Implement dark theme (purple accent)
+   - Add loading states
 
-```sql
--- Asset candidates (Tier 1)
-CREATE TABLE asset_candidates (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  entity_type TEXT NOT NULL,
-  entity_id INTEGER NOT NULL,
-  asset_type TEXT NOT NULL,
-  provider TEXT NOT NULL,
-  provider_url TEXT,
-  provider_metadata TEXT,
-  width INTEGER,
-  height INTEGER,
-  is_downloaded BOOLEAN DEFAULT 0,
-  cache_path TEXT,
-  content_hash TEXT,
-  perceptual_hash TEXT,
-  is_selected BOOLEAN DEFAULT 0,
-  is_rejected BOOLEAN DEFAULT 0,
-  selected_by TEXT,
-  selected_at TIMESTAMP,
-  auto_score REAL,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+### Deliverables
 
--- Cache inventory (Tier 2)
-CREATE TABLE cache_inventory (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  content_hash TEXT UNIQUE NOT NULL,
-  file_path TEXT NOT NULL,
-  file_size BIGINT NOT NULL,
-  asset_type TEXT NOT NULL,
-  mime_type TEXT,
-  reference_count INTEGER DEFAULT 0,
-  first_used_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  last_used_at TIMESTAMP,
-  orphaned_at TIMESTAMP,
-  width INTEGER,
-  height INTEGER,
-  perceptual_hash TEXT
-);
+- [x] Project builds without errors
+- [x] Database migrations run successfully
+- [x] Server starts on port 3000
+- [x] Frontend loads at http://localhost:3001
+- [x] Can navigate between empty pages
 
--- Publish log
-CREATE TABLE publish_log (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  entity_type TEXT NOT NULL,
-  entity_id INTEGER NOT NULL,
-  nfo_hash TEXT NOT NULL,
-  assets_published TEXT,
-  published_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  published_by TEXT DEFAULT 'system',
-  success BOOLEAN DEFAULT 1,
-  error_message TEXT,
-  players_notified TEXT
-);
+### Estimated Time: 3-5 days
 
--- Asset selection config
-CREATE TABLE asset_selection_config (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  library_id INTEGER NOT NULL,
-  asset_type TEXT NOT NULL,
-  min_count INTEGER DEFAULT 1,
-  max_count INTEGER DEFAULT 3,
-  min_width INTEGER,
-  min_height INTEGER,
-  prefer_language TEXT DEFAULT 'en',
-  weight_resolution REAL DEFAULT 0.3,
-  weight_votes REAL DEFAULT 0.4,
-  weight_language REAL DEFAULT 0.2,
-  weight_provider REAL DEFAULT 0.1,
-  phash_similarity_threshold REAL DEFAULT 0.90,
-  provider_priority TEXT DEFAULT '["tmdb", "tvdb", "fanart.tv"]',
-  FOREIGN KEY (library_id) REFERENCES libraries(id) ON DELETE CASCADE,
-  UNIQUE(library_id, asset_type)
-);
+## Phase 1: Core Movie Management (Weeks 2-3)
 
--- Library automation config
-CREATE TABLE library_automation_config (
-  library_id INTEGER PRIMARY KEY,
-  automation_mode TEXT DEFAULT 'hybrid',
-  auto_enrich BOOLEAN DEFAULT 1,
-  auto_select_assets BOOLEAN DEFAULT 1,
-  auto_publish BOOLEAN DEFAULT 0,
-  webhook_enabled BOOLEAN DEFAULT 1,
-  webhook_auto_publish BOOLEAN DEFAULT 1,
-  FOREIGN KEY (library_id) REFERENCES libraries(id) ON DELETE CASCADE
-);
+**Goal**: Basic movie library with manual scanning
 
--- Rejected assets (global blacklist)
-CREATE TABLE rejected_assets (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  provider TEXT NOT NULL,
-  provider_url TEXT NOT NULL,
-  asset_type TEXT NOT NULL,
-  rejected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  reason TEXT,
-  UNIQUE(provider, provider_url)
-);
-
--- Job queue
-CREATE TABLE job_queue (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  job_type TEXT NOT NULL,
-  priority INTEGER NOT NULL,
-  payload TEXT NOT NULL,
-  status TEXT DEFAULT 'pending',
-  progress_current INTEGER DEFAULT 0,
-  progress_total INTEGER DEFAULT 0,
-  progress_message TEXT,
-  retry_count INTEGER DEFAULT 0,
-  max_retries INTEGER DEFAULT 3,
-  next_retry_at TIMESTAMP,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  started_at TIMESTAMP,
-  completed_at TIMESTAMP,
-  error_message TEXT,
-  error_stack TEXT,
-  is_cancellable BOOLEAN DEFAULT 1,
-  cancelled_at TIMESTAMP
-);
-```
-
-#### Alter Existing Tables
+### Database Schema
 
 ```sql
--- Movies
-ALTER TABLE movies ADD COLUMN state TEXT DEFAULT 'discovered';
-ALTER TABLE movies ADD COLUMN has_unpublished_changes BOOLEAN DEFAULT 0;
-ALTER TABLE movies ADD COLUMN last_published_at TIMESTAMP;
-ALTER TABLE movies ADD COLUMN published_nfo_hash TEXT;
-ALTER TABLE movies ADD COLUMN enriched_at TIMESTAMP;
-ALTER TABLE movies ADD COLUMN enrichment_priority INTEGER DEFAULT 5;
-
--- Series
-ALTER TABLE series ADD COLUMN state TEXT DEFAULT 'discovered';
-ALTER TABLE series ADD COLUMN has_unpublished_changes BOOLEAN DEFAULT 0;
-ALTER TABLE series ADD COLUMN last_published_at TIMESTAMP;
-ALTER TABLE series ADD COLUMN published_nfo_hash TEXT;
-ALTER TABLE series ADD COLUMN enriched_at TIMESTAMP;
-ALTER TABLE series ADD COLUMN enrichment_priority INTEGER DEFAULT 5;
-
--- Episodes
-ALTER TABLE episodes ADD COLUMN state TEXT DEFAULT 'discovered';
-ALTER TABLE episodes ADD COLUMN has_unpublished_changes BOOLEAN DEFAULT 0;
-ALTER TABLE episodes ADD COLUMN last_published_at TIMESTAMP;
-ALTER TABLE episodes ADD COLUMN published_nfo_hash TEXT;
-ALTER TABLE episodes ADD COLUMN enriched_at TIMESTAMP;
-ALTER TABLE episodes ADD COLUMN enrichment_priority INTEGER DEFAULT 5;
+CREATE TABLE libraries (...)
+CREATE TABLE movies (...)
+CREATE TABLE video_streams (...)
+CREATE TABLE audio_streams (...)
+CREATE TABLE subtitle_streams (...)
+CREATE TABLE genres (...)
+CREATE TABLE actors (...)
+CREATE TABLE crew (...)
+-- Link tables
 ```
 
-#### Indexes
+### Backend Tasks
+
+1. **Library Management**
+   - Create library CRUD endpoints
+   - Implement filesystem walker
+   - Parse movie filenames (title + year extraction)
+   - Calculate file hashes (SHA256)
+
+2. **FFprobe Integration**
+   - Install fluent-ffmpeg
+   - Extract video stream info
+   - Extract audio stream info
+   - Extract subtitle stream info
+
+3. **Manual Library Scan**
+   - Scan directory for video files (.mkv, .mp4, .avi)
+   - Create movie records (status: unidentified)
+   - Store stream details
+   - Detect file changes (hash comparison)
+
+4. **Movie API Endpoints**
+   ```
+   GET    /api/movies
+   GET    /api/movies/:id
+   PUT    /api/movies/:id
+   DELETE /api/movies/:id
+   POST   /api/libraries/:id/scan
+   ```
+
+### Frontend Tasks
+
+1. **Library Management UI**
+   - List all libraries
+   - Add/Edit/Delete library
+   - Trigger manual scan
+   - Show scan progress (SSE)
+
+2. **Movie List View**
+   - Grid view with placeholders
+   - Table view with details
+   - Filter by library
+   - Sort by title/year/date added
+   - Search by title
+
+3. **Movie Detail Page**
+   - Display all metadata fields
+   - Show stream details (video, audio, subtitles)
+   - Edit basic fields (title, year, plot)
+   - Show file information
+
+### Testing
+
+- Scan small library (10-20 movies)
+- Verify file hash calculation
+- Test FFprobe stream extraction
+- Confirm database storage
+
+### Deliverables
+
+- [x] Manual library scan working
+- [x] Movies displayed in UI
+- [x] Stream details extracted and shown
+- [x] Basic CRUD operations functional
+
+### Estimated Time: 10-14 days
+
+## Phase 2: Provider Integration (Weeks 4-5)
+
+**Goal**: Fetch metadata from TMDB
+
+### Database Schema (Add)
 
 ```sql
-CREATE INDEX idx_movies_state ON movies(state);
-CREATE INDEX idx_movies_unpublished ON movies(has_unpublished_changes) WHERE has_unpublished_changes = 1;
-CREATE INDEX idx_movies_needs_enrichment ON movies(state, enriched_at, enrichment_priority) WHERE state IN ('identified', 'discovered') AND enriched_at IS NULL;
-
-CREATE INDEX idx_asset_candidates_entity ON asset_candidates(entity_type, entity_id, asset_type);
-CREATE INDEX idx_asset_candidates_selected ON asset_candidates(is_selected);
-CREATE INDEX idx_asset_candidates_content_hash ON asset_candidates(content_hash);
-
-CREATE INDEX idx_cache_content_hash ON cache_inventory(content_hash);
-CREATE INDEX idx_cache_orphaned ON cache_inventory(orphaned_at);
-
-CREATE INDEX idx_job_queue_processing ON job_queue(status, priority, created_at) WHERE status = 'pending';
-
-CREATE INDEX idx_publish_log_entity ON publish_log(entity_type, entity_id);
-CREATE INDEX idx_publish_log_timestamp ON publish_log(published_at);
+-- Add to movies table:
+tmdb_id
+imdb_id
+identification_status ('unidentified', 'identified', 'enriched')
 ```
 
-#### Migration Script
+### Backend Tasks
 
-```typescript
-// src/database/migrations/20251008_000000_revised_architecture.ts
+1. **TMDB Client**
+   - Implement TMDB API wrapper
+   - Search movies by title + year
+   - Fetch movie details (metadata + cast)
+   - Fetch movie images (posters, fanart)
+   - Handle rate limiting (50 req/10sec)
 
-export async function up(db: Database): Promise<void> {
-  // Create new tables
-  await db.execute(NEW_TABLES_SQL);
+2. **Identification Service**
+   - Auto-identify during scan (confidence threshold)
+   - Manual search endpoint
+   - Store provider IDs
 
-  // Alter existing tables
-  await db.execute(ALTER_TABLES_SQL);
+3. **Enrichment Service**
+   - Fetch full metadata from TMDB
+   - Store in normalized tables (actors, crew, genres)
+   - Update movie record
 
-  // Create indexes
-  await db.execute(INDEXES_SQL);
+4. **Provider API Endpoints**
+   ```
+   POST   /api/movies/:id/identify
+   GET    /api/providers/tmdb/search?query=...
+   POST   /api/movies/:id/enrich
+   GET    /api/movies/unidentified
+   ```
 
-  // Mark all existing movies as 'published' (migration)
-  await db.execute(`
-    UPDATE movies SET
-      state = 'published',
-      last_published_at = CURRENT_TIMESTAMP,
-      has_unpublished_changes = 0
-  `);
+### Frontend Tasks
 
-  // Migrate existing images to asset_candidates
-  await db.execute(`
-    INSERT INTO asset_candidates (
-      entity_type, entity_id, asset_type,
-      provider, is_downloaded, cache_path, content_hash,
-      is_selected, selected_by
-    )
-    SELECT
-      entity_type, entity_id, image_type,
-      'local', 1, cache_path, 'legacy_' || id,
-      1, 'migration'
-    FROM images
-  `);
+1. **Unidentified Media View**
+   - List movies with status='unidentified'
+   - Show parsed filename
+   - Search button per movie
 
-  // Populate cache_inventory from existing cache files
-  await db.execute(`
-    INSERT INTO cache_inventory (
-      content_hash, file_path, file_size, asset_type
-    )
-    SELECT DISTINCT
-      content_hash, cache_path, file_size, 'image'
-    FROM asset_candidates
-    WHERE is_downloaded = 1
-  `);
+2. **Provider Search Modal**
+   - Input: title, year
+   - Display: TMDB results with posters
+   - Select match → identify movie
 
-  console.log('Migration complete');
-}
+3. **Enrichment UI**
+   - Button: "Fetch Metadata"
+   - Show loading state
+   - Display enriched metadata
+   - Show cast & crew
 
-export async function down(db: Database): Promise<void> {
-  // Drop new tables
-  await db.execute('DROP TABLE IF EXISTS asset_candidates');
-  await db.execute('DROP TABLE IF EXISTS cache_inventory');
-  await db.execute('DROP TABLE IF EXISTS publish_log');
-  // ... (drop all new tables)
+4. **Movie Detail Enhancements**
+   - Display TMDB metadata
+   - Show cast list
+   - Show crew (director, writer)
+   - Display genres
 
-  // Cannot easily revert ALTER TABLE (would need to recreate tables)
-  console.warn('Down migration not fully implemented (ALTER TABLE cannot be reverted)');
-}
+### Testing
+
+- Search TMDB for various titles
+- Test rate limiting behavior
+- Verify metadata storage
+- Check normalized tables
+
+### Deliverables
+
+- [x] TMDB integration working
+- [x] Movies can be identified
+- [x] Metadata enrichment functional
+- [x] Cast & crew displayed
+
+### Estimated Time: 10-14 days
+
+## Phase 3: Asset Management (Weeks 6-7)
+
+**Goal**: Download and manage posters, fanart, logos
+
+### Database Schema (Add)
+
+```sql
+CREATE TABLE cache_assets (...)
+CREATE TABLE asset_references (...)
+CREATE TABLE trailers (...)
 ```
 
-**Deliverables**:
-- [ ] Migration script written
-- [ ] Tested on dev database
-- [ ] Indexes created and tested
-- [ ] Seed data for automation configs
+### Backend Tasks
 
----
+1. **Cache System**
+   - Create directory structure: `/cache/assets/{ab}/{cd}/`
+   - Implement SHA256-based storage
+   - Calculate perceptual hashes (pHash) for images
+   - Implement deduplication
 
-### Phase 2: Core Services Refactor (Week 3-4)
+2. **Asset Download Service**
+   - Download images from TMDB URLs
+   - Download images from FanArt.tv
+   - Process images (resize, optimize)
+   - Store in cache with hashing
 
-**Goal**: Implement new service layer with two-phase scanning, asset selection, and publishing.
+3. **Library Asset Writer**
+   - Copy assets from cache → library directory
+   - Use Kodi naming convention (moviename-poster.jpg)
+   - Generate NFO files (Kodi format)
+   - Handle asset updates
 
-#### Services to Implement
+4. **Asset API Endpoints**
+   ```
+   GET    /api/movies/:id/assets
+   POST   /api/movies/:id/assets/:type/download
+   POST   /api/movies/:id/assets/:type/upload
+   DELETE /api/movies/:id/assets/:type
+   GET    /cache/assets/{hash}
+   ```
 
-**1. ScanService (Two-Phase)**
+### Frontend Tasks
 
-```typescript
-// src/services/scanService.ts
+1. **Asset Display**
+   - Show posters in grid view
+   - Show fanart in detail view
+   - Display all asset types (poster, fanart, logo, clearart, banner)
+   - Image lazy loading
 
-class ScanService {
-  // Phase 1: Fast local scan
-  async scanLibrary(libraryId: number): Promise<ScanJob>
-  async scanDirectory(dirPath: string, mediaType: string): Promise<ScanResult>
+2. **Asset Management UI**
+   - View available assets from provider
+   - Select different asset from provider
+   - Upload custom asset
+   - Delete asset
 
-  // Directory discovery
-  private async discoverDirectories(libraryPath: string): Promise<string[]>
+3. **NFO Preview**
+   - View generated NFO
+   - Download NFO file
 
-  // NFO parsing
-  private async parseNFOIfExists(dirPath: string): Promise<NFOData | null>
+### Testing
 
-  // Stream details
-  private async scanStreamDetails(videoPath: string): Promise<StreamDetails>
+- Download assets for 50 movies
+- Verify cache deduplication
+- Test image processing
+- Validate NFO format
 
-  // Local assets
-  private async discoverLocalAssets(dirPath: string): Promise<LocalAsset[]>
+### Deliverables
 
-  // Progress tracking
-  private emitProgress(jobId: number, progress: ScanProgress): void
-}
+- [x] Assets downloaded and cached
+- [x] Library files written (Kodi format)
+- [x] NFO generation working
+- [x] Asset management UI functional
+
+### Estimated Time: 10-14 days
+
+## Phase 4: Job Queue & Background Processing (Week 8)
+
+**Goal**: Asynchronous processing with priority queue
+
+### Database Schema (Add)
+
+```sql
+CREATE TABLE job_queue (...)
+CREATE TABLE job_dependencies (...)
 ```
 
-**2. EnrichmentService (Background, Rate-Limited)**
+### Backend Tasks
 
-```typescript
-// src/services/enrichmentService.ts
+1. **Job Queue System**
+   - Implement database-backed queue
+   - Priority-based job selection
+   - Retry logic with exponential backoff
+   - Job status tracking
 
-class EnrichmentService {
-  // Enrich entity from providers
-  async enrichEntity(entityType: string, entityId: number, priority: number): Promise<void>
+2. **Job Types**
+   - `scan`: Library scan job
+   - `enrichment`: Fetch metadata
+   - `asset_download`: Download single asset
+   - `webhook`: Process webhook (Phase 5)
 
-  // Fetch metadata
-  private async fetchMetadata(entity: Entity): Promise<ProviderMetadata>
+3. **Background Worker**
+   - Continuous job processor
+   - Graceful shutdown
+   - Error handling
+   - Concurrency control
 
-  // Fetch asset candidates
-  private async fetchAssetCandidates(entity: Entity): Promise<AssetCandidate[]>
+4. **Progress Tracking**
+   - SSE endpoint for job progress
+   - Job history
+   - Failed job inspection
 
-  // Respect locks
-  private async mergeMetadata(entity: Entity, metadata: ProviderMetadata): Promise<void>
+5. **Job API Endpoints**
+   ```
+   GET    /api/jobs
+   GET    /api/jobs/:id
+   POST   /api/jobs/:id/retry
+   DELETE /api/jobs/:id
+   GET    /api/jobs/stream (SSE)
+   ```
 
-  // Rate limiting
-  private async executeWithRateLimit<T>(fn: () => Promise<T>, priority: number): Promise<T>
-}
+### Frontend Tasks
+
+1. **Job Status UI**
+   - Active jobs list
+   - Progress bars
+   - Failed jobs with retry button
+   - Job history
+
+2. **Real-time Updates**
+   - SSE connection for job updates
+   - Toast notifications on completion
+   - Error notifications
+
+### Testing
+
+- Queue 100 enrichment jobs
+- Verify priority ordering
+- Test retry logic
+- Monitor memory usage
+
+### Deliverables
+
+- [x] Job queue operational
+- [x] Background worker running
+- [x] Progress tracking in UI
+- [x] Retry mechanism working
+
+### Estimated Time: 7-10 days
+
+## Phase 5: Webhook Integration (Week 9)
+
+**Goal**: Radarr/Sonarr webhook handling
+
+### Database Schema (Add)
+
+```sql
+CREATE TABLE webhook_events (...)
 ```
 
-**3. AssetSelectionService (Algorithm + Manual)**
+### Backend Tasks
 
-```typescript
-// src/services/assetSelectionService.ts
+1. **Webhook Receiver**
+   - Radarr webhook endpoint
+   - Sonarr webhook endpoint (TV shows - future)
+   - Payload validation
+   - Event logging
 
-class AssetSelectionService {
-  // Auto-select assets
-  async autoSelectAssets(entityId: number, entityType: string, assetType: string): Promise<void>
+2. **Webhook Processing**
+   - `Download`: New media → create job (priority 1)
+   - `MovieFileDelete`: Capture playback state
+   - `Upgrade`: Update file path, restore assets
+   - `Test`: Respond with success
 
-  // Score candidate
-  private calculateScore(candidate: AssetCandidate, config: AssetSelectionConfig): number
+3. **Webhook API Endpoints**
+   ```
+   POST   /api/webhooks/radarr
+   POST   /api/webhooks/sonarr
+   GET    /api/webhooks/events
+   ```
 
-  // Filter duplicates
-  private filterDuplicates(candidates: AssetCandidate[], threshold: number): AssetCandidate[]
+### Frontend Tasks
 
-  // Manual selection
-  async selectCandidate(candidateId: number): Promise<void>
+1. **Webhook Configuration**
+   - Display webhook URL
+   - Show webhook events log
+   - Test webhook button
 
-  // Reject candidate
-  async rejectCandidate(candidateId: number, reason: string): Promise<void>
+2. **Setup Instructions**
+   - Copy-paste instructions for Radarr
+   - Required webhook events to enable
 
-  // Re-run algorithm
-  async reselectAsset(entityId: number, currentCandidateId: number, assetType: string): Promise<number>
-}
+### Testing
+
+- Configure Radarr with webhook
+- Download new movie via Radarr
+- Verify automatic processing
+- Test upgrade scenario
+
+### Deliverables
+
+- [x] Radarr webhooks working
+- [x] New movies auto-processed
+- [x] Upgrade handling functional
+- [x] Event log visible in UI
+
+### Estimated Time: 5-7 days
+
+## Phase 6: Kodi Integration (Week 10)
+
+**Goal**: Media player notification and library updates
+
+### Database Schema (Add)
+
+```sql
+CREATE TABLE media_player_groups (...)
+CREATE TABLE media_players (...)
+CREATE TABLE path_mappings (...)
+CREATE TABLE playback_state (...)
 ```
 
-**4. PublishService (Transactional)**
+### Backend Tasks
 
-```typescript
-// src/services/publishService.ts
+1. **Kodi Client**
+   - JSON-RPC over WebSocket
+   - Library update notifications
+   - Playback state queries
+   - Player control (play, stop, resume)
 
-class PublishService {
-  // Single entity publish
-  async publishEntity(entityType: string, entityId: number, options?: PublishOptions): Promise<PublishResult>
+2. **Path Translation**
+   - Metarr path → Kodi path mapping
+   - Auto-detection (compare file lists)
+   - Manual configuration
 
-  // Bulk publish
-  async publishBulk(entityType: string, entityIds: number[]): Promise<BulkPublishResult>
+3. **Playback State Management**
+   - Query active playback
+   - Capture position (seconds + percentage)
+   - Restore playback after upgrade
 
-  // NFO generation
-  private async generateNFO(entity: Entity): Promise<string>
+4. **Kodi API Endpoints**
+   ```
+   POST   /api/players
+   GET    /api/players
+   PUT    /api/players/:id
+   DELETE /api/players/:id
+   POST   /api/players/:id/notify
+   GET    /api/players/:id/playback-state
+   ```
 
-  // Asset deployment
-  private async copyAssetsToLibrary(entity: Entity, assets: AssetCandidate[]): Promise<PublishedAsset[]>
+### Frontend Tasks
 
-  // Player notification
-  async notifyPlayers(entityType: string, entityId: number, libraryPath: string): Promise<void>
+1. **Media Player Configuration**
+   - Add Kodi instance
+   - Create player group
+   - Configure path mappings
+   - Test connection
 
-  // Validation
-  private async validateBeforePublish(entityType: string, entityId: number): Promise<ValidationResult>
-}
+2. **Player Status Dashboard**
+   - Show online/offline status
+   - Display current playback
+   - Manual library update button
+
+### Testing
+
+- Connect to Kodi instance
+- Trigger library update
+- Play movie, upgrade during playback
+- Verify playback resume
+
+### Deliverables
+
+- [x] Kodi integration working
+- [x] Library notifications sent
+- [x] Playback state capture/restore
+- [x] Path mapping functional
+
+### Estimated Time: 7-10 days
+
+## Phase 7: Field Locking & Manual Overrides (Week 11)
+
+**Goal**: User edits persist, locked fields excluded from automation
+
+### Database Schema (Modify)
+
+```sql
+-- Add to movies table:
+title_locked, plot_locked, poster_locked, etc.
 ```
 
-**5. CacheService (Content-Addressed Storage)**
+### Backend Tasks
 
-```typescript
-// src/services/cacheService.ts
+1. **Field Locking Logic**
+   - Lock field on manual edit
+   - Exclude locked fields from enrichment
+   - Unlock endpoint (re-enable automation)
 
-class CacheService {
-  // Store asset
-  async storeAsset(buffer: Buffer, assetType: string, metadata: AssetMetadata): Promise<string>
+2. **Edit Tracking**
+   - Detect user vs automation changes
+   - Activity log for edits
 
-  // Retrieve asset
-  async retrieveAsset(contentHash: string): Promise<Buffer>
+3. **Locking API Endpoints**
+   ```
+   PUT    /api/movies/:id/fields/:field/lock
+   PUT    /api/movies/:id/fields/:field/unlock
+   GET    /api/movies/:id/locks
+   ```
 
-  // Deduplicate check
-  private async checkExists(contentHash: string): Promise<boolean>
+### Frontend Tasks
 
-  // Orphan asset
-  async orphanAsset(contentHash: string): Promise<void>
+1. **Lock Indicators**
+   - Show 🔒 icon on locked fields
+   - Show lock status in edit form
+   - Unlock button per field
 
-  // Garbage collection
-  async garbageCollect(): Promise<void>
+2. **Edit Form Enhancements**
+   - Auto-lock on manual edit
+   - Warning when unlocking field
+   - Bulk unlock option
 
-  // Calculate content hash
-  private calculateContentHash(buffer: Buffer): string
-}
+### Testing
+
+- Edit movie title manually
+- Re-run enrichment
+- Verify title unchanged
+- Unlock and re-enrich
+
+### Deliverables
+
+- [x] Field locking operational
+- [x] Manual edits preserved
+- [x] Unlock functionality working
+- [x] Lock indicators in UI
+
+### Estimated Time: 5-7 days
+
+## Phase 8: Soft Deletes & Trash Management (Week 12)
+
+**Goal**: 30-day recovery period for deleted media
+
+### Database Schema (Modify)
+
+```sql
+-- Add to movies table:
+deleted_at TIMESTAMP
 ```
 
-**6. DisasterRecoveryService**
+### Backend Tasks
 
-```typescript
-// src/services/disasterRecoveryService.ts
+1. **Soft Delete Logic**
+   - Set `deleted_at = NOW() + 30 days`
+   - Filter deleted records from queries
+   - Restore functionality
 
-class DisasterRecoveryService {
-  // Detect missing assets
-  async detectMissingAssets(entityType: string, entityId: number): Promise<string[]>
+2. **Scheduled Cleanup**
+   - Daily job: permanently delete expired
+   - Cascade delete relationships
+   - Decrement asset references
+   - Delete library files
 
-  // Restore from cache
-  async restoreFromCache(entityType: string, entityId: number, libraryPath: string): Promise<void>
+3. **Weekly Cache Cleanup**
+   - Find orphaned assets (ref_count = 0)
+   - Delete files older than 90 days
 
-  // Validate integrity
-  async validateIntegrity(entityType: string, entityId: number): Promise<IntegrityReport>
-}
+4. **Trash API Endpoints**
+   ```
+   GET    /api/trash
+   POST   /api/movies/:id/restore
+   DELETE /api/movies/:id/permanent
+   POST   /api/trash/empty
+   ```
+
+### Frontend Tasks
+
+1. **Trash View**
+   - List deleted movies
+   - Show expiration date
+   - Restore button
+   - Permanent delete button
+
+2. **Trash Management**
+   - Empty trash (all expired)
+   - Batch restore
+   - Auto-refresh countdown
+
+### Testing
+
+- Delete movie via webhook
+- Verify soft delete
+- Restore movie
+- Wait for expiration, verify permanent delete
+
+### Deliverables
+
+- [x] Soft delete working
+- [x] Restore functional
+- [x] Scheduled cleanup running
+- [x] Trash UI operational
+
+### Estimated Time: 5-7 days
+
+## Phase 9: TV Show Support (Weeks 13-15)
+
+**Goal**: Full support for TV series and episodes
+
+### Database Schema (Add)
+
+```sql
+CREATE TABLE series (...)
+CREATE TABLE seasons (...)
+CREATE TABLE episodes (...)
+-- Link tables for series
 ```
 
-**7. JobQueueService (Background Processor)**
+### Backend Tasks
 
-```typescript
-// src/services/jobQueueService.ts
+1. **TVDB Integration**
+   - TVDB API client
+   - Series search
+   - Episode metadata
+   - Series/season/episode artwork
 
-class JobQueueService {
-  // Add job
-  async addJob(job: JobDefinition): Promise<number>
+2. **TV Show Scanning**
+   - Parse episode filenames (S01E01 format)
+   - Group by series
+   - Link episodes to seasons
 
-  // Start worker
-  async startWorker(): Promise<void>
+3. **TV Show Enrichment**
+   - Fetch series metadata
+   - Fetch all episodes
+   - Download season/episode artwork
+   - Generate series/episode NFO files
 
-  // Stop worker
-  async stopWorker(): Promise<void>
+4. **TV API Endpoints**
+   ```
+   GET    /api/series
+   GET    /api/series/:id
+   GET    /api/series/:id/seasons
+   GET    /api/series/:id/seasons/:season/episodes
+   ```
 
-  // Execute job
-  private async executeJob(job: Job): Promise<void>
+### Frontend Tasks
 
-  // Handle failure
-  private async handleJobFailure(job: Job, error: Error): Promise<void>
-}
+1. **Series List View**
+   - Grid view with series posters
+   - Series detail page
+   - Season list with posters
+   - Episode list with thumbs
+
+2. **Episode Detail Page**
+   - Episode metadata
+   - Season/episode artwork
+   - Cast & crew
+
+### Testing
+
+- Scan TV show library
+- Identify series via TVDB
+- Enrich with metadata
+- Verify episode NFO files
+
+### Deliverables
+
+- [x] TV show scanning working
+- [x] TVDB integration complete
+- [x] Episodes displayed in UI
+- [x] Episode NFO generation functional
+
+### Estimated Time: 15-21 days
+
+## Phase 10: Music Support (Weeks 16-18)
+
+**Goal**: Full support for music libraries
+
+### Database Schema (Add)
+
+```sql
+CREATE TABLE artists (...)
+CREATE TABLE albums (...)
+CREATE TABLE tracks (...)
+-- Link tables for music
 ```
 
-**Deliverables**:
-- [ ] All 7 services implemented
-- [ ] Unit tests for each service
-- [ ] Integration tests for workflows
-- [ ] Rate limiting tested (TMDB, TVDB)
-
----
+### Backend Tasks
+
+1. **MusicBrainz Integration**
+   - MusicBrainz API client
+   - Artist/album search
+   - Track metadata
 
-### Phase 3: API Redesign (Week 5-6)
-
-**Goal**: Implement new REST API with pagination, filtering, bulk operations.
-
-#### New Endpoints
-
-**Asset Management**
+2. **Music Scanning**
+   - Parse music files (.mp3, .flac)
+   - Extract ID3 tags
+   - Group by artist/album
 
-```typescript
-// Get candidates for entity
-GET /api/movies/:id/assets/candidates?assetType=poster
-GET /api/series/:id/assets/candidates?assetType=fanart
+3. **Music Enrichment**
+   - Fetch artist/album metadata
+   - Download artist/album artwork
+   - Generate artist/album NFO files
 
-// Select specific candidate
-POST /api/movies/:id/assets/select
-Body: { candidateId: 789, assetType: 'poster' }
+4. **Music API Endpoints**
+   ```
+   GET    /api/artists
+   GET    /api/artists/:id
+   GET    /api/artists/:id/albums
+   GET    /api/albums/:id/tracks
+   ```
 
-// Reject and re-run algorithm
-POST /api/movies/:id/assets/reselect
-Body: { currentCandidateId: 456, assetType: 'poster' }
+### Frontend Tasks
 
-// Search additional providers
-POST /api/movies/:id/assets/search
-Body: { assetType: 'poster', providers: ['tmdb', 'tvdb'] }
+1. **Artist List View**
+   - Grid view with artist thumbs
+   - Artist detail page
+   - Album list with covers
 
-// Get cache asset (serve file)
-GET /api/cache/:contentHash
-GET /api/cache/:contentHash/thumbnail
-```
+2. **Album Detail Page**
+   - Track listing
+   - Album metadata
+   - Album artwork
 
-**Publishing**
+### Testing
 
-```typescript
-// Single entity publish
-POST /api/movies/:id/publish
-POST /api/series/:id/publish
-POST /api/episodes/:id/publish
+- Scan music library
+- Identify artists via MusicBrainz
+- Enrich with metadata
+- Verify NFO files
 
-// Bulk publish
-POST /api/movies/publish-bulk
-Body: { ids: [1, 2, 3, ...] }
+### Deliverables
 
-// Discard unpublished changes
-POST /api/movies/:id/discard-changes
+- [x] Music scanning working
+- [x] MusicBrainz integration complete
+- [x] Artists/albums displayed in UI
+- [x] Music NFO generation functional
 
-// Get publish history
-GET /api/movies/:id/publish-log
-```
+### Estimated Time: 15-21 days
 
-**Library Management**
-
-```typescript
-// Trigger library scan
-POST /api/libraries/:id/scan
-
-// Get unpublished items
-GET /api/movies/unpublished?page=1&limit=50
-
-// Get unpublished count
-GET /api/movies/unpublished/count
-
-// Enrich specific item (manual trigger)
-POST /api/movies/:id/enrich
-```
-
-**Pagination & Filtering**
-
-```typescript
-// Paginated movie list
-GET /api/movies?
-  page=1&
-  limit=50&
-  sort=title&
-  order=asc&
-  filter[state]=enriched&
-  filter[hasUnpublishedChanges]=true&
-  fields=id,title,year,poster_url,state
-
-// Search
-GET /api/movies/search?q=matrix&page=1&limit=20
-```
-
-**SSE Events**
-
-```typescript
-// Real-time updates
-GET /api/events
-
-// Event types:
-// - scan:started
-// - scan:progress
-// - scan:completed
-// - enrich:progress
-// - publish:progress
-// - movie:added
-// - movie:updated
-```
-
-**Deliverables**:
-- [ ] All endpoints implemented
-- [ ] OpenAPI spec generated
-- [ ] Postman collection
-- [ ] API tests (integration)
-
----
-
-### Phase 4: Frontend Rebuild (Week 7-10)
-
-**Goal**: Implement new UI with virtual scrolling, asset selection, and real-time updates.
-
-#### Components to Build
-
-**1. Virtual Scrolling Table**
-
-```typescript
-// components/MovieTable.tsx
-import { FixedSizeList } from 'react-window';
-
-function MovieTable() {
-  const { data } = useInfiniteQuery(['movies'], fetchMovies);
-
-  return (
-    <FixedSizeList
-      height={600}
-      itemCount={data.total}
-      itemSize={50}
-      onItemsRendered={loadMoreIfNeeded}
-    >
-      {MovieRow}
-    </FixedSizeList>
-  );
-}
-```
-
-**2. Asset Selection Modal**
-
-```typescript
-// components/AssetSelectionModal.tsx
-
-function AssetSelectionModal({ movieId, assetType }) {
-  const { data: candidates } = useQuery(
-    ['candidates', movieId, assetType],
-    () => fetchCandidates(movieId, assetType)
-  );
-
-  return (
-    <Modal>
-      <h3>Select {assetType}</h3>
-      <div className="grid grid-cols-4 gap-4">
-        {candidates.map(candidate => (
-          <AssetThumbnail
-            key={candidate.id}
-            candidate={candidate}
-            onSelect={() => selectCandidate(candidate.id)}
-          />
-        ))}
-      </div>
-      <button onClick={searchMoreProviders}>
-        Search More Providers
-      </button>
-    </Modal>
-  );
-}
-```
-
-**3. Publish Workflow**
-
-```typescript
-// components/PublishButton.tsx
-
-function PublishButton({ movieId }) {
-  const { mutate: publish, isLoading } = useMutation(
-    () => publishMovie(movieId),
-    {
-      onSuccess: () => {
-        queryClient.invalidateQueries(['movies', movieId]);
-        toast.success('Published successfully');
-      }
-    }
-  );
-
-  const movie = useQuery(['movies', movieId], () => fetchMovie(movieId));
-
-  if (!movie.data.has_unpublished_changes) {
-    return null;
-  }
-
-  return (
-    <button
-      onClick={() => publish()}
-      disabled={isLoading}
-      className="btn btn-primary"
-    >
-      {isLoading ? 'Publishing...' : '⚠️ Publish Changes'}
-    </button>
-  );
-}
-```
-
-**4. Progress Tracking**
-
-```typescript
-// hooks/useSSEProgress.ts
-
-function useSSEProgress(eventType: string) {
-  const [progress, setProgress] = useState(null);
-
-  useEffect(() => {
-    const eventSource = new EventSource('/api/events');
-
-    eventSource.addEventListener(eventType, (e) => {
-      const data = JSON.parse(e.data);
-      setProgress(data);
-    });
-
-    return () => eventSource.close();
-  }, [eventType]);
-
-  return progress;
-}
-
-// Usage
-function ScanProgressModal() {
-  const progress = useSSEProgress('scan:progress');
-
-  return (
-    <Modal>
-      <h3>Scanning Library...</h3>
-      <ProgressBar
-        value={(progress?.current / progress?.total) * 100}
-      />
-      <p>{progress?.current} of {progress?.total} items</p>
-    </Modal>
-  );
-}
-```
-
-**5. Bulk Operations**
-
-```typescript
-// components/BulkActions.tsx
-
-function BulkActions({ selectedIds }) {
-  const { mutate: publishBulk } = useMutation(
-    () => publishMoviesBulk(selectedIds),
-    {
-      onSuccess: () => {
-        queryClient.invalidateQueries(['movies']);
-        toast.success(`Published ${selectedIds.length} movies`);
-      }
-    }
-  );
-
-  return (
-    <div className="bulk-actions">
-      <button onClick={() => publishBulk()}>
-        Publish {selectedIds.length} Selected
-      </button>
-      <button onClick={() => enrichBulk(selectedIds)}>
-        Enrich {selectedIds.length} Selected
-      </button>
-    </div>
-  );
-}
-```
-
-**Deliverables**:
-- [ ] All components implemented
-- [ ] Virtual scrolling tested (32k items)
-- [ ] Asset selection modal
-- [ ] SSE integration
-- [ ] Bulk operations UI
-- [ ] Responsive design (mobile-friendly)
-
----
-
-### Phase 5: Background Jobs & Worker (Week 11-12)
-
-**Goal**: Implement job queue worker, background enrichment, garbage collection.
-
-#### Worker Implementation
-
-```typescript
-// src/workers/jobWorker.ts
-
-class JobWorker {
-  private isRunning = false;
-  private currentJob: Job | null = null;
-
-  async start() {
-    this.isRunning = true;
-
-    while (this.isRunning) {
-      const job = await this.fetchNextJob();
-
-      if (!job) {
-        await sleep(100);
-        continue;
-      }
-
-      this.currentJob = job;
-
-      try {
-        await this.executeJob(job);
-        await this.markJobCompleted(job.id);
-      } catch (error) {
-        await this.handleJobFailure(job, error);
-      }
-
-      this.currentJob = null;
-    }
-  }
-
-  async stop() {
-    this.isRunning = false;
-    // Wait for current job to finish
-    while (this.currentJob !== null) {
-      await sleep(100);
-    }
-  }
-}
-
-// Start worker on app boot
-const worker = new JobWorker();
-worker.start();
-```
-
-#### Scheduled Tasks
-
-```typescript
-// src/schedulers/index.ts
-
-import * as cron from 'node-cron';
-
-// Background enrichment (continuous)
-const enrichmentWorker = new EnrichmentWorker();
-enrichmentWorker.start();
-
-// Garbage collection (daily at 3 AM)
-cron.schedule('0 3 * * *', async () => {
-  await cacheService.garbageCollect();
-});
-
-// Library scan (if scheduled)
-cron.schedule('0 2 * * *', async () => {
-  const libraries = await db.getLibrariesWithScheduledScan();
-  for (const library of libraries) {
-    await jobQueue.addJob({
-      type: 'library_scan',
-      priority: 7,
-      payload: { libraryId: library.id }
-    });
-  }
-});
-```
-
-**Deliverables**:
-- [ ] Job worker implemented
-- [ ] Background enrichment running
-- [ ] Garbage collection scheduled
-- [ ] Graceful shutdown (wait for current job)
-- [ ] Job retry logic tested
-
----
-
-### Phase 6: Testing & Polish (Week 13-16)
-
-**Goal**: Load testing, disaster recovery testing, bug fixes, documentation.
-
-#### Testing Plan
-
-**1. Load Testing**
-
-```typescript
-// tests/load/scan-performance.test.ts
-
-test('scan 1000 movies in under 10 minutes', async () => {
-  const startTime = Date.now();
-
-  await scanService.scanLibrary(libraryId);
-
-  const duration = Date.now() - startTime;
-  expect(duration).toBeLessThan(10 * 60 * 1000);  // 10 minutes
-});
-
-test('UI remains responsive during scan', async () => {
-  const scanPromise = scanService.scanLibrary(libraryId);
-
-  // UI should still respond
-  const movies = await fetchMovies({ page: 1, limit: 50 });
-  expect(movies).toBeDefined();
-
-  await scanPromise;
-});
-```
-
-**2. Disaster Recovery Testing**
-
-```typescript
-// tests/integration/disaster-recovery.test.ts
-
-test('restore assets after Radarr upgrade', async () => {
-  // Setup: Movie with assets in library
-  const movie = await createTestMovie();
-  await publishMovie(movie.id);
-
-  // Simulate Radarr upgrade (delete directory)
-  await fs.remove(movie.directory);
-
-  // Trigger webhook
-  await handleUpgradeWebhook({
-    tmdb_id: movie.tmdb_id,
-    path: movie.file_path,
-    isUpgrade: true
-  });
-
-  // Verify: Assets restored from cache
-  const posterExists = await fs.pathExists(
-    path.join(movie.directory, 'poster.jpg')
-  );
-  expect(posterExists).toBe(true);
-});
-```
-
-**3. Concurrency Testing**
-
-```typescript
-// tests/integration/concurrency.test.ts
-
-test('handle multiple concurrent webhooks', async () => {
-  const webhooks = Array.from({ length: 10 }, (_, i) => ({
-    tmdb_id: 1000 + i,
-    path: `/movies/Movie${i}/movie.mkv`
-  }));
-
-  // Send all webhooks simultaneously
-  const results = await Promise.all(
-    webhooks.map(wh => handleWebhook(wh))
-  );
-
-  // Verify: All processed successfully
-  expect(results.every(r => r.success)).toBe(true);
-});
-```
-
-**Deliverables**:
-- [ ] Load tests (1k items, 10k items, 32k items)
-- [ ] Disaster recovery tests
-- [ ] Concurrency tests
-- [ ] Bug fixes (based on test failures)
-- [ ] Performance optimizations
-- [ ] User documentation (how-to guides)
-- [ ] API documentation (complete)
-
----
-
-## Deployment Checklist
-
-### Development
-
-- [ ] PostgreSQL support tested
-- [ ] Docker Compose for dev environment
-- [ ] Hot reload working (backend + frontend)
-- [ ] Database migrations tested
-- [ ] Seed data for testing
-
-### Production
-
-- [ ] Docker image built
-- [ ] Environment variables documented
-- [ ] Database backup/restore tested
-- [ ] Logging configured (rotation, retention)
-- [ ] Monitoring (health checks, metrics)
-- [ ] Reverse proxy setup (nginx/traefik)
-- [ ] SSL/TLS certificates
-
----
-
-## Future Enhancements (Post-v1)
-
-**Not in scope for initial implementation**:
-
-- [ ] Plex media player support
-- [ ] Subtitle extraction from video files
-- [ ] Subtitle sourcing (OpenSubtitles API)
-- [ ] Music library support (Lidarr integration)
-- [ ] Multi-user support (roles, permissions)
-- [ ] Mobile companion app
-- [ ] Advanced matching algorithms (fuzzy search, ML-based)
-- [ ] Custom metadata provider plugins
-- [ ] Backup/restore UI
-- [ ] Theme customization
-
----
-
-## Success Criteria
-
-**Phase 1-2** (Database + Services):
-- ✅ Database schema migration complete
-- ✅ Two-phase scanning working
-- ✅ Asset selection algorithm functional
-- ✅ Publishing workflow tested
-
-**Phase 3-4** (API + Frontend):
-- ✅ Paginated API working
-- ✅ Virtual scrolling handles 10k+ items
-- ✅ Asset selection UI functional
-- ✅ SSE real-time updates working
-
-**Phase 5-6** (Jobs + Testing):
-- ✅ Background enrichment running
-- ✅ 1000 item library scan < 10 minutes
-- ✅ Webhook processing < 5 seconds
-- ✅ Disaster recovery tested and working
-
-**Production Ready**:
-- ✅ Docker image deployable
-- ✅ PostgreSQL tested at scale
-- ✅ Documentation complete
-- ✅ No known critical bugs
-
----
-
-## Development Best Practices
-
-1. **Test-Driven Development**: Write tests before implementation
-2. **Incremental Commits**: Small, focused commits with clear messages
-3. **Code Reviews**: Self-review before committing
-4. **Documentation**: Update docs alongside code changes
-5. **Performance**: Profile before optimizing
-6. **Logging**: Comprehensive logging for debugging
-7. **Error Handling**: Graceful degradation, user-friendly errors
-
----
+## Phase 11: Performance & Optimization (Week 19)
+
+**Goal**: Handle large libraries (5000+ items)
+
+### Backend Tasks
+
+1. **Database Optimization**
+   - Add missing indexes
+   - Optimize slow queries
+   - Connection pooling
+
+2. **API Pagination**
+   - Cursor-based pagination
+   - Configurable page size
+   - Total count optimization
+
+3. **Caching Layer**
+   - Redis for hot data (optional)
+   - In-memory cache for config
+   - ETags for HTTP caching
+
+4. **Asset Optimization**
+   - Image resizing (multiple sizes)
+   - WebP conversion
+   - CDN-ready headers
+
+### Frontend Tasks
+
+1. **Virtual Scrolling**
+   - Implement react-window
+   - Render only visible items
+   - Maintain scroll position
+
+2. **Lazy Loading**
+   - Images load on scroll
+   - Route-based code splitting
+   - Component lazy loading
+
+3. **Debouncing**
+   - Search input debouncing
+   - Filter debouncing
+
+### Testing
+
+- Load 5000 movies
+- Measure query times
+- Test scroll performance
+- Monitor memory usage
+
+### Deliverables
+
+- [x] Pagination implemented
+- [x] Virtual scrolling working
+- [x] Query times < 100ms
+- [x] UI responsive with large libraries
+
+### Estimated Time: 7-10 days
+
+## Phase 12: Production Readiness (Week 20)
+
+**Goal**: Deploy to production environment
+
+### Backend Tasks
+
+1. **Docker Setup**
+   - Create Dockerfile
+   - Docker Compose with PostgreSQL
+   - Volume mounts for cache
+   - Health checks
+
+2. **Environment Configuration**
+   - Production environment variables
+   - Secret management
+   - Database migrations for PostgreSQL
+
+3. **Logging & Monitoring**
+   - Structured logging
+   - Error tracking (Sentry)
+   - Performance monitoring
+
+4. **Security**
+   - Authentication (JWT)
+   - API rate limiting
+   - CORS configuration
+   - Input validation
+
+### Frontend Tasks
+
+1. **Production Build**
+   - Optimize bundle size
+   - Minification
+   - Source maps
+
+2. **Error Boundaries**
+   - Catch React errors
+   - User-friendly error pages
+
+### DevOps Tasks
+
+1. **CI/CD Pipeline**
+   - GitHub Actions
+   - Automated tests
+   - Docker image builds
+   - Deployment automation
+
+2. **Documentation**
+   - Installation guide
+   - Configuration guide
+   - Troubleshooting guide
+   - API documentation
+
+### Testing
+
+- Deploy to Docker
+- Test with PostgreSQL
+- Load test with 10k movies
+- Security audit
+
+### Deliverables
+
+- [x] Docker deployment working
+- [x] Production environment stable
+- [x] Documentation complete
+- [x] Ready for users
+
+### Estimated Time: 7-10 days
+
+## Total Timeline
+
+**Minimum**: 20 weeks (5 months)
+**Realistic**: 24-26 weeks (6 months)
+**With buffer**: 30 weeks (7.5 months)
+
+## Development Priorities
+
+### Must Have (v1.0)
+- Movie library management
+- TMDB integration
+- Asset management
+- Webhook automation (Radarr)
+- Kodi integration
+- Field locking
+
+### Should Have (v1.1)
+- TV show support
+- Soft deletes
+- Performance optimizations
+
+### Nice to Have (v2.0)
+- Music support
+- Multiple provider support
+- Advanced filtering
+- User management
+
+## Success Metrics
+
+### Phase 1-8 (Core)
+- Scan 500 movies in < 5 minutes
+- Enrich 100 movies in < 2 minutes
+- UI loads in < 1 second
+- Zero data loss during upgrades
+
+### Phase 9-10 (Multi-media)
+- Support 1000+ TV episodes
+- Support 5000+ music tracks
+- Maintain performance metrics
+
+### Phase 11-12 (Production)
+- Handle 10,000+ total items
+- 99.9% uptime
+- API response < 100ms (p95)
+- Zero security vulnerabilities
 
 ## Related Documentation
 
-- **[ARCHITECTURE.md](ARCHITECTURE.md)** - Complete architectural vision
-- **[DATABASE_SCHEMA.md](DATABASE_SCHEMA.md)** - Schema reference
-- **[WORKFLOWS.md](WORKFLOWS.md)** - Operational workflows
-- **[ASSET_MANAGEMENT.md](ASSET_MANAGEMENT.md)** - Three-tier asset system
-- **[AUTOMATION_AND_WEBHOOKS.md](AUTOMATION_AND_WEBHOOKS.md)** - Automation behavior
-- **[PUBLISHING_WORKFLOW.md](PUBLISHING_WORKFLOW.md)** - Publishing process
+- [ARCHITECTURE.md](ARCHITECTURE.md) - Overall system design
+- [DATABASE_SCHEMA.md](DATABASE_SCHEMA.md) - Complete schema reference
+- [WORKFLOWS.md](WORKFLOWS.md) - Core workflows and processes

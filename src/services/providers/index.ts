@@ -9,6 +9,7 @@ export * from './BaseProvider.js';
 export * from './ProviderRegistry.js';
 export * from './AssetSelector.js';
 export * from './ProviderOrchestrator.js';
+export * from './FetchOrchestrator.js';
 
 // Utilities
 export * from './utils/index.js';

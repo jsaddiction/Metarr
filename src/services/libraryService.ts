@@ -48,7 +48,6 @@ export class LibraryService {
     name: string;
     type: MediaLibraryType;
     path: string;
-    enabled?: boolean;
   }): Promise<Library> {
     try {
       // Validate the path exists
@@ -59,9 +58,9 @@ export class LibraryService {
 
       const db = this.dbManager.getConnection();
       const result = await db.execute(
-        `INSERT INTO libraries (name, type, path, enabled)
-         VALUES (?, ?, ?, ?)`,
-        [data.name, data.type, data.path, data.enabled ?? true]
+        `INSERT INTO libraries (name, type, path)
+         VALUES (?, ?, ?)`,
+        [data.name, data.type, data.path]
       );
 
       const insertId = result.insertId;
@@ -91,7 +90,6 @@ export class LibraryService {
       name?: string;
       type?: MediaLibraryType;
       path?: string;
-      enabled?: boolean;
     }
   ): Promise<Library> {
     try {
@@ -120,10 +118,6 @@ export class LibraryService {
       if (data.path !== undefined) {
         updates.push('path = ?');
         values.push(data.path);
-      }
-      if (data.enabled !== undefined) {
-        updates.push('enabled = ?');
-        values.push(data.enabled);
       }
 
       if (updates.length === 0) {
@@ -601,7 +595,6 @@ export class LibraryService {
       name: row.name,
       type: row.type as MediaLibraryType,
       path: row.path,
-      enabled: Boolean(row.enabled),
       createdAt: new Date(row.created_at),
       updatedAt: new Date(row.updated_at),
     };

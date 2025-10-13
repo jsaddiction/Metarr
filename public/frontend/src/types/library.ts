@@ -5,7 +5,6 @@ export interface Library {
   name: string;
   type: MediaLibraryType;
   path: string;
-  enabled: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -14,7 +13,6 @@ export interface LibraryFormData {
   name: string;
   type: MediaLibraryType;
   path: string;
-  enabled: boolean;
 }
 
 export interface ScanJob {

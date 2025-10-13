@@ -88,13 +88,14 @@ export const ErrorBanner: React.FC<ErrorBannerProps> = ({
   return (
     <div
       className="fixed bottom-0 left-0 right-0 z-50 animate-slide-up"
+      role="alert"
     >
       <div
         className={`${config.bgColor} ${config.borderColor} border-t-4`}
       >
         <div className="px-6 py-3">
           <div className="flex items-center justify-between gap-4">
-            <FontAwesomeIcon icon={config.icon} className={`${config.iconColor} flex-shrink-0 text-lg`} />
+            <FontAwesomeIcon icon={config.icon} className={`${config.iconColor} flex-shrink-0 text-lg`} aria-hidden="true" />
             <p className={`${config.textColor} text-sm font-semibold flex-1 text-center`}>
               {error}
             </p>
@@ -103,7 +104,7 @@ export const ErrorBanner: React.FC<ErrorBannerProps> = ({
               className={`${config.textColor} hover:opacity-80 transition-opacity flex-shrink-0 p-1.5 hover:bg-white/10`}
               aria-label="Dismiss"
             >
-              <FontAwesomeIcon icon={faTimes} />
+              <FontAwesomeIcon icon={faTimes} aria-hidden="true" />
             </button>
           </div>
         </div>

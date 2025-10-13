@@ -22,7 +22,18 @@ import {
   GetAllProvidersResponse,
   GetProviderResponse,
   UpdateProviderResponse,
+  AutoSelectionStrategy,
+  GetAutoSelectionStrategyResponse,
+  SetAutoSelectionStrategyRequest,
+  SetAutoSelectionStrategyResponse,
+  DataSelectionConfig,
+  UpdateDataSelectionModeRequest,
+  UpdateDataSelectionModeResponse,
+  UpdateFieldPriorityRequest,
+  UpdateFieldPriorityResponse,
+  GetProviderOrderResponse,
 } from '../types/provider';
+import { ProviderResultsResponse } from '../types/asset';
 
 const API_BASE_URL = '/api';
 
@@ -218,6 +229,13 @@ export const libraryApi = {
    */
   async getDrives(): Promise<string[]> {
     return fetchApi<string[]>('/libraries/drives');
+  },
+
+  /**
+   * Get server platform information
+   */
+  async getPlatform(): Promise<{ platform: string; isWindows: boolean; separator: string }> {
+    return fetchApi<{ platform: string; isWindows: boolean; separator: string }>('/libraries/platform');
   },
 
   /**
@@ -450,6 +468,229 @@ export const providerApi = {
     return fetchApi<void>(`/providers/${name}`, {
       method: 'DELETE',
     });
+  },
+};
+
+/**
+ * Priority Configuration API
+ */
+export const priorityApi = {
+  /**
+   * Get all available priority presets
+   */
+  async getPresets(): Promise<import('../types/provider').PriorityPreset[]> {
+    const response = await fetchApi<import('../types/provider').GetPresetsResponse>('/priorities/presets');
+    return response.presets;
+  },
+
+  /**
+   * Get the currently active preset
+   */
+  async getActivePreset(): Promise<import('../types/provider').PriorityPresetSelection | null> {
+    const response = await fetchApi<import('../types/provider').GetActivePresetResponse>('/priorities/active');
+    return response.activePreset;
+  },
+
+  /**
+   * Apply a priority preset
+   */
+  async applyPreset(presetId: string): Promise<void> {
+    return fetchApi<void>('/priorities/apply', {
+      method: 'POST',
+      body: JSON.stringify({ presetId }),
+    });
+  },
+
+  /**
+   * Get all asset type priorities
+   */
+  async getAssetTypePriorities(): Promise<import('../types/provider').AssetTypePriority[]> {
+    const response = await fetchApi<import('../types/provider').GetAssetTypePrioritiesResponse>('/priorities/asset-types');
+    return response.priorities;
+  },
+
+  /**
+   * Get priority for a specific asset type
+   */
+  async getAssetTypePriority(assetType: string): Promise<import('../types/provider').AssetTypePriority> {
+    const response = await fetchApi<{ priority: import('../types/provider').AssetTypePriority }>(`/priorities/asset-types/${assetType}`);
+    return response.priority;
+  },
+
+  /**
+   * Update priority for a specific asset type
+   */
+  async updateAssetTypePriority(assetType: string, providerOrder: string[]): Promise<import('../types/provider').AssetTypePriority> {
+    const response = await fetchApi<{ success: boolean; priority: import('../types/provider').AssetTypePriority }>(`/priorities/asset-types/${assetType}`, {
+      method: 'POST',
+      body: JSON.stringify({ providerOrder }),
+    });
+    return response.priority;
+  },
+
+  /**
+   * Get all metadata field priorities
+   */
+  async getMetadataFieldPriorities(): Promise<import('../types/provider').MetadataFieldPriority[]> {
+    const response = await fetchApi<import('../types/provider').GetMetadataFieldPrioritiesResponse>('/priorities/metadata-fields');
+    return response.priorities;
+  },
+
+  /**
+   * Get priority for a specific metadata field
+   */
+  async getMetadataFieldPriority(fieldName: string): Promise<import('../types/provider').MetadataFieldPriority> {
+    const response = await fetchApi<{ priority: import('../types/provider').MetadataFieldPriority }>(`/priorities/metadata-fields/${fieldName}`);
+    return response.priority;
+  },
+
+  /**
+   * Update priority for a specific metadata field
+   */
+  async updateMetadataFieldPriority(fieldName: string, providerOrder: string[]): Promise<import('../types/provider').MetadataFieldPriority> {
+    const response = await fetchApi<{ success: boolean; priority: import('../types/provider').MetadataFieldPriority }>(`/priorities/metadata-fields/${fieldName}`, {
+      method: 'POST',
+      body: JSON.stringify({ providerOrder }),
+    });
+    return response.priority;
+  },
+};
+
+/**
+ * Auto-Selection Strategy API
+ */
+export const autoSelectionApi = {
+  /**
+   * Get the current auto-selection strategy
+   */
+  async getStrategy(): Promise<AutoSelectionStrategy> {
+    const response = await fetchApi<GetAutoSelectionStrategyResponse>('/auto-selection/strategy');
+    return response.strategy;
+  },
+
+  /**
+   * Set the auto-selection strategy
+   */
+  async setStrategy(strategy: AutoSelectionStrategy): Promise<void> {
+    const data: SetAutoSelectionStrategyRequest = { strategy };
+    await fetchApi<SetAutoSelectionStrategyResponse>('/auto-selection/strategy', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+};
+
+/**
+ * Data Selection API
+ * Manages provider priorities for metadata and images
+ */
+export const dataSelectionApi = {
+  /**
+   * Get current data selection configuration
+   */
+  async getConfig(): Promise<DataSelectionConfig> {
+    return fetchApi<DataSelectionConfig>('/data-selection');
+  },
+
+  /**
+   * Update data selection mode (balanced/custom)
+   */
+  async updateMode(mode: 'balanced' | 'custom'): Promise<DataSelectionConfig> {
+    const data: UpdateDataSelectionModeRequest = { mode };
+    const response = await fetchApi<UpdateDataSelectionModeResponse>('/data-selection/mode', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+    return response.config;
+  },
+
+  /**
+   * Update field priority for a specific field/asset type
+   */
+  async updateFieldPriority(
+    mediaType: 'movies' | 'tvshows' | 'music',
+    category: 'metadata' | 'images',
+    fieldName: string,
+    providerOrder: string[],
+    disabled?: string[]
+  ): Promise<DataSelectionConfig> {
+    const data: UpdateFieldPriorityRequest = {
+      mediaType,
+      category,
+      fieldName,
+      providerOrder,
+      disabled,
+    };
+    const response = await fetchApi<UpdateFieldPriorityResponse>('/data-selection/priority', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+    return response.config;
+  },
+
+  /**
+   * Get provider order for a specific field
+   */
+  async getProviderOrder(
+    category: 'metadata' | 'images',
+    mediaType: 'movies' | 'tvshows' | 'music',
+    fieldName: string
+  ): Promise<string[]> {
+    const response = await fetchApi<GetProviderOrderResponse>(
+      `/data-selection/provider-order/${category}/${mediaType}/${fieldName}`
+    );
+    return response.providerOrder;
+  },
+};
+
+/**
+ * Asset Selection API
+ * For fetching provider results and selecting assets
+ */
+export const assetApi = {
+  /**
+   * Get provider results for any entity type (generic)
+   * @param entityType - Entity type (movie, series, etc.)
+   * @param entityId - Entity ID
+   * @param assetTypes - Optional array of asset types to fetch
+   * @param force - Force fresh fetch (bypass cache)
+   */
+  async getEntityProviderResults(
+    entityType: string,
+    entityId: number,
+    assetTypes?: string[],
+    force = false
+  ): Promise<ProviderResultsResponse> {
+    const params = new URLSearchParams();
+    if (force) params.append('force', 'true');
+    if (assetTypes && assetTypes.length > 0) {
+      params.append('assetTypes', assetTypes.join(','));
+    }
+
+    // Use plural form for endpoint (movie -> movies, series -> series, etc.)
+    const entityTypePlural = entityType === 'series' ? 'series' : `${entityType}s`;
+    const endpoint = `/${entityTypePlural}/${entityId}/provider-results${params.toString() ? `?${params}` : ''}`;
+    return fetchApi<ProviderResultsResponse>(endpoint);
+  },
+
+  /**
+   * Subscribe to provider scraping progress via SSE
+   */
+  subscribeToScrapeProgress(
+    movieId: number,
+    callbacks: {
+      onStart?: (providers: string[]) => void;
+      onProviderStart?: (provider: string) => void;
+      onProviderComplete?: (provider: string, success: boolean) => void;
+      onProviderRetry?: (provider: string, attempt: number, maxRetries: number) => void;
+      onProviderTimeout?: (provider: string) => void;
+      onComplete?: (completed: string[], failed: string[], timedOut: string[]) => void;
+      onError?: (error: string) => void;
+    }
+  ): () => void {
+    // Note: This would need to be implemented based on your SSE architecture
+    // For now, returning a no-op cleanup function
+    return () => {};
   },
 };
 

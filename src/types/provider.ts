@@ -10,7 +10,6 @@ export interface ProviderConfig {
   enabled: boolean;
   apiKey?: string;
   personalApiKey?: string;         // Upgraded API key for better rates (e.g., FanArt.tv)
-  enabledAssetTypes: string[];     // ['poster', 'fanart', 'trailer']
   language?: string;                // 'en', 'es', 'fr', etc.
   region?: string;                  // 'US', 'GB', 'FR', etc.
   options?: Record<string, any>;    // Provider-specific options
@@ -50,7 +49,6 @@ export interface ProviderWithMetadata {
 
 export interface TestConnectionRequest {
   apiKey?: string;
-  enabledAssetTypes: string[];
 }
 
 export interface TestConnectionResponse {
@@ -63,7 +61,6 @@ export interface UpdateProviderRequest {
   enabled: boolean;
   apiKey?: string;
   personalApiKey?: string;
-  enabledAssetTypes: string[];
   language?: string;
   region?: string;
   options?: Record<string, any>;
@@ -130,4 +127,46 @@ export interface UpdateAssetTypePriorityRequest {
 export interface UpdateMetadataFieldPriorityRequest {
   fieldName: string;
   providerOrder: string[];
+}
+
+/**
+ * Data Selection Configuration
+ *
+ * Separates provider connection from data filtering/prioritization
+ */
+export interface DataSelectionConfig {
+  id: number;
+  mode: 'balanced' | 'custom';
+  customMetadataPriorities: Record<string, FieldPriorityConfig>;
+  customImagePriorities: Record<string, FieldPriorityConfig>;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * Field/Asset Priority Configuration
+ *
+ * Defines provider ordering and disabled providers for a specific field or asset type
+ */
+export interface FieldPriorityConfig {
+  providerOrder: string[];  // ['tmdb', 'tvdb', 'fanart_tv']
+  disabled: string[];        // ['imdb'] - providers to exclude for this field
+}
+
+/**
+ * Request to update data selection mode
+ */
+export interface UpdateDataSelectionModeRequest {
+  mode: 'balanced' | 'custom';
+}
+
+/**
+ * Request to update custom priority for a specific field/asset
+ */
+export interface UpdateFieldPriorityRequest {
+  mediaType: 'movies' | 'tvshows' | 'music';
+  category: 'metadata' | 'images';
+  fieldName: string;
+  providerOrder: string[];
+  disabled?: string[];
 }

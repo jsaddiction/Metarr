@@ -1,853 +1,1064 @@
-# Core Application Workflows
+# Workflows
 
-**Related Docs**: [ARCHITECTURE.md](ARCHITECTURE.md), [AUTOMATION_AND_WEBHOOKS.md](AUTOMATION_AND_WEBHOOKS.md), [ASSET_MANAGEMENT.md](ASSET_MANAGEMENT.md), [PUBLISHING_WORKFLOW.md](PUBLISHING_WORKFLOW.md)
+## Overview
 
-This document details the primary operational workflows in Metarr's revised architecture, including two-phase scanning, enrichment pipeline, and automated publishing.
+Metarr operates through 6 core workflows that handle all media processing scenarios. These workflows are designed for efficiency and automation while preserving user control.
 
----
+**Core Principle**: "Automate Everything, Override Anything"
+- 95% webhook automation
+- 5% manual fixes when needed
+- Field locking preserves user edits
 
-## Workflow Overview
+## Workflow 1: Webhook - New Media
 
-Metarr operates through four distinct operational phases:
+**Trigger**: Radarr/Sonarr sends "Download" or "Import" webhook
+
+**Purpose**: Fully automated processing of new media from *arr stack
+
+### Flow Diagram
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                  METARR WORKFLOW PHASES                      │
-└─────────────────────────────────────────────────────────────┘
+Webhook Received
+    ↓
+Parse Webhook Payload
+    ↓
+Check if Movie Exists (by provider ID)
+    ↓
+┌─────────────┐
+│ NEW MEDIA   │
+└─────────────┘
+    ↓
+Create Job (Priority 1 - Critical)
+    ↓
+JOB PROCESSING:
+│
+├─ 1. Create Database Record
+│   - Extract: title, year, file_path, provider IDs
+│   - Status: identified
+│   - Priority: 1 (immediate enrichment)
+│
+├─ 2. FFprobe Analysis
+│   - Extract: video streams (codec, resolution, HDR)
+│   - Extract: audio streams (codec, language, channels)
+│   - Extract: subtitle streams (embedded + external .srt)
+│   - Store in: video_streams, audio_streams, subtitle_streams
+│
+├─ 3. Provider Enrichment (TMDB/TVDB/etc)
+│   - Fetch: metadata (plot, rating, release date, runtime)
+│   - Fetch: cast & crew (actors, directors, writers)
+│   - Fetch: asset URLs (posters, fanart, logos, trailers)
+│   - Store in: normalized tables (actors, crew, genres, studios)
+│   - Update: identification_status = 'enriched'
+│
+├─ 4. Asset Download (Concurrent)
+│   - Download all asset types from providers
+│   - Calculate: SHA256 hash, perceptual hash (images)
+│   - Store in: /cache/assets/{ab}/{cd}/{hash}.ext
+│   - Deduplicate: Check if hash exists in cache_assets
+│   - Create: cache_assets record (if new)
+│   - Link: asset_references (entity → cache_asset)
+│   - Update: movie.poster_id, fanart_id, etc.
+│
+├─ 5. Write Library Assets
+│   - Copy from cache → library directory
+│   - Naming: Kodi convention (moviename-poster.jpg, moviename-fanart.jpg)
+│   - Generate: NFO file with all metadata
+│
+└─ 6. Notify Media Players
+    - Translate: Metarr path → Player path (via path_mappings)
+    - Send: Library update notification to all Kodi groups
+    - Trigger: Library scan for new item
 
-PHASE 1: DISCOVERY (Fast Local Scan)
-  ├─ Scan filesystem for media files
-  ├─ Parse NFO for IDs + basic metadata
-  ├─ FFprobe video files (stream details)
-  ├─ Discover local assets (copy to cache)
-  └─ Insert to database (state = 'discovered' or 'identified')
-
-PHASE 2: ENRICHMENT (Background, Rate-Limited)
-  ├─ Fetch provider metadata (TMDB/TVDB)
-  ├─ Fetch asset candidate URLs
-  ├─ Run auto-selection algorithm (if enabled)
-  ├─ Download selected assets to cache
-  └─ Update database (state = 'enriched' or 'selected')
-
-PHASE 3: PUBLISHING (User-Triggered or Auto)
-  ├─ Generate NFO from database
-  ├─ Copy assets from cache → library
-  ├─ Write NFO to library
-  └─ Update database (state = 'published', has_unpublished_changes = 0)
-
-PHASE 4: NOTIFICATION (Async, Non-Blocking)
-  └─ Trigger media player scans (Kodi/Jellyfin)
+COMPLETE
 ```
 
-**Key Principle**: Each phase is **independent** and **resumable**. Crashes don't lose progress.
-
----
-
-## Scan Initiation Methods
-
-Metarr supports three methods to initiate discovery/enrichment workflows.
-
-### 1. Initial Library Scan (User-Triggered)
-
-**Trigger**: User clicks "Scan Library" button
-
-**Target Users**:
-- New Metarr installation
-- Adding new library
-- Rebuilding after database deletion
-
-**Automation Behavior** (depends on library config):
-
-| Mode | Phase 1 (Discovery) | Phase 2 (Enrichment) | Phase 3 (Publishing) |
-|------|---------------------|----------------------|----------------------|
-| **Manual** | ✓ Runs immediately | User triggers per-item | User triggers per-item |
-| **YOLO** | ✓ Runs immediately | ✓ Auto (background) | ✓ Auto (after selection) |
-| **Hybrid** | ✓ Runs immediately | ✓ Auto (background) | User triggers (bulk) |
-
-**Workflow** (YOLO Mode - Full Automation):
+### Code Example
 
 ```typescript
-// User clicks "YOLO My Library"
-POST /api/libraries/1/scan?mode=yolo
-
-1. Phase 1: Fast Local Scan (3-5 hours for 32k items)
-   ├─ Discover all movie directories
-   ├─ For each directory:
-   │   ├─ Find video file (*.mkv, *.mp4, etc.)
-   │   ├─ Parse NFO if exists
-   │   │   ├─ Extract IDs (tmdb_id, imdb_id)
-   │   │   ├─ Extract basic metadata (title, year, plot, genres, actors)
-   │   │   ├─ Do NOT follow <thumb> URLs (just store URLs)
-   │   │   └─ Calculate NFO hash (detect future changes)
-   │   ├─ FFprobe video file
-   │   │   └─ Store stream details (video, audio, subtitle tables)
-   │   ├─ Discover local assets (poster.jpg, fanart*.jpg)
-   │   │   ├─ Copy to content-addressed cache
-   │   │   ├─ Calculate pHash
-   │   │   └─ Insert to asset_candidates (provider='local', is_selected=1)
-   │   └─ Insert movie to database
-   │       ├─ state = 'identified' (if has tmdb_id)
-   │       ├─ state = 'discovered' (if no IDs)
-   │       └─ enrichment_priority = 5 (normal)
-   │
-   └─ Result: User sees 32k movies in UI immediately
-
-2. Phase 2: Lazy Enrichment (18-36 hours, rate-limited)
-   ├─ Background job picks up items where state = 'identified' AND enriched_at IS NULL
-   ├─ For each movie (priority queue):
-   │   ├─ Fetch TMDB metadata (50/sec rate limit)
-   │   │   ├─ Plot, tagline, genres, actors, directors (respect locks)
-   │   │   └─ Store in database, mark enriched_at = NOW()
-   │   ├─ Fetch asset candidates (URLs only, don't download yet)
-   │   │   ├─ 15 posters from TMDB
-   │   │   ├─ 20 fanarts from TMDB
-   │   │   └─ Insert to asset_candidates (provider='tmdb', is_downloaded=0)
-   │   ├─ Run auto-selection algorithm
-   │   │   ├─ Score each candidate (resolution, votes, language)
-   │   │   ├─ Filter duplicates (pHash similarity)
-   │   │   ├─ Select top N (config: max_count)
-   │   │   └─ Mark is_selected=1, selected_by='auto'
-   │   ├─ Download selected assets to cache
-   │   │   ├─ Calculate content hash (SHA256)
-   │   │   ├─ Save as /cache/assets/{hash}.jpg
-   │   │   └─ Update asset_candidates (cache_path, content_hash, is_downloaded=1)
-   │   └─ Update movie state = 'selected'
-   │
-   └─ Emit SSE progress events (every 10 items)
-
-3. Phase 3: Auto-Publish (YOLO mode)
-   ├─ For each movie where state = 'selected':
-   │   ├─ Generate NFO from database
-   │   ├─ Copy selected assets from cache → library
-   │   │   ├─ poster.jpg (first poster)
-   │   │   ├─ fanart.jpg (first fanart)
-   │   │   └─ fanart1.jpg, fanart2.jpg, ... (additional fanarts)
-   │   ├─ Write NFO to library
-   │   └─ Update movie
-   │       ├─ state = 'published'
-   │       ├─ has_unpublished_changes = 0
-   │       ├─ last_published_at = NOW()
-   │       └─ published_nfo_hash = SHA256(nfo_content)
-   │
-   └─ Result: All assets in library, ready for player scan
-
-4. Phase 4: Notify Players (Async)
-   └─ Trigger Kodi/Jellyfin scans (one per library, not per movie)
-```
-
-**Progress Tracking** (Real-Time SSE):
-
-```typescript
-// Frontend listens to SSE
-const eventSource = new EventSource('/api/events');
-
-eventSource.addEventListener('scan:progress', (e) => {
-  // { current: 1234, total: 32000, added: 1100, updated: 134 }
-});
-
-eventSource.addEventListener('enrich:progress', (e) => {
-  // { current: 456, total: 32000, entityId: 789 }
-});
-
-eventSource.addEventListener('publish:progress', (e) => {
-  // { current: 123, total: 32000, entityId: 456 }
-});
-```
-
-**See Also**:
-- [AUTOMATION_AND_WEBHOOKS.md](AUTOMATION_AND_WEBHOOKS.md#automation-levels) - Automation modes
-- [ASSET_MANAGEMENT.md](ASSET_MANAGEMENT.md#auto-selection-algorithm) - Asset selection algorithm
-
----
-
-### 2. Webhook-Initiated Processing (Fully Automated)
-
-**Trigger**: Radarr/Sonarr sends webhook when download completes
-
-**Context Available**:
-- ✅ TMDB ID (authoritative identifier)
-- ✅ IMDB ID (secondary identifier)
-- ✅ File path (manager's view, needs path mapping)
-- ✅ Movie metadata (title, year, quality)
-
-**Automation**: **Always fully automated** (regardless of library mode)
-
-**Rationale**: User enabled webhooks because they want automation. No manual review for webhook-triggered content.
-
-**Workflow** (New Download):
-
-```typescript
-// Radarr sends webhook
-POST https://metarr.local/webhooks/radarr
-Body: {
-  eventType: "Download",
-  tmdb_id: 603,
-  imdb_id: "tt0133093",
-  title: "The Matrix",
-  year: 1999,
-  path: "/data/movies/The Matrix (1999)/The Matrix.mkv"
-}
-
-1. Webhook Received (Critical Priority - Pauses other jobs)
-   ├─ Parse payload
-   ├─ Apply path mapping (manager → Metarr)
-   │   └─ /data/movies/ → M:\Movies\
-   └─ Check if movie exists (by tmdb_id)
-
-2. Database Lookup Strategy
-   ├─ Query: SELECT * FROM movies WHERE tmdb_id = 603
-   ├─ If found:
-   │   └─ UPGRADE WORKFLOW (see next section)
-   └─ If not found:
-       └─ NEW DOWNLOAD WORKFLOW (continue below)
-
-3. Phase 1: Scan Directory (High Priority)
-   ├─ Find video file
-   ├─ Parse NFO (if exists)
-   │   ├─ Extract IDs, basic metadata
-   │   └─ Calculate NFO hash
-   ├─ FFprobe video file
-   ├─ Discover local assets (copy to cache)
-   └─ Insert movie
-       ├─ state = 'identified'
-       ├─ enrichment_priority = 2 (high - webhook triggered)
-
-4. Phase 2: Enrich from TMDB (High Priority)
-   ├─ Jump to front of enrichment queue (priority=2)
-   ├─ Fetch metadata (TMDB API)
-   ├─ Fetch asset candidates
-   ├─ Auto-select assets (algorithm)
-   ├─ Download to cache
-   └─ state = 'selected'
-
-5. Phase 3: Auto-Publish (Immediate)
-   ├─ Generate NFO
-   ├─ Copy assets to library
-   ├─ Write NFO
-   └─ state = 'published'
-
-6. Phase 4: Notify Players (Async)
-   └─ Trigger Kodi scan on specific directory
-
-RESULT: New movie appears in Kodi within 30-60 seconds
-```
-
-**Workflow** (Upgrade - Radarr Deleted Directory):
-
-```typescript
-// Scenario: Radarr upgrades 720p → 1080p, deletes entire directory
-
-POST https://metarr.local/webhooks/radarr
-Body: {
-  eventType: "Download",
-  isUpgrade: true,
-  tmdb_id: 603,
-  path: "/data/movies/The Matrix (1999)/The Matrix.mkv"
-}
-
-1. Webhook Received
-   └─ Query: SELECT * FROM movies WHERE tmdb_id = 603
-       └─ Found movie ID 123
-
-2. Detect Missing Assets (Disaster Recovery)
-   ├─ Get library path: M:\Movies\The Matrix (1999)\
-   ├─ Check NFO exists: movie.nfo → MISSING
-   ├─ Check poster exists: poster.jpg → MISSING
-   └─ Conclusion: Directory was deleted by Radarr
-
-3. Restore from Cache
-   ├─ Get last published assets from publish_log
-   │   └─ Query: SELECT assets_published FROM publish_log WHERE entity_id=123 AND success=1 ORDER BY published_at DESC LIMIT 1
-   ├─ Ensure library directory exists
-   │   └─ mkdir -p "M:\Movies\The Matrix (1999)"
-   ├─ Copy assets from cache → library
-   │   ├─ /cache/assets/abc123.jpg → poster.jpg
-   │   ├─ /cache/assets/def456.jpg → fanart.jpg
-   │   └─ /cache/assets/ghi789.jpg → fanart1.jpg
-   └─ Regenerate NFO from database
-       └─ Write movie.nfo (with metadata from database)
-
-4. Update Video File Path
-   └─ UPDATE movies SET file_path = 'M:\Movies\...\The Matrix.mkv' WHERE id = 123
-
-5. Re-Scan Stream Details (New File)
-   ├─ FFprobe new 1080p file
-   ├─ Update video_streams (resolution, bitrate, etc.)
-   └─ Update audio/subtitle streams
-
-6. Regenerate NFO (Updated Streams)
-   └─ Write movie.nfo with new <fileinfo><streamdetails>
-
-7. Mark as Published
-   ├─ state = 'published'
-   ├─ has_unpublished_changes = 0
-   └─ last_published_at = NOW()
-
-8. Notify Players
-   └─ Trigger Kodi scan
-
-RESULT: Seamless upgrade, user sees no data loss
-```
-
-**See Also**:
-- [WEBHOOKS.md](WEBHOOKS.md) - Complete webhook reference
-- [AUTOMATION_AND_WEBHOOKS.md](AUTOMATION_AND_WEBHOOKS.md#webhook-automation) - Webhook behavior
-- [ASSET_MANAGEMENT.md](ASSET_MANAGEMENT.md#disaster-recovery) - Restore from cache
-
----
-
-### 3. User-Initiated Refresh (Manual Enrichment)
-
-**Trigger**: User clicks "Enrich" button on movie detail page
-
-**Use Cases**:
-- Manual mode: User wants to fetch latest metadata
-- Fix enrichment errors
-- Update metadata after provider changes
-
-**Workflow**:
-
-```typescript
-// User clicks "Enrich from TMDB"
-POST /api/movies/123/enrich
-
-1. Check Current State
-   ├─ Load movie from database
-   └─ Check field locks (skip locked fields)
-
-2. Fetch TMDB Metadata
-   ├─ Query TMDB API (movie.tmdb_id)
-   ├─ Merge data (respect locks)
-   │   ├─ If plot_locked = 0 → Update plot
-   │   ├─ If plot_locked = 1 → Skip plot
-   │   └─ Repeat for all fields
-   └─ Mark enriched_at = NOW()
-
-3. Fetch Asset Candidates
-   ├─ Query TMDB images API
-   ├─ Insert to asset_candidates (is_downloaded=0)
-   └─ Return candidate count to UI
-
-4. User Reviews Candidates
-   ├─ UI shows grid of 15 posters
-   └─ User selects poster #3
-
-5. Download Selected
-   ├─ Download from provider URL
-   ├─ Save to cache (content-addressed)
-   └─ Mark is_selected=1, selected_by='manual'
-
-6. Lock Asset
-   └─ UPDATE movies SET poster_locked=1 WHERE id=123
-
-7. Mark Dirty
-   └─ UPDATE movies SET has_unpublished_changes=1 WHERE id=123
-
-8. User Clicks "Publish"
-   └─ Run publishing workflow (see PUBLISHING_WORKFLOW.md)
-```
-
-**See Also**:
-- [PUBLISHING_WORKFLOW.md](PUBLISHING_WORKFLOW.md) - Publishing process
-- [ASSET_MANAGEMENT.md](ASSET_MANAGEMENT.md#manual-selection-workflow) - Manual asset selection
-
----
-
-## Phase 1: Discovery (Fast Local Scan)
-
-### Purpose
-
-Quickly populate database with filesystem state, no network calls.
-
-### What Gets Scanned
-
-```typescript
-function scanDirectory(dirPath: string): ScanResult {
-  // 1. Find video file
-  const videoFile = findVideoFile(dirPath);  // *.mkv, *.mp4, *.avi, etc.
-
-  if (!videoFile) {
-    return { skipped: true, reason: 'no_video_file' };
-  }
-
-  // 2. Parse NFO (if exists)
-  const nfoPath = path.join(dirPath, 'movie.nfo');
-  let nfoData = null;
-
-  if (fs.existsSync(nfoPath)) {
-    nfoData = parseNFO(nfoPath, {
-      extractIDs: true,           // tmdb_id, imdb_id
-      extractBasicMetadata: true, // title, year, plot, genres
-      followThumbURLs: false,     // Do NOT download images
-      followTrailerURLs: false    // Do NOT download trailers
-    });
-  }
-
-  // 3. FFprobe video file
-  const streamDetails = await ffprobe(videoFile);
-
-  // 4. Discover local assets
-  const localAssets = discoverLocalAssets(dirPath, {
-    imagePatterns: ['poster.jpg', 'fanart*.jpg', 'banner.jpg', 'clearlogo.png'],
-    trailerPatterns: ['*-trailer.mkv', 'trailer.mp4'],
-    subtitlePatterns: ['*.srt', '*.ass']
+async function handleNewMediaWebhook(webhook: WebhookPayload): Promise<void> {
+  // Create critical priority job
+  const jobId = await jobQueue.add({
+    type: 'webhook',
+    priority: 1,
+    payload: {
+      action: 'new_media',
+      movieId: webhook.movie.tmdbId,
+      filePath: webhook.movie.path,
+      title: webhook.movie.title,
+      year: webhook.movie.year
+    }
   });
 
-  // 5. Copy assets to cache (content-addressed)
-  for (const asset of localAssets) {
-    const buffer = fs.readFileSync(asset.path);
-    const contentHash = sha256(buffer);
-    const cachePath = `/data/cache/assets/${contentHash}.${asset.ext}`;
+  // Job processor handles the rest
+  await jobQueue.process(jobId);
+}
 
-    if (!fs.existsSync(cachePath)) {
-      fs.copyFileSync(asset.path, cachePath);
-    }
-
-    // Calculate pHash (for images)
-    if (asset.type === 'image') {
-      asset.perceptualHash = await calculatePHash(buffer);
-    }
-  }
-
-  // 6. Insert to database
-  const movieId = await db.insertMovie({
-    title: nfoData?.title || extractTitleFromPath(dirPath),
-    year: nfoData?.year,
-    tmdb_id: nfoData?.tmdb_id,
-    imdb_id: nfoData?.imdb_id,
-    plot: nfoData?.plot,
-    genres: nfoData?.genres,
-    actors: nfoData?.actors,
-    directors: nfoData?.directors,
-    file_path: videoFile,
-    nfo_hash: nfoData ? sha256(nfoData.raw) : null,
-    state: nfoData?.tmdb_id ? 'identified' : 'discovered',
-    enrichment_priority: 5  // Normal priority
+async function processNewMediaJob(job: Job): Promise<void> {
+  // Step 1: Create database record
+  const movie = await db.movies.create({
+    library_id: 1,
+    file_path: job.payload.filePath,
+    title: job.payload.title,
+    year: job.payload.year,
+    tmdb_id: job.payload.movieId,
+    identification_status: 'identified',
+    enrichment_priority: 1
   });
 
-  // 7. Insert stream details
-  await db.insertVideoStream(movieId, streamDetails.video);
-  await db.insertAudioStreams(movieId, streamDetails.audio);
-  await db.insertSubtitleStreams(movieId, streamDetails.subtitles);
+  // Step 2: FFprobe
+  const streams = await ffprobe(job.payload.filePath);
+  await storeStreams(movie.id, streams);
 
-  // 8. Insert local assets as candidates
-  for (const asset of localAssets) {
-    await db.insertAssetCandidate({
+  // Step 3: Provider enrichment
+  const metadata = await tmdb.getMovie(job.payload.movieId);
+  await enrichMovie(movie.id, metadata);
+
+  // Step 4: Download assets
+  await downloadAssets(movie.id, metadata.images);
+
+  // Step 5: Write library files
+  await writeNFO(movie.id);
+  await copyAssetsToLibrary(movie.id);
+
+  // Step 6: Notify players
+  await notifyKodiGroups('library.scan', { movieId: movie.id });
+}
+```
+
+### Timing
+
+- **Total Duration**: 10-30 seconds (depends on asset count)
+  - Database + FFprobe: 1-2 seconds
+  - Provider API: 1-3 seconds
+  - Asset downloads: 5-20 seconds (concurrent)
+  - NFO + Library writes: 1-2 seconds
+  - Kodi notification: 1 second
+
+## Workflow 2: Webhook - Upgrade
+
+**Trigger**: Radarr sends "MovieFileDelete" followed by "Download" webhook
+
+**Purpose**: Handle quality upgrades while preserving assets and playback state
+
+### Flow Diagram
+
+```
+MovieFileDelete Webhook
+    ↓
+Check if Movie is Currently Playing
+    ↓
+┌────────────────────┐
+│ PLAYING → CAPTURE  │
+└────────────────────┘
+    ↓
+Query Kodi: Get playback position
+Store in: playback_state table
+    ↓
+Download Webhook (New File)
+    ↓
+Update Movie Record
+│
+├─ Update: file_path (new location)
+├─ Update: file_size, file_hash
+├─ Re-run: FFprobe (new streams)
+├─ Keep: All metadata (no re-enrichment)
+├─ Keep: All assets (already in cache)
+│
+└─ Copy Assets to New Location
+    - Source: cache (SHA256 hash)
+    - Destination: new movie directory
+    - Naming: Kodi convention
+
+Update NFO (new file path)
+    ↓
+Notify Kodi Groups
+    ↓
+Check for Playback State
+    ↓
+┌──────────────────────┐
+│ HAS STATE → RESTORE  │
+└──────────────────────┘
+    ↓
+Resume Playback:
+- Same position
+- Same player
+- Notify user: "Upgrade complete, resuming playback"
+```
+
+### Code Example
+
+```typescript
+async function handleMovieFileDeleteWebhook(webhook: WebhookPayload): Promise<void> {
+  const movie = await db.movies.findByTmdbId(webhook.movie.tmdbId);
+
+  // Check if currently playing
+  const playbackState = await kodi.getPlaybackState(movie.id);
+
+  if (playbackState) {
+    // Capture current position
+    await db.playback_state.create({
+      media_player_id: playbackState.playerId,
       entity_type: 'movie',
-      entity_id: movieId,
-      asset_type: asset.type,  // 'poster', 'fanart', etc.
-      provider: 'local',
-      is_downloaded: 1,
-      cache_path: asset.cachePath,
-      content_hash: asset.contentHash,
-      perceptual_hash: asset.perceptualHash,
-      is_selected: 1,  // Local assets auto-selected
-      selected_by: 'local'
+      entity_id: movie.id,
+      file_path: movie.file_path,
+      position_seconds: playbackState.position,
+      total_seconds: playbackState.total,
+      position_percentage: (playbackState.position / playbackState.total) * 100
+    });
+
+    // Stop playback
+    await kodi.stopPlayback(playbackState.playerId);
+  }
+}
+
+async function handleUpgradeDownloadWebhook(webhook: WebhookPayload): Promise<void> {
+  const movie = await db.movies.findByTmdbId(webhook.movie.tmdbId);
+
+  // Update file info only (keep all metadata and assets)
+  await db.movies.update(movie.id, {
+    file_path: webhook.movie.path,
+    file_size: webhook.movie.size,
+    updated_at: new Date()
+  });
+
+  // Re-analyze streams (may have changed)
+  const streams = await ffprobe(webhook.movie.path);
+  await updateStreams(movie.id, streams);
+
+  // Copy assets from cache to new location
+  await copyAssetsToLibrary(movie.id);
+
+  // Update NFO
+  await writeNFO(movie.id);
+
+  // Notify players
+  await notifyKodiGroups('library.scan', { movieId: movie.id });
+
+  // Check for playback state
+  const playbackState = await db.playback_state.findLatest(movie.id);
+
+  if (playbackState && !playbackState.restored_at) {
+    // Wait for library scan to complete (5 seconds)
+    await sleep(5000);
+
+    // Resume playback
+    await kodi.play(playbackState.media_player_id, {
+      file: translatePath(movie.file_path, playbackState.media_player_id),
+      resume: {
+        position: playbackState.position_seconds,
+        percentage: playbackState.position_percentage
+      }
+    });
+
+    // Mark as restored
+    await db.playback_state.update(playbackState.id, {
+      restored_at: new Date()
+    });
+
+    // Notify user
+    await kodi.showNotification(playbackState.media_player_id, {
+      title: 'Upgrade Complete',
+      message: `${movie.title} upgraded and resumed`,
+      image: movie.poster_path
     });
   }
-
-  return { success: true, movieId };
 }
 ```
 
-### Performance Characteristics
+### Timing
 
-| Metric | Value |
-|--------|-------|
-| Time per item | ~0.5 seconds |
-| 1,000 items | ~8 minutes |
-| 10,000 items | ~1.4 hours |
-| 32,000 items | ~4.5 hours |
+- **Upgrade Duration**: 5-10 seconds
+  - Playback capture: <1 second
+  - Database update: <1 second
+  - FFprobe: 1-2 seconds
+  - Asset copy: 1-3 seconds
+  - NFO write: <1 second
+  - Playback restore: 5 seconds (wait for scan)
 
-### NFO Parsing During Phase 1
+## Workflow 3: Manual Library Scan
 
-**What Gets Parsed**:
-- ✅ Provider IDs (`<tmdbid>`, `<imdbid>`)
-- ✅ Basic metadata (`<title>`, `<year>`, `<plot>`, `<genre>`)
-- ✅ Cast/crew (`<actor>`, `<director>`, `<writer>`)
-- ✅ Ratings (`<ratings>`)
+**Trigger**: User clicks "Scan Library" or scheduled scan runs
 
-**What Gets Deferred**:
-- ❌ `<thumb>` URLs (stored but not downloaded)
-- ❌ `<fanart>` URLs (stored but not downloaded)
-- ❌ `<trailer>` URLs (ignored - local files only)
+**Purpose**: Discover new files, remove deleted files, realign metadata
 
-**Rationale**: Fast scan with immediate UI feedback. User can search, browse, and make edits while Phase 2 runs in background.
+### Flow Diagram
 
-### Database State After Phase 1
+```
+Scan Initiated
+    ↓
+Create Scan Job (Priority 7 - Low)
+    ↓
+Read Library Configuration
+    ↓
+Filesystem Walk
+│
+├─ For each media file:
+│   │
+│   ├─ Check Database (by file_path)
+│   │   │
+│   │   ├─ EXISTS → Compare file_hash
+│   │   │   │
+│   │   │   ├─ SAME → Skip (no changes)
+│   │   │   │
+│   │   │   └─ DIFFERENT → File replaced
+│   │   │       - Delete old streams
+│   │   │       - Re-run FFprobe
+│   │   │       - Keep metadata (unless locked)
+│   │   │       - Update file_hash
+│   │   │
+│   │   └─ NOT EXISTS → New file
+│   │       - Parse filename (title, year)
+│   │       - Create database record
+│   │       - Status: unidentified
+│   │       - Add to enrichment queue
+│   │
+│   └─ Check for sidecar files
+│       - NFO file → Parse for provider IDs
+│       - Subtitle files → Link to movie
+│       - Image files → Import to cache
+│
+└─ Check for deleted files
+    - Database records not found in filesystem
+    - Set: deleted_at = NOW() + 30 days (soft delete)
 
-```sql
--- Movies discovered
-SELECT COUNT(*) FROM movies WHERE state = 'discovered';
--- Result: 500 (movies without provider IDs)
-
-SELECT COUNT(*) FROM movies WHERE state = 'identified';
--- Result: 31,500 (movies with tmdb_id from NFO)
-
--- Local assets discovered
-SELECT COUNT(*) FROM asset_candidates WHERE provider = 'local';
--- Result: 128,000 (posters + fanarts from library)
-
--- Stream details scanned
-SELECT COUNT(*) FROM video_streams;
--- Result: 32,000 (one per movie)
+Scan Complete
+    ↓
+Process Unidentified Files
+│
+├─ Search Provider (TMDB/TVDB)
+│   - Query: title + year
+│   - Match threshold: 85% confidence
+│   │
+│   ├─ MATCH FOUND → Update record
+│   │   - Set: provider IDs
+│   │   - Status: identified
+│   │   - Add to enrichment queue (priority 5)
+│   │
+│   └─ NO MATCH → Manual intervention
+│       - Status: unidentified
+│       - User notified via UI
+│
+└─ Process Enrichment Queue
+    - Background job processes identified media
+    - Lower priority (5) than webhooks (1)
 ```
 
-**User Can Immediately**:
-- Browse library (all 32k items visible)
-- Search by title
-- View basic metadata (from NFO)
-- View local assets (posters already in library)
-- Manually edit any field
-- Manually trigger enrichment on specific items
-
----
-
-## Phase 2: Enrichment (Background, Rate-Limited)
-
-### Purpose
-
-Fetch metadata and asset candidates from providers without blocking UI.
-
-### Enrichment Queue
-
-```sql
--- Items needing enrichment
-SELECT * FROM movies
-WHERE state = 'identified'
-  AND enriched_at IS NULL
-ORDER BY enrichment_priority ASC, created_at DESC;
-
--- Priority levels:
--- 1 = Critical (webhook-triggered, immediate)
--- 2 = High (user-triggered, jump queue)
--- 5 = Normal (scheduled background)
-```
-
-### Enrichment Worker
+### Code Example
 
 ```typescript
-class EnrichmentWorker {
-  async start() {
-    while (true) {
-      // 1. Fetch next item from queue
-      const movie = await db.query(`
-        SELECT * FROM movies
-        WHERE state = 'identified'
-          AND enriched_at IS NULL
-        ORDER BY enrichment_priority ASC, created_at ASC
-        LIMIT 1
-      `);
+async function scanLibrary(libraryId: number): Promise<ScanResult> {
+  const library = await db.libraries.findById(libraryId);
+  const scanJob = await db.scan_jobs.create({
+    library_id: libraryId,
+    scan_type: 'full',
+    status: 'running',
+    started_at: new Date()
+  });
 
-      if (!movie.length) {
-        await sleep(1000);  // Wait 1 second, check again
+  const stats = {
+    total: 0,
+    added: 0,
+    updated: 0,
+    removed: 0,
+    unidentified: 0
+  };
+
+  // Walk filesystem
+  const files = await walkDirectory(library.path, ['.mkv', '.mp4', '.avi']);
+  stats.total = files.length;
+
+  for (const file of files) {
+    const fileHash = await calculateHash(file.path);
+    const existing = await db.movies.findByPath(file.path);
+
+    if (existing) {
+      // Check if file changed
+      if (existing.file_hash !== fileHash) {
+        await updateMovie(existing.id, file, fileHash);
+        stats.updated++;
+      }
+    } else {
+      // New file
+      const parsed = parseFilename(file.name);
+      const movie = await db.movies.create({
+        library_id: libraryId,
+        file_path: file.path,
+        file_name: file.name,
+        file_size: file.size,
+        file_hash: fileHash,
+        title: parsed.title,
+        year: parsed.year,
+        identification_status: 'unidentified',
+        enrichment_priority: 5
+      });
+
+      stats.added++;
+
+      // Try to identify
+      const match = await searchTMDB(parsed.title, parsed.year);
+      if (match && match.confidence > 0.85) {
+        await db.movies.update(movie.id, {
+          tmdb_id: match.id,
+          imdb_id: match.imdb_id,
+          identification_status: 'identified'
+        });
+
+        // Add to enrichment queue
+        await jobQueue.add({
+          type: 'enrichment',
+          priority: 5,
+          payload: { movieId: movie.id }
+        });
+      } else {
+        stats.unidentified++;
+      }
+    }
+  }
+
+  // Check for deleted files
+  const allMovies = await db.movies.findByLibrary(libraryId);
+  const filePaths = new Set(files.map(f => f.path));
+
+  for (const movie of allMovies) {
+    if (!filePaths.has(movie.file_path) && !movie.deleted_at) {
+      await db.movies.update(movie.id, {
+        deleted_at: addDays(new Date(), 30)
+      });
+      stats.removed++;
+    }
+  }
+
+  // Update scan job
+  await db.scan_jobs.update(scanJob.id, {
+    status: 'completed',
+    completed_at: new Date(),
+    total_items: stats.total,
+    added_items: stats.added,
+    updated_items: stats.updated,
+    removed_items: stats.removed
+  });
+
+  return stats;
+}
+```
+
+### Timing
+
+- **Scan Duration**: Depends on library size
+  - Small (100 movies): 1-2 minutes
+  - Medium (1000 movies): 10-15 minutes
+  - Large (5000 movies): 30-60 minutes
+- **Per File**: ~1-2 seconds (hash calculation + database lookup)
+
+## Workflow 4: Manual Asset Replacement
+
+**Trigger**: User uploads custom asset or selects different provider image
+
+**Purpose**: Override automated asset selection with user preference
+
+### Flow Diagram
+
+```
+User Action: "Replace Poster"
+    ↓
+┌─────────────────────┐
+│ UPLOAD LOCAL FILE   │
+│ or                  │
+│ SELECT FROM PROVIDER│
+└─────────────────────┘
+    ↓
+IF UPLOAD:
+│
+├─ Validate Image
+│   - Check: file type (jpg, png)
+│   - Check: dimensions (min 1000x1500)
+│   - Check: file size (max 10MB)
+│
+├─ Process Image
+│   - Calculate: SHA256 hash
+│   - Calculate: perceptual hash
+│   - Check: Duplicate in cache (by hash)
+│
+├─ Store in Cache
+│   - Path: /cache/assets/{ab}/{cd}/{hash}.jpg
+│   - Create: cache_assets record
+│   - Source: 'user'
+│
+└─ Link to Movie
+    - Update: movie.poster_id
+    - Set: movie.poster_locked = true
+    - Create: asset_references record
+
+IF PROVIDER:
+│
+├─ Download from URL
+│   - Process same as upload
+│   - Source: 'provider'
+│
+└─ Link to Movie (same as above)
+
+Copy to Library
+    ↓
+Update NFO
+    ↓
+Set Field Lock
+- poster_locked = true
+- Prevents future automation from changing
+    ↓
+Notify Media Players
+    ↓
+Activity Log
+- Event: 'asset.replaced'
+- Description: "User replaced poster for {title}"
+```
+
+### Code Example
+
+```typescript
+async function replaceAsset(
+  movieId: number,
+  assetType: string,
+  source: 'upload' | 'provider',
+  data: Buffer | string
+): Promise<void> {
+  let imageBuffer: Buffer;
+
+  if (source === 'upload') {
+    imageBuffer = data as Buffer;
+  } else {
+    // Download from provider URL
+    imageBuffer = await downloadImage(data as string);
+  }
+
+  // Validate
+  const metadata = await sharp(imageBuffer).metadata();
+  if (metadata.width < 1000 || metadata.height < 1500) {
+    throw new Error('Image too small (min 1000x1500)');
+  }
+
+  // Calculate hashes
+  const contentHash = crypto.createHash('sha256').update(imageBuffer).digest('hex');
+  const perceptualHash = await calculatePerceptualHash(imageBuffer);
+
+  // Check for duplicate
+  let cacheAsset = await db.cache_assets.findByHash(contentHash);
+
+  if (!cacheAsset) {
+    // Store in cache
+    const cachePath = `/cache/assets/${contentHash.slice(0, 2)}/${contentHash.slice(2, 4)}/${contentHash}.jpg`;
+    await fs.writeFile(cachePath, imageBuffer);
+
+    cacheAsset = await db.cache_assets.create({
+      content_hash: contentHash,
+      file_path: cachePath,
+      file_size: imageBuffer.length,
+      mime_type: `image/${metadata.format}`,
+      width: metadata.width,
+      height: metadata.height,
+      perceptual_hash: perceptualHash,
+      source_type: source === 'upload' ? 'user' : 'provider',
+      reference_count: 0
+    });
+  }
+
+  // Get movie
+  const movie = await db.movies.findById(movieId);
+
+  // Decrement old asset reference count
+  if (movie.poster_id) {
+    await decrementAssetReference(movie.poster_id);
+  }
+
+  // Update movie
+  await db.movies.update(movieId, {
+    poster_id: cacheAsset.id,
+    poster_locked: true
+  });
+
+  // Increment new asset reference count
+  await incrementAssetReference(cacheAsset.id);
+
+  // Create asset reference
+  await db.asset_references.create({
+    cache_asset_id: cacheAsset.id,
+    entity_type: 'movie',
+    entity_id: movieId,
+    asset_type: assetType
+  });
+
+  // Copy to library
+  await copyAssetToLibrary(movieId, assetType, cacheAsset.file_path);
+
+  // Update NFO
+  await writeNFO(movieId);
+
+  // Notify players
+  await notifyKodiGroups('library.scan', { movieId });
+
+  // Log activity
+  await db.activity_log.create({
+    event_type: 'asset.replaced',
+    severity: 'info',
+    entity_type: 'movie',
+    entity_id: movieId,
+    description: `User replaced ${assetType} for ${movie.title}`
+  });
+}
+```
+
+### Timing
+
+- **Upload**: 2-5 seconds
+  - Image processing: 1-2 seconds
+  - Cache storage: <1 second
+  - Database updates: <1 second
+  - Library copy: <1 second
+  - NFO write: <1 second
+
+## Workflow 5: Delete Webhook (Trash Day)
+
+**Trigger**: Radarr sends "MovieDelete" webhook
+
+**Purpose**: Soft delete with 30-day recovery period
+
+### Flow Diagram
+
+```
+MovieDelete Webhook
+    ↓
+Find Movie Record (by provider ID)
+    ↓
+Soft Delete
+- Set: deleted_at = NOW() + 30 days
+- Status: Visible in "Trash" UI
+    ↓
+User Has 30 Days to:
+│
+├─ RESTORE → Clear deleted_at
+│   - Movie returns to library
+│   - All assets intact
+│   - No re-download needed
+│
+└─ DO NOTHING → Auto-delete after 30 days
+
+Scheduled Job (Daily):
+│
+└─ Find Expired Records
+    - Query: deleted_at < NOW()
+    │
+    └─ For each expired movie:
+        │
+        ├─ Delete database record
+        │   - Cascade: all relationships
+        │   - Cascade: stream details
+        │   - Cascade: asset references
+        │
+        ├─ Decrement cache reference counts
+        │   - For each linked asset
+        │   - If ref_count = 0 → mark orphaned
+        │
+        └─ Delete library files (NFO, assets)
+
+Cache Cleanup (Weekly):
+│
+└─ Find orphaned assets
+    - Query: reference_count = 0 AND created_at < NOW() - 90 days
+    │
+    └─ Delete physical files
+        - Remove from /cache/assets/
+        - Delete cache_assets record
+```
+
+### Code Example
+
+```typescript
+async function handleMovieDeleteWebhook(webhook: WebhookPayload): Promise<void> {
+  const movie = await db.movies.findByTmdbId(webhook.movie.tmdbId);
+
+  if (!movie) {
+    return; // Already deleted
+  }
+
+  // Soft delete (30-day grace period)
+  await db.movies.update(movie.id, {
+    deleted_at: addDays(new Date(), 30)
+  });
+
+  await db.activity_log.create({
+    event_type: 'movie.deleted',
+    severity: 'warning',
+    entity_type: 'movie',
+    entity_id: movie.id,
+    description: `Movie soft-deleted via webhook: ${movie.title}. Recoverable for 30 days.`,
+    metadata: JSON.stringify(webhook)
+  });
+}
+
+async function restoreMovie(movieId: number): Promise<void> {
+  const movie = await db.movies.findById(movieId);
+
+  if (!movie.deleted_at) {
+    throw new Error('Movie is not deleted');
+  }
+
+  // Restore
+  await db.movies.update(movieId, {
+    deleted_at: null
+  });
+
+  await db.activity_log.create({
+    event_type: 'movie.restored',
+    severity: 'success',
+    entity_type: 'movie',
+    entity_id: movieId,
+    description: `Movie restored from trash: ${movie.title}`
+  });
+}
+
+// Scheduled job (runs daily)
+async function permanentlyDeleteExpired(): Promise<void> {
+  const expired = await db.movies.findExpired();
+
+  for (const movie of expired) {
+    // Get all linked assets before deletion
+    const assets = await db.asset_references.findByEntity('movie', movie.id);
+
+    // Delete movie (cascades to all relationships)
+    await db.movies.delete(movie.id);
+
+    // Decrement asset reference counts
+    for (const asset of assets) {
+      await decrementAssetReference(asset.cache_asset_id);
+    }
+
+    // Delete library files
+    await deleteLibraryFiles(movie.file_path);
+
+    await db.activity_log.create({
+      event_type: 'movie.permanently_deleted',
+      severity: 'warning',
+      entity_type: 'movie',
+      entity_id: movie.id,
+      description: `Movie permanently deleted after grace period: ${movie.title}`
+    });
+  }
+}
+
+// Scheduled job (runs weekly)
+async function cleanupOrphanedAssets(): Promise<void> {
+  const orphaned = await db.cache_assets.find({
+    reference_count: 0,
+    created_at: { $lt: subDays(new Date(), 90) }
+  });
+
+  for (const asset of orphaned) {
+    // Delete physical file
+    await fs.unlink(asset.file_path);
+
+    // Delete database record
+    await db.cache_assets.delete(asset.id);
+  }
+
+  await db.activity_log.create({
+    event_type: 'cache.cleanup',
+    severity: 'info',
+    description: `Cleaned up ${orphaned.length} orphaned assets`
+  });
+}
+```
+
+## Workflow 6: Unidentified Media
+
+**Trigger**: Library scan finds file that can't be automatically matched
+
+**Purpose**: User intervention to identify media
+
+### Flow Diagram
+
+```
+Scan Finds Unknown File
+    ↓
+Parse Filename
+- Extract: title, year (best guess)
+- Status: unidentified
+    ↓
+Search Provider (Auto-attempt)
+- Query: TMDB with title + year
+- Confidence threshold: 85%
+    ↓
+┌────────────────┐
+│ MATCH < 85%    │
+└────────────────┘
+    ↓
+User Notification
+- UI: "Unidentified Media" badge
+- List: All unidentified files
+    ↓
+User Actions:
+│
+├─ 1. SEARCH MANUALLY
+│   - User enters: title, year
+│   - UI shows: provider results
+│   - User selects: correct match
+│   - Update: provider IDs
+│   - Status: identified
+│   - Trigger: Workflow 1 (enrichment)
+│
+├─ 2. ENTER METADATA MANUALLY
+│   - User fills form: title, plot, cast, etc.
+│   - Upload: custom assets
+│   - Status: enriched
+│   - Lock: all fields (prevent automation)
+│
+└─ 3. IGNORE
+    - Mark: identification_status = 'ignored'
+    - Hide from UI
+    - Skip in future scans
+```
+
+### Code Example
+
+```typescript
+async function identifyMovie(movieId: number, tmdbId: number): Promise<void> {
+  const movie = await db.movies.findById(movieId);
+
+  // Update with provider ID
+  await db.movies.update(movieId, {
+    tmdb_id: tmdbId,
+    identification_status: 'identified',
+    enrichment_priority: 2 // High priority (user action)
+  });
+
+  // Add to enrichment queue
+  await jobQueue.add({
+    type: 'enrichment',
+    priority: 2,
+    payload: { movieId }
+  });
+
+  await db.activity_log.create({
+    event_type: 'movie.identified',
+    severity: 'success',
+    entity_type: 'movie',
+    entity_id: movieId,
+    description: `User identified movie: ${movie.title} → TMDB ${tmdbId}`
+  });
+}
+
+async function manuallyEnrichMovie(
+  movieId: number,
+  metadata: ManualMetadata
+): Promise<void> {
+  // Update all fields
+  await db.movies.update(movieId, {
+    ...metadata,
+    identification_status: 'enriched',
+
+    // Lock all manually entered fields
+    title_locked: true,
+    plot_locked: true,
+    year_locked: true,
+    // ... lock all provided fields
+  });
+
+  // Handle manual cast/crew
+  if (metadata.actors) {
+    for (const actorName of metadata.actors) {
+      const actor = await db.actors.findOrCreate(actorName);
+      await db.movie_actors.create({
+        movie_id: movieId,
+        actor_id: actor.id
+      });
+    }
+
+    await db.movies.update(movieId, { actors_locked: true });
+  }
+
+  // Handle manual assets
+  if (metadata.customAssets) {
+    for (const [type, file] of Object.entries(metadata.customAssets)) {
+      await replaceAsset(movieId, type, 'upload', file);
+    }
+  }
+
+  await db.activity_log.create({
+    event_type: 'movie.manually_enriched',
+    severity: 'success',
+    entity_type: 'movie',
+    entity_id: movieId,
+    description: `User manually enriched movie with custom metadata`
+  });
+}
+```
+
+## Supporting Processes
+
+### Job Queue Processing
+
+```typescript
+class JobQueue {
+  async process(): Promise<void> {
+    while (true) {
+      // Get next job (priority order)
+      const job = await db.job_queue.findNext();
+
+      if (!job) {
+        await sleep(1000);
         continue;
       }
 
-      const item = movie[0];
-
-      // 2. Mark as enriching
-      await db.execute(`
-        UPDATE movies SET state = 'enriching' WHERE id = ?
-      `, [item.id]);
+      // Mark as running
+      await db.job_queue.update(job.id, {
+        status: 'running',
+        started_at: new Date()
+      });
 
       try {
-        // 3. Fetch metadata (rate-limited)
-        await this.enrichMovie(item);
+        // Route to handler
+        switch (job.job_type) {
+          case 'webhook':
+            await processWebhookJob(job);
+            break;
+          case 'enrichment':
+            await processEnrichmentJob(job);
+            break;
+          case 'scan':
+            await processScanJob(job);
+            break;
+        }
 
-        // 4. Mark as enriched
-        await db.execute(`
-          UPDATE movies
-          SET state = 'enriched',
-              enriched_at = CURRENT_TIMESTAMP
-          WHERE id = ?
-        `, [item.id]);
+        // Mark complete
+        await db.job_queue.update(job.id, {
+          status: 'completed',
+          completed_at: new Date()
+        });
 
       } catch (error) {
-        // Handle error (retry or mark failed)
-        await this.handleEnrichmentError(item, error);
+        // Handle failure
+        if (job.retry_count < job.max_retries) {
+          await db.job_queue.update(job.id, {
+            status: 'pending',
+            retry_count: job.retry_count + 1,
+            next_retry_at: addMinutes(new Date(), 5),
+            error_message: error.message
+          });
+        } else {
+          await db.job_queue.update(job.id, {
+            status: 'failed',
+            error_message: error.message,
+            completed_at: new Date()
+          });
+        }
       }
-
-      // Small delay between items (avoid hammering)
-      await sleep(100);
-    }
-  }
-
-  async enrichMovie(movie: Movie) {
-    // 1. Fetch TMDB metadata (rate-limited)
-    const tmdbData = await rateLimiter.execute(
-      () => tmdb.getMovieDetails(movie.tmdb_id, {
-        append_to_response: 'credits,images'
-      }),
-      movie.enrichment_priority
-    );
-
-    // 2. Merge metadata (respect locks)
-    const updates: any = {};
-
-    if (!movie.plot_locked && tmdbData.overview) {
-      updates.plot = tmdbData.overview;
-    }
-
-    if (!movie.tagline_locked && tmdbData.tagline) {
-      updates.tagline = tmdbData.tagline;
-    }
-
-    // ... (repeat for all unlocked fields)
-
-    if (Object.keys(updates).length > 0) {
-      await db.updateMovie(movie.id, updates);
-    }
-
-    // 3. Fetch asset candidates (URLs only)
-    for (const poster of tmdbData.images.posters) {
-      await db.insertAssetCandidate({
-        entity_type: 'movie',
-        entity_id: movie.id,
-        asset_type: 'poster',
-        provider: 'tmdb',
-        provider_url: `https://image.tmdb.org/t/p/original${poster.file_path}`,
-        width: poster.width,
-        height: poster.height,
-        provider_metadata: JSON.stringify({
-          language: poster.iso_639_1,
-          vote_average: poster.vote_average,
-          vote_count: poster.vote_count
-        }),
-        is_downloaded: 0  // Not yet downloaded
-      });
-    }
-
-    // 4. Auto-select assets (if YOLO mode)
-    const library = await db.getLibraryForMovie(movie.id);
-    const automationConfig = await db.getAutomationConfig(library.id);
-
-    if (automationConfig.auto_select_assets) {
-      await assetSelector.autoSelectAssets(movie.id, 'movie', 'poster');
-      await assetSelector.autoSelectAssets(movie.id, 'movie', 'fanart');
-
-      await db.execute(`
-        UPDATE movies SET state = 'selected' WHERE id = ?
-      `, [movie.id]);
-    }
-
-    // 5. Auto-publish (if YOLO mode)
-    if (automationConfig.auto_publish) {
-      await publishService.publishEntity('movie', movie.id, {
-        publishedBy: 'auto'
-      });
-
-      // Emit SSE event
-      eventEmitter.emit('movie:published', { movieId: movie.id });
-    }
-  }
-}
-
-// Start worker on app boot
-const enrichmentWorker = new EnrichmentWorker();
-enrichmentWorker.start();
-```
-
-### Rate Limiting
-
-```typescript
-class RateLimiter {
-  private tmdbRequests = 0;
-  private tvdbRequests = 0;
-  private windowStart = Date.now();
-
-  async execute<T>(
-    fn: () => Promise<T>,
-    priority: number,
-    provider: 'tmdb' | 'tvdb' = 'tmdb'
-  ): Promise<T> {
-    // Wait until we can make request
-    while (!this.canMakeRequest(provider, priority)) {
-      await this.waitForWindow(provider);
-    }
-
-    // Make request
-    if (provider === 'tmdb') {
-      this.tmdbRequests++;
-    } else {
-      this.tvdbRequests++;
-    }
-
-    return fn();
-  }
-
-  private canMakeRequest(provider: string, priority: number): boolean {
-    this.resetWindowIfNeeded();
-
-    if (provider === 'tmdb') {
-      // 50/sec limit, reserve 10 for high priority
-      const limit = priority <= 2 ? 50 : 40;
-      return this.tmdbRequests < limit;
-    } else {
-      // 1/sec limit
-      return this.tvdbRequests < 1;
     }
   }
 }
 ```
 
-### Auto-Publish After Enrichment (YOLO Mode)
-
-**Question Answered**: Q6 - When auto-enrichment updates fields, immediately republish.
+### Path Translation
 
 ```typescript
-// After enrichment completes in YOLO mode
-if (automationConfig.auto_publish) {
-  // Generate NFO with updated metadata
-  await publishService.publishEntity('movie', movie.id);
+async function translatePath(
+  metarrPath: string,
+  mediaPlayerGroupId: number
+): Promise<string> {
+  const mappings = await db.path_mappings.findByGroup(mediaPlayerGroupId);
 
-  // Players stay in sync automatically
-  // User never sees stale data
+  for (const mapping of mappings) {
+    if (metarrPath.startsWith(mapping.metarr_path)) {
+      return metarrPath.replace(mapping.metarr_path, mapping.player_path);
+    }
+  }
+
+  throw new Error(`No path mapping found for: ${metarrPath}`);
 }
 ```
 
-**Result**: In YOLO mode, library is **always** in sync with database. No dirty state accumulates.
-
----
-
-## Phase 3: Publishing
-
-Publishing is covered in detail in [PUBLISHING_WORKFLOW.md](PUBLISHING_WORKFLOW.md).
-
-**Quick Reference**:
+### Asset Reference Counting
 
 ```typescript
-// Single entity
-POST /api/movies/:id/publish
-
-// Bulk
-POST /api/movies/publish-bulk
-Body: { ids: [1, 2, 3, ...] }
-
-// Transactional process:
-1. Generate NFO from database
-2. Copy assets from cache → library (atomic)
-3. Write NFO (atomic)
-4. Update database (transaction)
-5. Notify players (async)
-```
-
----
-
-## Phase 4: Player Notification
-
-Player notification is covered in [PUBLISHING_WORKFLOW.md](PUBLISHING_WORKFLOW.md#player-notification).
-
-**Quick Reference**:
-
-```typescript
-// Kodi
-await kodi.request('VideoLibrary.Scan', {
-  directory: '/movies/The Matrix (1999)/'
-});
-
-// Jellyfin
-await fetch('http://jellyfin:8096/Library/Refresh', {
-  method: 'POST',
-  headers: { 'X-MediaBrowser-Token': apiKey },
-  body: JSON.stringify({ path: '/movies/The Matrix (1999)' })
-});
-```
-
----
-
-## Error Handling & Recovery
-
-### NFO Parsing Errors
-
-```typescript
-try {
-  const nfoData = parseNFO(nfoPath);
-} catch (error) {
-  // Log error, continue with default values
-  logger.error('NFO parse error', { path: nfoPath, error });
-
-  // Create movie with status = 'needs_identification'
-  await db.insertMovie({
-    title: extractTitleFromPath(dirPath),
-    state: 'needs_identification',
-    status: 'error_nfo_parse',
-    error_message: error.message
+async function incrementAssetReference(cacheAssetId: number): Promise<void> {
+  await db.cache_assets.update(cacheAssetId, {
+    reference_count: sql`reference_count + 1`,
+    last_accessed_at: new Date()
   });
 }
-```
 
-### Enrichment Errors
+async function decrementAssetReference(cacheAssetId: number): Promise<void> {
+  const asset = await db.cache_assets.findById(cacheAssetId);
 
-```typescript
-try {
-  await this.enrichMovie(movie);
-} catch (error) {
-  if (error.code === 'RATE_LIMIT_EXCEEDED') {
-    // Retry with backoff
-    await db.execute(`
-      UPDATE movies
-      SET enrichment_priority = enrichment_priority + 1,
-          state = 'identified'
-      WHERE id = ?
-    `, [movie.id]);
+  if (asset.reference_count <= 1) {
+    // Mark as orphaned
+    await db.cache_assets.update(cacheAssetId, {
+      reference_count: 0
+    });
   } else {
-    // Mark as error
-    await db.execute(`
-      UPDATE movies
-      SET state = 'error_provider_failure',
-          error_message = ?
-      WHERE id = ?
-    `, [error.message, movie.id]);
+    await db.cache_assets.update(cacheAssetId, {
+      reference_count: sql`reference_count - 1`
+    });
   }
 }
 ```
 
-### Publishing Errors
+## Error Handling
 
-See [PUBLISHING_WORKFLOW.md](PUBLISHING_WORKFLOW.md#validation-before-publish) for validation and rollback.
-
----
-
-## Performance Monitoring
-
-### Metrics to Track
+### Provider API Failures
 
 ```typescript
-// Scan performance
-{
-  phase1_duration_ms: 16200000,  // 4.5 hours
-  items_scanned: 32000,
-  items_per_second: 1.98
-}
+async function enrichMovie(movieId: number): Promise<void> {
+  try {
+    const movie = await db.movies.findById(movieId);
+    const metadata = await tmdb.getMovie(movie.tmdb_id);
 
-// Enrichment performance
-{
-  phase2_duration_ms: 64800000,  // 18 hours
-  items_enriched: 32000,
-  items_per_second: 0.49,  // Rate-limited
-  tmdb_api_calls: 32000,
-  tvdb_api_calls: 0
-}
+    // Process metadata...
 
-// Publishing performance
-{
-  publish_duration_ms: 2340,  // 2.3 seconds per item
-  nfo_generation_ms: 45,
-  asset_copy_ms: 1200,
-  database_update_ms: 95,
-  player_notification_ms: 1000
+  } catch (error) {
+    if (error instanceof RateLimitError) {
+      // Retry later
+      throw new RetryableError('Rate limit exceeded', 300); // 5 min
+    } else if (error instanceof NetworkError) {
+      // Retry soon
+      throw new RetryableError('Network error', 60); // 1 min
+    } else {
+      // Fatal error
+      await db.movies.update(movieId, {
+        identification_status: 'error'
+      });
+      throw error;
+    }
+  }
 }
 ```
 
----
+### Asset Download Failures
+
+```typescript
+async function downloadAsset(url: string): Promise<Buffer> {
+  const maxRetries = 3;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const response = await fetch(url, { timeout: 30000 });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      return await response.buffer();
+
+    } catch (error) {
+      if (attempt === maxRetries) {
+        throw error;
+      }
+
+      await sleep(attempt * 1000); // Exponential backoff
+    }
+  }
+}
+```
 
 ## Related Documentation
 
-- **[ARCHITECTURE.md](ARCHITECTURE.md)** - Overall system design
-- **[AUTOMATION_AND_WEBHOOKS.md](AUTOMATION_AND_WEBHOOKS.md)** - Automation modes, webhook handling
-- **[ASSET_MANAGEMENT.md](ASSET_MANAGEMENT.md)** - Three-tier asset system
-- **[PUBLISHING_WORKFLOW.md](PUBLISHING_WORKFLOW.md)** - Publishing process
-- **[WEBHOOKS.md](WEBHOOKS.md)** - Webhook payload reference
-- **[NFO_PARSING.md](NFO_PARSING.md)** - NFO format specification
-- **[DATABASE_SCHEMA.md](DATABASE_SCHEMA.md)** - Schema reference
+- [ARCHITECTURE.md](ARCHITECTURE.md) - Overall system design
+- [DATABASE_SCHEMA.md](DATABASE_SCHEMA.md) - Complete schema reference
+- [IMPLEMENTATION_ROADMAP.md](IMPLEMENTATION_ROADMAP.md) - Phased development plan

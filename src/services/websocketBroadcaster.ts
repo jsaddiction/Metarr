@@ -310,6 +310,148 @@ export class WebSocketBroadcaster {
   }
 
   // ============================================================================
+  // Provider Scrape Broadcasts
+  // ============================================================================
+
+  /**
+   * Broadcast provider scrape start
+   */
+  public broadcastProviderScrapeStart(movieId: number, providers: string[]): void {
+    if (!this.isReady()) return;
+
+    const message: import('../types/websocket.js').ProviderScrapeStartMessage = {
+      type: 'providerScrapeStart',
+      timestamp: new Date().toISOString(),
+      movieId,
+      providers,
+    };
+
+    this.wsServer!.broadcastToAll(message);
+    logger.debug('Broadcasted provider scrape start', { movieId, providers });
+  }
+
+  /**
+   * Broadcast provider scrape provider start
+   */
+  public broadcastProviderScrapeProviderStart(movieId: number, provider: string): void {
+    if (!this.isReady()) return;
+
+    const message: import('../types/websocket.js').ProviderScrapeProviderStartMessage = {
+      type: 'providerScrapeProviderStart',
+      timestamp: new Date().toISOString(),
+      movieId,
+      provider,
+    };
+
+    this.wsServer!.broadcastToAll(message);
+    logger.debug('Broadcasted provider scrape provider start', { movieId, provider });
+  }
+
+  /**
+   * Broadcast provider scrape provider complete
+   */
+  public broadcastProviderScrapeProviderComplete(
+    movieId: number,
+    provider: string,
+    success: boolean
+  ): void {
+    if (!this.isReady()) return;
+
+    const message: import('../types/websocket.js').ProviderScrapeProviderCompleteMessage = {
+      type: 'providerScrapeProviderComplete',
+      timestamp: new Date().toISOString(),
+      movieId,
+      provider,
+      success,
+    };
+
+    this.wsServer!.broadcastToAll(message);
+    logger.debug('Broadcasted provider scrape provider complete', { movieId, provider, success });
+  }
+
+  /**
+   * Broadcast provider scrape provider retry
+   */
+  public broadcastProviderScrapeProviderRetry(
+    movieId: number,
+    provider: string,
+    attempt: number,
+    maxRetries: number
+  ): void {
+    if (!this.isReady()) return;
+
+    const message: import('../types/websocket.js').ProviderScrapeProviderRetryMessage = {
+      type: 'providerScrapeProviderRetry',
+      timestamp: new Date().toISOString(),
+      movieId,
+      provider,
+      attempt,
+      maxRetries,
+    };
+
+    this.wsServer!.broadcastToAll(message);
+    logger.debug('Broadcasted provider scrape provider retry', { movieId, provider, attempt, maxRetries });
+  }
+
+  /**
+   * Broadcast provider scrape provider timeout
+   */
+  public broadcastProviderScrapeProviderTimeout(movieId: number, provider: string): void {
+    if (!this.isReady()) return;
+
+    const message: import('../types/websocket.js').ProviderScrapeProviderTimeoutMessage = {
+      type: 'providerScrapeProviderTimeout',
+      timestamp: new Date().toISOString(),
+      movieId,
+      provider,
+    };
+
+    this.wsServer!.broadcastToAll(message);
+    logger.debug('Broadcasted provider scrape provider timeout', { movieId, provider });
+  }
+
+  /**
+   * Broadcast provider scrape complete
+   */
+  public broadcastProviderScrapeComplete(
+    movieId: number,
+    completedProviders: string[],
+    failedProviders: string[],
+    timedOutProviders: string[]
+  ): void {
+    if (!this.isReady()) return;
+
+    const message: import('../types/websocket.js').ProviderScrapeCompleteMessage = {
+      type: 'providerScrapeComplete',
+      timestamp: new Date().toISOString(),
+      movieId,
+      completedProviders,
+      failedProviders,
+      timedOutProviders,
+    };
+
+    this.wsServer!.broadcastToAll(message);
+    logger.debug('Broadcasted provider scrape complete', { movieId, completedProviders, failedProviders, timedOutProviders });
+  }
+
+  /**
+   * Broadcast provider scrape error
+   */
+  public broadcastProviderScrapeError(movieId: number, error: string): void {
+    if (!this.isReady()) return;
+
+    const message: import('../types/websocket.js').ProviderScrapeErrorMessage = {
+      type: 'providerScrapeError',
+      timestamp: new Date().toISOString(),
+      movieId,
+      error,
+    };
+
+    this.wsServer!.broadcastToAll(message);
+    logger.debug('Broadcasted provider scrape error', { movieId, error });
+  }
+
+  // ============================================================================
   // Resync Broadcasts
   // ============================================================================
 

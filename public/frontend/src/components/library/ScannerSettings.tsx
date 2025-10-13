@@ -9,6 +9,13 @@ import {
   faLock,
   faTimes,
 } from '@fortawesome/free-solid-svg-icons';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 
 interface IgnorePattern {
   id: number;
@@ -26,6 +33,7 @@ export const ScannerSettings: React.FC = () => {
   const [newPattern, setNewPattern] = useState('');
   const [newDescription, setNewDescription] = useState('');
   const [saving, setSaving] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ id: number; pattern: string; isSystem: boolean } | null>(null);
 
   useEffect(() => {
     loadPatterns();
@@ -93,23 +101,24 @@ export const ScannerSettings: React.FC = () => {
     }
   };
 
-  const handleDelete = async (id: number, pattern: string, isSystem: boolean) => {
+  const handleDeleteClick = (id: number, pattern: string, isSystem: boolean) => {
     if (isSystem) {
-      alert('Cannot delete system patterns');
       return;
     }
+    setDeleteConfirm({ id, pattern, isSystem });
+  };
 
-    if (!confirm(`Are you sure you want to delete the pattern "${pattern}"?`)) {
-      return;
-    }
+  const handleDeleteConfirm = async () => {
+    if (!deleteConfirm) return;
 
     try {
-      const response = await fetch(`/api/ignore-patterns/${id}`, {
+      const response = await fetch(`/api/ignore-patterns/${deleteConfirm.id}`, {
         method: 'DELETE',
       });
 
       if (response.ok) {
         await loadPatterns();
+        setDeleteConfirm(null);
       } else {
         const error = await response.json();
         alert(`Failed to delete pattern: ${error.error || 'Unknown error'}`);
@@ -121,7 +130,7 @@ export const ScannerSettings: React.FC = () => {
   };
 
   return (
-    <div className="mt-12">
+    <div>
       <div className="mb-6">
         <h2 className="text-xl font-semibold text-white">Scanner Settings</h2>
         <p className="text-neutral-400 mt-1">
@@ -129,17 +138,17 @@ export const ScannerSettings: React.FC = () => {
         </p>
       </div>
 
-      <div className="card">
-        <div className="card-body">
+      <Card>
+        <CardContent className="p-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold text-white">Ignore Patterns</h3>
-            <button
+            <Button
               onClick={() => setShowAddModal(true)}
-              className="btn btn-primary btn-sm"
+              size="sm"
             >
               <FontAwesomeIcon icon={faPlus} className="mr-2" />
               Add Pattern
-            </button>
+            </Button>
           </div>
 
           {loading ? (
@@ -179,51 +188,50 @@ export const ScannerSettings: React.FC = () => {
                       </td>
                       <td className="py-3 px-4">
                         {pattern.is_system ? (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-neutral-700 text-neutral-300">
+                          <Badge variant="outline" className="bg-neutral-700 text-neutral-300 border-neutral-600">
                             <FontAwesomeIcon icon={faLock} className="mr-1" />
                             System
-                          </span>
+                          </Badge>
                         ) : (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-primary/20 text-primary-400">
+                          <Badge variant="outline" className="bg-primary/20 text-primary-400 border-primary">
                             Custom
-                          </span>
+                          </Badge>
                         )}
                       </td>
                       <td className="py-3 px-4">
                         {pattern.enabled ? (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-success/20 text-success">
+                          <Badge variant="outline" className="bg-success/20 text-success border-success">
                             Enabled
-                          </span>
+                          </Badge>
                         ) : (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-neutral-700 text-neutral-400">
+                          <Badge variant="outline" className="bg-neutral-700 text-neutral-400 border-neutral-600">
                             Disabled
-                          </span>
+                          </Badge>
                         )}
                       </td>
                       <td className="py-3 px-4 text-right">
                         <div className="flex items-center justify-end gap-2">
-                          <button
+                          <Button
                             onClick={() => handleToggle(pattern.id, pattern.enabled)}
-                            className="btn btn-ghost btn-sm"
+                            variant="ghost"
+                            size="sm"
                             title={pattern.enabled ? 'Disable pattern' : 'Enable pattern'}
                           >
                             <FontAwesomeIcon
                               icon={pattern.enabled ? faToggleOn : faToggleOff}
                               className={pattern.enabled ? 'text-success' : 'text-neutral-500'}
                             />
-                          </button>
-                          <button
-                            onClick={() => handleDelete(pattern.id, pattern.pattern, pattern.is_system)}
-                            className={`btn btn-ghost btn-sm ${
-                              pattern.is_system
-                                ? 'opacity-50 cursor-not-allowed'
-                                : 'text-error hover:bg-error/20'
-                            }`}
+                          </Button>
+                          <Button
+                            onClick={() => handleDeleteClick(pattern.id, pattern.pattern, pattern.is_system)}
+                            variant="ghost"
+                            size="sm"
                             disabled={pattern.is_system}
                             title={pattern.is_system ? 'Cannot delete system patterns' : 'Delete pattern'}
+                            className={pattern.is_system ? '' : 'text-error hover:bg-error/20'}
                           >
                             <FontAwesomeIcon icon={faTrash} />
-                          </button>
+                          </Button>
                         </div>
                       </td>
                     </tr>
@@ -232,82 +240,107 @@ export const ScannerSettings: React.FC = () => {
               </table>
             </div>
           )}
-        </div>
-      </div>
+        </CardContent>
+      </Card>
 
-      {/* Add Pattern Modal */}
-      {showAddModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-neutral-800 rounded-lg border border-neutral-700 max-w-lg w-full p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-white">Add Ignore Pattern</h3>
-              <button
-                onClick={() => {
-                  setShowAddModal(false);
-                  setNewPattern('');
-                  setNewDescription('');
-                }}
-                className="text-neutral-400 hover:text-white transition-colors"
-              >
-                <FontAwesomeIcon icon={faTimes} />
-              </button>
+      {/* Add Pattern Dialog */}
+      <Dialog open={showAddModal} onOpenChange={(open) => {
+        if (!saving) {
+          setShowAddModal(open);
+          if (!open) {
+            setNewPattern('');
+            setNewDescription('');
+          }
+        }
+      }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Add Ignore Pattern</DialogTitle>
+            <DialogDescription>
+              Create a new pattern to ignore files during library scanning
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 px-6">
+            <div>
+              <Label htmlFor="pattern" className="block text-sm font-medium text-neutral-300 mb-2">
+                Pattern <span className="text-error">*</span>
+              </Label>
+              <Input
+                id="pattern"
+                type="text"
+                value={newPattern}
+                onChange={(e) => setNewPattern(e.target.value)}
+                placeholder="e.g., *sample*.mkv or *.nfo"
+                autoFocus
+              />
+              <p className="text-xs text-neutral-500 mt-1">
+                Use glob patterns: * for any characters, ? for single character
+              </p>
             </div>
 
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-neutral-300 mb-2">
-                  Pattern <span className="text-error">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={newPattern}
-                  onChange={(e) => setNewPattern(e.target.value)}
-                  placeholder="e.g., *sample*.mkv or *.nfo"
-                  className="input w-full"
-                  autoFocus
-                />
-                <p className="text-xs text-neutral-500 mt-1">
-                  Use glob patterns: * for any characters, ? for single character
-                </p>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-neutral-300 mb-2">
-                  Description
-                </label>
-                <input
-                  type="text"
-                  value={newDescription}
-                  onChange={(e) => setNewDescription(e.target.value)}
-                  placeholder="Optional description"
-                  className="input w-full"
-                />
-              </div>
-
-              <div className="flex justify-end gap-3 pt-4">
-                <button
-                  onClick={() => {
-                    setShowAddModal(false);
-                    setNewPattern('');
-                    setNewDescription('');
-                  }}
-                  className="btn btn-ghost"
-                  disabled={saving}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleAdd}
-                  className="btn btn-primary"
-                  disabled={!newPattern.trim() || saving}
-                >
-                  {saving ? 'Adding...' : 'Add Pattern'}
-                </button>
-              </div>
+            <div>
+              <Label htmlFor="description" className="block text-sm font-medium text-neutral-300 mb-2">
+                Description
+              </Label>
+              <Input
+                id="description"
+                type="text"
+                value={newDescription}
+                onChange={(e) => setNewDescription(e.target.value)}
+                placeholder="Optional description"
+              />
             </div>
           </div>
-        </div>
-      )}
+
+          <DialogFooter className="px-6 pb-6 pt-4">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowAddModal(false);
+                setNewPattern('');
+                setNewDescription('');
+              }}
+              disabled={saving}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleAdd}
+              disabled={!newPattern.trim() || saving}
+            >
+              {saving ? 'Adding...' : 'Add Pattern'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation AlertDialog */}
+      <AlertDialog open={deleteConfirm !== null} onOpenChange={(open) => {
+        if (!open) setDeleteConfirm(null);
+      }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Ignore Pattern</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete the pattern <strong>"{deleteConfirm?.pattern}"</strong>?
+              This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                handleDeleteConfirm();
+              }}
+              className="bg-error hover:bg-error/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

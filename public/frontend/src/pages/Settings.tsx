@@ -4,17 +4,6 @@ import { ViewControls } from '../components/ui/ViewControls';
 export const Settings: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
 
-  const headerActions = (
-    <>
-      <button className="btn btn-primary">
-        Save Settings
-      </button>
-      <button className="btn btn-secondary">
-        Reset to Defaults
-      </button>
-    </>
-  );
-
   const handleRefresh = () => {
     console.log('Refreshing settings...');
   };

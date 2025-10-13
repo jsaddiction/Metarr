@@ -21,7 +21,6 @@ registry.registerProvider(
       id: 0,
       providerName: 'musicbrainz',
       enabled: true,
-      enabledAssetTypes: [], // No assets provided
       createdAt: new Date(),
       updatedAt: new Date(),
     },

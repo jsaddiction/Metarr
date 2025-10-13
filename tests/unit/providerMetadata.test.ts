@@ -10,13 +10,13 @@ describe('Provider Metadata', () => {
     it('should contain TMDB metadata', () => {
       expect(PROVIDER_METADATA.tmdb).toBeDefined();
       expect(PROVIDER_METADATA.tmdb.name).toBe('tmdb');
-      expect(PROVIDER_METADATA.tmdb.displayName).toBe('TMDB (The Movie Database)');
+      expect(PROVIDER_METADATA.tmdb.displayName).toBe('TMDB');
     });
 
     it('should contain TVDB metadata', () => {
       expect(PROVIDER_METADATA.tvdb).toBeDefined();
       expect(PROVIDER_METADATA.tvdb.name).toBe('tvdb');
-      expect(PROVIDER_METADATA.tvdb.displayName).toBe('TVDB (TheTVDB)');
+      expect(PROVIDER_METADATA.tvdb.displayName).toBe('TVDB');
     });
 
     it('should contain FanArt.tv metadata', () => {
@@ -51,35 +51,35 @@ describe('Provider Metadata', () => {
       expect(tmdb.rateLimit.windowSeconds).toBe(10);
     });
 
-    it('should support posters', () => {
-      const poster = tmdb.supportedAssetTypes.find(t => t.type === 'poster');
+    it('should support movie posters', () => {
+      const poster = tmdb.supportedAssetTypes.find(t => t.type === 'movie_poster');
       expect(poster).toBeDefined();
       expect(poster?.available).toBe(true);
-      expect(poster?.displayName).toBe('Posters');
+      expect(poster?.displayName).toBe('Movie Posters');
     });
 
-    it('should support fanart', () => {
-      const fanart = tmdb.supportedAssetTypes.find(t => t.type === 'fanart');
+    it('should support movie fanart', () => {
+      const fanart = tmdb.supportedAssetTypes.find(t => t.type === 'movie_fanart');
       expect(fanart).toBeDefined();
       expect(fanart?.available).toBe(true);
-      expect(fanart?.displayName).toBe('Fanart (Backdrops)');
+      expect(fanart?.displayName).toBe('Movie Fanart (Backdrops)');
     });
 
-    it('should support trailers', () => {
-      const trailer = tmdb.supportedAssetTypes.find(t => t.type === 'trailer');
+    it('should support movie trailers', () => {
+      const trailer = tmdb.supportedAssetTypes.find(t => t.type === 'movie_trailer');
       expect(trailer).toBeDefined();
       expect(trailer?.available).toBe(true);
-      expect(trailer?.displayName).toBe('Trailers (YouTube)');
+      expect(trailer?.displayName).toBe('Movie Trailers (YouTube)');
     });
 
-    it('should not support banners', () => {
-      const banner = tmdb.supportedAssetTypes.find(t => t.type === 'banner');
+    it('should not support movie banners', () => {
+      const banner = tmdb.supportedAssetTypes.find(t => t.type === 'movie_banner');
       expect(banner).toBeDefined();
       expect(banner?.available).toBe(false);
     });
 
-    it('should not support clearlogo', () => {
-      const clearlogo = tmdb.supportedAssetTypes.find(t => t.type === 'clearlogo');
+    it('should not support movie clearlogo', () => {
+      const clearlogo = tmdb.supportedAssetTypes.find(t => t.type === 'movie_clearlogo');
       expect(clearlogo).toBeDefined();
       expect(clearlogo?.available).toBe(false);
     });
@@ -115,19 +115,19 @@ describe('Provider Metadata', () => {
     });
 
     it('should support series posters', () => {
-      const poster = tvdb.supportedAssetTypes.find(t => t.type === 'poster');
+      const poster = tvdb.supportedAssetTypes.find(t => t.type === 'tv_poster');
       expect(poster).toBeDefined();
       expect(poster?.available).toBe(true);
     });
 
     it('should support banners', () => {
-      const banner = tvdb.supportedAssetTypes.find(t => t.type === 'banner');
+      const banner = tvdb.supportedAssetTypes.find(t => t.type === 'tv_banner');
       expect(banner).toBeDefined();
       expect(banner?.available).toBe(true);
     });
 
     it('should support season posters', () => {
-      const seasonPoster = tvdb.supportedAssetTypes.find(t => t.type === 'season_poster');
+      const seasonPoster = tvdb.supportedAssetTypes.find(t => t.type === 'tv_season_poster');
       expect(seasonPoster).toBeDefined();
       expect(seasonPoster?.available).toBe(true);
     });
@@ -155,20 +155,20 @@ describe('Provider Metadata', () => {
       expect(fanart.rateLimit.windowSeconds).toBe(1);
     });
 
-    it('should support HD ClearLogo', () => {
-      const hdclearlogo = fanart.supportedAssetTypes.find(t => t.type === 'hdclearlogo');
-      expect(hdclearlogo).toBeDefined();
-      expect(hdclearlogo?.available).toBe(true);
+    it('should support movie clearlogo', () => {
+      const clearlogo = fanart.supportedAssetTypes.find(t => t.type === 'movie_clearlogo');
+      expect(clearlogo).toBeDefined();
+      expect(clearlogo?.available).toBe(true);
     });
 
-    it('should support ClearArt', () => {
-      const clearart = fanart.supportedAssetTypes.find(t => t.type === 'clearart');
+    it('should support movie clearart', () => {
+      const clearart = fanart.supportedAssetTypes.find(t => t.type === 'movie_clearart');
       expect(clearart).toBeDefined();
       expect(clearart?.available).toBe(true);
     });
 
-    it('should support character art', () => {
-      const characterart = fanart.supportedAssetTypes.find(t => t.type === 'characterart');
+    it('should support TV character art', () => {
+      const characterart = fanart.supportedAssetTypes.find(t => t.type === 'tv_characterart');
       expect(characterart).toBeDefined();
       expect(characterart?.available).toBe(true);
     });
@@ -325,11 +325,14 @@ describe('Provider Metadata', () => {
   });
 
   describe('Asset types', () => {
-    it('should have at least one supported asset type per provider', () => {
+    it('should have at least one supported asset type per provider (except metadata-only providers)', () => {
       const all = getAllProviderMetadata();
+      const metadataOnlyProviders = ['imdb', 'musicbrainz'];
       all.forEach(provider => {
         const availableTypes = provider.supportedAssetTypes.filter(t => t.available);
-        expect(availableTypes.length).toBeGreaterThan(0);
+        if (!metadataOnlyProviders.includes(provider.name)) {
+          expect(availableTypes.length).toBeGreaterThan(0);
+        }
       });
     });
 
@@ -387,7 +390,8 @@ describe('Provider Metadata', () => {
     it('should have valid base URLs', () => {
       const all = getAllProviderMetadata();
       all.forEach(provider => {
-        expect(provider.baseUrl).toMatch(/^https?:\/\//);
+        // Allow file:// for local provider, http(s):// for others
+        expect(provider.baseUrl).toMatch(/^(https?|file):\/\//);
       });
     });
   });

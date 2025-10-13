@@ -7,10 +7,9 @@ import { useBackendConnection } from '../../hooks/useBackendConnection';
 interface LayoutProps {
   children: React.ReactNode;
   title: string;
-  headerActions?: React.ReactNode;
 }
 
-export const Layout: React.FC<LayoutProps> = ({ children, title, headerActions }) => {
+export const Layout: React.FC<LayoutProps> = ({ children, title }) => {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const { error, dismissError } = useBackendConnection();
@@ -28,9 +27,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, title, headerActions }
       <Header
         title={title}
         onToggleSidebar={handleToggleSidebar}
-      >
-        {headerActions}
-      </Header>
+      />
 
       <Sidebar
         isCollapsed={sidebarCollapsed}

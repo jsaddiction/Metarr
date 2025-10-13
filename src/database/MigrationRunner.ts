@@ -1,5 +1,5 @@
 import { DatabaseConnection } from '../types/database.js';
-import { InitialSchemaMigration } from './migrations/20251003_001_initial_schema.js';
+import { CleanSchemaMigration } from './migrations/20251015_001_clean_schema.js';
 
 interface MigrationRecord {
   version: string;
@@ -20,10 +20,10 @@ export class MigrationRunner {
     this.db = db;
     this.migrations = [
       {
-        version: InitialSchemaMigration.version,
-        name: InitialSchemaMigration.migrationName,
-        up: InitialSchemaMigration.up,
-        down: InitialSchemaMigration.down,
+        version: CleanSchemaMigration.version,
+        name: CleanSchemaMigration.migrationName,
+        up: CleanSchemaMigration.up,
+        down: CleanSchemaMigration.down,
       },
     ];
   }

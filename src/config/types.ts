@@ -26,6 +26,18 @@ export interface ProviderConfig {
     rateLimit: number;
     rateLimitWindow: number;
   };
+  tvdb?: {
+    apiKey?: string | undefined;
+    baseUrl: string;
+    rateLimit: number;
+    rateLimitWindow: number;
+  };
+  fanart_tv?: {
+    apiKey?: string | undefined;
+    baseUrl: string;
+    rateLimit: number;
+    rateLimitWindow: number;
+  };
   imdb?: {
     apiKey?: string | undefined;
     baseUrl: string;
@@ -82,6 +94,13 @@ export interface JobConfig {
   processingTimeout: number; // milliseconds
 }
 
+export interface EnrichmentConfig {
+  checkForChanges: boolean; // Use TMDB changes API to avoid unnecessary re-scraping
+  staleDataThresholdDays: number; // Days before data is considered stale (always check changes)
+  forceRescrapeAfterDays: number; // Days before forcing a full re-scrape regardless of changes
+  enableChangeDetection: boolean; // Master switch for change detection optimization
+}
+
 export interface AppConfig {
   server: ServerConfig;
   database: DatabaseConfig;
@@ -89,4 +108,5 @@ export interface AppConfig {
   mediaPlayers: MediaPlayerConfig;
   logging: LoggingConfig;
   jobs: JobConfig;
+  enrichment: EnrichmentConfig;
 }

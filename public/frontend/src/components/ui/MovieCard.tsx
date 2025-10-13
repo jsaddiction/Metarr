@@ -25,7 +25,7 @@ export const MovieCard: React.FC<MovieCardProps> = ({
   const completenessLabel = getCompletenessLabel(overallScore);
 
   return (
-    <div className="bg-neutral-800 rounded-lg overflow-hidden border border-neutral-700 hover:border-primary-500 transition-colors duration-200 cursor-pointer group">
+    <div className="bg-neutral-800 rounded-lg overflow-hidden border border-neutral-700 hover:border-primary-500 transition-colors duration-200 cursor-pointer group" role="button" tabIndex={0}>
       <div className="relative aspect-[2/3]">
         {posterUrl ? (
           <img
@@ -42,13 +42,13 @@ export const MovieCard: React.FC<MovieCardProps> = ({
         {/* Hover overlay */}
         <div className="absolute inset-0 bg-black/75 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center">
           <div className="flex space-x-2">
-            <button className="btn btn-secondary p-2 text-sm" title="More Info">
+            <button className="btn btn-secondary p-2 text-sm" title="More Info" aria-label="More Info">
               ℹ️
             </button>
-            <button className="btn btn-secondary p-2 text-sm" title="Edit">
+            <button className="btn btn-secondary p-2 text-sm" title="Edit" aria-label="Edit">
               ✏️
             </button>
-            <button className="btn btn-secondary p-2 text-sm" title="Search">
+            <button className="btn btn-secondary p-2 text-sm" title="Search" aria-label="Search">
               🔍
             </button>
           </div>
@@ -85,6 +85,7 @@ export const MovieCard: React.FC<MovieCardProps> = ({
             <span
               className="inline-block w-2 h-2 rounded-full"
               style={{ backgroundColor: completenessColor }}
+              aria-hidden="true"
             />
             <span
               className="text-xs"

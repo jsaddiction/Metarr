@@ -22,7 +22,6 @@ registry.registerProvider(
       providerName: 'fanart_tv',
       enabled: true,
       apiKey: '', // Temporary for capabilities only
-      enabledAssetTypes: [],
       createdAt: new Date(),
       updatedAt: new Date(),
     },

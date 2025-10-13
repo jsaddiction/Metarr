@@ -3,6 +3,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faServer, faCheck, faTimes } from '@fortawesome/free-solid-svg-icons';
 import { MediaPlayer } from '../../types/mediaPlayer';
 import { ConnectionStatusIndicator } from './ConnectionStatusIndicator';
+import { Card, CardContent } from '@/components/ui/card';
 
 interface MediaPlayerCardProps {
   player: MediaPlayer;
@@ -11,9 +12,9 @@ interface MediaPlayerCardProps {
 
 export const MediaPlayerCard: React.FC<MediaPlayerCardProps> = ({ player, onClick }) => {
   return (
-    <div
+    <Card
       onClick={onClick}
-      className="card cursor-pointer hover:border-primary-500 transition-all duration-200 relative"
+      className="cursor-pointer hover:outline hover:outline-2 hover:outline-primary hover:border-primary hover:bg-primary/5 transition-all duration-200 relative"
     >
       <ConnectionStatusIndicator
         status={player.connectionStatus}
@@ -21,7 +22,7 @@ export const MediaPlayerCard: React.FC<MediaPlayerCardProps> = ({ player, onClic
         lastError={player.lastError}
       />
 
-      <div className="card-body">
+      <CardContent className="p-6">
         <div className="flex items-start mb-3">
           <FontAwesomeIcon icon={faServer} className="text-primary-500 text-2xl mr-3 mt-1" />
           <div className="flex-1">
@@ -69,7 +70,7 @@ export const MediaPlayerCard: React.FC<MediaPlayerCardProps> = ({ player, onClic
             </span>
           </div>
         </div>
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 };

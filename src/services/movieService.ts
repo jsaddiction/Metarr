@@ -229,6 +229,57 @@ export class MovieService {
     return 'complete';
   }
 
+  /**
+   * Map database row (snake_case) to TypeScript object (camelCase)
+   */
+  private mapMovieFromDb(dbRow: any): any {
+    return {
+      id: dbRow.id,
+      libraryId: dbRow.library_id,
+      filePath: dbRow.file_path,
+      title: dbRow.title,
+      originalTitle: dbRow.original_title,
+      sortTitle: dbRow.sort_title,
+      year: dbRow.year,
+
+      // External IDs (critical for provider lookups)
+      tmdbId: dbRow.tmdb_id,
+      imdbId: dbRow.imdb_id,
+
+      // Metadata fields
+      plot: dbRow.plot,
+      outline: dbRow.outline,
+      tagline: dbRow.tagline,
+      mpaa: dbRow.mpaa,
+      premiered: dbRow.premiered,
+      userRating: dbRow.user_rating,
+      trailerUrl: dbRow.trailer_url,
+      setId: dbRow.set_id,
+
+      // Hashes
+      directoryHash: dbRow.directory_hash,
+      nfoHash: dbRow.nfo_hash,
+      videoHash: dbRow.video_hash,
+
+      // Locks
+      titleLocked: dbRow.title_locked,
+      originalTitleLocked: dbRow.original_title_locked,
+      sortTitleLocked: dbRow.sort_title_locked,
+      yearLocked: dbRow.year_locked,
+      plotLocked: dbRow.plot_locked,
+      outlineLocked: dbRow.outline_locked,
+      taglineLocked: dbRow.tagline_locked,
+      mpaaLocked: dbRow.mpaa_locked,
+      premieredLocked: dbRow.premiered_locked,
+      userRatingLocked: dbRow.user_rating_locked,
+      trailerUrlLocked: dbRow.trailer_url_locked,
+
+      // Timestamps
+      createdAt: dbRow.created_at,
+      updatedAt: dbRow.updated_at,
+    };
+  }
+
   async getById(movieId: number): Promise<any | null> {
     // Get base movie data with all fields
     const movieQuery = `SELECT * FROM movies WHERE id = ?`;
@@ -238,7 +289,7 @@ export class MovieService {
       return null;
     }
 
-    const movie = movies[0];
+    const movie = this.mapMovieFromDb(movies[0]);
 
     // Get related entities
     const [actors, genres, directors, writers, studios, countries, tags] = await Promise.all([

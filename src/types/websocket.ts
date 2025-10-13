@@ -228,6 +228,74 @@ export interface WelcomeMessage extends BaseServerMessage {
 }
 
 /**
+ * Provider Scrape Start - Server notifies provider scraping has started
+ */
+export interface ProviderScrapeStartMessage extends BaseServerMessage {
+  type: 'providerScrapeStart';
+  movieId: number;
+  providers: string[];
+}
+
+/**
+ * Provider Scrape Provider Start - Individual provider fetch started
+ */
+export interface ProviderScrapeProviderStartMessage extends BaseServerMessage {
+  type: 'providerScrapeProviderStart';
+  movieId: number;
+  provider: string;
+}
+
+/**
+ * Provider Scrape Provider Complete - Individual provider fetch completed
+ */
+export interface ProviderScrapeProviderCompleteMessage extends BaseServerMessage {
+  type: 'providerScrapeProviderComplete';
+  movieId: number;
+  provider: string;
+  success: boolean;
+}
+
+/**
+ * Provider Scrape Provider Retry - Individual provider is retrying
+ */
+export interface ProviderScrapeProviderRetryMessage extends BaseServerMessage {
+  type: 'providerScrapeProviderRetry';
+  movieId: number;
+  provider: string;
+  attempt: number;
+  maxRetries: number;
+}
+
+/**
+ * Provider Scrape Provider Timeout - Individual provider timed out
+ */
+export interface ProviderScrapeProviderTimeoutMessage extends BaseServerMessage {
+  type: 'providerScrapeProviderTimeout';
+  movieId: number;
+  provider: string;
+}
+
+/**
+ * Provider Scrape Complete - All providers have completed
+ */
+export interface ProviderScrapeCompleteMessage extends BaseServerMessage {
+  type: 'providerScrapeComplete';
+  movieId: number;
+  completedProviders: string[];
+  failedProviders: string[];
+  timedOutProviders: string[];
+}
+
+/**
+ * Provider Scrape Error - Fatal error during scraping
+ */
+export interface ProviderScrapeErrorMessage extends BaseServerMessage {
+  type: 'providerScrapeError';
+  movieId: number;
+  error: string;
+}
+
+/**
  * Union type of all server messages
  */
 export type ServerMessage =
@@ -240,7 +308,14 @@ export type ServerMessage =
   | AckMessage
   | ConflictMessage
   | ErrorMessage
-  | WelcomeMessage;
+  | WelcomeMessage
+  | ProviderScrapeStartMessage
+  | ProviderScrapeProviderStartMessage
+  | ProviderScrapeProviderCompleteMessage
+  | ProviderScrapeProviderRetryMessage
+  | ProviderScrapeProviderTimeoutMessage
+  | ProviderScrapeCompleteMessage
+  | ProviderScrapeErrorMessage;
 
 // ============================================================================
 // WebSocket Connection Types

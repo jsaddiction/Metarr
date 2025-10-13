@@ -13,8 +13,10 @@ import { ProviderMetadata } from '../types/provider.js';
 export const PROVIDER_METADATA: Record<string, ProviderMetadata> = {
   tmdb: {
     name: 'tmdb',
-    displayName: 'TMDB (The Movie Database)',
-    requiresApiKey: true,
+    displayName: 'TMDB',
+    requiresApiKey: false,
+    apiKeyOptional: true,
+    apiKeyBenefit: 'Personal API keys allow usage tracking and support the TMDB community. Get yours at https://www.themoviedb.org/settings/api',
     baseUrl: 'https://api.themoviedb.org/3',
     authType: 'bearer',
     rateLimit: {
@@ -22,18 +24,24 @@ export const PROVIDER_METADATA: Record<string, ProviderMetadata> = {
       windowSeconds: 10
     },
     supportedAssetTypes: [
-      { type: 'poster', displayName: 'Posters', available: true },
-      { type: 'fanart', displayName: 'Fanart (Backdrops)', available: true },
-      { type: 'trailer', displayName: 'Trailers (YouTube)', available: true },
-      { type: 'banner', displayName: 'Banners', available: false },
-      { type: 'clearlogo', displayName: 'ClearLogo', available: false }
+      { type: 'movie_poster', displayName: 'Movie Posters', available: true },
+      { type: 'movie_fanart', displayName: 'Movie Fanart (Backdrops)', available: true },
+      { type: 'movie_trailer', displayName: 'Movie Trailers (YouTube)', available: true },
+      { type: 'tv_poster', displayName: 'TV Posters', available: true },
+      { type: 'tv_fanart', displayName: 'TV Fanart (Backdrops)', available: true },
+      { type: 'movie_banner', displayName: 'Movie Banners', available: false },
+      { type: 'tv_banner', displayName: 'TV Banners', available: false },
+      { type: 'movie_clearlogo', displayName: 'Movie ClearLogo', available: false },
+      { type: 'tv_clearlogo', displayName: 'TV ClearLogo', available: false }
     ]
   },
 
   tvdb: {
     name: 'tvdb',
-    displayName: 'TVDB (TheTVDB)',
-    requiresApiKey: true,
+    displayName: 'TVDB',
+    requiresApiKey: false,
+    apiKeyOptional: true,
+    apiKeyBenefit: 'Personal API keys allow usage tracking and support the TVDB community. Get yours at https://thetvdb.com/api-information',
     baseUrl: 'https://api4.thetvdb.com/v4',
     authType: 'jwt',
     rateLimit: {
@@ -41,11 +49,11 @@ export const PROVIDER_METADATA: Record<string, ProviderMetadata> = {
       windowSeconds: 10
     },
     supportedAssetTypes: [
-      { type: 'poster', displayName: 'Series Posters', available: true },
-      { type: 'fanart', displayName: 'Fanart', available: true },
-      { type: 'banner', displayName: 'Series Banners', available: true },
-      { type: 'season_poster', displayName: 'Season Posters', available: true },
-      { type: 'episode_still', displayName: 'Episode Stills', available: true }
+      { type: 'tv_poster', displayName: 'Series Posters', available: true },
+      { type: 'tv_fanart', displayName: 'TV Fanart', available: true },
+      { type: 'tv_banner', displayName: 'Series Banners', available: true },
+      { type: 'tv_season_poster', displayName: 'Season Posters', available: true },
+      { type: 'tv_episode_still', displayName: 'Episode Stills', available: true }
     ]
   },
 
@@ -61,16 +69,19 @@ export const PROVIDER_METADATA: Record<string, ProviderMetadata> = {
       windowSeconds: 1
     },
     supportedAssetTypes: [
-      { type: 'hdclearlogo', displayName: 'HD ClearLogo', available: true },
-      { type: 'clearlogo', displayName: 'ClearLogo', available: true },
-      { type: 'clearart', displayName: 'ClearArt', available: true },
-      { type: 'hdclearart', displayName: 'HD ClearArt', available: true },
-      { type: 'cdart', displayName: 'CD Art', available: true },
-      { type: 'characterart', displayName: 'Character Art', available: true },
-      { type: 'tvthumb', displayName: 'TV Thumbnail', available: true },
-      { type: 'poster', displayName: 'Movie Posters', available: true },
-      { type: 'fanart', displayName: 'Movie Fanart', available: true },
-      { type: 'banner', displayName: 'Series Banners', available: true }
+      { type: 'movie_poster', displayName: 'Movie Posters', available: true },
+      { type: 'movie_fanart', displayName: 'Movie Fanart', available: true },
+      { type: 'movie_clearlogo', displayName: 'Movie ClearLogo', available: true },
+      { type: 'movie_clearart', displayName: 'Movie ClearArt', available: true },
+      { type: 'movie_discart', displayName: 'Movie Disc Art', available: true },
+      { type: 'tv_poster', displayName: 'TV Posters', available: true },
+      { type: 'tv_fanart', displayName: 'TV Fanart', available: true },
+      { type: 'tv_banner', displayName: 'TV Banners', available: true },
+      { type: 'tv_clearlogo', displayName: 'TV ClearLogo', available: true },
+      { type: 'tv_clearart', displayName: 'TV ClearArt', available: true },
+      { type: 'tv_characterart', displayName: 'TV Character Art', available: true },
+      { type: 'tv_landscape', displayName: 'TV Landscape', available: true },
+      { type: 'tv_thumb', displayName: 'TV Thumbnail', available: true }
     ]
   },
 
@@ -84,21 +95,24 @@ export const PROVIDER_METADATA: Record<string, ProviderMetadata> = {
       windowSeconds: 1
     },
     supportedAssetTypes: [
-      { type: 'poster', displayName: 'Posters', available: true },
-      { type: 'fanart', displayName: 'Fanart', available: true },
-      { type: 'banner', displayName: 'Banners', available: true },
-      { type: 'clearlogo', displayName: 'ClearLogo', available: true },
-      { type: 'clearart', displayName: 'ClearArt', available: true },
-      { type: 'discart', displayName: 'Disc Art', available: true },
-      { type: 'landscape', displayName: 'Landscape', available: true },
-      { type: 'thumb', displayName: 'Thumbnail', available: true },
-      { type: 'characterart', displayName: 'Character Art', available: true }
+      { type: 'movie_poster', displayName: 'Movie Posters', available: true },
+      { type: 'movie_fanart', displayName: 'Movie Fanart', available: true },
+      { type: 'movie_banner', displayName: 'Movie Banners', available: true },
+      { type: 'movie_clearlogo', displayName: 'Movie ClearLogo', available: true },
+      { type: 'movie_clearart', displayName: 'Movie ClearArt', available: true },
+      { type: 'movie_discart', displayName: 'Movie Disc Art', available: true },
+      { type: 'tv_poster', displayName: 'TV Posters', available: true },
+      { type: 'tv_fanart', displayName: 'TV Fanart', available: true },
+      { type: 'tv_banner', displayName: 'TV Banners', available: true },
+      { type: 'tv_landscape', displayName: 'TV Landscape', available: true },
+      { type: 'tv_thumb', displayName: 'TV Thumbnail', available: true },
+      { type: 'tv_characterart', displayName: 'TV Character Art', available: true }
     ]
   },
 
   imdb: {
     name: 'imdb',
-    displayName: 'IMDb (Internet Movie Database)',
+    displayName: 'IMDb',
     requiresApiKey: false,
     baseUrl: 'https://www.imdb.com',
     legalWarning: 'Web scraping violates IMDb Terms of Service. Use at your own risk. Your IP may be banned.',
@@ -162,6 +176,31 @@ export function getAllProviderMetadata(): ProviderMetadata[] {
  */
 export function isProviderSupported(providerName: string): boolean {
   return providerName in PROVIDER_METADATA;
+}
+
+/**
+ * Check if a provider supports a specific asset type
+ */
+export function providerSupportsAssetType(providerName: string, assetType: string): boolean {
+  const metadata = getProviderMetadata(providerName);
+  if (!metadata) return false;
+
+  return metadata.supportedAssetTypes.some(
+    asset => asset.type === assetType && asset.available
+  );
+}
+
+/**
+ * Get all providers that support a specific asset type
+ */
+export function getProvidersForAssetType(assetType: string): string[] {
+  return Object.values(PROVIDER_METADATA)
+    .filter(provider =>
+      provider.supportedAssetTypes.some(
+        asset => asset.type === assetType && asset.available
+      )
+    )
+    .map(provider => provider.name);
 }
 
 /**

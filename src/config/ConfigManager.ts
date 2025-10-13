@@ -1,6 +1,7 @@
 import dotenv from 'dotenv';
 import { AppConfig, DatabaseConfig, ServerConfig } from './types.js';
 import { defaultConfig } from './defaults.js';
+import { getDefaultApiKey } from './providerDefaults.js';
 
 export class ConfigManager {
   private static instance: ConfigManager;
@@ -51,9 +52,16 @@ export class ConfigManager {
       config.database.ssl = this.getBoolean('DB_SSL', false);
     }
 
-    // Provider API keys (optional)
+    // Provider API keys (use defaults if not provided by user)
+    // Environment variables are optional - defaults provided for zero-config setup
     if (config.providers.tmdb) {
-      config.providers.tmdb.apiKey = process.env.TMDB_API_KEY;
+      config.providers.tmdb.apiKey = process.env.TMDB_API_KEY || getDefaultApiKey('tmdb');
+    }
+    if (config.providers.tvdb) {
+      config.providers.tvdb.apiKey = process.env.TVDB_API_KEY || getDefaultApiKey('tvdb');
+    }
+    if (config.providers.fanart_tv) {
+      config.providers.fanart_tv.apiKey = process.env.FANART_TV_API_KEY || getDefaultApiKey('fanart_tv');
     }
     if (config.providers.imdb) {
       config.providers.imdb.apiKey = process.env.IMDB_API_KEY;
@@ -200,7 +208,7 @@ export class ConfigManager {
 
     // Check provider API keys if enabled
     if (this.config.providers.tmdb && !this.config.providers.tmdb.apiKey) {
-      console.warn('TMDB API key not provided - TMDB provider will be disabled');
+      console.warn('TMDB API key not provided - this should not happen as default key should be used');
     }
 
     if (errors.length > 0) {

@@ -1,6 +1,7 @@
 import React from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faPlus } from '@fortawesome/free-solid-svg-icons';
+import { Card } from '@/components/ui/card';
 
 interface AddMediaPlayerCardProps {
   onClick: () => void;
@@ -8,14 +9,15 @@ interface AddMediaPlayerCardProps {
 
 export const AddMediaPlayerCard: React.FC<AddMediaPlayerCardProps> = ({ onClick }) => {
   return (
-    <div
+    <Card
       onClick={onClick}
-      className="card cursor-pointer hover:border-primary-500 transition-all duration-200 flex items-center justify-center min-h-[200px]"
+      className="cursor-pointer hover:outline hover:outline-2 hover:outline-primary hover:border-primary hover:bg-primary/5 transition-all duration-200 border-dashed flex items-center justify-center min-h-[200px]"
     >
       <div className="text-center">
-        <FontAwesomeIcon icon={faPlus} className="text-5xl text-neutral-500 mb-2" />
-        <p className="text-neutral-400">Add Media Player</p>
+        <FontAwesomeIcon icon={faPlus} className="text-primary-500 text-4xl mb-3" />
+        <p className="text-neutral-300 font-medium">Add Media Player</p>
+        <p className="text-neutral-500 text-sm mt-1">Configure a media player connection</p>
       </div>
-    </div>
+    </Card>
   );
 };

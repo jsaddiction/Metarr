@@ -9,7 +9,9 @@ import {
   faSpinner,
   faArrowLeft,
   faTimes,
+  faSearch,
 } from '@fortawesome/free-solid-svg-icons';
+import { useQuery } from '@tanstack/react-query';
 import {
   useMovieImages,
   useUploadImage,
@@ -17,6 +19,11 @@ import {
   useDeleteImage,
   useRecoverImages,
 } from '../../hooks/useMovieAssets';
+import { AssetSelectionDialog } from '../asset/AssetSelectionDialog';
+import { AssetCard } from '../asset/AssetCard';
+import { assetApi } from '../../utils/api';
+import type { AssetType } from '../../types/providers/capabilities';
+import type { AssetCandidate } from '../../types/asset';
 
 interface ImagesTabProps {
   movieId: number;
@@ -63,7 +70,34 @@ export const ImagesTab: React.FC<ImagesTabProps> = ({ movieId }) => {
 
   const [uploadType, setUploadType] = useState<string | null>(null);
   const [fullscreenImage, setFullscreenImage] = useState<Image | null>(null);
+  const [assetDialogOpen, setAssetDialogOpen] = useState(false);
+  const [selectedAssetType, setSelectedAssetType] = useState<AssetType | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Convert Image to AssetCandidate for use with AssetCard
+  const imageToAssetCandidate = (image: Image, assetType: string): AssetCandidate => ({
+    providerId: image.url ? 'tmdb' : ('custom' as any), // If from provider, assume tmdb, otherwise custom
+    providerResultId: image.id.toString(),
+    assetType: assetType as AssetType,
+    url: image.cache_url,
+    thumbnailUrl: image.cache_url,
+    width: image.width || undefined,
+    height: image.height || undefined,
+    voteAverage: image.vote_average || undefined,
+    votes: undefined, // Explicitly set to undefined to prevent rendering issues
+  });
+
+  // Fetch provider results when dialog is open
+  const {
+    data: providerResults,
+    isLoading: isLoadingProviders,
+    error: providerError,
+  } = useQuery({
+    queryKey: ['provider-results', 'movie', movieId, selectedAssetType],
+    queryFn: () => assetApi.getEntityProviderResults('movie', movieId, selectedAssetType ? [selectedAssetType] : []),
+    enabled: assetDialogOpen && selectedAssetType !== null,
+    staleTime: 1000 * 60 * 60, // 1 hour cache
+  });
 
   const handleUploadClick = (imageType: string) => {
     setUploadType(imageType);
@@ -122,6 +156,22 @@ export const ImagesTab: React.FC<ImagesTabProps> = ({ movieId }) => {
     }
   };
 
+  const handleSearchProviders = (assetType: string) => {
+    setSelectedAssetType(assetType as AssetType);
+    setAssetDialogOpen(true);
+  };
+
+  const handleAssetSelect = async (asset: AssetCandidate, provider: string) => {
+    // TODO: Call backend to save the selected asset
+    console.log('Selected asset from provider:', provider, asset);
+    setAssetDialogOpen(false);
+
+    // For now, just show a message
+    alert(`Asset selection from ${provider} - Backend integration coming soon!`);
+
+    // After backend integration, TanStack Query will automatically refetch
+  };
+
   if (loading) {
     return (
       <div className="card">
@@ -142,6 +192,7 @@ export const ImagesTab: React.FC<ImagesTabProps> = ({ movieId }) => {
         accept="image/jpeg,image/jpg,image/png"
         onChange={handleFileSelect}
         className="hidden"
+        aria-label="Upload image file"
       />
 
       {/* Recovery button */}
@@ -171,101 +222,102 @@ export const ImagesTab: React.FC<ImagesTabProps> = ({ movieId }) => {
                     ({typeImages.length}/{type.max})
                   </span>
                 </h3>
-                {canUpload && (
+                <div className="flex gap-2">
                   <button
-                    onClick={() => handleUploadClick(type.key)}
-                    className="btn btn-primary btn-sm"
-                    disabled={uploadImageMutation.isPending}
+                    onClick={() => handleSearchProviders(type.key)}
+                    className="btn btn-secondary btn-sm"
                   >
-                    <FontAwesomeIcon icon={faUpload} className="mr-2" />
-                    Upload
+                    <FontAwesomeIcon icon={faSearch} className="mr-2" aria-hidden="true" />
+                    Search Providers
                   </button>
-                )}
+                  {canUpload && (
+                    <button
+                      onClick={() => handleUploadClick(type.key)}
+                      className="btn btn-primary btn-sm"
+                      disabled={uploadImageMutation.isPending}
+                    >
+                      <FontAwesomeIcon icon={faUpload} className="mr-2" aria-hidden="true" />
+                      Upload
+                    </button>
+                  )}
+                  {typeImages.length > 0 && (
+                    <>
+                      <button
+                        onClick={() => {
+                          // Toggle lock for all images of this type
+                          const anyLocked = typeImages.some(img => img.locked);
+                          typeImages.forEach(img => {
+                            handleToggleLock(img.id, anyLocked);
+                          });
+                        }}
+                        className={`btn btn-sm ${typeImages.some(img => img.locked) ? 'btn-warning' : 'btn-ghost'}`}
+                        title={typeImages.some(img => img.locked) ? 'Unlock all' : 'Lock all'}
+                        aria-label={typeImages.some(img => img.locked) ? 'Unlock all images' : 'Lock all images'}
+                      >
+                        <FontAwesomeIcon icon={typeImages.some(img => img.locked) ? faLock : faLockOpen} aria-hidden="true" />
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (confirm(`Delete all ${type.label.toLowerCase()}?`)) {
+                            typeImages.forEach(img => handleDeleteImage(img.id));
+                          }
+                        }}
+                        className="btn btn-sm btn-ghost text-error hover:bg-error/20"
+                        title="Delete all"
+                        aria-label="Delete all images"
+                      >
+                        <FontAwesomeIcon icon={faTrash} aria-hidden="true" />
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
 
               {typeImages.length === 0 ? (
                 <div className="text-center py-8 bg-neutral-800/30 rounded border border-dashed border-neutral-700">
                   <FontAwesomeIcon icon={faImage} className="text-4xl text-neutral-600 mb-3" />
                   <p className="text-neutral-400">No {type.label.toLowerCase()} available</p>
-                  <button
-                    onClick={() => handleUploadClick(type.key)}
-                    className="btn btn-secondary btn-sm mt-3"
-                    disabled={uploadImageMutation.isPending}
-                  >
-                    <FontAwesomeIcon icon={faUpload} className="mr-2" />
-                    Upload {type.label}
-                  </button>
+                  <div className="flex gap-2 justify-center mt-3">
+                    <button
+                      onClick={() => handleSearchProviders(type.key)}
+                      className="btn btn-secondary btn-sm"
+                    >
+                      <FontAwesomeIcon icon={faSearch} className="mr-2" aria-hidden="true" />
+                      Search Providers
+                    </button>
+                    <button
+                      onClick={() => handleUploadClick(type.key)}
+                      className="btn btn-primary btn-sm"
+                      disabled={uploadImageMutation.isPending}
+                    >
+                      <FontAwesomeIcon icon={faUpload} className="mr-2" aria-hidden="true" />
+                      Upload {type.label}
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
                   {typeImages.map((image) => {
-                    const filename = image.library_path?.split(/[\\/]/).pop() || image.cache_path?.split(/[\\/]/).pop() || 'Unknown';
+                    const assetCandidate = imageToAssetCandidate(image, type.key);
+                    const providerName = image.url ? 'Provider' : 'Custom';
 
                     return (
-                      <div
-                        key={image.id}
-                        className="relative group border border-neutral-700 rounded-lg overflow-hidden bg-neutral-800"
-                      >
-                        {/* Image - Clickable */}
-                        <div
-                          className={`${type.aspectRatio} bg-neutral-900 cursor-pointer relative`}
+                      <div key={image.id} className="relative">
+                        {/* AssetCard in display mode */}
+                        <AssetCard
+                          asset={assetCandidate}
+                          provider={providerName}
                           onClick={() => setFullscreenImage(image)}
-                        >
-                          <img
-                            src={image.cache_url}
-                            alt={type.label}
-                            className="w-full h-full object-contain"
-                            loading="lazy"
-                          />
+                          mode="display"
+                        />
 
-                          {/* Dimensions overlay on image */}
-                          {image.width && image.height && image.width > 0 && image.height > 0 && (
-                            <div className="absolute top-2 left-2 bg-black/70 text-white text-xs px-2 py-1 rounded">
-                              {image.width}×{image.height}
-                            </div>
-                          )}
-
-                          {/* Lock indicator */}
-                          {image.locked && (
-                            <div className="absolute top-2 right-2 bg-warning text-neutral-900 rounded-full p-1.5">
-                              <FontAwesomeIcon icon={faLock} className="text-xs" />
-                            </div>
-                          )}
-
-                          {/* Hover overlay with actions */}
-                          <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center space-x-2">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleToggleLock(image.id, image.locked);
-                              }}
-                              className={`btn btn-sm ${image.locked ? 'btn-warning' : 'btn-ghost'}`}
-                              title={image.locked ? 'Locked' : 'Unlocked'}
-                            >
-                              <FontAwesomeIcon icon={image.locked ? faLock : faLockOpen} />
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeleteImage(image.id);
-                              }}
-                              className="btn btn-sm btn-ghost text-error hover:bg-error/20"
-                              title="Delete"
-                            >
-                              <FontAwesomeIcon icon={faTrash} />
-                            </button>
+                        {/* Lock indicator badge - Top Right (if any images are locked) */}
+                        {image.locked && (
+                          <div className="absolute top-2 right-2 bg-warning/90 text-white text-[9px] font-semibold px-1.5 py-0.5 rounded flex items-center gap-1 pointer-events-none">
+                            <FontAwesomeIcon icon={faLock} className="text-[9px]" />
+                            <span>LOCKED</span>
                           </div>
-                        </div>
-
-                        {/* Filename below image */}
-                        <div className="p-2 bg-neutral-800/50">
-                          <div className="text-xs text-neutral-300 truncate font-mono" title={filename}>
-                            {filename}
-                          </div>
-                          {image.url && (
-                            <div className="text-xs text-green-400 mt-1">Provider</div>
-                          )}
-                        </div>
+                        )}
                       </div>
                     );
                   })}
@@ -288,14 +340,14 @@ export const ImagesTab: React.FC<ImagesTabProps> = ({ movieId }) => {
 
       {/* Fullscreen Image Viewer */}
       {fullscreenImage && (
-        <div className="fixed inset-0 bg-black z-50 flex flex-col">
+        <div className="fixed inset-0 bg-black z-50 flex flex-col" role="dialog" aria-modal="true" aria-label="Fullscreen image viewer">
           {/* Header with back button */}
           <div className="flex items-center justify-between p-4 bg-black/90">
             <button
               onClick={() => setFullscreenImage(null)}
               className="btn btn-ghost text-white"
             >
-              <FontAwesomeIcon icon={faArrowLeft} className="mr-2" />
+              <FontAwesomeIcon icon={faArrowLeft} className="mr-2" aria-hidden="true" />
               Back
             </button>
             <div className="text-white text-sm">
@@ -309,8 +361,9 @@ export const ImagesTab: React.FC<ImagesTabProps> = ({ movieId }) => {
             <button
               onClick={() => setFullscreenImage(null)}
               className="btn btn-ghost text-white"
+              aria-label="Close fullscreen viewer"
             >
-              <FontAwesomeIcon icon={faTimes} />
+              <FontAwesomeIcon icon={faTimes} aria-hidden="true" />
             </button>
           </div>
 
@@ -349,7 +402,7 @@ export const ImagesTab: React.FC<ImagesTabProps> = ({ movieId }) => {
                     }}
                     className={`btn btn-sm ${fullscreenImage.locked ? 'btn-warning' : 'btn-secondary'}`}
                   >
-                    <FontAwesomeIcon icon={fullscreenImage.locked ? faLock : faLockOpen} className="mr-2" />
+                    <FontAwesomeIcon icon={fullscreenImage.locked ? faLock : faLockOpen} className="mr-2" aria-hidden="true" />
                     {fullscreenImage.locked ? 'Locked' : 'Unlocked'}
                   </button>
                   <button
@@ -361,7 +414,7 @@ export const ImagesTab: React.FC<ImagesTabProps> = ({ movieId }) => {
                     }}
                     className="btn btn-sm btn-error"
                   >
-                    <FontAwesomeIcon icon={faTrash} className="mr-2" />
+                    <FontAwesomeIcon icon={faTrash} className="mr-2" aria-hidden="true" />
                     Delete
                   </button>
                 </div>
@@ -369,6 +422,20 @@ export const ImagesTab: React.FC<ImagesTabProps> = ({ movieId }) => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Asset Selection Dialog */}
+      {assetDialogOpen && selectedAssetType && (
+        <AssetSelectionDialog
+          isOpen={assetDialogOpen}
+          onClose={() => setAssetDialogOpen(false)}
+          onSelect={handleAssetSelect}
+          assetType={selectedAssetType}
+          currentAsset={images[selectedAssetType]?.[0]}
+          providerResults={providerResults}
+          isLoading={isLoadingProviders}
+          error={providerError as Error | null}
+        />
       )}
     </div>
   );

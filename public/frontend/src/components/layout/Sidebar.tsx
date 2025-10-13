@@ -23,7 +23,9 @@ import {
   faBell,
   faHistory,
   faSpinner,
-  faBan
+  faBan,
+  faSliders,
+  faBook
 } from '@fortawesome/free-solid-svg-icons';
 interface SidebarProps {
   isCollapsed?: boolean;
@@ -201,12 +203,17 @@ export const Sidebar: React.FC<SidebarProps> = ({ isCollapsed = false, isMobileO
           path: '/settings/providers',
         },
         {
+          icon: faSliders,
+          label: 'Data Selection',
+          path: '/settings/data-selection',
+        },
+        {
           icon: faFolder,
           label: 'Files',
           path: '/settings/files',
         },
         {
-          icon: faDatabase,
+          icon: faBook,
           label: 'Libraries',
           path: '/settings/libraries',
         },
@@ -273,6 +280,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ isCollapsed = false, isMobileO
                     }`}
                     onClick={() => toggleSection(item.label.toLowerCase(), item)}
                     title={isCollapsed ? item.label : undefined}
+                    aria-label={`${item.label} navigation section`}
+                    aria-expanded={expandedSections.includes(item.label.toLowerCase())}
+                    aria-controls={`${item.label.toLowerCase()}-submenu`}
                   >
                     <span className={`${isCollapsed ? 'mx-auto' : 'mr-3'} w-4 h-4 flex items-center justify-center`}>
                       <FontAwesomeIcon icon={item.icon} />
@@ -283,6 +293,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isCollapsed = false, isMobileO
                   </button>
 
                   <div
+                    id={`${item.label.toLowerCase()}-submenu`}
                     className={`grid transition-all duration-300 ease-in-out ${
                       !isCollapsed && (expandedSections.includes(item.label.toLowerCase()) || collapsingSections.includes(item.label.toLowerCase()))
                         ? expandedSections.includes(item.label.toLowerCase())
@@ -290,6 +301,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isCollapsed = false, isMobileO
                           : 'grid-rows-[0fr] opacity-0'
                         : 'grid-rows-[0fr] opacity-0'
                     }`}
+                    role="region"
+                    aria-label={`${item.label} submenu`}
                   >
                     <div className="overflow-hidden">
                       <ul className="bg-neutral-800">
