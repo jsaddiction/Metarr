@@ -5,6 +5,7 @@ import { RadarrWebhookPayload } from '../types/webhooks.js';
 import { scanMovieDirectory, ScanContext } from './scan/unifiedScanService.js';
 import { applyManagerPathMapping } from './pathMappingService.js';
 import { markMovieForDeletion } from './scan/movieLookupService.js';
+import { MediaPlayerConnectionManager } from './mediaPlayerConnectionManager.js';
 
 /**
  * Find library by matching the longest path prefix
@@ -38,9 +39,11 @@ async function findLibraryByPath(db: DatabaseConnection, filePath: string): Prom
 
 export class WebhookProcessingService {
   private dbManager: DatabaseManager;
+  private mediaPlayerManager: MediaPlayerConnectionManager;
 
-  constructor(dbManager: DatabaseManager) {
+  constructor(dbManager: DatabaseManager, mediaPlayerManager: MediaPlayerConnectionManager) {
     this.dbManager = dbManager;
+    this.mediaPlayerManager = mediaPlayerManager;
   }
 
   /**
@@ -134,8 +137,10 @@ export class WebhookProcessingService {
         streamsExtracted: scanResult.streamsExtracted,
       });
 
-      // TODO: Emit notification event 'movie.download.complete'
-      // TODO: Trigger media player library scan
+      // Notify all media players to scan for new content
+      await this.notifyMediaPlayers(libraryId);
+
+      logger.info('Media players notified for library scan', { libraryId });
     } catch (error: any) {
       logger.error('Failed to process Download webhook', {
         movieTitle: payload.movie.title,
@@ -199,7 +204,10 @@ export class WebhookProcessingService {
         newPath: mappedPath,
       });
 
-      // TODO: Emit notification event 'movie.renamed'
+      // Notify media players about the rename
+      await this.notifyMediaPlayers(libraryId);
+
+      logger.info('Media players notified after rename', { libraryId });
     } catch (error: any) {
       logger.error('Failed to process Rename webhook', {
         movieTitle: payload.movie.title,
@@ -295,6 +303,67 @@ export class WebhookProcessingService {
         error: error.message,
       });
       // Don't throw - logging failure shouldn't stop webhook processing
+    }
+  }
+
+  /**
+   * Notify all enabled media players to scan their libraries
+   */
+  private async notifyMediaPlayers(libraryId: number): Promise<void> {
+    try {
+      const db = this.dbManager.getConnection();
+
+      // Get all enabled media players for this library
+      const players = await db.query<{
+        id: number;
+        name: string;
+        type: string;
+      }>(
+        `SELECT mp.id, mp.name, mp.type
+         FROM media_players mp
+         INNER JOIN media_player_libraries mpl ON mp.id = mpl.player_id
+         WHERE mpl.library_id = ? AND mp.enabled = 1`,
+        [libraryId]
+      );
+
+      if (players.length === 0) {
+        logger.debug('No enabled media players found for library', { libraryId });
+        return;
+      }
+
+      // Trigger scan for each player
+      for (const player of players) {
+        try {
+          if (player.type === 'kodi') {
+            const httpClient = this.mediaPlayerManager.getHttpClient(player.id);
+            if (httpClient) {
+              await httpClient.scanVideoLibrary();
+              logger.info('Triggered library scan on media player', {
+                playerId: player.id,
+                playerName: player.name
+              });
+            } else {
+              logger.warn('HTTP client not available for player', { playerId: player.id });
+            }
+          } else {
+            logger.warn('Unsupported media player type', { type: player.type });
+          }
+        } catch (error: any) {
+          logger.error('Failed to notify media player', {
+            playerId: player.id,
+            playerName: player.name,
+            error: error.message
+          });
+          // Continue with other players even if one fails
+        }
+      }
+
+    } catch (error: any) {
+      logger.error('Failed to notify media players', {
+        libraryId,
+        error: error.message
+      });
+      // Don't throw - notification failure shouldn't stop webhook processing
     }
   }
 }

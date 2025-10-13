@@ -1,11 +1,15 @@
 import { Router } from 'express';
 import { WebhookController } from '../controllers/webhookController.js';
 import { DatabaseManager } from '../database/DatabaseManager.js';
+import { MediaPlayerConnectionManager } from '../services/mediaPlayerConnectionManager.js';
 import { rateLimitByIp } from '../middleware/security.js';
 
-export function createWebhookRouter(dbManager: DatabaseManager): Router {
+export function createWebhookRouter(
+  dbManager: DatabaseManager,
+  connectionManager: MediaPlayerConnectionManager
+): Router {
   const router = Router();
-  const webhookController = new WebhookController(dbManager);
+  const webhookController = new WebhookController(dbManager, connectionManager);
 
   // Rate limiting for webhooks - 60 requests per minute
   router.use(rateLimitByIp(60000, 60));

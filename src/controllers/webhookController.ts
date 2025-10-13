@@ -8,12 +8,13 @@ import { ValidationError } from '../middleware/errorHandler.js';
 import { logger } from '../middleware/logging.js';
 import { WebhookProcessingService } from '../services/webhookProcessingService.js';
 import { DatabaseManager } from '../database/DatabaseManager.js';
+import { MediaPlayerConnectionManager } from '../services/mediaPlayerConnectionManager.js';
 
 export class WebhookController {
   private webhookService: WebhookProcessingService;
 
-  constructor(dbManager: DatabaseManager) {
-    this.webhookService = new WebhookProcessingService(dbManager);
+  constructor(dbManager: DatabaseManager, connectionManager: MediaPlayerConnectionManager) {
+    this.webhookService = new WebhookProcessingService(dbManager, connectionManager);
   }
 
   async handleSonarr(req: Request, res: Response, next: NextFunction): Promise<void> {

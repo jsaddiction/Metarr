@@ -1,5 +1,6 @@
 import { JobQueueService } from './jobQueueService.js';
 import { logger } from '../middleware/logging.js';
+import crypto from 'crypto';
 
 /**
  * Webhook Service
@@ -246,27 +247,43 @@ export class WebhookService {
   /**
    * Validate Radarr webhook signature (if configured)
    */
-  validateRadarrSignature(_payload: string, _signature: string, _secret: string): boolean {
-    // TODO: Implement HMAC signature validation
-    // Radarr uses HMAC-SHA256
-    return true; // For now, accept all
+  validateRadarrSignature(payload: string, signature: string, secret: string): boolean {
+    return this.validateHMACSignature(payload, signature, secret);
   }
 
   /**
    * Validate Sonarr webhook signature (if configured)
    */
-  validateSonarrSignature(_payload: string, _signature: string, _secret: string): boolean {
-    // TODO: Implement HMAC signature validation
-    // Sonarr uses HMAC-SHA256
-    return true; // For now, accept all
+  validateSonarrSignature(payload: string, signature: string, secret: string): boolean {
+    return this.validateHMACSignature(payload, signature, secret);
   }
 
   /**
    * Validate Lidarr webhook signature (if configured)
    */
-  validateLidarrSignature(_payload: string, _signature: string, _secret: string): boolean {
-    // TODO: Implement HMAC signature validation
-    // Lidarr uses HMAC-SHA256
-    return true; // For now, accept all
+  validateLidarrSignature(payload: string, signature: string, secret: string): boolean {
+    return this.validateHMACSignature(payload, signature, secret);
+  }
+
+  /**
+   * Validate HMAC-SHA256 signature
+   * Used by Radarr, Sonarr, and Lidarr webhooks
+   */
+  private validateHMACSignature(payload: string, providedSignature: string, secret: string): boolean {
+    try {
+      // Create HMAC-SHA256 hash
+      const hmac = crypto.createHmac('sha256', secret);
+      hmac.update(payload);
+      const calculatedSignature = hmac.digest('hex');
+
+      // Compare signatures (timing-safe comparison)
+      return crypto.timingSafeEqual(
+        Buffer.from(calculatedSignature, 'hex'),
+        Buffer.from(providedSignature, 'hex')
+      );
+    } catch (error: any) {
+      logger.error('Failed to validate HMAC signature', { error: error.message });
+      return false;
+    }
   }
 }

@@ -116,8 +116,8 @@ export class App {
     const apiRoutes = createApiRouter(this.dbManager, this.connectionManager);
     this.express.use('/api', apiRoutes);
 
-    // Webhook routes (with dependency injection) - requires DB connection
-    const webhookRoutes = createWebhookRouter(this.dbManager);
+    // Webhook routes (with dependency injection) - requires DB connection and connection manager
+    const webhookRoutes = createWebhookRouter(this.dbManager, this.connectionManager);
     this.express.use('/webhooks', webhookRoutes);
   }
 

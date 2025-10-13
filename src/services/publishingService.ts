@@ -217,7 +217,7 @@ export class PublishingService {
     }
 
     if (entityType === 'movie') {
-      return this.generateMovieNFO(entity);
+      return await this.generateMovieNFO(entity);
     } else if (entityType === 'series') {
       return this.generateSeriesNFO(entity);
     } else {
@@ -228,7 +228,7 @@ export class PublishingService {
   /**
    * Generate movie NFO (Kodi format)
    */
-  private generateMovieNFO(movie: any): string {
+  private async generateMovieNFO(movie: any): Promise<string> {
     const nfo: string[] = ['<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'];
     nfo.push('<movie>');
 
@@ -245,7 +245,40 @@ export class PublishingService {
     if (movie.imdb_id) nfo.push(`  <imdbid>${movie.imdb_id}</imdbid>`);
     if (movie.tmdb_id) nfo.push(`  <tmdbid>${movie.tmdb_id}</tmdbid>`);
 
-    // TODO: Add genres, actors, directors, studios (from joined tables)
+    // Add genres
+    const genres = await this.getMovieGenres(movie.id);
+    for (const genre of genres) {
+      nfo.push(`  <genre>${this.escapeXML(genre.name)}</genre>`);
+    }
+
+    // Add actors
+    const actors = await this.getMovieActors(movie.id);
+    for (const actor of actors) {
+      nfo.push('  <actor>');
+      nfo.push(`    <name>${this.escapeXML(actor.name)}</name>`);
+      if (actor.character) nfo.push(`    <role>${this.escapeXML(actor.character)}</role>`);
+      if (actor.order !== null) nfo.push(`    <order>${actor.order}</order>`);
+      if (actor.thumb) nfo.push(`    <thumb>${this.escapeXML(actor.thumb)}</thumb>`);
+      nfo.push('  </actor>');
+    }
+
+    // Add directors
+    const directors = await this.getMovieDirectors(movie.id);
+    for (const director of directors) {
+      nfo.push(`  <director>${this.escapeXML(director.name)}</director>`);
+    }
+
+    // Add writers
+    const writers = await this.getMovieWriters(movie.id);
+    for (const writer of writers) {
+      nfo.push(`  <credits>${this.escapeXML(writer.name)}</credits>`);
+    }
+
+    // Add studios
+    const studios = await this.getMovieStudios(movie.id);
+    for (const studio of studios) {
+      nfo.push(`  <studio>${this.escapeXML(studio.name)}</studio>`);
+    }
 
     nfo.push('</movie>');
     return nfo.join('\n');
@@ -425,5 +458,80 @@ export class PublishingService {
     );
 
     return result.map(r => r.id);
+  }
+
+  /**
+   * Get movie genres
+   */
+  private async getMovieGenres(movieId: number): Promise<Array<{ name: string }>> {
+    return this.db.query(
+      `SELECT g.name
+       FROM genres g
+       INNER JOIN movie_genres mg ON g.id = mg.genre_id
+       WHERE mg.movie_id = ?
+       ORDER BY g.name`,
+      [movieId]
+    );
+  }
+
+  /**
+   * Get movie actors
+   */
+  private async getMovieActors(movieId: number): Promise<Array<{
+    name: string;
+    character: string | null;
+    order: number | null;
+    thumb: string | null;
+  }>> {
+    return this.db.query(
+      `SELECT a.name, ma.character, ma.display_order as 'order', a.thumb
+       FROM actors a
+       INNER JOIN movie_actors ma ON a.id = ma.actor_id
+       WHERE ma.movie_id = ?
+       ORDER BY ma.display_order, a.name`,
+      [movieId]
+    );
+  }
+
+  /**
+   * Get movie directors
+   */
+  private async getMovieDirectors(movieId: number): Promise<Array<{ name: string }>> {
+    return this.db.query(
+      `SELECT c.name
+       FROM crew c
+       INNER JOIN movie_crew mc ON c.id = mc.crew_id
+       WHERE mc.movie_id = ? AND mc.role = 'Director'
+       ORDER BY c.name`,
+      [movieId]
+    );
+  }
+
+  /**
+   * Get movie writers
+   */
+  private async getMovieWriters(movieId: number): Promise<Array<{ name: string }>> {
+    return this.db.query(
+      `SELECT c.name
+       FROM crew c
+       INNER JOIN movie_crew mc ON c.id = mc.crew_id
+       WHERE mc.movie_id = ? AND mc.role IN ('Writer', 'Screenplay')
+       ORDER BY c.name`,
+      [movieId]
+    );
+  }
+
+  /**
+   * Get movie studios
+   */
+  private async getMovieStudios(movieId: number): Promise<Array<{ name: string }>> {
+    return this.db.query(
+      `SELECT s.name
+       FROM studios s
+       INNER JOIN movie_studios ms ON s.id = ms.studio_id
+       WHERE ms.movie_id = ?
+       ORDER BY s.name`,
+      [movieId]
+    );
   }
 }
