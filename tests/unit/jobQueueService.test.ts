@@ -31,7 +31,7 @@ describe('JobQueueService', () => {
       expect(job).toBeDefined();
       expect(job?.type).toBe('webhook');
       expect(job?.priority).toBe(1);
-      expect(job?.state).toBe('pending');
+      expect(job?.status).toBe('pending');
     });
 
     it('should set default max_retries to 3', async () => {
@@ -123,18 +123,18 @@ describe('JobQueueService', () => {
       expect(webhookJobs.every(j => j.type === 'webhook')).toBe(true);
     });
 
-    it.skip('should filter by type and state', async () => {
+    it.skip('should filter by type and status', async () => {
       const jobId1 = await service.addJob({ type: 'webhook', priority: 1, payload: {} });
       await service.addJob({ type: 'webhook', priority: 1, payload: {} });
 
       // Mark one as completed
       const db = await testDb.create();
-      await db.execute('UPDATE job_queue SET state = ? WHERE id = ?', ['completed', jobId1]);
+      await db.execute('UPDATE job_queue SET status = ? WHERE id = ?', ['completed', jobId1]);
 
       const pendingWebhooks = await service.getJobsByType('webhook', 'pending');
 
       expect(pendingWebhooks).toHaveLength(1);
-      expect(pendingWebhooks[0].state).toBe('pending');
+      expect(pendingWebhooks[0].status).toBe('pending');
     });
   });
 
@@ -164,7 +164,7 @@ describe('JobQueueService', () => {
 
       // Mark as processing
       const db = await testDb.create();
-      await db.execute('UPDATE job_queue SET state = ? WHERE id = ?', ['processing', jobId]);
+      await db.execute('UPDATE job_queue SET status = ? WHERE id = ?', ['processing', jobId]);
 
       const success = await service.cancelJob(jobId);
 
@@ -197,7 +197,7 @@ describe('JobQueueService', () => {
 
       // Verify job is pending again
       const job = await service.getJob(jobId);
-      expect(job?.state).toBe('pending');
+      expect(job?.status).toBe('pending');
       expect(job?.retry_count).toBe(0);
       expect(job?.error).toBeNull();
     });
@@ -224,13 +224,13 @@ describe('JobQueueService', () => {
       const db = await testDb.create();
       await db.execute(
         `UPDATE job_queue
-         SET state = 'completed', completed_at = datetime('now', '-10 days')
+         SET status = 'completed', completed_at = datetime('now', '-10 days')
          WHERE id = ?`,
         [jobId1]
       );
       await db.execute(
         `UPDATE job_queue
-         SET state = 'completed', completed_at = CURRENT_TIMESTAMP
+         SET status = 'completed', completed_at = CURRENT_TIMESTAMP
          WHERE id = ?`,
         [jobId2]
       );

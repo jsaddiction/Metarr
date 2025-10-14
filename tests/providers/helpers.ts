@@ -22,7 +22,6 @@ export function createMockProviderConfig(
     id: 1,
     providerName,
     enabled: true,
-    enabledAssetTypes: [],
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,

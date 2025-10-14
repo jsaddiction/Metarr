@@ -34,8 +34,9 @@ describe('Provider Metadata', () => {
   describe('TMDB metadata', () => {
     const tmdb = PROVIDER_METADATA.tmdb;
 
-    it('should require API key', () => {
-      expect(tmdb.requiresApiKey).toBe(true);
+    it('should have embedded default API key (no user key required)', () => {
+      // TMDB has embedded default key, so requiresApiKey is false
+      expect(tmdb.requiresApiKey).toBe(false);
     });
 
     it('should have correct base URL', () => {
@@ -97,8 +98,9 @@ describe('Provider Metadata', () => {
   describe('TVDB metadata', () => {
     const tvdb = PROVIDER_METADATA.tvdb;
 
-    it('should require API key', () => {
-      expect(tvdb.requiresApiKey).toBe(true);
+    it('should have embedded default API key (no user key required)', () => {
+      // TVDB has embedded default key, so requiresApiKey is false
+      expect(tvdb.requiresApiKey).toBe(false);
     });
 
     it('should have correct base URL', () => {

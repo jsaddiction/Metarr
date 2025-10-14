@@ -760,25 +760,24 @@ export class CleanSchemaMigration {
     await db.execute(`
       CREATE TABLE job_queue (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        job_type TEXT NOT NULL CHECK(job_type IN ('webhook', 'enrichment', 'scan', 'publish', 'cleanup', 'playback_restore')),
+        type TEXT NOT NULL,
         priority INTEGER NOT NULL DEFAULT 5,
-        status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'running', 'completed', 'failed', 'cancelled')),
+        status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'processing', 'completed', 'failed', 'retrying')),
         payload TEXT NOT NULL,
         result TEXT,
-        error_message TEXT,
+        error TEXT,
         retry_count INTEGER DEFAULT 0,
         max_retries INTEGER DEFAULT 3,
         next_retry_at TIMESTAMP,
         started_at TIMESTAMP,
         completed_at TIMESTAMP,
-        worker_id TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
 
     await db.execute('CREATE INDEX idx_jobs_status_priority ON job_queue(status, priority)');
-    await db.execute('CREATE INDEX idx_jobs_type ON job_queue(job_type)');
+    await db.execute('CREATE INDEX idx_jobs_type ON job_queue(type)');
     await db.execute('CREATE INDEX idx_jobs_retry ON job_queue(status, next_retry_at)');
     await db.execute('CREATE INDEX idx_jobs_created ON job_queue(created_at)');
 

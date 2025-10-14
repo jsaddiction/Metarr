@@ -1,7 +1,8 @@
 import sqlite3 from 'sqlite3';
 import { open, Database } from 'sqlite';
 import { DatabaseConnection } from '../../src/types/database.js';
-import { InitialSchemaMigration } from '../../src/database/migrations/20251003_001_initial_schema.js';
+import { CleanSchemaMigration } from '../../src/database/migrations/20251015_001_clean_schema.js';
+import { LibrarySchedulerConfigMigration } from '../../src/database/migrations/20251015_002_library_scheduler_config.js';
 
 /**
  * Test Database Utilities
@@ -31,6 +32,11 @@ export class TestDatabase {
       query: async <T = any>(sql: string, params?: any[]): Promise<T[]> => {
         const result = await this.db!.all(sql, params);
         return result as T[];
+      },
+
+      get: async <T = any>(sql: string, params?: any[]): Promise<T | undefined> => {
+        const result = await this.db!.get(sql, params);
+        return result as T | undefined;
       },
 
       execute: async (sql: string, params?: any[]): Promise<{ affectedRows: number; insertId?: number }> => {
@@ -65,7 +71,8 @@ export class TestDatabase {
     };
 
     // Run migrations
-    await InitialSchemaMigration.up(this.connection);
+    await CleanSchemaMigration.up(this.connection);
+    await LibrarySchedulerConfigMigration.up(this.connection);
 
     return this.connection;
   }
@@ -141,8 +148,8 @@ export class TestDatabase {
       for (const movie of data.movies) {
         const library_id = movie.library_id || 1;
         await this.connection.execute(
-          `INSERT INTO movies (title, year, tmdb_id, imdb_id, library_id, file_path, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, '/movies/test', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+          `INSERT INTO movies (title, year, tmdb_id, imdb_id, library_id, file_path, file_name, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, '/movies/test/movie.mkv', 'movie.mkv', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
           [movie.title, movie.year, movie.tmdb_id, movie.imdb_id, library_id]
         );
       }

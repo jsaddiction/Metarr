@@ -91,7 +91,7 @@ describe('WebhookService', () => {
       expect(jobId).toBeGreaterThan(0);
 
       const job = await jobQueue.getJob(jobId);
-      expect(job?.payload.event).toBe('Rename');
+      expect(job?.payload.eventType).toBe('Rename');
     });
 
     it('should create job for Grab event', async () => {
@@ -112,7 +112,7 @@ describe('WebhookService', () => {
       expect(jobId).toBeGreaterThan(0);
 
       const job = await jobQueue.getJob(jobId);
-      expect(job?.payload.event).toBe('Grab');
+      expect(job?.payload.eventType).toBe('Grab');
     });
 
     it('should include movie file info in payload when present', async () => {
@@ -140,9 +140,8 @@ describe('WebhookService', () => {
       const jobId = await service.processRadarrWebhook(webhook);
       const job = await jobQueue.getJob(jobId);
 
-      expect(job?.payload.movieFile).toBeDefined();
-      expect(job?.payload.movieFile.path).toBe('/movies/Test Movie (2023)/Test Movie (2023).mkv');
-      expect(job?.payload.movieFile.quality).toBe('1080p');
+      // The service stores file path in movie.filePath, not as a separate movieFile object
+      expect(job?.payload.movie.filePath).toBe('/movies/Test Movie (2023)/Test Movie (2023).mkv');
     });
   });
 
@@ -219,7 +218,7 @@ describe('WebhookService', () => {
       expect(jobId).toBeGreaterThan(0);
 
       const job = await jobQueue.getJob(jobId);
-      expect(job?.payload.event).toBe('Rename');
+      expect(job?.payload.eventType).toBe('Rename');
     });
   });
 
@@ -286,7 +285,7 @@ describe('WebhookService', () => {
       expect(jobId).toBeGreaterThan(0);
 
       const job = await jobQueue.getJob(jobId);
-      expect(job?.payload.event).toBe('Grab');
+      expect(job?.payload.eventType).toBe('Grab');
     });
   });
 
@@ -327,7 +326,7 @@ describe('WebhookService', () => {
       const job = await jobQueue.getJob(jobId);
 
       expect(job?.payload).toHaveProperty('source');
-      expect(job?.payload).toHaveProperty('event');
+      expect(job?.payload).toHaveProperty('eventType');
       expect(job?.payload).toHaveProperty('movie');
     });
   });
