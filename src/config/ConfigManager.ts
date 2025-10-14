@@ -2,7 +2,6 @@ import dotenv from 'dotenv';
 import { AppConfig, DatabaseConfig, ServerConfig } from './types.js';
 import { defaultConfig } from './defaults.js';
 import { getDefaultApiKey } from './providerDefaults.js';
-import { logger } from '../middleware/logging.js';
 
 export class ConfigManager {
   private static instance: ConfigManager;
@@ -209,7 +208,7 @@ export class ConfigManager {
 
     // Check provider API keys if enabled
     if (this.config.providers.tmdb && !this.config.providers.tmdb.apiKey) {
-      logger.warn('TMDB API key not provided - this should not happen as default key should be used');
+      console.warn('TMDB API key not provided - this should not happen as default key should be used');
     }
 
     if (errors.length > 0) {

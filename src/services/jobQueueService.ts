@@ -37,7 +37,7 @@ export interface Job {
   type: JobType;
   priority: number;
   payload: any;
-  state?: JobState;
+  status?: JobState;
   error?: string | null;
   retry_count?: number;
   max_retries?: number;
@@ -97,7 +97,7 @@ export class JobQueueService {
   async addJob(job: Omit<Job, 'id' | 'created_at'>): Promise<number> {
     const result = await this.db.execute(
       `INSERT INTO job_queue (
-        type, priority, payload, state, retry_count, max_retries, created_at
+        type, priority, payload, status, retry_count, max_retries, created_at
       ) VALUES (?, ?, ?, 'pending', 0, ?, CURRENT_TIMESTAMP)`,
       [
         job.type,
@@ -169,7 +169,7 @@ export class JobQueueService {
       // Get next pending job (ordered by priority ASC, then created_at ASC)
       const jobs = await this.db.query<Job>(
         `SELECT * FROM job_queue
-         WHERE state IN ('pending', 'retrying')
+         WHERE status IN ('pending', 'retrying')
          ORDER BY priority ASC, created_at ASC
          LIMIT 1`
       );
@@ -183,7 +183,7 @@ export class JobQueueService {
       // Mark as processing
       await this.db.execute(
         `UPDATE job_queue
-         SET state = 'processing', started_at = CURRENT_TIMESTAMP
+         SET status = 'processing', started_at = CURRENT_TIMESTAMP
          WHERE id = ?`,
         [job.id]
       );
@@ -210,7 +210,7 @@ export class JobQueueService {
       // Mark as completed
       await this.db.execute(
         `UPDATE job_queue
-         SET state = 'completed', completed_at = CURRENT_TIMESTAMP, error = NULL
+         SET status = 'completed', completed_at = CURRENT_TIMESTAMP, error = NULL
          WHERE id = ?`,
         [job.id]
       );
@@ -244,7 +244,7 @@ export class JobQueueService {
       // Retry
       await this.db.execute(
         `UPDATE job_queue
-         SET state = 'retrying', retry_count = ?, error = ?
+         SET status = 'retrying', retry_count = ?, error = ?
          WHERE id = ?`,
         [retryCount, error.message, job.id]
       );
@@ -256,7 +256,7 @@ export class JobQueueService {
       // Max retries reached, mark as failed
       await this.db.execute(
         `UPDATE job_queue
-         SET state = 'failed', completed_at = CURRENT_TIMESTAMP, error = ?
+         SET status = 'failed', completed_at = CURRENT_TIMESTAMP, error = ?
          WHERE id = ?`,
         [error.message, job.id]
       );
@@ -296,10 +296,10 @@ export class JobQueueService {
     retrying: number;
   }> {
     const result = await this.db.query<{
-      state: JobState;
+      status: JobState;
       count: number;
     }>(
-      `SELECT state, COUNT(*) as count FROM job_queue GROUP BY state`
+      `SELECT status, COUNT(*) as count FROM job_queue GROUP BY status`
     );
 
     const stats = {
@@ -311,7 +311,7 @@ export class JobQueueService {
     };
 
     for (const row of result) {
-      stats[row.state] = row.count;
+      stats[row.status] = row.count;
     }
 
     return stats;
@@ -323,7 +323,7 @@ export class JobQueueService {
   async clearOldJobs(daysOld: number = 7): Promise<number> {
     const result = await this.db.execute(
       `DELETE FROM job_queue
-       WHERE state = 'completed'
+       WHERE status = 'completed'
        AND completed_at < datetime('now', '-' || ? || ' days')`,
       [daysOld]
     );
@@ -338,8 +338,8 @@ export class JobQueueService {
   async retryJob(jobId: number): Promise<boolean> {
     const result = await this.db.execute(
       `UPDATE job_queue
-       SET state = 'pending', retry_count = 0, error = NULL, started_at = NULL, completed_at = NULL
-       WHERE id = ? AND state = 'failed'`,
+       SET status = 'pending', retry_count = 0, error = NULL, started_at = NULL, completed_at = NULL
+       WHERE id = ? AND status = 'failed'`,
       [jobId]
     );
 
@@ -356,7 +356,7 @@ export class JobQueueService {
    */
   async cancelJob(jobId: number): Promise<boolean> {
     const result = await this.db.execute(
-      `DELETE FROM job_queue WHERE id = ? AND state = 'pending'`,
+      `DELETE FROM job_queue WHERE id = ? AND status = 'pending'`,
       [jobId]
     );
 
@@ -392,7 +392,7 @@ export class JobQueueService {
    */
   async getJobsByType(type: JobType, state?: JobState, limit: number = 50): Promise<Job[]> {
     const sql = state
-      ? `SELECT * FROM job_queue WHERE type = ? AND state = ? ORDER BY created_at DESC LIMIT ?`
+      ? `SELECT * FROM job_queue WHERE type = ? AND status = ? ORDER BY created_at DESC LIMIT ?`
       : `SELECT * FROM job_queue WHERE type = ? ORDER BY created_at DESC LIMIT ?`;
 
     const params = state ? [type, state, limit] : [type, limit];
