@@ -175,6 +175,13 @@ export class JobHandlers {
   private async handleFetchProviderAssets(job: Job): Promise<void> {
     const { entityType, entityId, provider, providerId } = job.payload;
 
+    // Check if entity is monitored
+    const isMonitored = await this.isEntityMonitored(entityType, entityId);
+    if (!isMonitored) {
+      logger.info(`Skipping asset fetch for unmonitored ${entityType} ${entityId}`);
+      return;
+    }
+
     logger.info(`Fetching assets from ${provider} for ${entityType} ${entityId}`);
 
     if (provider === 'tmdb' && entityType === 'movie') {
@@ -196,6 +203,13 @@ export class JobHandlers {
    */
   private async handleEnrichMetadata(job: Job): Promise<void> {
     const { entityType, entityId, provider, providerId } = job.payload;
+
+    // Check if entity is monitored
+    const isMonitored = await this.isEntityMonitored(entityType, entityId);
+    if (!isMonitored) {
+      logger.info(`Skipping metadata enrichment for unmonitored ${entityType} ${entityId}`);
+      return;
+    }
 
     logger.info(`Enriching metadata from ${provider} for ${entityType} ${entityId}`);
 
@@ -548,6 +562,49 @@ export class JobHandlers {
       } else {
         await this.assetSelection.selectAssetHybrid(config);
       }
+    }
+  }
+
+  /**
+   * Check if entity is monitored
+   *
+   * Unmonitored entities (monitored = 0) have all automation frozen.
+   * This is separate from field locks - unmonitored stops EVERYTHING.
+   */
+  private async isEntityMonitored(entityType: string, entityId: number): Promise<boolean> {
+    try {
+      let tableName: string;
+
+      if (entityType === 'movie') {
+        tableName = 'movies';
+      } else if (entityType === 'series') {
+        tableName = 'series';
+      } else if (entityType === 'season') {
+        tableName = 'seasons';
+      } else if (entityType === 'episode') {
+        tableName = 'episodes';
+      } else {
+        // Unknown entity type, default to monitored (safe for unknown types)
+        logger.warn(`Unknown entity type ${entityType}, defaulting to monitored`);
+        return true;
+      }
+
+      const result = await this.db.query<{ monitored: number }>(
+        `SELECT monitored FROM ${tableName} WHERE id = ?`,
+        [entityId]
+      );
+
+      if (result.length === 0) {
+        // Entity not found, default to monitored
+        logger.warn(`Entity ${entityType} ${entityId} not found, defaulting to monitored`);
+        return true;
+      }
+
+      return result[0].monitored === 1;
+    } catch (error: any) {
+      logger.error(`Error checking monitored status for ${entityType} ${entityId}:`, error);
+      // On error, default to monitored (allow operation to proceed)
+      return true;
     }
   }
 }
