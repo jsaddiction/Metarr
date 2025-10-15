@@ -3,6 +3,8 @@ import { CleanSchemaMigration } from './migrations/20251015_001_clean_schema.js'
 import { AddMonitoredColumnMigration } from './migrations/20250114_001_add_monitored_column.js';
 import { CreateAssetCandidatesMigration } from './migrations/20250114_003_create_asset_candidates.js';
 import * as MediaPlayerLibrariesMigration from './migrations/20251015_003_media_player_libraries.js';
+import * as AddMaxMembersToGroupsMigration from './migrations/20251015_004_add_max_members_to_groups.js';
+import * as CreateGroupPathMappingsMigration from './migrations/20251015_005_create_group_path_mappings.js';
 
 interface MigrationRecord {
   version: string;
@@ -45,6 +47,18 @@ export class MigrationRunner {
         name: 'create_media_player_libraries',
         up: MediaPlayerLibrariesMigration.up,
         down: MediaPlayerLibrariesMigration.down,
+      },
+      {
+        version: '20251015_004',
+        name: 'add_max_members_to_groups',
+        up: AddMaxMembersToGroupsMigration.up,
+        down: AddMaxMembersToGroupsMigration.down,
+      },
+      {
+        version: '20251015_005',
+        name: 'create_group_path_mappings',
+        up: CreateGroupPathMappingsMigration.up,
+        down: CreateGroupPathMappingsMigration.down,
       },
     ];
   }

@@ -18,37 +18,58 @@ This stage focuses on:
 
 ---
 
-## 🏗️ Architecture: Media Player Groups
+## 🏗️ Architecture: Universal Group Architecture
 
-### The Problem: Kodi Shared Database
+### Core Principle: ALL Players Belong to Groups
 
-**Scenario**: User has 3 Kodi instances (Living Room, Bedroom, Office)
-- All 3 instances share the **same MySQL backend database**
-- When one instance scans the library, **all instances see the changes**
-- If Metarr triggers scan on all 3 instances → **3 concurrent scans = problems**
+**Design Decision** (see [DESIGN_DECISIONS.md](DESIGN_DECISIONS.md)):
+- **ALL player types** belong to groups (Kodi, Jellyfin, Plex)
+- **Group constraints** enforced at schema level via `max_members` column
+- **Path mapping** configured at group level (not player level)
 
-**Solution**: **Media Player Groups**
+### Group Types
 
+**Kodi Groups** (max_members = NULL, unlimited):
 ```
-Group: "Home Kodi Instances" (type: kodi, shared_database: true)
+Group: "Home Kodi Instances" (type: kodi, max_members: NULL)
   ├── Player 1: Living Room Kodi (192.168.1.100:8080)
   ├── Player 2: Bedroom Kodi (192.168.1.101:8080)
   └── Player 3: Office Kodi (192.168.1.102:8080)
 
-Scan Behavior:
-  - Metarr triggers scan on ONE instance in the group (e.g., Player 1)
-  - All 3 instances get updated via shared MySQL database
-  - No concurrent scan conflicts
+Why Groups?
+  - All 3 share same MySQL database
+  - Scanning all 3 → 3 concurrent scans = conflicts
+  - Solution: Scan ONE instance per group
+
+Path Mapping:
+  - Group sees: /movies
+  - All instances use same path (shared DB requirement)
 ```
 
-### Database Schema (Already Exists!)
+**Jellyfin/Plex Groups** (max_members = 1, single server):
+```
+Group: "Main Jellyfin Server" (type: jellyfin, max_members: 1)
+  └── Player 1: Jellyfin (192.168.1.200:8096)
+
+Why Groups?
+  - Consistency: Same interface as Kodi
+  - Simplicity: No branching logic in scan code
+  - Future-proof: Easy to add new player types
+
+Path Mapping:
+  - Group sees: /data/movies
+  - Single server, single path namespace
+```
+
+### Database Schema
 
 ```sql
--- Groups define shared database sets
+-- Groups define player sets with constraints
 CREATE TABLE media_player_groups (
   id INTEGER PRIMARY KEY,
   name TEXT NOT NULL,                    -- "Home Kodi Instances"
   type TEXT CHECK(type IN ('kodi', 'jellyfin', 'plex')),
+  max_members INTEGER NULL,              -- NULL = unlimited, 1 = single server
   created_at TIMESTAMP
 );
 
@@ -74,9 +95,22 @@ CREATE TABLE media_player_libraries (
   FOREIGN KEY (group_id) REFERENCES media_player_groups(id),
   FOREIGN KEY (library_id) REFERENCES libraries(id)
 );
+
+-- Path mapping at GROUP level (new!)
+CREATE TABLE media_player_group_path_mappings (
+  id INTEGER PRIMARY KEY,
+  group_id INTEGER NOT NULL,              -- FK to media_player_groups
+  metarr_path TEXT NOT NULL,              -- /mnt/movies
+  player_path TEXT NOT NULL,              -- /movies
+  description TEXT,
+  FOREIGN KEY (group_id) REFERENCES media_player_groups(id)
+);
 ```
 
-**Key Insight**: `media_player_libraries` links **groups** (not individual players) to libraries!
+**Key Insights**:
+- `media_player_libraries` links **groups** (not individual players) to libraries
+- `max_members` enforces group constraints (NULL = Kodi, 1 = Jellyfin/Plex)
+- Path mapping at **group level** (all players in group share same path view)
 
 ---
 

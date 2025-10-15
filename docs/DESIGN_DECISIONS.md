@@ -456,27 +456,69 @@ Search this document for keywords to find original reasoning.
 
 ## 🎬 Media Player Architecture (Stage 5)
 
-### Media Player Groups
+### Universal Group Architecture
 
-**Decision**: Link media player GROUPS to libraries (not individual players)
+**Decision**: ALL players belong to groups, with constraints enforced at schema level
 
-**Why**: Kodi supports shared MySQL databases
-- Common setup: 3 Kodi instances (living room, bedroom, office) share one MySQL DB
-- Problem: Scanning all 3 instances → 3 concurrent scans on same DB → conflicts
-- Solution: Group instances that share a database, scan ONE instance per group
+**Why**:
+- **Consistency**: Unified data model - no special cases for Jellyfin/Plex vs Kodi
+- **Simplification**: All scan/notification logic goes through groups (no branching)
+- **Future-proof**: Easy to add new player types (same pattern for all)
+- **Path mapping correctness**: Group-level mapping makes architectural sense
 
 **Implementation**:
-- `media_player_groups` table: Defines sets of instances sharing a database
-- `media_players.group_id`: Each instance belongs to a group
-- `media_player_libraries`: Links GROUPS (not players) to libraries
-- Scan logic: One scan per group (fallback if primary fails)
+```sql
+-- Group constraints
+media_player_groups:
+  - max_members INTEGER NULL
+    -- NULL = unlimited (Kodi groups with shared MySQL)
+    -- 1 = single member (Jellyfin/Plex servers)
+
+-- Path mapping at group level
+media_player_group_path_mappings:
+  - group_id → metarr_path → player_path
+  - All players in group share same path view
+```
+
+**Player Type Examples**:
+- **Kodi groups**: max_members = NULL (unlimited)
+  - 3 instances sharing MySQL database
+  - Group ensures one scan at a time
+- **Jellyfin groups**: max_members = 1 (single server)
+  - Server is atomic entity
+  - Group provides consistent interface
+- **Plex groups** (future): max_members = 1 (single server)
 
 **Alternatives Considered**:
-- Link individual players to libraries → Rejected: Causes concurrent scans on shared DB
-- Auto-detect shared databases → Rejected: Requires intrusive DB queries
-- Scan all instances always → Rejected: Wasteful, causes conflicts
+- Kodi uses groups, Jellyfin direct → Rejected: Branching logic everywhere
+- Player-level path mapping → Rejected: Wrong abstraction (paths are group-level concern)
+- No max_members constraint → Rejected: Would allow invalid group configurations
 
-**Related**: Stage 5 (Kodi Integration)
+**Related**: Stage 5 (Kodi Integration), [STAGE_5_KODI_INTEGRATION.md](STAGE_5_KODI_INTEGRATION.md)
+
+---
+
+### Group-Level Path Mapping
+
+**Decision**: Path mappings configured at group level (not player level)
+
+**Why**:
+- **Kodi groups**: All instances sharing MySQL see identical paths
+- **Jellyfin groups**: Single server has one path namespace
+- **Simpler configuration**: One mapping per group instead of N mappings per player
+
+**Implementation**:
+```typescript
+// Metarr path → Group path translation
+applyGroupPathMapping(db, groupId, '/mnt/movies/The Matrix (1999)/')
+  → '/movies/The Matrix (1999)/'
+
+// Used by all players in group
+```
+
+**Alternative Considered**: Per-player path mapping → Rejected: Redundant for shared-DB groups, wrong abstraction
+
+**Related**: `pathMappingService.ts`, `webhookProcessingService.ts`
 
 ---
 
@@ -519,7 +561,8 @@ Search this document for keywords to find original reasoning.
 - Stage workflow? → "Stage-Based Development"
 - Why webhooks? → "Webhook-First Automation"
 - Why locks? → Core Philosophy + "What We Decided NOT To Do" (Edit History)
-- Media player groups? → "Media Player Groups" (above)
+- Universal group architecture? → "Universal Group Architecture" (above)
+- Group-level path mapping? → "Group-Level Path Mapping" (above)
 
 **Making a new choice?**:
 1. Document it here

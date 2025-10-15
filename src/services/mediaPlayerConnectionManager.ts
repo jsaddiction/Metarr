@@ -29,6 +29,47 @@ export class MediaPlayerConnectionManager extends EventEmitter {
   }
 
   /**
+   * Validate group membership constraints
+   * Ensures groups don't exceed max_members limit
+   */
+  async validateGroupMembership(groupId: number, excludePlayerId?: number): Promise<void> {
+    const db = this.dbManager.getConnection();
+
+    // Get group max_members constraint
+    const groups = await db.query<{ max_members: number | null }>(
+      'SELECT max_members FROM media_player_groups WHERE id = ?',
+      [groupId]
+    );
+
+    if (groups.length === 0) {
+      throw new Error(`Media player group ${groupId} not found`);
+    }
+
+    const maxMembers = groups[0].max_members;
+
+    // NULL = unlimited (Kodi groups)
+    if (maxMembers === null) {
+      return;
+    }
+
+    // Count current members (exclude player being updated/removed)
+    const countQuery = excludePlayerId
+      ? 'SELECT COUNT(*) as count FROM media_players WHERE group_id = ? AND id != ?'
+      : 'SELECT COUNT(*) as count FROM media_players WHERE group_id = ?';
+
+    const countParams = excludePlayerId ? [groupId, excludePlayerId] : [groupId];
+    const result = await db.query<{ count: number }>(countQuery, countParams);
+    const currentCount = result[0].count;
+
+    // Check if adding a new member would exceed limit
+    if (currentCount >= maxMembers) {
+      throw new Error(
+        `Cannot add player to group ${groupId}: maximum ${maxMembers} member(s) allowed`
+      );
+    }
+  }
+
+  /**
    * Connect to a media player
    */
   async connectPlayer(player: MediaPlayer): Promise<void> {

@@ -550,18 +550,18 @@ export class WebhookProcessingService {
       return;
     }
 
-    // Apply path mapping for this group (Metarr path → Player path)
+    // Apply group-level path mapping (Metarr path → Group path)
     let mappedPath: string;
     try {
-      // Path mapping uses group_id, not player_id
-      mappedPath = await applyManagerPathMapping(db, 'kodi', libraryPath);
-      logger.debug('Applied path mapping for group scan', {
+      const { applyGroupPathMapping } = await import('./pathMappingService.js');
+      mappedPath = await applyGroupPathMapping(db, groupId, libraryPath);
+      logger.debug('Applied group path mapping for scan', {
         groupId,
         metarrPath: libraryPath,
         mappedPath,
       });
     } catch (error: any) {
-      logger.warn('Path mapping failed, using original path', {
+      logger.warn('Group path mapping failed, using original path', {
         groupId,
         libraryPath,
         error: error.message,
