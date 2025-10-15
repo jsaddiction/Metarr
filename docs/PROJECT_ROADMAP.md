@@ -1,9 +1,9 @@
 # Metarr Project Roadmap
 
 **Last Updated**: 2025-10-15
-**Current Stage**: Stage 4 - Webhooks (In Progress)
-**Current Branch**: `feature/stage-4-webhooks`
-**Next Branch**: `feature/stage-5-kodi` (after Stage 4 complete)
+**Current Stage**: Stage 4 Complete → Stage 5 Next
+**Current Branch**: `master` (after Stage 4 merge)
+**Next Branch**: `feature/stage-5-kodi`
 
 ---
 
@@ -34,11 +34,11 @@
 - ✅ **Stage 1**: Monitored/Unmonitored System (`stage-1-complete`)
 - ✅ **Stage 2**: Field & Asset Locking (`stage-2-complete`)
 - ✅ **Stage 3**: Asset Candidate Caching (`stage-3-complete`)
+- ✅ **Stage 4**: Webhooks (Radarr/Sonarr/Lidarr) (`stage-4-complete`)
 
 ### v1.0 Critical Path (Required for Automation Flow)
 
-- ⏳ **Stage 4**: Webhooks (Radarr/Sonarr Integration) ← **NEXT**
-- ⏳ **Stage 5**: Kodi Integration (Player Notification)
+- ⏳ **Stage 5**: Kodi Integration (Player Notification) ← **NEXT**
 - ⏳ **Stage 6**: Polish & Docker Deployment (Community Release)
 
 ### Post-v1.0 Features (Not Required for Initial Release)
