@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faRefresh,
@@ -15,6 +15,8 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 import { Movie } from '../../types/movie';
 import { AssetIndicator } from './AssetIndicator';
+import { BookmarkToggle } from '../ui/BookmarkToggle';
+import { useToggleMonitored } from '../../hooks/useToggleMonitored';
 
 interface MovieRowProps {
   movie: Movie;
@@ -23,6 +25,8 @@ interface MovieRowProps {
 }
 
 export const MovieRow = React.memo<MovieRowProps>(({ movie, onClick, onRefresh }) => {
+  const toggleMonitored = useToggleMonitored();
+
   const handleClick = () => {
     onClick?.(movie);
   };
@@ -32,11 +36,25 @@ export const MovieRow = React.memo<MovieRowProps>(({ movie, onClick, onRefresh }
     onRefresh?.(movie);
   };
 
+  const handleToggleMonitored = (newMonitoredStatus: boolean) => {
+    toggleMonitored.mutate(movie.id);
+  };
+
   return (
     <div
-      className="grid grid-cols-[25%_auto_80px] py-4 px-4 hover:bg-neutral-700 cursor-pointer transition-colors border-b border-neutral-700"
+      className="grid grid-cols-[40px_25%_auto_80px] py-4 px-4 hover:bg-neutral-700 cursor-pointer transition-colors border-b border-neutral-700"
       onClick={handleClick}
     >
+      {/* Monitored/Bookmark Column */}
+      <div className="flex items-center justify-center">
+        <BookmarkToggle
+          monitored={movie.monitored}
+          onToggle={handleToggleMonitored}
+          loading={toggleMonitored.isPending}
+          size="sm"
+        />
+      </div>
+
       {/* Title Column */}
       <div className="flex flex-col">
         <span className="text-white font-medium">{movie.title}</span>
