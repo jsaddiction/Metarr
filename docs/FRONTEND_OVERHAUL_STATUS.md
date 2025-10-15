@@ -10,7 +10,7 @@
 ## Overall Progress
 
 - [x] Stage 0: Planning (COMPLETED 2025-01-14)
-- [ ] Stage 1: Monitored System (IN PROGRESS - 40%)
+- [ ] Stage 1: Monitored System (IN PROGRESS - 70%)
 - [ ] Stage 2: Lock System (NOT STARTED)
 - [ ] Stage 3: Asset Candidate Caching (NOT STARTED)
 - [ ] Stage 4: Status Pages (NOT STARTED)
@@ -26,15 +26,15 @@
 ### Stage 1: Monitored/Unmonitored System
 
 **Started**: 2025-01-14
-**Backend Progress**: 40% (2/5 tasks)
+**Backend Progress**: 70% (3.5/5 tasks)
 **Frontend Progress**: 0% (0/4 tasks)
 
 #### Backend Tasks
 - [x] Migration: Add `monitored BOOLEAN DEFAULT 1` to movies, series, seasons, episodes
 - [x] API: `POST /api/movies/:id/toggle-monitored`
-- [ ] API: `POST /api/series/:id/toggle-monitored` (cascades to seasons/episodes)
-- [ ] Service: Update `enrichMovie()` to skip if `monitored = 0`
-- [ ] Service: Update `updateAssets()` to skip unmonitored items
+- [ ] API: `POST /api/series/:id/toggle-monitored` (cascades to seasons/episodes) - DEFERRED TO STAGE 2
+- [x] Service: Update enrichment jobs to skip if `monitored = 0`
+- [ ] Service: Update `updateAssets()` to skip unmonitored items - BLOCKED (not yet implemented)
 
 #### Frontend Tasks
 - [ ] Component: BookmarkToggle component
@@ -44,11 +44,12 @@
 
 #### Notes
 - ✅ Database migration completed - monitored column added to all media tables
-- ✅ Toggle monitored API endpoint implemented for movies
-- ✅ MovieService.toggleMonitored() working with WebSocket broadcasting
-- Next: Implement series/seasons/episodes toggle with cascade logic
-- Then: Update enrichment services to respect monitored status
-- Finally: Build frontend BookmarkToggle component
+- ✅ Toggle monitored API endpoint implemented for movies (WebSocket broadcasting)
+- ✅ Enrichment jobs now respect monitored status (handleEnrichMetadata, handleFetchProviderAssets)
+- ✅ isEntityMonitored() helper added to jobHandlers.ts
+- 🔄 Series/seasons/episodes toggle deferred (will be part of TV show implementation)
+- 🚫 updateAssets job blocked - not yet implemented (scheduled job for refreshing asset candidates)
+- 📋 Next: Build frontend BookmarkToggle component and integrate with movies list
 
 ---
 
@@ -56,10 +57,14 @@
 
 1. ✅ ~~Create database migration for monitored column~~ (COMPLETED)
 2. ✅ ~~Implement toggle monitored API endpoint for movies~~ (COMPLETED)
-3. Implement series/seasons/episodes toggle with cascade logic
-4. Update enrichMovie() and updateAssets() to skip unmonitored items
-5. Build BookmarkToggle frontend component
-6. Test monitored/unmonitored behavior end-to-end
+3. ✅ ~~Update enrichment jobs to skip unmonitored items~~ (COMPLETED)
+4. 🔄 ~~Implement series/seasons/episodes toggle~~ (DEFERRED - part of TV implementation)
+5. 🚫 ~~Update updateAssets() to skip unmonitored items~~ (BLOCKED - job not implemented yet)
+6. Build BookmarkToggle frontend component (React + Tailwind)
+7. Add monitored column to movies table view
+8. Add monitored toggle to movie edit page header
+9. Implement useToggleMonitored mutation hook
+10. Test monitored/unmonitored behavior end-to-end
 
 ---
 
@@ -117,11 +122,13 @@ Use this when updating status for stages 1-8:
 
 ---
 
-**Last Session Summary**: Stage 1 backend work 40% complete:
+**Last Session Summary**: Stage 1 backend work 70% complete:
 - Created and ran monitored column migration (20250114_001_add_monitored_column.ts)
 - Implemented POST /api/movies/:id/toggle-monitored endpoint
 - Added MovieService.toggleMonitored() with WebSocket broadcasting
 - Fixed MigrationRunner to register new migration
+- Updated enrichment jobs to respect monitored status (handleEnrichMetadata, handleFetchProviderAssets)
+- Added isEntityMonitored() helper method to jobHandlers.ts
 - All migrations executing successfully
 
 **Files Changed This Session**:
@@ -130,6 +137,11 @@ Use this when updating status for stages 1-8:
 - src/controllers/movieController.ts (toggleMonitored method)
 - src/routes/api.ts (POST route)
 - src/services/movieService.ts (toggleMonitored method)
+- src/services/jobHandlers.ts (monitored checks in enrichment)
 - docs/FRONTEND_OVERHAUL_STATUS.md (this file)
 
-**Next Session Plan**: Continue Stage 1 backend - implement series toggle with cascade logic, update enrichment services to respect monitored status, then start frontend work.
+**Deferred/Blocked**:
+- Series/seasons/episodes toggle (deferred to TV show implementation)
+- updateAssets job monitoring (blocked - job not implemented yet)
+
+**Next Session Plan**: Start Stage 1 frontend work - build BookmarkToggle component, add to movies list, implement useToggleMonitored hook, test end-to-end.
