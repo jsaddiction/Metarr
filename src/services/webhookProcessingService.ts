@@ -4,7 +4,6 @@ import { DatabaseConnection } from '../types/database.js';
 import { RadarrWebhookPayload } from '../types/webhooks.js';
 import { scanMovieDirectory, ScanContext } from './scan/unifiedScanService.js';
 import { applyManagerPathMapping } from './pathMappingService.js';
-import { markMovieForDeletion } from './scan/movieLookupService.js';
 import { MediaPlayerConnectionManager } from './mediaPlayerConnectionManager.js';
 
 /**
@@ -220,7 +219,8 @@ export class WebhookProcessingService {
 
   /**
    * Handle Radarr MovieFileDelete event
-   * File being deleted - mark for soft deletion with 7-day grace period
+   * Note: Soft delete functionality removed in clean schema
+   * Movie records will remain in database when files are deleted
    */
   async handleRadarrMovieFileDelete(payload: RadarrWebhookPayload): Promise<void> {
     const db = this.dbManager.getConnection();
@@ -241,7 +241,7 @@ export class WebhookProcessingService {
     try {
       // Find movie by TMDB ID
       const results = (await db.query(
-        `SELECT id FROM movies WHERE tmdb_id = ? AND deleted_on IS NULL`,
+        `SELECT id FROM movies WHERE tmdb_id = ?`,
         [payload.movie.tmdbId]
       )) as Array<{ id: number }>;
 
@@ -255,17 +255,15 @@ export class WebhookProcessingService {
 
       const movieId = results[0].id;
 
-      // Mark for deletion (7-day grace period)
-      await markMovieForDeletion(db, movieId, 'Radarr MovieFileDelete webhook');
-
-      logger.info('Movie marked for deletion', {
+      // Note: Soft delete removed - movie will remain in database
+      // Future enhancement: Implement status flag or hard delete
+      logger.info('Movie file deleted (database record retained)', {
         movieId,
         tmdbId: payload.movie.tmdbId,
         title: payload.movie.title,
-        deleteOn: '7 days from now',
       });
 
-      // TODO: Emit notification event 'movie.marked.for.deletion'
+      // TODO: Emit notification event 'movie.file.deleted'
     } catch (error: any) {
       logger.error('Failed to process MovieFileDelete webhook', {
         movieTitle: payload.movie.title,

@@ -21,6 +21,7 @@ import {
 } from '../../hooks/useMovieAssets';
 import { AssetSelectionDialog } from '../asset/AssetSelectionDialog';
 import { AssetCard } from '../asset/AssetCard';
+import { AssetBrowserModal } from '../ui/AssetBrowserModal';
 import { assetApi } from '../../utils/api';
 import type { AssetType } from '../../types/providers/capabilities';
 import type { AssetCandidate } from '../../types/asset';
@@ -71,6 +72,7 @@ export const ImagesTab: React.FC<ImagesTabProps> = ({ movieId }) => {
   const [uploadType, setUploadType] = useState<string | null>(null);
   const [fullscreenImage, setFullscreenImage] = useState<Image | null>(null);
   const [assetDialogOpen, setAssetDialogOpen] = useState(false);
+  const [assetBrowserOpen, setAssetBrowserOpen] = useState(false);
   const [selectedAssetType, setSelectedAssetType] = useState<AssetType | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -159,6 +161,11 @@ export const ImagesTab: React.FC<ImagesTabProps> = ({ movieId }) => {
   const handleSearchProviders = (assetType: string) => {
     setSelectedAssetType(assetType as AssetType);
     setAssetDialogOpen(true);
+  };
+
+  const handleBrowseAssets = (assetType: string) => {
+    setSelectedAssetType(assetType as AssetType);
+    setAssetBrowserOpen(true);
   };
 
   const handleAssetSelect = async (asset: AssetCandidate, provider: string) => {
@@ -302,7 +309,7 @@ export const ImagesTab: React.FC<ImagesTabProps> = ({ movieId }) => {
                     const providerName = image.url ? 'Provider' : 'Custom';
 
                     return (
-                      <div key={image.id} className="relative">
+                      <div key={image.id} className="relative group">
                         {/* AssetCard in display mode */}
                         <AssetCard
                           asset={assetCandidate}
@@ -318,6 +325,20 @@ export const ImagesTab: React.FC<ImagesTabProps> = ({ movieId }) => {
                             <span>LOCKED</span>
                           </div>
                         )}
+
+                        {/* Replace button - appears on hover */}
+                        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleBrowseAssets(type.key);
+                            }}
+                            className="w-full btn btn-primary btn-sm text-xs"
+                          >
+                            <FontAwesomeIcon icon={faSearch} className="mr-1" aria-hidden="true" />
+                            Replace
+                          </button>
+                        </div>
                       </div>
                     );
                   })}
@@ -435,6 +456,17 @@ export const ImagesTab: React.FC<ImagesTabProps> = ({ movieId }) => {
           providerResults={providerResults}
           isLoading={isLoadingProviders}
           error={providerError as Error | null}
+        />
+      )}
+
+      {/* Asset Browser Modal (New) */}
+      {assetBrowserOpen && selectedAssetType && (
+        <AssetBrowserModal
+          isOpen={assetBrowserOpen}
+          onClose={() => setAssetBrowserOpen(false)}
+          entityId={movieId}
+          assetType={selectedAssetType}
+          assetTypeLabel={IMAGE_TYPES.find(t => t.key === selectedAssetType)?.label}
         />
       )}
     </div>

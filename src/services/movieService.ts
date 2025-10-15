@@ -96,24 +96,23 @@ export class MovieService {
         -- Entity counts for NFO completeness check
         COUNT(DISTINCT mg.genre_id) as genre_count,
         COUNT(DISTINCT ma.actor_id) as actor_count,
-        COUNT(DISTINCT md.director_id) as director_count,
-        COUNT(DISTINCT mw.writer_id) as writer_count,
+        COUNT(DISTINCT mcd.crew_id) as director_count,
+        COUNT(DISTINCT mcw.crew_id) as writer_count,
         COUNT(DISTINCT ms.studio_id) as studio_count,
-        COUNT(DISTINCT mc.country_id) as country_count,
-        COUNT(DISTINCT mt.tag_id) as tag_count,
 
-        -- Asset counts
-        COUNT(DISTINCT CASE WHEN a.type='poster' THEN a.id END) as poster_count,
-        COUNT(DISTINCT CASE WHEN a.type='fanart' THEN a.id END) as fanart_count,
-        COUNT(DISTINCT CASE WHEN a.type='landscape' THEN a.id END) as landscape_count,
-        COUNT(DISTINCT CASE WHEN a.type='keyart' THEN a.id END) as keyart_count,
-        COUNT(DISTINCT CASE WHEN a.type='banner' THEN a.id END) as banner_count,
-        COUNT(DISTINCT CASE WHEN a.type='clearart' THEN a.id END) as clearart_count,
-        COUNT(DISTINCT CASE WHEN a.type='clearlogo' THEN a.id END) as clearlogo_count,
-        COUNT(DISTINCT CASE WHEN a.type='discart' THEN a.id END) as discart_count,
-        COUNT(DISTINCT CASE WHEN a.type='trailer' THEN a.id END) as trailer_count,
-        COUNT(DISTINCT CASE WHEN a.type='subtitle' THEN a.id END) as subtitle_count,
-        COUNT(DISTINCT CASE WHEN a.type='theme' THEN a.id END) as theme_count
+        -- Asset counts (clean schema: assets are FK columns, not separate table)
+        -- Just check if FK columns are populated (1 if not null, 0 if null)
+        CASE WHEN m.poster_id IS NOT NULL THEN 1 ELSE 0 END as poster_count,
+        CASE WHEN m.fanart_id IS NOT NULL THEN 1 ELSE 0 END as fanart_count,
+        0 as landscape_count,
+        0 as keyart_count,
+        CASE WHEN m.banner_id IS NOT NULL THEN 1 ELSE 0 END as banner_count,
+        CASE WHEN m.clearart_id IS NOT NULL THEN 1 ELSE 0 END as clearart_count,
+        CASE WHEN m.logo_id IS NOT NULL THEN 1 ELSE 0 END as clearlogo_count,
+        CASE WHEN m.discart_id IS NOT NULL THEN 1 ELSE 0 END as discart_count,
+        0 as trailer_count,
+        0 as subtitle_count,
+        0 as theme_count
 
       FROM movies m
 
@@ -123,21 +122,16 @@ export class MovieService {
           movie_id,
           studio_id,
           ROW_NUMBER() OVER (PARTITION BY movie_id ORDER BY studio_id) as studio_row
-        FROM movies_studios
+        FROM movie_studios
       ) ms_numbered ON m.id = ms_numbered.movie_id
       LEFT JOIN studios s ON ms_numbered.studio_id = s.id AND ms_numbered.studio_row = 1
 
-      -- Entity relationships for NFO status
-      LEFT JOIN movies_genres mg ON m.id = mg.movie_id
-      LEFT JOIN movies_actors ma ON m.id = ma.movie_id
-      LEFT JOIN movies_directors md ON m.id = md.movie_id
-      LEFT JOIN movies_writers mw ON m.id = mw.movie_id
-      LEFT JOIN movies_studios ms ON m.id = ms.movie_id
-      LEFT JOIN movies_countries mc ON m.id = mc.movie_id
-      LEFT JOIN movies_tags mt ON m.id = mt.movie_id
-
-      -- Assets for image/media counts
-      LEFT JOIN assets a ON a.entity_type='movie' AND a.entity_id=m.id
+      -- Entity relationships for NFO status (clean schema)
+      LEFT JOIN movie_genres mg ON m.id = mg.movie_id
+      LEFT JOIN movie_actors ma ON m.id = ma.movie_id
+      LEFT JOIN movie_crew mcd ON m.id = mcd.movie_id AND mcd.role = 'director'
+      LEFT JOIN movie_crew mcw ON m.id = mcw.movie_id AND mcw.role = 'writer'
+      LEFT JOIN movie_studios ms ON m.id = ms.movie_id
 
       WHERE ${whereClauses.join(' AND ')}
 
@@ -262,10 +256,8 @@ export class MovieService {
       trailerUrl: dbRow.trailer_url,
       setId: dbRow.set_id,
 
-      // Hashes
-      directoryHash: dbRow.directory_hash,
-      nfoHash: dbRow.nfo_hash,
-      videoHash: dbRow.video_hash,
+      // Hashes (clean schema only has file_hash)
+      fileHash: dbRow.file_hash,
 
       // Locks
       titleLocked: dbRow.title_locked,
@@ -297,26 +289,22 @@ export class MovieService {
 
     const movie = this.mapMovieFromDb(movies[0]);
 
-    // Get related entities
-    const [actors, genres, directors, writers, studios, countries, tags] = await Promise.all([
-      this.db.query<any>('SELECT a.*, ma.role, ma.`order` FROM actors a JOIN movies_actors ma ON a.id = ma.actor_id WHERE ma.movie_id = ? ORDER BY ma.`order`', [movieId]),
-      this.db.query<any>('SELECT g.* FROM genres g JOIN movies_genres mg ON g.id = mg.genre_id WHERE mg.movie_id = ?', [movieId]),
-      this.db.query<any>('SELECT d.* FROM directors d JOIN movies_directors md ON d.id = md.director_id WHERE md.movie_id = ?', [movieId]),
-      this.db.query<any>('SELECT w.* FROM writers w JOIN movies_writers mw ON w.id = mw.writer_id WHERE mw.movie_id = ?', [movieId]),
-      this.db.query<any>('SELECT s.* FROM studios s JOIN movies_studios ms ON s.id = ms.studio_id WHERE ms.movie_id = ?', [movieId]),
-      this.db.query<any>('SELECT c.* FROM countries c JOIN movies_countries mc ON c.id = mc.country_id WHERE mc.movie_id = ?', [movieId]),
-      this.db.query<any>('SELECT t.* FROM tags t JOIN movies_tags mt ON t.id = mt.tag_id WHERE mt.movie_id = ?', [movieId]),
+    // Get related entities (clean schema)
+    const [actors, genres, directors, writers, studios] = await Promise.all([
+      this.db.query<any>('SELECT a.*, ma.role, ma.sort_order FROM actors a JOIN movie_actors ma ON a.id = ma.actor_id WHERE ma.movie_id = ? ORDER BY ma.sort_order', [movieId]),
+      this.db.query<any>('SELECT g.* FROM genres g JOIN movie_genres mg ON g.id = mg.genre_id WHERE mg.movie_id = ?', [movieId]),
+      this.db.query<any>('SELECT c.* FROM crew c JOIN movie_crew mc ON c.id = mc.crew_id WHERE mc.movie_id = ? AND mc.role = \'director\'', [movieId]),
+      this.db.query<any>('SELECT c.* FROM crew c JOIN movie_crew mc ON c.id = mc.crew_id WHERE mc.movie_id = ? AND mc.role = \'writer\'', [movieId]),
+      this.db.query<any>('SELECT s.* FROM studios s JOIN movie_studios ms ON s.id = ms.studio_id WHERE ms.movie_id = ?', [movieId]),
     ]);
 
     return {
       ...movie,
-      actors: actors.map(a => ({ name: a.name, role: a.role, order: a.order, thumb_url: a.thumb_url })),
+      actors: actors.map(a => ({ name: a.name, role: a.role, order: a.sort_order })),
       genres: genres.map(g => g.name),
       directors: directors.map(d => d.name),
       writers: writers.map(w => w.name),
       studios: studios.map(s => s.name),
-      countries: countries.map(c => c.name),
-      tags: tags.map(t => t.name),
     };
   }
 
@@ -338,70 +326,24 @@ export class MovieService {
     return this.db.query<any>(query, [movieId]);
   }
 
-  async getImages(movieId: number): Promise<any[]> {
-    const query = `
-      SELECT
-        id,
-        type as image_type,
-        library_path,
-        cache_path,
-        provider_url,
-        url,
-        width,
-        height,
-        file_size,
-        locked,
-        created_at
-      FROM images
-      WHERE entity_type = 'movie' AND entity_id = ?
-      ORDER BY type ASC, id ASC
-    `;
-
-    return this.db.query<any>(query, [movieId]);
+  async getImages(_movieId: number): Promise<any[]> {
+    // TODO: Query cache_assets via movies FK columns for clean schema
+    // Clean schema: movies.poster_id, movies.fanart_id, etc. → cache_assets
+    return [];
   }
 
-  async getExtras(movieId: number): Promise<{
+  async getExtras(_movieId: number): Promise<{
     trailer: any | null;
     subtitles: any[];
     themeSong: any | null;
   }> {
-    // Get trailer
-    const trailerQuery = `
-      SELECT
-        id,
-        provider_url,
-        local_path,
-        resolution,
-        file_size,
-        duration,
-        locked
-      FROM trailers
-      WHERE entity_type = 'movie' AND entity_id = ? AND deleted_on IS NULL
-      ORDER BY is_default DESC, created_at DESC
-      LIMIT 1
-    `;
-    const trailers = await this.db.query<any>(trailerQuery, [movieId]);
-
-    // Get subtitles
-    const subtitlesQuery = `
-      SELECT
-        id,
-        language,
-        file_path,
-        format,
-        forced,
-        file_size,
-        locked
-      FROM subtitles
-      WHERE entity_type = 'movie' AND entity_id = ? AND deleted_on IS NULL
-      ORDER BY language ASC
-    `;
-    const subtitles = await this.db.query<any>(subtitlesQuery, [movieId]);
-
+    // TODO: Query trailers and subtitles for clean schema
+    // Clean schema: trailers.cache_asset_id → cache_assets
+    // Clean schema: subtitle_streams.cache_asset_id → cache_assets (where stream_index IS NULL)
     return {
-      trailer: trailers.length > 0 ? trailers[0] : null,
-      subtitles,
-      themeSong: null // Not implemented yet
+      trailer: null,
+      subtitles: [],
+      themeSong: null
     };
   }
 

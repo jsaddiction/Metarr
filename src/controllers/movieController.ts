@@ -5,6 +5,7 @@ import { websocketBroadcaster } from '../services/websocketBroadcaster.js';
 import { FetchOrchestrator, ProgressCallback } from '../services/providers/FetchOrchestrator.js';
 import { AssetType } from '../types/providers/capabilities.js';
 import { AssetSelectionService } from '../services/assetSelectionService.js';
+import { AssetCandidateService } from '../services/assetCandidateService.js';
 import { logger } from '../middleware/logging.js';
 
 export class MovieController {
@@ -12,7 +13,8 @@ export class MovieController {
     private movieService: MovieService,
     private scanService: LibraryScanService,
     private fetchOrchestrator?: FetchOrchestrator,
-    private assetSelectionService?: AssetSelectionService
+    private assetSelectionService?: AssetSelectionService,
+    private assetCandidateService?: AssetCandidateService
   ) {}
 
   async getAll(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -683,6 +685,237 @@ export class MovieController {
       res.json(result);
     } catch (error) {
       logger.error('Reset metadata failed', {
+        movieId: req.params.id,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+      next(error);
+    }
+  }
+
+  /**
+   * Get asset candidates for a movie
+   * Endpoint: GET /api/movies/:id/asset-candidates?type=poster
+   * Query params:
+   *   - type: 'poster' | 'fanart' | 'clearlogo' | etc.
+   *   - includeBlocked: boolean (default: false) - Include blocked candidates
+   *
+   * Returns cached asset candidates with scores for instant browsing.
+   */
+  async getAssetCandidates(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const movieId = parseInt(req.params.id);
+      const assetType = req.query.type as string;
+      const includeBlocked = req.query.includeBlocked === 'true';
+
+      // Check if service is available
+      if (!this.assetCandidateService) {
+        res.status(503).json({
+          error: 'Asset candidate service not available',
+          message: 'AssetCandidateService not initialized',
+        });
+        return;
+      }
+
+      // Validate parameters
+      if (!assetType) {
+        res.status(400).json({ error: 'type query parameter is required' });
+        return;
+      }
+
+      // Validate movie exists
+      const movie = await this.movieService.getById(movieId);
+      if (!movie) {
+        res.status(404).json({ error: 'Movie not found' });
+        return;
+      }
+
+      // Get candidates
+      const candidates = await this.assetCandidateService.getAssetCandidates(
+        'movie',
+        movieId,
+        assetType,
+        includeBlocked
+      );
+
+      res.json({ candidates });
+    } catch (error) {
+      logger.error('Get asset candidates failed', {
+        movieId: req.params.id,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+      next(error);
+    }
+  }
+
+  /**
+   * Select an asset candidate
+   * Endpoint: POST /api/asset-candidates/:id/select
+   * Body: { selectedBy?: 'user' | 'auto' }
+   *
+   * Marks candidate as selected, deselects all others of same type.
+   */
+  async selectAssetCandidate(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const candidateId = parseInt(req.params.id);
+      const { selectedBy = 'user' } = req.body;
+
+      // Check if service is available
+      if (!this.assetCandidateService) {
+        res.status(503).json({
+          error: 'Asset candidate service not available',
+          message: 'AssetCandidateService not initialized',
+        });
+        return;
+      }
+
+      // Select the candidate
+      const candidate = await this.assetCandidateService.selectAssetCandidate(candidateId, selectedBy);
+
+      // Broadcast WebSocket update for cross-tab sync
+      websocketBroadcaster.broadcastMoviesUpdated([candidate.entity_id]);
+
+      logger.info('Selected asset candidate', {
+        candidateId,
+        entityId: candidate.entity_id,
+        assetType: candidate.asset_type,
+        provider: candidate.provider,
+        selectedBy
+      });
+
+      res.json({ candidate });
+    } catch (error) {
+      logger.error('Select asset candidate failed', {
+        candidateId: req.params.id,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+      next(error);
+    }
+  }
+
+  /**
+   * Block an asset candidate (blacklist)
+   * Endpoint: POST /api/asset-candidates/:id/block
+   * Body: { blockedBy?: 'user' | 'auto' }
+   *
+   * Prevents candidate from being selected automatically.
+   */
+  async blockAssetCandidate(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const candidateId = parseInt(req.params.id);
+      const { blockedBy = 'user' } = req.body;
+
+      // Check if service is available
+      if (!this.assetCandidateService) {
+        res.status(503).json({
+          error: 'Asset candidate service not available',
+          message: 'AssetCandidateService not initialized',
+        });
+        return;
+      }
+
+      // Block the candidate
+      await this.assetCandidateService.blockAssetCandidate(candidateId, blockedBy);
+
+      logger.info('Blocked asset candidate', {
+        candidateId,
+        blockedBy
+      });
+
+      res.json({ success: true });
+    } catch (error) {
+      logger.error('Block asset candidate failed', {
+        candidateId: req.params.id,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+      next(error);
+    }
+  }
+
+  /**
+   * Unblock an asset candidate
+   * Endpoint: POST /api/asset-candidates/:id/unblock
+   *
+   * Removes blacklist, allows candidate to be selected again.
+   */
+  async unblockAssetCandidate(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const candidateId = parseInt(req.params.id);
+
+      // Check if service is available
+      if (!this.assetCandidateService) {
+        res.status(503).json({
+          error: 'Asset candidate service not available',
+          message: 'AssetCandidateService not initialized',
+        });
+        return;
+      }
+
+      // Unblock the candidate
+      await this.assetCandidateService.unblockAssetCandidate(candidateId);
+
+      logger.info('Unblocked asset candidate', {
+        candidateId
+      });
+
+      res.json({ success: true });
+    } catch (error) {
+      logger.error('Unblock asset candidate failed', {
+        candidateId: req.params.id,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+      next(error);
+    }
+  }
+
+  /**
+   * Reset asset selection for a movie
+   * Endpoint: POST /api/movies/:id/reset-asset
+   * Body: { assetType: 'poster' | 'fanart' | etc. }
+   *
+   * Deselects all candidates for the specified asset type.
+   */
+  async resetAssetSelection(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const movieId = parseInt(req.params.id);
+      const { assetType } = req.body;
+
+      // Check if service is available
+      if (!this.assetCandidateService) {
+        res.status(503).json({
+          error: 'Asset candidate service not available',
+          message: 'AssetCandidateService not initialized',
+        });
+        return;
+      }
+
+      // Validate parameters
+      if (!assetType) {
+        res.status(400).json({ error: 'assetType is required' });
+        return;
+      }
+
+      // Validate movie exists
+      const movie = await this.movieService.getById(movieId);
+      if (!movie) {
+        res.status(404).json({ error: 'Movie not found' });
+        return;
+      }
+
+      // Reset selection
+      await this.assetCandidateService.resetAssetSelection('movie', movieId, assetType);
+
+      // Broadcast WebSocket update for cross-tab sync
+      websocketBroadcaster.broadcastMoviesUpdated([movieId]);
+
+      logger.info('Reset asset selection', {
+        movieId,
+        movieTitle: movie.title,
+        assetType
+      });
+
+      res.json({ success: true });
+    } catch (error) {
+      logger.error('Reset asset selection failed', {
         movieId: req.params.id,
         error: error instanceof Error ? error.message : 'Unknown error'
       });

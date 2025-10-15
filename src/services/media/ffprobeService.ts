@@ -274,36 +274,37 @@ export async function storeVideoStreams(
       entityId,
     ]);
 
-    // Insert new streams
+    // Insert new streams (clean schema: simplified columns)
     for (const stream of streams) {
+      // Detect HDR type from color info
+      let hdrType: string | null = null;
+      if (stream.colorTransfer) {
+        const transfer = stream.colorTransfer.toLowerCase();
+        if (transfer.includes('smpte2084') || transfer.includes('pq')) {
+          hdrType = 'HDR10';
+        } else if (transfer.includes('arib-std-b67') || transfer.includes('hlg')) {
+          hdrType = 'HLG';
+        } else if (transfer.includes('bt2020')) {
+          hdrType = 'HDR';
+        }
+      }
+
       await db.execute(
         `INSERT INTO video_streams (
-          entity_type, entity_id, stream_index, codec_name, codec_long_name, profile,
-          width, height, aspect_ratio, fps, bit_rate, pix_fmt,
-          color_range, color_space, color_transfer, color_primaries,
-          language, title, is_default, is_forced
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          entity_type, entity_id, stream_index, codec,
+          width, height, aspect_ratio, framerate, bitrate, hdr_type
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           entityType,
           entityId,
           stream.streamIndex,
-          stream.codecName,
-          stream.codecLongName,
-          stream.profile,
+          stream.codecName, // Maps to 'codec' column
           stream.width,
           stream.height,
           stream.aspectRatio,
-          stream.fps,
-          stream.bitRate,
-          stream.pixFmt,
-          stream.colorRange,
-          stream.colorSpace,
-          stream.colorTransfer,
-          stream.colorPrimaries,
-          stream.language,
-          stream.title,
-          stream.isDefault ? 1 : 0,
-          stream.isForced ? 1 : 0,
+          stream.fps, // Maps to 'framerate' column
+          stream.bitRate, // Maps to 'bitrate' column
+          hdrType,
         ]
       );
     }
@@ -339,29 +340,23 @@ export async function storeAudioStreams(
       entityId,
     ]);
 
-    // Insert new streams
+    // Insert new streams (clean schema: simplified columns)
     for (const stream of streams) {
       await db.execute(
         `INSERT INTO audio_streams (
-          entity_type, entity_id, stream_index, codec_name, codec_long_name, profile,
-          channels, channel_layout, sample_rate, bit_rate,
-          language, title, is_default, is_forced
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          entity_type, entity_id, stream_index, codec,
+          language, channels, bitrate, title, default_stream
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           entityType,
           entityId,
           stream.streamIndex,
-          stream.codecName,
-          stream.codecLongName,
-          stream.profile,
-          stream.channels,
-          stream.channelLayout,
-          stream.sampleRate,
-          stream.bitRate,
+          stream.codecName, // Maps to 'codec' column
           stream.language,
+          stream.channels,
+          stream.bitRate, // Maps to 'bitrate' column
           stream.title,
-          stream.isDefault ? 1 : 0,
-          stream.isForced ? 1 : 0,
+          stream.isDefault ? 1 : 0, // Maps to 'default_stream' column
         ]
       );
     }
@@ -391,31 +386,28 @@ export async function storeSubtitleStreams(
   streams: SubtitleStream[]
 ): Promise<void> {
   try {
-    // Delete existing embedded streams (external subtitle files handled separately)
+    // Delete existing streams (clean schema doesn't distinguish embedded vs external)
     await db.execute(
-      `DELETE FROM subtitle_streams WHERE entity_type = ? AND entity_id = ? AND source_type = 'embedded'`,
+      `DELETE FROM subtitle_streams WHERE entity_type = ? AND entity_id = ? AND stream_index IS NOT NULL`,
       [entityType, entityId]
     );
 
-    // Insert new streams
+    // Insert new streams (clean schema: simplified columns)
     for (const stream of streams) {
       await db.execute(
         `INSERT INTO subtitle_streams (
-          entity_type, entity_id, stream_index, codec_name, source_type, file_path,
-          language, title, is_default, is_forced, is_sdh
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          entity_type, entity_id, stream_index, language, title,
+          format, forced, default_stream
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           entityType,
           entityId,
           stream.streamIndex,
-          stream.codecName,
-          stream.sourceType,
-          stream.filePath,
-          stream.language,
+          stream.language || 'und', // language is NOT NULL in clean schema
           stream.title,
-          stream.isDefault ? 1 : 0,
-          stream.isForced ? 1 : 0,
-          stream.isSdh ? 1 : 0,
+          stream.codecName, // Maps to 'format' column
+          stream.isForced ? 1 : 0, // Maps to 'forced' column
+          stream.isDefault ? 1 : 0, // Maps to 'default_stream' column
         ]
       );
     }

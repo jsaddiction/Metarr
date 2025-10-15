@@ -478,4 +478,45 @@ export class AssetCandidateService {
       throw error;
     }
   }
+
+  /**
+   * Reset asset selection
+   *
+   * Deselects all candidates for a specific asset type.
+   * Use this when user wants to clear their selection and start over.
+   *
+   * @param entityType - Entity type
+   * @param entityId - Entity ID
+   * @param assetType - Asset type
+   */
+  async resetAssetSelection(
+    entityType: string,
+    entityId: number,
+    assetType: string
+  ): Promise<void> {
+    try {
+      const conn = this.db.getConnection();
+
+      await conn.execute(
+        `UPDATE asset_candidates
+         SET is_selected = 0, selected_at = NULL, selected_by = NULL
+         WHERE entity_type = ? AND entity_id = ? AND asset_type = ?`,
+        [entityType, entityId, assetType]
+      );
+
+      logger.info('Reset asset selection', {
+        entityType,
+        entityId,
+        assetType
+      });
+    } catch (error: any) {
+      logger.error('Failed to reset asset selection', {
+        entityType,
+        entityId,
+        assetType,
+        error: error.message
+      });
+      throw error;
+    }
+  }
 }

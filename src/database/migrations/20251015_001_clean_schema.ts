@@ -878,6 +878,66 @@ export class CleanSchemaMigration {
       )
     `);
 
+    // Ignore Patterns (for unknown file detection)
+    await db.execute(`
+      CREATE TABLE ignore_patterns (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        pattern TEXT NOT NULL,
+        pattern_type TEXT NOT NULL CHECK(pattern_type IN ('glob', 'exact')),
+        enabled BOOLEAN DEFAULT 1,
+        is_system BOOLEAN DEFAULT 0,
+        description TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await db.execute('CREATE INDEX idx_ignore_patterns_enabled ON ignore_patterns(enabled)');
+    await db.execute('CREATE INDEX idx_ignore_patterns_system ON ignore_patterns(is_system)');
+
+    // Insert default system patterns
+    const defaultPatterns = [
+      { pattern: '.DS_Store', type: 'exact', description: 'macOS metadata file' },
+      { pattern: 'Thumbs.db', type: 'exact', description: 'Windows thumbnail cache' },
+      { pattern: 'desktop.ini', type: 'exact', description: 'Windows folder config' },
+      { pattern: '*.sample.*', type: 'glob', description: 'Sample video files' },
+      { pattern: '*-sample.*', type: 'glob', description: 'Sample video files' },
+      { pattern: '*.proof.*', type: 'glob', description: 'Proof video files' },
+      { pattern: '*-proof.*', type: 'glob', description: 'Proof video files' },
+      { pattern: 'RARBG*', type: 'glob', description: 'RARBG release info files' },
+      { pattern: '*ETRG*', type: 'glob', description: 'ETRG release info files' },
+      { pattern: '*.nfo', type: 'glob', description: 'NFO metadata files (handled separately)' },
+      { pattern: '*.torrent', type: 'glob', description: 'Torrent files' },
+      { pattern: '*.nzb', type: 'glob', description: 'NZB files' },
+    ];
+
+    for (const { pattern, type, description } of defaultPatterns) {
+      await db.execute(
+        `INSERT INTO ignore_patterns (pattern, pattern_type, enabled, is_system, description)
+         VALUES (?, ?, 1, 1, ?)`,
+        [pattern, type, description]
+      );
+    }
+
+    // Unknown Files (detected during scan)
+    await db.execute(`
+      CREATE TABLE unknown_files (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        entity_type TEXT NOT NULL CHECK(entity_type IN ('movie', 'episode')),
+        entity_id INTEGER NOT NULL,
+        file_path TEXT NOT NULL,
+        file_name TEXT NOT NULL,
+        file_size INTEGER NOT NULL,
+        file_hash TEXT,
+        extension TEXT NOT NULL,
+        category TEXT NOT NULL CHECK(category IN ('video', 'image', 'archive', 'text', 'other')),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await db.execute('CREATE INDEX idx_unknown_files_entity ON unknown_files(entity_type, entity_id)');
+    await db.execute('CREATE INDEX idx_unknown_files_category ON unknown_files(category)');
+
     console.log('✅ Configuration tables created');
 
     // ============================================================

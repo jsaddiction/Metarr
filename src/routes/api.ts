@@ -19,6 +19,7 @@ import { JobQueueService } from '../services/jobQueueService.js';
 import { JobHandlers } from '../services/jobHandlers.js';
 import { AutomationConfigService } from '../services/automationConfigService.js';
 import { AssetSelectionService } from '../services/assetSelectionService.js';
+import { AssetCandidateService } from '../services/assetCandidateService.js';
 import { tmdbService } from '../services/providers/TMDBService.js';
 import { ProviderConfigService } from '../services/providerConfigService.js';
 import { ProviderConfigController } from '../controllers/providerConfigController.js';
@@ -69,13 +70,17 @@ export const createApiRouter = (
   // Initialize asset selection service
   const assetSelectionService = new AssetSelectionService(db);
 
+  // Initialize asset candidate service
+  const assetCandidateService = new AssetCandidateService(dbManager);
+
   // Initialize movie service and controller
   const movieService = new MovieService(dbManager);
   const movieController = new MovieController(
     movieService,
     libraryScanService,
     fetchOrchestrator,
-    assetSelectionService
+    assetSelectionService,
+    assetCandidateService
   );
 
   // Initialize ignore pattern service and controller
@@ -317,6 +322,32 @@ export const createApiRouter = (
   router.post('/movies/:id/reset-metadata', (req, res, next) => {
     logger.debug('[Route Hit] /movies/:id/reset-metadata with id:', req.params.id);
     movieController.resetMetadata(req, res, next);
+  });
+
+  // Asset candidate routes
+  router.get('/movies/:id/asset-candidates', (req, res, next) => {
+    logger.debug('[Route Hit] /movies/:id/asset-candidates with id:', req.params.id);
+    movieController.getAssetCandidates(req, res, next);
+  });
+
+  router.post('/asset-candidates/:id/select', (req, res, next) => {
+    logger.debug('[Route Hit] /asset-candidates/:id/select with id:', req.params.id);
+    movieController.selectAssetCandidate(req, res, next);
+  });
+
+  router.post('/asset-candidates/:id/block', (req, res, next) => {
+    logger.debug('[Route Hit] /asset-candidates/:id/block with id:', req.params.id);
+    movieController.blockAssetCandidate(req, res, next);
+  });
+
+  router.post('/asset-candidates/:id/unblock', (req, res, next) => {
+    logger.debug('[Route Hit] /asset-candidates/:id/unblock with id:', req.params.id);
+    movieController.unblockAssetCandidate(req, res, next);
+  });
+
+  router.post('/movies/:id/reset-asset', (req, res, next) => {
+    logger.debug('[Route Hit] /movies/:id/reset-asset with id:', req.params.id);
+    movieController.resetAssetSelection(req, res, next);
   });
 
   // Movie detail (MUST come last among movie routes)

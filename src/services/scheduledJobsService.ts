@@ -2,7 +2,7 @@ import { DatabaseManager } from '../database/DatabaseManager.js';
 import { AssetCandidateService, AssetMetadata } from './assetCandidateService.js';
 import { TMDBClient } from './providers/tmdb/TMDBClient.js';
 import { logger } from '../middleware/logging.js';
-import cron from 'node-cron';
+import * as cron from 'node-cron';
 
 /**
  * Scheduled Jobs Service
@@ -90,9 +90,7 @@ export class ScheduledJobsService {
       }
     });
 
-    logger.info('updateAssets job scheduled', {
-      nextRun: this.updateAssetsTask.nextDates(1)[0]
-    });
+    logger.info('updateAssets job scheduled');
   }
 
   /**
@@ -418,14 +416,12 @@ export class ScheduledJobsService {
     updateAssets: {
       enabled: boolean;
       running: boolean;
-      nextRun: Date | null;
     };
   } {
     return {
       updateAssets: {
         enabled: this.updateAssetsTask !== null,
-        running: this.isRunning,
-        nextRun: this.updateAssetsTask ? this.updateAssetsTask.nextDates(1)[0] : null
+        running: this.isRunning
       }
     };
   }

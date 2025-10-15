@@ -3,17 +3,18 @@ import fs from 'fs/promises';
 import { logger } from '../../middleware/logging.js';
 import { DatabaseConnection } from '../../types/database.js';
 import { DatabaseManager } from '../../database/DatabaseManager.js';
-import {
-  hashDirectoryFingerprint,
-  hasDirectoryChanged,
-  hasNfoChanged,
-  hasVideoChanged,
-  hashFile,
-} from '../hash/hashService.js';
+// TODO: Re-enable hash tracking when schema supports it
+// import {
+//   hashDirectoryFingerprint,
+//   hasDirectoryChanged,
+//   hasNfoChanged,
+//   hasVideoChanged,
+//   hashFile,
+// } from '../hash/hashService.js';
 import { parseFullMovieNfos } from '../nfo/nfoParser.js';
 import { generateMovieNFOFromDatabase } from '../nfo/nfoGenerator.js';
 import { extractAndStoreMediaInfo } from '../media/ffprobeService.js';
-import { discoverAndStoreAssets } from '../media/assetDiscovery.js';
+import { discoverAndStoreAssets } from '../media/assetDiscovery_flexible.js';
 import { detectAndStoreUnknownFiles } from '../media/unknownFilesDetection.js';
 import { IgnorePatternService } from '../ignorePatternService.js';
 import { findOrCreateMovie, MovieLookupContext } from './movieLookupService.js';
@@ -263,14 +264,8 @@ export async function scanMovieDirectory(
           // Generate clean NFO from database (database is source of truth)
           await generateMovieNFOFromDatabase(db, movieId, movieDir);
 
-          // Hash the generated NFO
-          const nfoPath = path.join(movieDir, 'movie.nfo');
-          try {
-            const { hash } = await hashFile(nfoPath);
-            await db.execute(`UPDATE movies SET nfo_hash = ? WHERE id = ?`, [hash, movieId]);
-          } catch (error: any) {
-            logger.warn('Failed to hash generated NFO', { error: error.message });
-          }
+          // TODO: Hash tracking not in clean schema - implement if needed
+          // const nfoPath = path.join(movieDir, 'movie.nfo');
 
           logger.info('Parsed and stored NFO metadata', {
             movieId,
@@ -284,19 +279,9 @@ export async function scanMovieDirectory(
         logger.debug('No NFO files found, movie needs identification', { movieDir });
       }
 
-      // Hash directory fingerprint
-      const dirHashResult = await hashDirectoryFingerprint(movieDir);
-      await db.execute(`UPDATE movies SET directory_hash = ? WHERE id = ?`, [
-        dirHashResult.directoryHash,
-        movieId,
-      ]);
-
-      // Hash video file
-      const videoHashResult = await hashFile(videoFilePath);
-      await db.execute(`UPDATE movies SET video_hash = ? WHERE id = ?`, [
-        videoHashResult.hash,
-        movieId,
-      ]);
+      // TODO: Hash tracking not in clean schema - implement if needed
+      // const dirHashResult = await hashDirectoryFingerprint(movieDir);
+      // const videoHashResult = await hashFile(videoFilePath);
 
       // Extract stream details with FFprobe
       try {
@@ -316,9 +301,9 @@ export async function scanMovieDirectory(
           path.basename(videoFilePath)
         );
         result.assetsFound = {
-          images: assets.images.length,
-          trailers: assets.trailers.length,
-          subtitles: assets.subtitles.length,
+          images: assets.images,
+          trailers: assets.trailers,
+          subtitles: assets.subtitles,
         };
       } catch (error: any) {
         result.errors.push(`Asset discovery failed: ${error.message}`);
@@ -348,73 +333,28 @@ export async function scanMovieDirectory(
         trigger: context?.trigger || 'unknown',
       });
 
-      // Check directory fingerprint (quick check)
-      const existingMovie = lookupResult.movie;
-      const dirChanged = await hasDirectoryChanged(movieDir, existingMovie.directory_hash);
-      result.directoryChanged = dirChanged;
+      // TODO: Change detection temporarily disabled - hash columns not in clean schema
+      // For now, always rescan everything
+      logger.debug('Rescanning all components (change detection disabled)', { movieId });
+      result.directoryChanged = true;
 
-      if (!dirChanged && !result.pathChanged) {
-        logger.debug('Directory unchanged, skipping detailed scan', { movieId });
-        return result;
+      // Always regenerate NFO on rescan (for now)
+      try {
+        logger.info('Regenerating NFO from database', { movieId });
+        await generateMovieNFOFromDatabase(db, movieId, movieDir);
+        result.nfoRegenerated = true;
+      } catch (error: any) {
+        logger.warn('NFO regeneration failed', { movieId, error: error.message });
       }
 
-      // Directory changed - check what changed
-      logger.debug('Directory changed, checking components', { movieId });
-
-      // Update directory hash
-      const dirHashResult = await hashDirectoryFingerprint(movieDir);
-      await db.execute(`UPDATE movies SET directory_hash = ? WHERE id = ?`, [
-        dirHashResult.directoryHash,
-        movieId,
-      ]);
-
-      // Check NFO file
-      const nfoPath = path.join(movieDir, 'movie.nfo');
+      // Always re-extract streams on rescan (for now)
       try {
-        const nfoChanged = await hasNfoChanged(nfoPath, existingMovie.nfo_hash);
-        result.nfoChanged = nfoChanged;
-
-        if (nfoChanged) {
-          logger.info('NFO file modified externally, regenerating from database', { movieId });
-
-          // Regenerate NFO from database (database is source of truth)
-          await generateMovieNFOFromDatabase(db, movieId, movieDir);
-
-          // Update NFO hash
-          const { hash } = await hashFile(nfoPath);
-          await db.execute(`UPDATE movies SET nfo_hash = ? WHERE id = ?`, [hash, movieId]);
-
-          result.nfoRegenerated = true;
-        }
+        logger.info('Re-extracting video streams', { movieId });
+        await extractAndStoreMediaInfo(db, 'movie', movieId, videoFilePath);
+        result.streamsExtracted = true;
+        result.videoChanged = true;
       } catch (error: any) {
-        logger.warn('NFO check failed', { movieId, error: error.message });
-      }
-
-      // Check video file
-      try {
-        const videoChanged = await hasVideoChanged(videoFilePath, existingMovie.video_hash);
-        result.videoChanged = videoChanged;
-
-        if (videoChanged) {
-          logger.info('Video file changed, re-extracting streams', { movieId });
-
-          // Update video hash
-          const videoHashResult = await hashFile(videoFilePath);
-          await db.execute(`UPDATE movies SET video_hash = ? WHERE id = ?`, [
-            videoHashResult.hash,
-            movieId,
-          ]);
-
-          // Re-extract stream details
-          try {
-            await extractAndStoreMediaInfo(db, 'movie', movieId, videoFilePath);
-            result.streamsExtracted = true;
-          } catch (error: any) {
-            result.errors.push(`FFprobe failed: ${error.message}`);
-          }
-        }
-      } catch (error: any) {
-        logger.warn('Video check failed', { movieId, error: error.message });
+        result.errors.push(`FFprobe failed: ${error.message}`);
       }
 
       // Re-discover assets (always, since directory changed)
@@ -427,9 +367,9 @@ export async function scanMovieDirectory(
           path.basename(videoFilePath)
         );
         result.assetsFound = {
-          images: assets.images.length,
-          trailers: assets.trailers.length,
-          subtitles: assets.subtitles.length,
+          images: assets.images,
+          trailers: assets.trailers,
+          subtitles: assets.subtitles,
         };
       } catch (error: any) {
         result.errors.push(`Asset discovery failed: ${error.message}`);
@@ -490,12 +430,12 @@ async function storeMovieMetadata(
       year = ?,
       plot = ?,
       tagline = ?,
-      mpaa = ?,
-      premiered = ?,
+      content_rating = ?,
+      release_date = ?,
       tmdb_id = ?,
       imdb_id = ?,
-      status = ?,
-      nfo_parsed_at = CURRENT_TIMESTAMP
+      identification_status = ?,
+      updated_at = CURRENT_TIMESTAMP
     WHERE id = ?`,
     [
       nfoData.title,
@@ -504,102 +444,106 @@ async function storeMovieMetadata(
       nfoData.year,
       nfoData.plot,
       nfoData.tagline,
-      nfoData.mpaa,
+      nfoData.mpaa, // mpaa maps to content_rating
       nfoData.premiered,
       nfoData.tmdbId,
       nfoData.imdbId,
-      'identified',
+      'enriched', // Changed from 'identified' to 'enriched' since we have full metadata
       movieId,
     ]
   );
 
-  // Store genres
+  // Store genres (clean schema: genres table with media_type, movie_genres junction)
   if (nfoData.genres && nfoData.genres.length > 0) {
     for (const genreName of nfoData.genres) {
       // Get or create genre
-      const genreResults = await db.query(`SELECT id FROM genres WHERE name = ?`, [genreName]);
+      const genreResults = await db.query(`SELECT id FROM genres WHERE name = ? AND media_type = 'movie'`, [genreName]);
       let genre = genreResults.length > 0 ? genreResults[0] : null;
       if (!genre) {
-        const result = await db.execute(`INSERT INTO genres (name) VALUES (?)`, [genreName]);
+        const result = await db.execute(`INSERT INTO genres (name, media_type) VALUES (?, 'movie')`, [genreName]);
         genre = { id: result.insertId };
       }
 
       // Link to movie
-      await db.execute(`INSERT OR IGNORE INTO movies_genres (movie_id, genre_id) VALUES (?, ?)`, [
+      await db.execute(`INSERT OR IGNORE INTO movie_genres (movie_id, genre_id) VALUES (?, ?)`, [
         movieId,
         genre.id,
       ]);
     }
   }
 
-  // Store directors
+  // Store directors (clean schema: crew table with movie_crew junction using role='director')
   if (nfoData.directors && nfoData.directors.length > 0) {
     for (const directorName of nfoData.directors) {
-      const directorResults = await db.query(`SELECT id FROM directors WHERE name = ?`, [
-        directorName,
-      ]);
-      let director = directorResults.length > 0 ? directorResults[0] : null;
-      if (!director) {
-        const result = await db.execute(`INSERT INTO directors (name) VALUES (?)`, [directorName]);
-        director = { id: result.insertId };
+      const crewResults = await db.query(`SELECT id FROM crew WHERE name = ?`, [directorName]);
+      let crew = crewResults.length > 0 ? crewResults[0] : null;
+      if (!crew) {
+        const result = await db.execute(`INSERT INTO crew (name) VALUES (?)`, [directorName]);
+        crew = { id: result.insertId };
       }
 
       await db.execute(
-        `INSERT OR IGNORE INTO movies_directors (movie_id, director_id) VALUES (?, ?)`,
-        [movieId, director.id]
+        `INSERT OR IGNORE INTO movie_crew (movie_id, crew_id, role) VALUES (?, ?, 'director')`,
+        [movieId, crew.id]
       );
     }
   }
 
-  // Store writers
+  // Store writers (clean schema: crew table with movie_crew junction using role='writer')
   if (nfoData.credits && nfoData.credits.length > 0) {
     for (const writerName of nfoData.credits) {
-      const writerResults = await db.query(`SELECT id FROM writers WHERE name = ?`, [writerName]);
-      let writer = writerResults.length > 0 ? writerResults[0] : null;
-      if (!writer) {
-        const result = await db.execute(`INSERT INTO writers (name) VALUES (?)`, [writerName]);
-        writer = { id: result.insertId };
+      const crewResults = await db.query(`SELECT id FROM crew WHERE name = ?`, [writerName]);
+      let crew = crewResults.length > 0 ? crewResults[0] : null;
+      if (!crew) {
+        const result = await db.execute(`INSERT INTO crew (name) VALUES (?)`, [writerName]);
+        crew = { id: result.insertId };
       }
 
-      await db.execute(`INSERT OR IGNORE INTO movies_writers (movie_id, writer_id) VALUES (?, ?)`, [
+      await db.execute(`INSERT OR IGNORE INTO movie_crew (movie_id, crew_id, role) VALUES (?, ?, 'writer')`, [
         movieId,
-        writer.id,
+        crew.id,
       ]);
     }
   }
 
-  // Store actors
+  // Store actors (clean schema: actors table with movie_actors junction)
   if (nfoData.actors && nfoData.actors.length > 0) {
     for (const actorData of nfoData.actors) {
       const actorResults = await db.query(`SELECT id FROM actors WHERE name = ?`, [actorData.name]);
       let actor = actorResults.length > 0 ? actorResults[0] : null;
       if (!actor) {
-        const result = await db.execute(`INSERT INTO actors (name, thumb_url) VALUES (?, ?)`, [
-          actorData.name,
-          actorData.thumb,
-        ]);
+        // Clean schema: actors.thumb_id references cache_assets, not thumb_url
+        // For now, just create actor without thumb - full implementation would download and cache
+        const result = await db.execute(`INSERT INTO actors (name) VALUES (?)`, [actorData.name]);
         actor = { id: result.insertId };
       }
 
       await db.execute(
-        `INSERT OR IGNORE INTO movies_actors (movie_id, actor_id, role, \`order\`) VALUES (?, ?, ?, ?)`,
+        `INSERT OR IGNORE INTO movie_actors (movie_id, actor_id, role, sort_order) VALUES (?, ?, ?, ?)`,
         [movieId, actor.id, actorData.role, actorData.order]
       );
     }
   }
 
-  // Store ratings
+  // Store ratings - Clean schema doesn't have a ratings table
+  // TMDB/IMDB ratings go directly in movies table columns
   if (nfoData.ratings && nfoData.ratings.length > 0) {
     for (const rating of nfoData.ratings) {
-      await db.execute(
-        `INSERT INTO ratings (entity_type, entity_id, source, value, votes, is_default)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        ['movie', movieId, rating.source, rating.value, rating.votes || 0, rating.default ? 1 : 0]
-      );
+      if (rating.source === 'tmdb') {
+        await db.execute(
+          `UPDATE movies SET tmdb_rating = ?, tmdb_votes = ? WHERE id = ?`,
+          [rating.value, rating.votes || 0, movieId]
+        );
+      } else if (rating.source === 'imdb') {
+        await db.execute(
+          `UPDATE movies SET imdb_rating = ?, imdb_votes = ? WHERE id = ?`,
+          [rating.value, rating.votes || 0, movieId]
+        );
+      }
     }
   }
 
-  // Store studios
+  // Store studios (clean schema: studios table with movie_studios junction)
   if (nfoData.studios && nfoData.studios.length > 0) {
     for (const studioName of nfoData.studios) {
       const studioResults = await db.query(`SELECT id FROM studios WHERE name = ?`, [studioName]);
@@ -609,62 +553,32 @@ async function storeMovieMetadata(
         studio = { id: result.insertId };
       }
 
-      await db.execute(`INSERT OR IGNORE INTO movies_studios (movie_id, studio_id) VALUES (?, ?)`, [
+      await db.execute(`INSERT OR IGNORE INTO movie_studios (movie_id, studio_id) VALUES (?, ?)`, [
         movieId,
         studio.id,
       ]);
     }
   }
 
-  // Store countries
-  if (nfoData.countries && nfoData.countries.length > 0) {
-    for (const countryName of nfoData.countries) {
-      const countryResults = await db.query(`SELECT id FROM countries WHERE name = ?`, [
-        countryName,
-      ]);
-      let country = countryResults.length > 0 ? countryResults[0] : null;
-      if (!country) {
-        const result = await db.execute(`INSERT INTO countries (name) VALUES (?)`, [countryName]);
-        country = { id: result.insertId };
-      }
+  // Clean schema doesn't have countries or tags tables - skipping for now
 
-      await db.execute(
-        `INSERT OR IGNORE INTO movies_countries (movie_id, country_id) VALUES (?, ?)`,
-        [movieId, country.id]
-      );
-    }
-  }
-
-  // Store tags
-  if (nfoData.tags && nfoData.tags.length > 0) {
-    for (const tagName of nfoData.tags) {
-      const tagResults = await db.query(`SELECT id FROM tags WHERE name = ?`, [tagName]);
-      let tag = tagResults.length > 0 ? tagResults[0] : null;
-      if (!tag) {
-        const result = await db.execute(`INSERT INTO tags (name) VALUES (?)`, [tagName]);
-        tag = { id: result.insertId };
-      }
-
-      await db.execute(`INSERT OR IGNORE INTO movies_tags (movie_id, tag_id) VALUES (?, ?)`, [
-        movieId,
-        tag.id,
-      ]);
-    }
-  }
-
-  // Store set/collection
+  // Store set/collection (clean schema: movie_collections table with movie_collection_members junction)
   if (nfoData.set && nfoData.set.name) {
-    const setResults = await db.query(`SELECT id FROM sets WHERE name = ?`, [nfoData.set.name]);
-    let set = setResults.length > 0 ? setResults[0] : null;
-    if (!set) {
-      const result = await db.execute(`INSERT INTO sets (name, overview) VALUES (?, ?)`, [
+    const collectionResults = await db.query(`SELECT id FROM movie_collections WHERE name = ?`, [nfoData.set.name]);
+    let collection = collectionResults.length > 0 ? collectionResults[0] : null;
+    if (!collection) {
+      const result = await db.execute(`INSERT INTO movie_collections (name, plot) VALUES (?, ?)`, [
         nfoData.set.name,
         nfoData.set.overview,
       ]);
-      set = { id: result.insertId };
+      collection = { id: result.insertId };
     }
 
-    await db.execute(`UPDATE movies SET set_id = ? WHERE id = ?`, [set.id, movieId]);
+    // Add movie to collection
+    await db.execute(
+      `INSERT OR IGNORE INTO movie_collection_members (movie_id, collection_id) VALUES (?, ?)`,
+      [movieId, collection.id]
+    );
   }
 }
 

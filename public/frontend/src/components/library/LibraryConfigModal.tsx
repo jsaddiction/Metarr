@@ -30,7 +30,7 @@ export const LibraryConfigModal: React.FC<LibraryConfigModalProps> = ({
 }) => {
   const [formData, setFormData] = useState<LibraryFormData>({
     name: '',
-    type: 'movies',
+    type: 'movie',
     path: '',
   });
 
@@ -84,7 +84,7 @@ export const LibraryConfigModal: React.FC<LibraryConfigModalProps> = ({
     } else {
       setFormData({
         name: '',
-        type: 'movies',
+        type: 'movie',
         path: '',
       });
       setPathValidation({ status: 'idle' });
@@ -233,8 +233,8 @@ export const LibraryConfigModal: React.FC<LibraryConfigModalProps> = ({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="movies">Movies</SelectItem>
-                    <SelectItem value="tvshows">TV Shows</SelectItem>
+                    <SelectItem value="movie">Movies</SelectItem>
+                    <SelectItem value="tv">TV Shows</SelectItem>
                     <SelectItem value="music">Music</SelectItem>
                   </SelectContent>
                 </Select>

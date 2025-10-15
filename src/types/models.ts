@@ -136,7 +136,7 @@ export interface Asset {
   updatedAt: Date;
 }
 
-export type MediaLibraryType = 'movies' | 'tvshows' | 'music';
+export type MediaLibraryType = 'movie' | 'tv' | 'music';
 
 export interface Library {
   id: number;

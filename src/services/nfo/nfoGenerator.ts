@@ -448,78 +448,78 @@ export async function generateMovieNFOFromDatabase(
 
     const movie = movieResults[0];
 
-    // Fetch related data
+    // Fetch related data (clean schema)
     const genres = await db.query(
       `SELECT g.name FROM genres g
-       JOIN movies_genres mg ON g.id = mg.genre_id
+       JOIN movie_genres mg ON g.id = mg.genre_id
        WHERE mg.movie_id = ?`,
       [movieId]
     );
 
     const directors = await db.query(
-      `SELECT d.name FROM directors d
-       JOIN movies_directors md ON d.id = md.director_id
-       WHERE md.movie_id = ?`,
+      `SELECT c.name FROM crew c
+       JOIN movie_crew mc ON c.id = mc.crew_id
+       WHERE mc.movie_id = ? AND mc.role = 'director'`,
       [movieId]
     );
 
     const writers = await db.query(
-      `SELECT w.name FROM writers w
-       JOIN movies_writers mw ON w.id = mw.writer_id
-       WHERE mw.movie_id = ?`,
+      `SELECT c.name FROM crew c
+       JOIN movie_crew mc ON c.id = mc.crew_id
+       WHERE mc.movie_id = ? AND mc.role = 'writer'`,
       [movieId]
     );
 
     const studios = await db.query(
       `SELECT s.name FROM studios s
-       JOIN movies_studios ms ON s.id = ms.studio_id
+       JOIN movie_studios ms ON s.id = ms.studio_id
        WHERE ms.movie_id = ?`,
       [movieId]
     );
 
-    const countries = await db.query(
-      `SELECT c.name FROM countries c
-       JOIN movies_countries mc ON c.id = mc.country_id
-       WHERE mc.movie_id = ?`,
-      [movieId]
-    );
-
-    const tags = await db.query(
-      `SELECT t.name FROM tags t
-       JOIN movies_tags mt ON t.id = mt.tag_id
-       WHERE mt.movie_id = ?`,
-      [movieId]
-    );
-
     const actors = await db.query(
-      `SELECT a.name, ma.role, ma.\`order\`, a.thumb_url as thumb
+      `SELECT a.name, ma.role, ma.sort_order as \`order\`
        FROM actors a
-       JOIN movies_actors ma ON a.id = ma.actor_id
+       JOIN movie_actors ma ON a.id = ma.actor_id
        WHERE ma.movie_id = ?
-       ORDER BY ma.\`order\``,
+       ORDER BY ma.sort_order`,
       [movieId]
     );
 
-    const ratings = await db.query(
-      `SELECT source, value, votes, is_default as isDefault
-       FROM ratings
-       WHERE entity_type = 'movie' AND entity_id = ?`,
-      [movieId]
-    );
+    // Ratings are stored directly in movies table, not separate ratings table
+    const ratings: any[] = [];
+    if (movie.tmdb_rating) {
+      ratings.push({
+        source: 'tmdb',
+        value: movie.tmdb_rating,
+        votes: movie.tmdb_votes || 0,
+        isDefault: true,
+      });
+    }
+    if (movie.imdb_rating) {
+      ratings.push({
+        source: 'imdb',
+        value: movie.imdb_rating,
+        votes: movie.imdb_votes || 0,
+        isDefault: !movie.tmdb_rating,
+      });
+    }
 
-    // Fetch set info
+    // Fetch collection info (clean schema: movie_collections + movie_collection_members)
     let setData: { name: string; overview?: string } | undefined = undefined;
-    if (movie.set_id) {
-      const setResults = await db.query(`SELECT name, overview FROM sets WHERE id = ?`, [
-        movie.set_id,
-      ]);
-      if (setResults.length > 0) {
-        const setInfo = setResults[0];
-        setData = {
-          name: setInfo.name,
-          overview: setInfo.overview,
-        };
-      }
+    const collectionResults = await db.query(
+      `SELECT mc.name, mc.plot as overview
+       FROM movie_collections mc
+       JOIN movie_collection_members mcm ON mc.id = mcm.collection_id
+       WHERE mcm.movie_id = ?`,
+      [movieId]
+    );
+    if (collectionResults.length > 0) {
+      const collectionInfo = collectionResults[0];
+      setData = {
+        name: collectionInfo.name,
+        overview: collectionInfo.overview,
+      };
     }
 
     // Build NFO data object
@@ -530,16 +530,17 @@ export async function generateMovieNFOFromDatabase(
       year: movie.year,
       plot: movie.plot,
       tagline: movie.tagline,
-      mpaa: movie.mpaa,
-      premiered: movie.premiered,
+      mpaa: movie.content_rating, // Clean schema uses content_rating, not mpaa
+      premiered: movie.release_date, // Clean schema uses release_date, not premiered
+      runtime: movie.runtime,
       tmdbId: movie.tmdb_id,
       imdbId: movie.imdb_id,
       genres: genres.map((g: any) => g.name),
       directors: directors.map((d: any) => d.name),
       writers: writers.map((w: any) => w.name),
       studios: studios.map((s: any) => s.name),
-      countries: countries.map((c: any) => c.name),
-      tags: tags.map((t: any) => t.name),
+      countries: [], // Not in clean schema
+      tags: [], // Not in clean schema
       actors: actors,
       ratings: ratings,
       ...(setData && { set: setData }),

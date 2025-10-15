@@ -2,7 +2,6 @@ import fs from 'fs/promises';
 import path from 'path';
 import { logger } from '../../middleware/logging.js';
 import { DatabaseConnection } from '../../types/database.js';
-import { hashSmallFile, hashFile } from '../hash/hashService.js';
 import { IgnorePatternService } from '../ignorePatternService.js';
 
 /**
@@ -199,48 +198,87 @@ export async function buildKnownFilesSet(
       knownFiles.add(standardNfoPath);
     }
 
-    // Add images from database (stored in images table)
-    const images = await db.query(
-      `SELECT library_path FROM images WHERE entity_type = ? AND entity_id = ? AND library_path IS NOT NULL`,
-      [entityType, entityId]
-    );
-
-    for (const image of images) {
-      if (image.library_path) {
-        knownFiles.add(image.library_path);
+    // Add standard Kodi asset filenames (these are valid even if not stored in DB)
+    // Asset discovery may have chosen the media-file-named variant, but both are valid
+    if (entityType === 'movie') {
+      const standardAssets = [
+        'poster.jpg',
+        'fanart.jpg',
+        'banner.jpg',
+        'clearlogo.png',
+        'clearart.png',
+        'disc.png',
+        'discart.png',
+        'landscape.jpg',
+        'thumb.jpg',
+      ];
+      for (const assetName of standardAssets) {
+        knownFiles.add(path.join(mediaDir, assetName));
       }
     }
 
-    // Add trailers from database
+    // Add images from cache_assets via movie FK columns
+    // Clean schema: movies table has FK columns pointing to cache_assets
     if (entityType === 'movie') {
-      const trailers = await db.query(
-        `SELECT local_path FROM trailers WHERE entity_type = ? AND entity_id = ? AND source_type = 'local'`,
-        [entityType, entityId]
+      const images = await db.query<any[]>(
+        `SELECT ca.file_path
+         FROM cache_assets ca
+         INNER JOIN movies m ON (
+           ca.id = m.poster_id OR ca.id = m.fanart_id OR
+           ca.id = m.banner_id OR ca.id = m.clearart_id OR
+           ca.id = m.logo_id OR ca.id = m.discart_id OR
+           ca.id = m.thumb_id
+         )
+         WHERE m.id = ? AND ca.file_path IS NOT NULL`,
+        [entityId]
       );
 
-      for (const trailer of trailers) {
-        if (trailer.local_path) {
-          knownFiles.add(trailer.local_path);
+      logger.debug('Found cached asset image paths', { entityType, entityId, count: images.length, paths: images.map((i: any) => i.file_path) });
+
+      for (const image of images) {
+        if ((image as any).file_path) {
+          knownFiles.add((image as any).file_path);
         }
       }
     }
 
-    // Add external subtitles from database
-    const subtitles = await db.query(
-      `SELECT file_path FROM subtitle_streams WHERE entity_type = ? AND entity_id = ? AND source_type = 'external'`,
+    // Add trailers from cache_assets (clean schema: trailers table has cache_asset_id FK)
+    if (entityType === 'movie') {
+      const trailers = await db.query<any[]>(
+        `SELECT ca.file_path
+         FROM trailers t
+         INNER JOIN cache_assets ca ON t.cache_asset_id = ca.id
+         WHERE t.entity_type = ? AND t.entity_id = ? AND ca.file_path IS NOT NULL`,
+        [entityType, entityId]
+      );
+
+      for (const trailer of trailers) {
+        if ((trailer as any).file_path) {
+          knownFiles.add((trailer as any).file_path);
+        }
+      }
+    }
+
+    // Add external subtitles from database (clean schema: stream_index IS NULL for external)
+    const subtitles = await db.query<any[]>(
+      `SELECT ca.file_path
+       FROM subtitle_streams ss
+       LEFT JOIN cache_assets ca ON ss.cache_asset_id = ca.id
+       WHERE ss.entity_type = ? AND ss.entity_id = ? AND ss.stream_index IS NULL AND ca.file_path IS NOT NULL`,
       [entityType, entityId]
     );
 
     for (const subtitle of subtitles) {
-      if (subtitle.file_path) {
-        knownFiles.add(subtitle.file_path);
+      if ((subtitle as any).file_path) {
+        knownFiles.add((subtitle as any).file_path);
       }
     }
 
-    logger.debug('Built known files set', {
+    logger.info('Built known files set', {
       entityType,
       entityId,
       count: knownFiles.size,
+      files: Array.from(knownFiles),
     });
 
     return knownFiles;
@@ -270,39 +308,19 @@ export async function storeUnknownFiles(
       entityId,
     ]);
 
-    // Insert new unknown files
+    // Insert new unknown files (no hashing for now - simplified)
     for (const file of unknownFiles) {
-      // Hash the file for duplicate detection
-      let fileHash: string | undefined;
-      try {
-        if (file.fileSize < 10 * 1024 * 1024) {
-          // Small file - use full hash
-          const hashResult = await hashSmallFile(file.filePath);
-          fileHash = hashResult.hash;
-        } else {
-          // Large file - use size-based hash
-          const hashResult = await hashFile(file.filePath);
-          fileHash = hashResult.hash;
-        }
-      } catch (error: any) {
-        logger.warn('Failed to hash unknown file', {
-          filePath: file.filePath,
-          error: error.message,
-        });
-      }
-
       await db.execute(
         `INSERT INTO unknown_files (
-          entity_type, entity_id, file_path, file_name, file_size, file_hash,
+          entity_type, entity_id, file_path, file_name, file_size,
           extension, category
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
         [
           entityType,
           entityId,
           file.filePath,
           file.fileName,
           file.fileSize,
-          fileHash,
           file.extension,
           file.category,
         ]

@@ -4,7 +4,6 @@ import { Library, ScanJob } from '../types/models.js';
 import { logger } from '../middleware/logging.js';
 import { getSubdirectories } from './nfo/nfoDiscovery.js';
 import { scanMovieDirectory } from './scan/unifiedScanService.js';
-import { markMovieForDeletion } from './scan/movieLookupService.js';
 import { websocketBroadcaster } from './websocketBroadcaster.js';
 import path from 'path';
 
@@ -185,9 +184,9 @@ export class LibraryScanService extends EventEmitter {
       // Execute the scan and capture statistics
       let stats = { added: 0, updated: 0, deleted: 0, failed: 0 };
 
-      if (library.type === 'movies') {
+      if (library.type === 'movie') {
         stats = await this.scanMovieLibrary(scanJob, library);
-      } else if (library.type === 'tvshows') {
+      } else if (library.type === 'tv') {
         await this.scanTVShowLibrary(scanJob, library);
         // TV shows don't return stats yet
       } else {
@@ -274,15 +273,6 @@ export class LibraryScanService extends EventEmitter {
     const db = this.dbManager.getConnection();
     const movieDirs = await getSubdirectories(library.path);
 
-    // Get all existing movies for this library (by path prefix)
-    const existingMovies = await db.query<any>(
-      'SELECT id, file_path FROM movies WHERE file_path LIKE ?',
-      [`${library.path}%`]
-    );
-
-    // Track which movie directories still exist on filesystem
-    const scannedDirs = new Set<string>();
-
     // Update total count
     await db.execute('UPDATE scan_jobs SET progress_total = ? WHERE id = ?', [
       movieDirs.length,
@@ -310,7 +300,6 @@ export class LibraryScanService extends EventEmitter {
 
       const movieDir = movieDirs[i];
       const movieName = path.basename(movieDir);
-      scannedDirs.add(movieDir);
 
       try {
         // Update progress
@@ -366,27 +355,10 @@ export class LibraryScanService extends EventEmitter {
       }
     }
 
-    // Mark movies for deletion that no longer exist on filesystem (7-day grace period)
+    // Note: Soft delete functionality removed in clean schema
+    // Movies that no longer exist on filesystem will remain in database
+    // Future enhancement: Implement hard delete or status flag for missing files
     let markedForDeletionCount = 0;
-    for (const movieRow of existingMovies) {
-      const movie = movieRow as any;
-      const movieDir = path.dirname(movie.file_path);
-
-      if (!scannedDirs.has(movieDir)) {
-        await markMovieForDeletion(db, movie.id, 'File not found during scheduled library scan');
-        markedForDeletionCount++;
-        logger.info(`Marked movie for deletion (not found on filesystem): ${movie.file_path}`, {
-          movieId: movie.id,
-          deleteOn: '7 days from now',
-        });
-      }
-    }
-
-    if (markedForDeletionCount > 0) {
-      logger.info(
-        `Marked ${markedForDeletionCount} movies for deletion from library ${library.id} (no longer on filesystem)`
-      );
-    }
 
     // Update final error count
     if (totalErrors > 0) {

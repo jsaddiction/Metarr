@@ -20,7 +20,6 @@ export interface Movie {
   tmdb_id?: number;
   imdb_id?: string;
   file_path: string;
-  deleted_on?: string | null;
   status?: string;
   [key: string]: any;
 }
@@ -50,7 +49,7 @@ export async function findMovieByTmdbId(
 ): Promise<Movie | null> {
   try {
     const results = (await db.query(
-      `SELECT * FROM movies WHERE tmdb_id = ? AND deleted_on IS NULL`,
+      `SELECT * FROM movies WHERE tmdb_id = ?`,
       [tmdbId]
     )) as Movie[];
 
@@ -73,7 +72,7 @@ export async function findMovieByPath(
 ): Promise<Movie | null> {
   try {
     const results = (await db.query(
-      `SELECT * FROM movies WHERE file_path = ? AND deleted_on IS NULL`,
+      `SELECT * FROM movies WHERE file_path = ?`,
       [filePath]
     )) as Movie[];
 
@@ -115,58 +114,38 @@ export async function updateMoviePath(
   }
 }
 
-/**
- * Clear deletion flag on movie
- * Used when a previously deleted movie is restored
- */
-export async function clearDeletionFlag(db: DatabaseConnection, movieId: number): Promise<void> {
-  try {
-    await db.execute(
-      `UPDATE movies SET deleted_on = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-      [movieId]
-    );
-
-    // Also clear deletion flag on images
-    await db.execute(
-      `UPDATE images SET deleted_on = NULL WHERE entity_type = 'movie' AND entity_id = ?`,
-      [movieId]
-    );
-
-    logger.info('Movie restored from deletion', { movieId });
-  } catch (error: any) {
-    logger.error('Failed to clear deletion flag', {
-      movieId,
-      error: error.message,
-    });
-    throw error;
-  }
-}
+// clearDeletionFlag function removed - deleted_on column no longer exists in clean schema
 
 /**
  * Create new movie record
  */
 async function createMovie(db: DatabaseConnection, context: MovieLookupContext): Promise<Movie> {
   try {
+    // Extract file name from path
+    const fileName = context.filePath.split(/[\\/]/).pop() || '';
+
     const result = await db.execute(
       `INSERT INTO movies (
         library_id,
         file_path,
+        file_name,
         tmdb_id,
         imdb_id,
         title,
         year,
-        status,
+        identification_status,
         created_at,
         updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
       [
         context.libraryId,
         context.filePath,
+        fileName,
         context.tmdbId || null,
         context.imdbId || null,
         context.title || null,
         context.year || null,
-        context.tmdbId ? 'processing_webhook' : 'needs_identification',
+        context.tmdbId ? 'identified' : 'unidentified',
       ]
     );
 
@@ -183,7 +162,7 @@ async function createMovie(db: DatabaseConnection, context: MovieLookupContext):
     const createdMovie: Movie = {
       id: movieId,
       file_path: context.filePath,
-      status: context.tmdbId ? 'processing_webhook' : 'needs_identification',
+      status: context.tmdbId ? 'identified' : 'unidentified',
     };
 
     if (context.tmdbId) createdMovie.tmdb_id = context.tmdbId;
@@ -244,18 +223,6 @@ export async function findOrCreateMovie(
         pathChanged = true;
       }
 
-      // Check if was marked for deletion
-      if (movie.deleted_on) {
-        logger.info('Movie was marked for deletion, restoring', {
-          movieId: movie.id,
-          deletedOn: movie.deleted_on,
-        });
-
-        await clearDeletionFlag(db, movie.id);
-        movie.deleted_on = null; // Update local object
-        restoredFromDeletion = true;
-      }
-
       return {
         movie,
         created: false,
@@ -291,13 +258,6 @@ export async function findOrCreateMovie(
         if (context.imdbId) movie.imdb_id = context.imdbId;
       }
 
-      // Check if was marked for deletion
-      if (movie.deleted_on) {
-        await clearDeletionFlag(db, movie.id);
-        movie.deleted_on = null;
-        restoredFromDeletion = true;
-      }
-
       return {
         movie,
         created: false,
@@ -324,37 +284,4 @@ export async function findOrCreateMovie(
   };
 }
 
-/**
- * Mark movie for deletion
- * Sets deleted_on to 7 days from now
- */
-export async function markMovieForDeletion(
-  db: DatabaseConnection,
-  movieId: number,
-  reason?: string
-): Promise<void> {
-  try {
-    await db.execute(
-      `UPDATE movies SET deleted_on = datetime('now', '+7 days'), updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-      [movieId]
-    );
-
-    // Mark images for deletion
-    await db.execute(
-      `UPDATE images SET deleted_on = datetime('now', '+7 days') WHERE entity_type = 'movie' AND entity_id = ?`,
-      [movieId]
-    );
-
-    logger.info('Movie marked for deletion', {
-      movieId,
-      reason,
-      deleteOn: '7 days from now',
-    });
-  } catch (error: any) {
-    logger.error('Failed to mark movie for deletion', {
-      movieId,
-      error: error.message,
-    });
-    throw error;
-  }
-}
+// markMovieForDeletion function removed - deleted_on column no longer exists in clean schema

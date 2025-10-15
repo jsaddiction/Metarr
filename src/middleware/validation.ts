@@ -200,7 +200,7 @@ export const filePathSchema = z
 /**
  * Validate library type
  */
-export const libraryTypeSchema = z.enum(['movies', 'tvshows', 'music']);
+export const libraryTypeSchema = z.enum(['movie', 'tv', 'music']);
 
 /**
  * Validate asset type
