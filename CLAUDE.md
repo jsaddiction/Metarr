@@ -16,9 +16,14 @@ Metarr is a web-based metadata management application inspired by MediaElch, des
 
 ### Quick Start Documentation
 
-**For New Developers**:
-1. **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** - **START HERE** - Complete architectural vision and design principles
-2. **[IMPLEMENTATION_ROADMAP.md](docs/IMPLEMENTATION_ROADMAP.md)** - Phased development plan
+**For Resuming Work** (Most Important):
+1. **[PROJECT_ROADMAP.md](docs/PROJECT_ROADMAP.md)** - **START HERE** - Current status, what's done, what's next
+2. **[STAGE_DEFINITIONS.md](docs/STAGE_DEFINITIONS.md)** - Detailed stage plans and tasks
+3. **[GIT_WORKFLOW.md](docs/GIT_WORKFLOW.md)** - Branch strategy, commit conventions, development rules
+
+**For Understanding Design**:
+1. **[DESIGN_DECISIONS.md](docs/DESIGN_DECISIONS.md)** - Why we made specific architectural choices
+2. **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** - Complete architectural vision and design principles
 
 **Core Architecture**:
 - **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** - System design, data flow, technology stack
@@ -429,6 +434,27 @@ powershell -Command "Get-Content logs/error.log -Tail 50 -Wait"
 ```
 
 **IMPORTANT:** Always monitor both `app.log` and `error.log` when troubleshooting backend server issues. Run these commands in background terminals to capture real-time activity.
+
+## ⚠️ Critical Development Rules for Claude (AI Assistant)
+
+### Server Management - DO NOT TOUCH!
+
+**YOU (the human) control all Node.js servers. Claude NEVER runs server commands.**
+
+**Claude Must NEVER Run**:
+- `npm run dev`, `npm run dev:backend`, `npm run dev:frontend`, `npm start`
+- `pkill node`, `killall node`, or any process killing commands
+- Any command that starts/stops/restarts servers
+
+**Why**: Killing Node processes terminates Claude's session, losing all context. This is catastrophic during troubleshooting.
+
+**What Claude Should Do**:
+- ✅ Ask you to restart servers when needed
+- ✅ Tell you when hot-reload should handle changes
+- ✅ Read logs to diagnose issues
+- ✅ Make code changes and let you test
+
+**See [docs/GIT_WORKFLOW.md](docs/GIT_WORKFLOW.md) for complete Claude rules and development workflow.**
 
 ## Future Enhancements
 - Plex media player support
