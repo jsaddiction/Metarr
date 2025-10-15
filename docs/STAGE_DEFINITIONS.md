@@ -133,9 +133,45 @@ Each stage follows this structure:
 
 ---
 
+### Stage 4: Webhooks (Radarr/Sonarr/Lidarr Integration)
+
+**Branch**: `feature/stage-4-webhooks`
+**Tag**: `stage-4-complete`
+**Completed**: 2025-10-15
+
+**Goal**: Enable automation - incoming webhook triggers enrichment workflow
+
+**Delivered**:
+- **Radarr Integration (100% Complete)**:
+  - All 11 event types fully implemented
+  - Download event: Full scan workflow (enrichment + player notification)
+  - Rename event: Updates file_path
+  - MovieFileDelete: Logs deletion
+  - Health events: Logs with severity mapping
+  - Notification events: ApplicationUpdate, ManualInteractionRequired
+  - Info events: MovieAdded, MovieDeleted (logged only)
+  - Test event: Responds with success
+
+- **Sonarr/Lidarr Integration (Placeholder Complete)**:
+  - All events logged to activity_log
+  - Generic handler with clear "Stage 9/10" messaging
+  - Test events respond successfully
+  - No errors, graceful handling
+
+**Why This Matters**: Core automation flow complete for movies (webhook → scan → enrich → publish → notify)
+
+**Files Modified**:
+- `src/types/webhooks.ts` (added all event types and notification fields)
+- `src/services/webhookProcessingService.ts` (4 new handlers + generic handler)
+- `src/controllers/webhookController.ts` (complete event routing)
+
+**Frontend Deferred**: Webhook configuration UI deferred to post-v1.0 (can configure manually)
+
+---
+
 ## ⏳ Upcoming Stages (v1.0 Critical Path)
 
-### Stage 4: Webhooks (Radarr/Sonarr Integration)
+### Stage 5: Kodi Integration (Player Notification)
 
 **Branch**: `feature/stage-4-webhooks` ← **CREATE THIS NEXT**
 **Goal**: Enable automation - incoming webhook triggers enrichment workflow
