@@ -14,10 +14,11 @@ import { WebSocketController } from './controllers/websocketController.js';
 import { cacheService } from './services/cacheService.js';
 import { JobQueueService } from './services/jobQueue/JobQueueService.js';
 import { SQLiteJobQueueStorage } from './services/jobQueue/storage/SQLiteJobQueueStorage.js';
+import { NotificationConfigService } from './services/notificationConfigService.js';
+import { MediaPlayerGroupService } from './services/mediaPlayerGroupService.js';
+import { JobHandlers } from './services/jobHandlers.js';
 import { FileScannerScheduler } from './services/schedulers/FileScannerScheduler.js';
 import { ProviderUpdaterScheduler } from './services/schedulers/ProviderUpdaterScheduler.js';
-import { createScheduledFileScanHandler } from './services/jobHandlers/scheduledFileScanHandler.js';
-import { createScheduledProviderUpdateHandler } from './services/jobHandlers/scheduledProviderUpdateHandler.js';
 import { securityMiddleware, rateLimitByIp } from './middleware/security.js';
 import { requestLoggingMiddleware, errorLoggingMiddleware, logger } from './middleware/logging.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
@@ -186,15 +187,25 @@ export class App {
       await this.jobQueueService.initialize();
       logger.info('Job queue initialized (crash recovery complete)');
 
-      // Register job handlers
-      this.jobQueueService.registerHandler(
-        'scheduled-file-scan',
-        createScheduledFileScanHandler(this.dbManager)
+      // Initialize notification config service
+      const notificationConfig = new NotificationConfigService(this.dbManager.getConnection());
+      logger.info('Notification config service initialized');
+
+      // Initialize media player group service
+      const mediaPlayerGroups = new MediaPlayerGroupService(this.dbManager.getConnection());
+      logger.info('Media player group service initialized');
+
+      // Initialize job handlers with all dependencies
+      const jobHandlers = new JobHandlers(
+        this.dbManager.getConnection(),
+        this.jobQueueService,
+        this.config.paths.cache || './data/cache',
+        notificationConfig,
+        mediaPlayerGroups
       );
-      this.jobQueueService.registerHandler(
-        'scheduled-provider-update',
-        createScheduledProviderUpdateHandler(this.dbManager)
-      );
+
+      // Register all job handlers with job queue
+      jobHandlers.registerHandlers(this.jobQueueService);
       logger.info('Job handlers registered');
 
       // Start job queue processing

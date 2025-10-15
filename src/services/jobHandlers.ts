@@ -5,6 +5,8 @@ import { ProviderAssetService } from './providerAssetService.js';
 import { AssetSelectionService } from './assetSelectionService.js';
 import { PublishingService } from './publishingService.js';
 import { TMDBClient } from './providers/tmdb/TMDBClient.js';
+import { NotificationConfigService } from './notificationConfigService.js';
+import { MediaPlayerGroupService } from './mediaPlayerGroupService.js';
 import { logger } from '../middleware/logging.js';
 
 /**
@@ -16,22 +18,31 @@ import { logger } from '../middleware/logging.js';
 
 export class JobHandlers {
   private db: DatabaseConnection;
+  private jobQueue: JobQueueService;
   private assetDiscovery: AssetDiscoveryService;
   private providerAssets: ProviderAssetService;
   private assetSelection: AssetSelectionService;
   private publishing: PublishingService;
+  private notificationConfig: NotificationConfigService;
+  private mediaPlayerGroups: MediaPlayerGroupService;
   private tmdbClient: TMDBClient | undefined;
 
   constructor(
     db: DatabaseConnection,
+    jobQueue: JobQueueService,
     cacheDir: string,
+    notificationConfig: NotificationConfigService,
+    mediaPlayerGroups: MediaPlayerGroupService,
     tmdbClient?: TMDBClient
   ) {
     this.db = db;
+    this.jobQueue = jobQueue;
     this.assetDiscovery = new AssetDiscoveryService(db, cacheDir);
     this.providerAssets = new ProviderAssetService(db, cacheDir, tmdbClient);
     this.assetSelection = new AssetSelectionService(db);
     this.publishing = new PublishingService(db);
+    this.notificationConfig = notificationConfig;
+    this.mediaPlayerGroups = mediaPlayerGroups;
     this.tmdbClient = tmdbClient;
   }
 
@@ -39,17 +50,44 @@ export class JobHandlers {
    * Register all handlers with job queue
    */
   registerHandlers(jobQueue: JobQueueService): void {
-    jobQueue.registerHandler('webhook', this.handleWebhook.bind(this));
+    // Webhook fan-out
+    jobQueue.registerHandler('webhook-received', this.handleWebhookReceived.bind(this));
+    jobQueue.registerHandler('scan-movie', this.handleScanMovie.bind(this));
+
+    // Notification handlers
+    jobQueue.registerHandler('notify-kodi', this.handleNotifyKodi.bind(this));
+    jobQueue.registerHandler('notify-jellyfin', this.handleNotifyJellyfin.bind(this));
+    jobQueue.registerHandler('notify-plex', this.handleNotifyPlex.bind(this));
+    jobQueue.registerHandler('notify-discord', this.handleNotifyDiscord.bind(this));
+    jobQueue.registerHandler('notify-pushover', this.handleNotifyPushover.bind(this));
+    jobQueue.registerHandler('notify-email', this.handleNotifyEmail.bind(this));
+
+    // Asset management
     jobQueue.registerHandler('discover-assets', this.handleDiscoverAssets.bind(this));
     jobQueue.registerHandler('fetch-provider-assets', this.handleFetchProviderAssets.bind(this));
     jobQueue.registerHandler('enrich-metadata', this.handleEnrichMetadata.bind(this));
     jobQueue.registerHandler('select-assets', this.handleSelectAssets.bind(this));
     jobQueue.registerHandler('publish', this.handlePublish.bind(this));
+
+    // Scheduled tasks
     jobQueue.registerHandler('library-scan', this.handleLibraryScan.bind(this));
+    jobQueue.registerHandler('scheduled-file-scan', this.handleScheduledFileScan.bind(this));
+    jobQueue.registerHandler('scheduled-provider-update', this.handleScheduledProviderUpdate.bind(this));
+    jobQueue.registerHandler('scheduled-cleanup', this.handleScheduledCleanup.bind(this));
   }
 
   /**
-   * Handle webhook from Sonarr/Radarr/Lidarr
+   * Handle webhook from Sonarr/Radarr/Lidarr (FAN-OUT COORDINATOR)
+   *
+   * This is the fan-out handler that receives webhooks and creates multiple jobs:
+   * - scan-movie (HIGH priority)
+   * - notify-kodi, notify-jellyfin, notify-discord, etc. (NORMAL priority)
+   *
+   * Benefits:
+   * - Non-blocking webhook processing (responds instantly)
+   * - Independent failure handling (one notification failure doesn't affect others)
+   * - Individual retry logic per notification service
+   * - Better observability (see each notification job separately)
    *
    * Payload: {
    *   source: 'radarr' | 'sonarr' | 'lidarr',
@@ -59,27 +97,289 @@ export class JobHandlers {
    *   episodes?: [{ id, episodeNumber, seasonNumber, path }]
    * }
    */
-  private async handleWebhook(job: Job): Promise<void> {
+  private async handleWebhookReceived(job: Job): Promise<void> {
     const { source, eventType } = job.payload;
 
-    logger.info(`Processing ${source} webhook: ${eventType}`, job.payload);
+    logger.info('[JobHandlers] Processing webhook (fan-out coordinator)', {
+      service: 'JobHandlers',
+      handler: 'handleWebhookReceived',
+      jobId: job.id,
+      source,
+      eventType,
+    });
 
     // Only process Download events for now
     if (eventType !== 'Download') {
-      logger.info(`Ignoring ${eventType} event`);
+      logger.info('[JobHandlers] Ignoring non-Download event', {
+        service: 'JobHandlers',
+        handler: 'handleWebhookReceived',
+        jobId: job.id,
+        eventType,
+      });
       return;
     }
 
+    // Fan-out: Create scan job (HIGH priority 3)
     if (source === 'radarr' && job.payload.movie) {
-      await this.processMovieWebhook(job.payload.movie);
+      const scanJobId = await this.jobQueue.addJob({
+        type: 'scan-movie',
+        priority: 3, // HIGH priority (user-triggered by download)
+        payload: {
+          movie: job.payload.movie,
+        },
+        retry_count: 0,
+        max_retries: 3,
+      });
+
+      logger.info('[JobHandlers] Created scan-movie job', {
+        service: 'JobHandlers',
+        handler: 'handleWebhookReceived',
+        webhookJobId: job.id,
+        scanJobId,
+        movieTitle: job.payload.movie.title,
+      });
     } else if (source === 'sonarr' && job.payload.series) {
-      await this.processSeriesWebhook(job.payload.series, job.payload.episodes);
+      // TODO: Implement series webhook handling
+      logger.info('[JobHandlers] Series webhook handling not yet implemented', {
+        service: 'JobHandlers',
+        handler: 'handleWebhookReceived',
+        jobId: job.id,
+      });
+      return;
     }
-    // Lidarr support coming later
+
+    // Fan-out: Create notification jobs (NORMAL priority 5-7)
+    const enabledServices = await this.notificationConfig.getEnabledServices();
+
+    logger.info('[JobHandlers] Creating notification jobs', {
+      service: 'JobHandlers',
+      handler: 'handleWebhookReceived',
+      webhookJobId: job.id,
+      enabledServices,
+    });
+
+    // Create job for each enabled notification service
+    for (const service of enabledServices) {
+      const notifyJobId = await this.jobQueue.addJob({
+        type: `notify-${service}` as any,
+        priority: 5, // NORMAL priority
+        payload: {
+          webhookPayload: job.payload, // Pass entire webhook payload
+        },
+        retry_count: 0,
+        max_retries: 2, // Fewer retries for notifications
+      });
+
+      logger.info('[JobHandlers] Created notification job', {
+        service: 'JobHandlers',
+        handler: 'handleWebhookReceived',
+        webhookJobId: job.id,
+        notifyJobId,
+        notificationService: service,
+      });
+    }
+
+    logger.info('[JobHandlers] Webhook fan-out complete', {
+      service: 'JobHandlers',
+      handler: 'handleWebhookReceived',
+      webhookJobId: job.id,
+      jobsCreated: 1 + enabledServices.length, // scan + notifications
+    });
+  }
+
+  /**
+   * Handle scan-movie job
+   *
+   * Payload: {
+   *   movie: { id, title, year, path, tmdbId, imdbId }
+   * }
+   */
+  private async handleScanMovie(job: Job): Promise<void> {
+    const { movie } = job.payload;
+
+    logger.info('[JobHandlers] Processing movie scan', {
+      service: 'JobHandlers',
+      handler: 'handleScanMovie',
+      jobId: job.id,
+      movieTitle: movie.title,
+      movieYear: movie.year,
+    });
+
+    await this.processMovieWebhook(movie);
+
+    logger.info('[JobHandlers] Movie scan complete', {
+      service: 'JobHandlers',
+      handler: 'handleScanMovie',
+      jobId: job.id,
+      movieTitle: movie.title,
+    });
+  }
+
+  /**
+   * Handle notify-kodi job
+   *
+   * Payload: {
+   *   webhookPayload: { source, eventType, movie?, series?, episodes? }
+   * }
+   */
+  private async handleNotifyKodi(job: Job): Promise<void> {
+    // Check if Kodi notifications are enabled (defensive check)
+    const enabled = await this.notificationConfig.isServiceEnabled('kodi');
+    if (!enabled) {
+      logger.info('[JobHandlers] Kodi notifications disabled, skipping', {
+        service: 'JobHandlers',
+        handler: 'handleNotifyKodi',
+        jobId: job.id,
+      });
+      return;
+    }
+
+    logger.info('[JobHandlers] Sending Kodi notification', {
+      service: 'JobHandlers',
+      handler: 'handleNotifyKodi',
+      jobId: job.id,
+    });
+
+    const { webhookPayload } = job.payload;
+
+    // Notify all Kodi groups
+    if (webhookPayload.source === 'radarr' && webhookPayload.movie) {
+      await this.mediaPlayerGroups.notifyAllGroupsMovieAdded(
+        webhookPayload.movie.path,
+        webhookPayload.movie.title
+      );
+    } else if (webhookPayload.source === 'sonarr' && webhookPayload.series) {
+      await this.mediaPlayerGroups.notifyAllGroupsSeriesAdded(
+        webhookPayload.series.path,
+        webhookPayload.series.title
+      );
+    }
+
+    logger.info('[JobHandlers] Kodi notification sent', {
+      service: 'JobHandlers',
+      handler: 'handleNotifyKodi',
+      jobId: job.id,
+    });
+  }
+
+  /**
+   * Handle notify-jellyfin job
+   */
+  private async handleNotifyJellyfin(job: Job): Promise<void> {
+    const enabled = await this.notificationConfig.isServiceEnabled('jellyfin');
+    if (!enabled) {
+      logger.info('[JobHandlers] Jellyfin notifications disabled, skipping', {
+        service: 'JobHandlers',
+        handler: 'handleNotifyJellyfin',
+        jobId: job.id,
+      });
+      return;
+    }
+
+    logger.info('[JobHandlers] Jellyfin notification (not yet implemented)', {
+      service: 'JobHandlers',
+      handler: 'handleNotifyJellyfin',
+      jobId: job.id,
+    });
+
+    // TODO: Implement Jellyfin notification
+  }
+
+  /**
+   * Handle notify-plex job
+   */
+  private async handleNotifyPlex(job: Job): Promise<void> {
+    const enabled = await this.notificationConfig.isServiceEnabled('plex');
+    if (!enabled) {
+      logger.info('[JobHandlers] Plex notifications disabled, skipping', {
+        service: 'JobHandlers',
+        handler: 'handleNotifyPlex',
+        jobId: job.id,
+      });
+      return;
+    }
+
+    logger.info('[JobHandlers] Plex notification (not yet implemented)', {
+      service: 'JobHandlers',
+      handler: 'handleNotifyPlex',
+      jobId: job.id,
+    });
+
+    // TODO: Implement Plex notification
+  }
+
+  /**
+   * Handle notify-discord job
+   */
+  private async handleNotifyDiscord(job: Job): Promise<void> {
+    const enabled = await this.notificationConfig.isServiceEnabled('discord');
+    if (!enabled) {
+      logger.info('[JobHandlers] Discord notifications disabled, skipping', {
+        service: 'JobHandlers',
+        handler: 'handleNotifyDiscord',
+        jobId: job.id,
+      });
+      return;
+    }
+
+    logger.info('[JobHandlers] Discord notification (not yet implemented)', {
+      service: 'JobHandlers',
+      handler: 'handleNotifyDiscord',
+      jobId: job.id,
+    });
+
+    // TODO: Implement Discord webhook notification
+  }
+
+  /**
+   * Handle notify-pushover job
+   */
+  private async handleNotifyPushover(job: Job): Promise<void> {
+    const enabled = await this.notificationConfig.isServiceEnabled('pushover');
+    if (!enabled) {
+      logger.info('[JobHandlers] Pushover notifications disabled, skipping', {
+        service: 'JobHandlers',
+        handler: 'handleNotifyPushover',
+        jobId: job.id,
+      });
+      return;
+    }
+
+    logger.info('[JobHandlers] Pushover notification (not yet implemented)', {
+      service: 'JobHandlers',
+      handler: 'handleNotifyPushover',
+      jobId: job.id,
+    });
+
+    // TODO: Implement Pushover notification
+  }
+
+  /**
+   * Handle notify-email job
+   */
+  private async handleNotifyEmail(job: Job): Promise<void> {
+    const enabled = await this.notificationConfig.isServiceEnabled('email');
+    if (!enabled) {
+      logger.info('[JobHandlers] Email notifications disabled, skipping', {
+        service: 'JobHandlers',
+        handler: 'handleNotifyEmail',
+        jobId: job.id,
+      });
+      return;
+    }
+
+    logger.info('[JobHandlers] Email notification (not yet implemented)', {
+      service: 'JobHandlers',
+      handler: 'handleNotifyEmail',
+      jobId: job.id,
+    });
+
+    // TODO: Implement email notification
   }
 
   /**
    * Process movie webhook (discover → fetch → select → publish)
+   * Used by handleScanMovie
    */
   private async processMovieWebhook(movie: any): Promise<void> {
     // 1. Check if movie exists in database
@@ -696,5 +996,108 @@ export class JobHandlers {
       // On error, return empty locks (allow all operations to proceed)
       return {};
     }
+  }
+
+  /**
+   * Handle scheduled-file-scan job
+   * Runs on schedule to scan all enabled libraries for new content
+   */
+  private async handleScheduledFileScan(job: Job): Promise<void> {
+    logger.info('[JobHandlers] Starting scheduled file scan', {
+      service: 'JobHandlers',
+      handler: 'handleScheduledFileScan',
+      jobId: job.id,
+    });
+
+    // Get all enabled libraries
+    const libraries = await this.db.query<{
+      id: number;
+      name: string;
+      path: string;
+      type: string;
+    }>('SELECT id, name, path, type FROM libraries WHERE enabled = 1');
+
+    logger.info('[JobHandlers] Found enabled libraries', {
+      service: 'JobHandlers',
+      handler: 'handleScheduledFileScan',
+      jobId: job.id,
+      count: libraries.length,
+    });
+
+    // Create library-scan job for each enabled library
+    for (const library of libraries) {
+      await this.jobQueue.addJob({
+        type: 'library-scan',
+        priority: 8, // LOW priority (scheduled task)
+        payload: {
+          libraryId: library.id,
+          libraryPath: library.path,
+          libraryType: library.type,
+        },
+        retry_count: 0,
+        max_retries: 2,
+      });
+
+      logger.info('[JobHandlers] Created library-scan job', {
+        service: 'JobHandlers',
+        handler: 'handleScheduledFileScan',
+        libraryId: library.id,
+        libraryName: library.name,
+      });
+    }
+
+    logger.info('[JobHandlers] Scheduled file scan complete', {
+      service: 'JobHandlers',
+      handler: 'handleScheduledFileScan',
+      jobId: job.id,
+      librariesScheduled: libraries.length,
+    });
+  }
+
+  /**
+   * Handle scheduled-provider-update job
+   * Runs on schedule to fetch updated metadata from providers
+   */
+  private async handleScheduledProviderUpdate(job: Job): Promise<void> {
+    logger.info('[JobHandlers] Scheduled provider update (not yet implemented)', {
+      service: 'JobHandlers',
+      handler: 'handleScheduledProviderUpdate',
+      jobId: job.id,
+    });
+
+    // TODO: Implement scheduled provider updates
+    // - Find entities that haven't been updated in X days
+    // - Re-fetch metadata from TMDB/TVDB
+    // - Respect field locks (don't overwrite user changes)
+  }
+
+  /**
+   * Handle scheduled-cleanup job
+   * Runs on schedule to cleanup old history and temporary files
+   */
+  private async handleScheduledCleanup(job: Job): Promise<void> {
+    logger.info('[JobHandlers] Starting scheduled cleanup', {
+      service: 'JobHandlers',
+      handler: 'handleScheduledCleanup',
+      jobId: job.id,
+    });
+
+    // Cleanup job history
+    const deletedJobs = await this.jobQueue.cleanupHistory({
+      completed: 30, // Keep completed jobs for 30 days
+      failed: 90, // Keep failed jobs for 90 days (debugging)
+    });
+
+    logger.info('[JobHandlers] Job history cleanup complete', {
+      service: 'JobHandlers',
+      handler: 'handleScheduledCleanup',
+      jobId: job.id,
+      deletedJobs,
+    });
+
+    // TODO: Add more cleanup tasks
+    // - Remove orphaned cache files (no database reference)
+    // - Remove temporary download files older than X days
+    // - Cleanup old log files
   }
 }
