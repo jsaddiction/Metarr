@@ -1,9 +1,9 @@
 # Metarr Project Roadmap
 
 **Last Updated**: 2025-10-15
-**Current Stage**: Stage 3 Complete → Stage 4 Next
-**Current Branch**: `master` (clean)
-**Next Branch**: `feature/stage-4-webhooks`
+**Current Stage**: Stage 4 - Webhooks (In Progress)
+**Current Branch**: `feature/stage-4-webhooks`
+**Next Branch**: `feature/stage-5-kodi` (after Stage 4 complete)
 
 ---
 
