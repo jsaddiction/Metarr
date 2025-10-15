@@ -305,6 +305,165 @@ export class WebhookProcessingService {
   }
 
   /**
+   * Handle Radarr HealthIssue event
+   * Log health issue with severity and emit notification
+   */
+  async handleRadarrHealthIssue(payload: RadarrWebhookPayload): Promise<void> {
+    const db = this.dbManager.getConnection();
+
+    logger.warn('Processing Radarr HealthIssue event', {
+      level: payload.level,
+      type: payload.type,
+      message: payload.message,
+    });
+
+    // Map level to severity
+    const severityMap: Record<string, string> = {
+      'Ok': 'info',
+      'Notice': 'info',
+      'Warning': 'warning',
+      'Error': 'error',
+    };
+    const severity = severityMap[payload.level || 'Warning'] || 'warning';
+
+    // Log to activity_log with severity
+    try {
+      await db.execute(
+        `INSERT INTO activity_log (
+          event_type,
+          source,
+          description,
+          metadata,
+          severity,
+          created_at
+        ) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+        [
+          'webhook',
+          'radarr',
+          `Radarr Health Issue: ${payload.message || payload.type || 'Unknown issue'}`,
+          JSON.stringify(payload),
+          severity,
+        ]
+      );
+    } catch (error: any) {
+      logger.error('Failed to log HealthIssue webhook', { error: error.message });
+    }
+
+    // TODO: Emit notification event for user alerts (Stage 7+)
+    logger.info('Health issue logged', {
+      type: payload.type,
+      severity,
+      wikiUrl: payload.wikiUrl,
+    });
+  }
+
+  /**
+   * Handle Radarr HealthRestored event
+   * Log health restoration
+   */
+  async handleRadarrHealthRestored(payload: RadarrWebhookPayload): Promise<void> {
+    const db = this.dbManager.getConnection();
+
+    logger.info('Processing Radarr HealthRestored event', {
+      message: payload.message,
+    });
+
+    // Log to activity_log
+    await this.logWebhookActivity(db, 'radarr', 'HealthRestored', payload);
+
+    // TODO: Emit notification event for user alerts (Stage 7+)
+    logger.info('Health restored', { message: payload.message });
+  }
+
+  /**
+   * Handle Radarr ApplicationUpdate event
+   * Log application version update
+   */
+  async handleRadarrApplicationUpdate(payload: RadarrWebhookPayload): Promise<void> {
+    const db = this.dbManager.getConnection();
+
+    logger.info('Processing Radarr ApplicationUpdate event', {
+      previousVersion: payload.previousVersion,
+      newVersion: payload.newVersion,
+      message: payload.message,
+    });
+
+    // Log to activity_log
+    await this.logWebhookActivity(db, 'radarr', 'ApplicationUpdate', payload);
+
+    logger.info('Application update logged', {
+      from: payload.previousVersion,
+      to: payload.newVersion,
+    });
+  }
+
+  /**
+   * Handle Radarr ManualInteractionRequired event
+   * Log manual interaction needed and emit notification
+   */
+  async handleRadarrManualInteractionRequired(payload: RadarrWebhookPayload): Promise<void> {
+    const db = this.dbManager.getConnection();
+
+    logger.warn('Processing Radarr ManualInteractionRequired event', {
+      message: payload.message,
+      movieTitle: payload.movie?.title,
+    });
+
+    // Log to activity_log with warning severity
+    try {
+      await db.execute(
+        `INSERT INTO activity_log (
+          event_type,
+          source,
+          description,
+          metadata,
+          severity,
+          created_at
+        ) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+        [
+          'webhook',
+          'radarr',
+          `Manual Interaction Required: ${payload.message || 'User action needed'}`,
+          JSON.stringify(payload),
+          'warning',
+        ]
+      );
+    } catch (error: any) {
+      logger.error('Failed to log ManualInteractionRequired webhook', { error: error.message });
+    }
+
+    // TODO: Emit notification event for user alerts (Stage 7+)
+    logger.info('Manual interaction logged', {
+      movieTitle: payload.movie?.title,
+      message: payload.message,
+    });
+  }
+
+  /**
+   * Handle generic webhook events (placeholder for Stage 9/10)
+   * Used for Radarr info events (MovieAdded/MovieDeleted) and all Sonarr/Lidarr events
+   * Just log events to activity_log for now
+   */
+  async handleGenericEvent(
+    source: 'radarr' | 'sonarr' | 'lidarr',
+    eventType: string,
+    payload: any
+  ): Promise<void> {
+    const db = this.dbManager.getConnection();
+
+    const stageMap = { radarr: 'N/A', sonarr: '9', lidarr: '10' };
+    const stage = stageMap[source];
+
+    logger.info(`Processing ${source} ${eventType} event${stage !== 'N/A' ? ` (full support in Stage ${stage})` : ''}`, {
+      eventType,
+      source,
+    });
+
+    // Log to activity_log
+    await this.logWebhookActivity(db, source, eventType, payload);
+  }
+
+  /**
    * Notify all enabled media players to scan their libraries
    */
   private async notifyMediaPlayers(libraryId: number): Promise<void> {

@@ -31,18 +31,14 @@ export class WebhookController {
       });
 
       // Process based on event type
+      // Note: Full Sonarr support deferred to Stage 9 (TV Shows)
       switch (payload.eventType) {
-        case 'Download':
-          await this.handleSonarrDownload(payload);
-          break;
-        case 'SeriesAdd':
-          await this.handleSonarrSeriesAdd(payload);
-          break;
         case 'Test':
           logger.info('Sonarr test webhook received successfully');
           break;
         default:
-          logger.info(`Sonarr event type '${payload.eventType}' not handled`);
+          // Log all Sonarr events for now (full implementation in Stage 9)
+          await this.webhookService.handleGenericEvent('sonarr', payload.eventType, payload);
       }
 
       res.json({ status: 'success', message: 'Webhook processed successfully' });
@@ -79,7 +75,21 @@ export class WebhookController {
           await this.webhookService.handleRadarrMovieFileDelete(payload);
           break;
         case 'MovieAdded':
-          await this.handleRadarrMovieAdd(payload);
+        case 'MovieDeleted':
+          // Just log these events - no action needed
+          await this.webhookService.handleGenericEvent('radarr', payload.eventType, payload);
+          break;
+        case 'HealthIssue':
+          await this.webhookService.handleRadarrHealthIssue(payload);
+          break;
+        case 'HealthRestored':
+          await this.webhookService.handleRadarrHealthRestored(payload);
+          break;
+        case 'ApplicationUpdate':
+          await this.webhookService.handleRadarrApplicationUpdate(payload);
+          break;
+        case 'ManualInteractionRequired':
+          await this.webhookService.handleRadarrManualInteractionRequired(payload);
           break;
         case 'Test':
           logger.info('Radarr test webhook received successfully');
@@ -108,18 +118,14 @@ export class WebhookController {
       });
 
       // Process based on event type
+      // Note: Full Lidarr support deferred to Stage 10 (Music)
       switch (payload.eventType) {
-        case 'Download':
-          await this.handleLidarrDownload(payload);
-          break;
-        case 'ArtistAdded':
-          await this.handleLidarrArtistAdd(payload);
-          break;
         case 'Test':
           logger.info('Lidarr test webhook received successfully');
           break;
         default:
-          logger.info(`Lidarr event type '${payload.eventType}' not handled`);
+          // Log all Lidarr events for now (full implementation in Stage 10)
+          await this.webhookService.handleGenericEvent('lidarr', payload.eventType, payload);
       }
 
       res.json({ status: 'success', message: 'Webhook processed successfully' });
@@ -158,109 +164,7 @@ export class WebhookController {
     }
   }
 
-  private async handleSonarrDownload(payload: SonarrWebhookPayload): Promise<void> {
-    if (!payload.series || !payload.episodes) {
-      return;
-    }
-
-    logger.info(`Processing Sonarr download for series: ${payload.series.title}`);
-
-    // TODO: Create job to process series metadata
-    // await this.jobService.createJob({
-    //   type: 'series_metadata',
-    //   priority: 100,
-    //   payload: {
-    //     seriesId: payload.series.id,
-    //     tvdbId: payload.series.tvdbId,
-    //     imdbId: payload.series.imdbId,
-    //     title: payload.series.title,
-    //     path: payload.series.path,
-    //     episodes: payload.episodes,
-    //   },
-    // });
-  }
-
-  private async handleSonarrSeriesAdd(payload: SonarrWebhookPayload): Promise<void> {
-    if (!payload.series) {
-      return;
-    }
-
-    logger.info(`Processing Sonarr series add: ${payload.series.title}`);
-
-    // TODO: Create job to process series metadata
-    // await this.jobService.createJob({
-    //   type: 'series_metadata',
-    //   priority: 50,
-    //   payload: {
-    //     seriesId: payload.series.id,
-    //     tvdbId: payload.series.tvdbId,
-    //     imdbId: payload.series.imdbId,
-    //     title: payload.series.title,
-    //     path: payload.series.path,
-    //   },
-    // });
-  }
-
-  private async handleRadarrMovieAdd(payload: RadarrWebhookPayload): Promise<void> {
-    if (!payload.movie) {
-      return;
-    }
-
-    logger.info(`Processing Radarr movie add: ${payload.movie.title} (${payload.movie.year})`);
-
-    // TODO: Create job to process movie metadata
-    // await this.jobService.createJob({
-    //   type: 'movie_metadata',
-    //   priority: 50,
-    //   payload: {
-    //     movieId: payload.movie.id,
-    //     tmdbId: payload.movie.tmdbId,
-    //     imdbId: payload.movie.imdbId,
-    //     title: payload.movie.title,
-    //     year: payload.movie.year,
-    //     path: payload.movie.folderPath,
-    //   },
-    // });
-  }
-
-  private async handleLidarrDownload(payload: LidarrWebhookPayload): Promise<void> {
-    if (!payload.artist) {
-      return;
-    }
-
-    logger.info(`Processing Lidarr download for artist: ${payload.artist.name}`);
-
-    // TODO: Create job to process artist metadata
-    // await this.jobService.createJob({
-    //   type: 'artist_metadata',
-    //   priority: 100,
-    //   payload: {
-    //     artistId: payload.artist.id,
-    //     mbId: payload.artist.mbId,
-    //     name: payload.artist.name,
-    //     path: payload.artist.path,
-    //     albums: payload.albums,
-    //   },
-    // });
-  }
-
-  private async handleLidarrArtistAdd(payload: LidarrWebhookPayload): Promise<void> {
-    if (!payload.artist) {
-      return;
-    }
-
-    logger.info(`Processing Lidarr artist add: ${payload.artist.name}`);
-
-    // TODO: Create job to process artist metadata
-    // await this.jobService.createJob({
-    //   type: 'artist_metadata',
-    //   priority: 50,
-    //   payload: {
-    //     artistId: payload.artist.id,
-    //     mbId: payload.artist.mbId,
-    //     name: payload.artist.name,
-    //     path: payload.artist.path,
-    //   },
-    // });
-  }
+  // Removed: Old stub handlers (handleSonarrDownload, handleSonarrSeriesAdd, etc.)
+  // Now using webhookService.handleGenericEvent() for Sonarr/Lidarr
+  // Full implementation deferred to Stage 9 (TV) and Stage 10 (Music)
 }

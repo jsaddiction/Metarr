@@ -13,6 +13,7 @@ export interface SonarrWebhookPayload extends BaseWebhookPayload {
     | 'SeriesDelete'
     | 'EpisodeFileDelete'
     | 'HealthIssue'
+    | 'HealthRestored'
     | 'ApplicationUpdate'
     | 'Test';
   series?: {
@@ -46,6 +47,13 @@ export interface SonarrWebhookPayload extends BaseWebhookPayload {
     dateAdded: string;
   };
   isUpgrade?: boolean;
+  // Health and notification event fields
+  level?: string;
+  message?: string;
+  type?: string;
+  wikiUrl?: string;
+  previousVersion?: string;
+  newVersion?: string;
 }
 
 export interface RadarrWebhookPayload extends BaseWebhookPayload {
@@ -57,7 +65,9 @@ export interface RadarrWebhookPayload extends BaseWebhookPayload {
     | 'MovieDeleted'
     | 'MovieFileDeleted'
     | 'HealthIssue'
+    | 'HealthRestored'
     | 'ApplicationUpdate'
+    | 'ManualInteractionRequired'
     | 'Test';
   movie?: {
     id: number;
@@ -87,6 +97,13 @@ export interface RadarrWebhookPayload extends BaseWebhookPayload {
     year: number;
   };
   isUpgrade?: boolean;
+  // Health and notification event fields
+  level?: string; // 'Ok', 'Notice', 'Warning', 'Error'
+  message?: string;
+  type?: string;
+  wikiUrl?: string;
+  previousVersion?: string;
+  newVersion?: string;
 }
 
 export interface LidarrWebhookPayload extends BaseWebhookPayload {
@@ -97,6 +114,7 @@ export interface LidarrWebhookPayload extends BaseWebhookPayload {
     | 'ArtistDeleted'
     | 'TrackFileDeleted'
     | 'HealthIssue'
+    | 'HealthRestored'
     | 'ApplicationUpdate'
     | 'Test';
   artist?: {
@@ -123,6 +141,13 @@ export interface LidarrWebhookPayload extends BaseWebhookPayload {
     dateAdded: string;
   }>;
   isUpgrade?: boolean;
+  // Health and notification event fields
+  level?: string;
+  message?: string;
+  type?: string;
+  wikiUrl?: string;
+  previousVersion?: string;
+  newVersion?: string;
 }
 
 export type WebhookPayload = SonarrWebhookPayload | RadarrWebhookPayload | LidarrWebhookPayload;
