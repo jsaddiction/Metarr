@@ -1,9 +1,9 @@
 # Frontend Overhaul Status
 
-**Last Updated**: 2025-01-14 19:30:00
-**Current Stage**: Stage 1 - Monitored/Unmonitored System (COMPLETED)
+**Last Updated**: 2025-01-14 21:00:00
+**Current Stage**: Stage 2 - Lock System (COMPLETED)
 **Current Machine**: Primary Development Machine
-**Current Branch**: feature/stage-1-monitored-system (ready for merge)
+**Current Branch**: feature/stage-2-lock-system (ready for merge)
 
 ---
 
@@ -11,7 +11,7 @@
 
 - [x] Stage 0: Planning (COMPLETED 2025-01-14)
 - [x] Stage 1: Monitored System (COMPLETED 2025-01-14)
-- [ ] Stage 2: Lock System (NOT STARTED)
+- [x] Stage 2: Lock System (COMPLETED 2025-01-14)
 - [ ] Stage 3: Asset Candidate Caching (NOT STARTED)
 - [ ] Stage 4: Status Pages (NOT STARTED)
 - [ ] Stage 5: Activity Tabs (NOT STARTED)
@@ -165,4 +165,48 @@ Documentation:
 - Series/seasons/episodes toggle (deferred to TV show implementation)
 - updateAssets job monitoring (blocked - scheduled job not yet implemented)
 
-**Next Session Plan**: Merge feature/stage-1-monitored-system to master, tag as stage-1-complete, then start Stage 2: Lock System.
+**Next Session Plan**: Merge feature/stage-2-lock-system to master, tag as stage-2-complete, then start Stage 3: Asset Candidate Caching.
+
+---
+
+## Stage 2: Lock System
+
+### Stage 2: Lock System
+
+**Started**: 2025-01-14
+**Completed**: 2025-01-14
+**Backend Progress**: 100% (4/4 tasks)
+**Frontend Progress**: 100% (2/2 tasks)
+
+#### Backend Tasks (Completed)
+- [x] Lock columns already exist in schema (from clean_schema migration)
+- [x] API: `POST /api/movies/:id/lock-field` - Lock specific field
+- [x] API: `POST /api/movies/:id/unlock-field` - Unlock specific field
+- [x] API: `POST /api/movies/:id/reset-metadata` - Reset all locks
+- [x] Service: Update enrichment to respect field locks (getFieldLocks helper)
+
+#### Frontend Tasks (Completed)
+- [x] Component: LockIcon component (Lucide icons, red/gray styling)
+- [x] Hook: useLockField, useUnlockField, useToggleLockField, useResetMetadata hooks
+
+#### Notes
+- ✅ Lock columns (*_locked) already existed in database schema
+- ✅ Lock/unlock/reset API endpoints implemented with WebSocket broadcasting
+- ✅ Enrichment dynamically skips locked fields (builds UPDATE query without locked fields)
+- ✅ LockIcon component ready (red lock = protected, gray lock open = modifiable)
+- ✅ All hooks include optimistic updates and toast notifications
+- 📋 Ready to integrate into metadata forms (MetadataTab component)
+
+**Files Changed**:
+Backend:
+- src/controllers/movieController.ts (lockField, unlockField, resetMetadata methods)
+- src/routes/api.ts (3 new endpoints)
+- src/services/movieService.ts (3 new methods)
+- src/services/jobHandlers.ts (getFieldLocks helper, enrichment respects locks)
+
+Frontend:
+- public/frontend/src/components/ui/LockIcon.tsx (created)
+- public/frontend/src/hooks/useLockField.ts (created)
+
+Documentation:
+- docs/FRONTEND_OVERHAUL_STATUS.md (this file)
