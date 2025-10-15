@@ -173,43 +173,6 @@ Each stage follows this structure:
 
 ### Stage 5: Kodi Integration (Player Notification)
 
-**Branch**: `feature/stage-4-webhooks` ← **CREATE THIS NEXT**
-**Goal**: Enable automation - incoming webhook triggers enrichment workflow
-
-**Backend Work**:
-- Webhook receiver endpoints (`POST /api/webhooks/radarr`, `POST /api/webhooks/sonarr`)
-- Payload validation (Zod schemas for event types)
-- Event logging (`webhook_events` table - already exists in schema)
-- Job triggers:
-  - `Download` event → Create enrichment job (priority 1)
-  - `MovieFileDelete` event → Capture playback state (for restore)
-  - `Upgrade` event → Update file path, restore assets from cache
-  - `Test` event → Respond with success
-- Error handling (invalid payloads, unknown events)
-
-**Frontend Work**:
-- Webhook configuration page (`Settings → Webhooks`)
-- Display webhook URLs (copy-to-clipboard)
-- Setup instructions (Radarr connection configuration)
-- Event history table (last 50 events, filterable)
-- Test webhook button (verify connectivity)
-
-**Testing Criteria**:
-1. Configure Radarr webhook pointing to Metarr
-2. Click "Test" in Radarr → verify event received
-3. Download new movie via Radarr
-4. Verify webhook received and enrichment job created
-5. Check movie metadata and assets published
-6. Trigger upgrade in Radarr → verify assets restored from cache
-
-**Completes**: Webhook → Enrich → Publish flow (no Kodi notification yet)
-
-**Related Docs**: [WEBHOOKS.md](WEBHOOKS.md) for payload formats and event types
-
----
-
-### Stage 5: Kodi Integration (Player Notification)
-
 **Branch**: `feature/stage-5-kodi`
 **Goal**: Notify Kodi players after publishing so changes appear immediately
 
