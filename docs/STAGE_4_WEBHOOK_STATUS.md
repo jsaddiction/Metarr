@@ -8,9 +8,9 @@
 
 ## 📊 Current Status
 
-### ✅ What Already Exists
+### ✅ Backend COMPLETE! (100%)
 
-**Infrastructure** (80% complete):
+**Infrastructure**:
 - ✅ Type definitions (`src/types/webhooks.ts`)
   - `RadarrWebhookPayload`, `SonarrWebhookPayload`, `LidarrWebhookPayload`
   - All event types defined
@@ -31,30 +31,28 @@
   - POST `/api/webhooks/sonarr`
   - POST `/api/webhooks/lidarr`
 
+- ✅ **All Radarr Event Handlers** (Complete!)
+  - ✅ `Grab` - Logs activity
+  - ✅ `Download` - **Full scan workflow** (enrichment + player notification)
+  - ✅ `Rename` - Updates file_path
+  - ✅ `MovieFileDeleted` - Logs deletion
+  - ✅ `MovieAdded` - Logs to activity_log
+  - ✅ `MovieDeleted` - Logs to activity_log
+  - ✅ `HealthIssue` - Logs with severity mapping
+  - ✅ `HealthRestored` - Logs restoration
+  - ✅ `ApplicationUpdate` - Logs version changes
+  - ✅ `ManualInteractionRequired` - Logs with warning severity
+  - ✅ `Test` - Responds with success
+
+- ✅ **Sonarr/Lidarr Placeholder Handlers** (Complete!)
+  - ✅ All events use `handleGenericEvent()`
+  - ✅ Logs all events to activity_log
+  - ✅ Clear messaging: "full support in Stage 9/10"
+  - ✅ Test events respond with success
+
 ### ⏳ What Needs Completion
 
-**Backend Work Remaining**:
-
-1. **Add Missing Event Handlers** (Radarr)
-   - [ ] `HealthIssue` - Log to activity_log with severity
-   - [ ] `HealthRestored` - Log to activity_log
-   - [ ] `ApplicationUpdate` - Log to activity_log
-   - [ ] `ManualInteractionRequired` - Log to activity_log with notification
-
-2. **Sonarr Event Handlers** (TV Shows - Post v1.0)
-   - Currently has stubs: `handleSonarrDownload`, `handleSonarrSeriesAdd`
-   - **Note**: Full implementation deferred to Stage 9 (TV Show Support)
-   - For now: Just log events to activity_log
-
-3. **Lidarr Event Handlers** (Music - Post v1.0)
-   - Currently has stubs: `handleLidarrDownload`, `handleLidarrArtistAdd`
-   - **Note**: Full implementation deferred to Stage 10 (Music Support)
-   - For now: Just log events to activity_log
-
-4. **Webhook Event Logging Enhancement**
-   - [ ] Ensure all events logged to `activity_log` table
-   - [ ] Add `event_data` JSON column for full payload storage
-   - [ ] Verify `logWebhookActivity()` method exists and works
+**Frontend Work** (Not started):
 
 **Frontend Work** (Not started):
 - [ ] Webhook configuration page (`Settings → Webhooks`)
