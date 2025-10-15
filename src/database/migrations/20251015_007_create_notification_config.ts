@@ -1,4 +1,4 @@
-import { IDatabase } from '../../types/database.js';
+import { MigrationInterface } from '../../types/database.js';
 import { logger } from '../../middleware/logging.js';
 
 /**
@@ -7,68 +7,81 @@ import { logger } from '../../middleware/logging.js';
  * Stores notification service configuration and enabled state.
  * Fan-out job handlers check this table to determine which notifications to send.
  */
+export const migration: MigrationInterface = {
+  up: async (db) => {
+    logger.info('[Migration] Creating notification_config table', {
+      service: 'Migration',
+      migration: '20251015_007_create_notification_config',
+    });
 
-export async function up(db: IDatabase): Promise<void> {
-  logger.info('[Migration] Creating notification_config table', {
-    service: 'Migration',
-    migration: '20251015_007_create_notification_config',
-  });
+    // Create notification_config table
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS notification_config (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        service TEXT NOT NULL UNIQUE CHECK (service IN (
+          'kodi',
+          'jellyfin',
+          'plex',
+          'discord',
+          'pushover',
+          'email'
+        )),
+        enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0, 1)),
+        config TEXT,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
 
-  await db.exec(`
-    CREATE TABLE IF NOT EXISTS notification_config (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      service TEXT NOT NULL UNIQUE CHECK (service IN (
-        'kodi',
-        'jellyfin',
-        'plex',
-        'discord',
-        'pushover',
-        'email'
-      )),
-      enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0, 1)),
-      config TEXT, -- JSON configuration (webhook URLs, API keys, etc.)
-      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-    );
+    logger.info('[Migration] Created table: notification_config');
 
-    -- Index for quick lookups by service
-    CREATE INDEX IF NOT EXISTS idx_notification_config_service
-      ON notification_config(service);
+    // Index for quick lookups by service
+    await db.execute(`
+      CREATE INDEX IF NOT EXISTS idx_notification_config_service
+        ON notification_config(service)
+    `);
 
-    -- Index for enabled services (most common query)
-    CREATE INDEX IF NOT EXISTS idx_notification_config_enabled
-      ON notification_config(enabled) WHERE enabled = 1;
+    logger.info('[Migration] Created index: idx_notification_config_service');
 
-    -- Insert default configurations (all disabled initially)
-    INSERT OR IGNORE INTO notification_config (service, enabled, config) VALUES
-      ('kodi', 0, '{}'),
-      ('jellyfin', 0, '{}'),
-      ('plex', 0, '{}'),
-      ('discord', 0, '{}'),
-      ('pushover', 0, '{}'),
-      ('email', 0, '{}');
-  `);
+    // Index for enabled services (most common query)
+    await db.execute(`
+      CREATE INDEX IF NOT EXISTS idx_notification_config_enabled
+        ON notification_config(enabled) WHERE enabled = 1
+    `);
 
-  logger.info('[Migration] notification_config table created', {
-    service: 'Migration',
-    migration: '20251015_007_create_notification_config',
-  });
-}
+    logger.info('[Migration] Created index: idx_notification_config_enabled');
 
-export async function down(db: IDatabase): Promise<void> {
-  logger.info('[Migration] Dropping notification_config table', {
-    service: 'Migration',
-    migration: '20251015_007_create_notification_config',
-  });
+    // Insert default configurations (all disabled initially)
+    await db.execute(`
+      INSERT OR IGNORE INTO notification_config (service, enabled, config) VALUES
+        ('kodi', 0, '{}'),
+        ('jellyfin', 0, '{}'),
+        ('plex', 0, '{}'),
+        ('discord', 0, '{}'),
+        ('pushover', 0, '{}'),
+        ('email', 0, '{}')
+    `);
 
-  await db.exec(`
-    DROP INDEX IF EXISTS idx_notification_config_enabled;
-    DROP INDEX IF EXISTS idx_notification_config_service;
-    DROP TABLE IF EXISTS notification_config;
-  `);
+    logger.info('[Migration] Inserted default notification configs');
+    logger.info('[Migration] notification_config table complete', {
+      service: 'Migration',
+      migration: '20251015_007_create_notification_config',
+    });
+  },
 
-  logger.info('[Migration] notification_config table dropped', {
-    service: 'Migration',
-    migration: '20251015_007_create_notification_config',
-  });
-}
+  down: async (db) => {
+    logger.info('[Migration] Dropping notification_config table', {
+      service: 'Migration',
+      migration: '20251015_007_create_notification_config',
+    });
+
+    await db.execute('DROP INDEX IF EXISTS idx_notification_config_enabled');
+    await db.execute('DROP INDEX IF EXISTS idx_notification_config_service');
+    await db.execute('DROP TABLE IF EXISTS notification_config');
+
+    logger.info('[Migration] notification_config table dropped', {
+      service: 'Migration',
+      migration: '20251015_007_create_notification_config',
+    });
+  },
+};

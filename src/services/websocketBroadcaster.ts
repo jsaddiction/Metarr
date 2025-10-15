@@ -548,6 +548,23 @@ export class WebSocketBroadcaster {
   // ============================================================================
 
   /**
+   * Generic broadcast method for custom messages
+   * Use this for messages that don't have a specific typed method
+   */
+  public broadcast(eventType: string, data: any): void {
+    if (!this.isReady()) return;
+
+    const message = {
+      type: eventType,
+      timestamp: new Date().toISOString(),
+      ...data,
+    };
+
+    this.wsServer!.broadcastToAll(message);
+    logger.debug('Broadcasted custom message', { eventType });
+  }
+
+  /**
    * Get connected client count
    */
   public getClientCount(): number {
