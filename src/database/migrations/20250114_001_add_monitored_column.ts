@@ -34,7 +34,7 @@ export class AddMonitoredColumnMigration {
     console.log('✅ Created index on movies.monitored');
 
     // Add monitored column to series table (if exists)
-    const hasSeriesTable = await db.queryOne(`
+    const hasSeriesTable = await db.get(`
       SELECT name FROM sqlite_master
       WHERE type='table' AND name='series'
     `);
@@ -54,7 +54,7 @@ export class AddMonitoredColumnMigration {
     }
 
     // Add monitored column to seasons table (if exists)
-    const hasSeasonsTable = await db.queryOne(`
+    const hasSeasonsTable = await db.get(`
       SELECT name FROM sqlite_master
       WHERE type='table' AND name='seasons'
     `);
@@ -74,7 +74,7 @@ export class AddMonitoredColumnMigration {
     }
 
     // Add monitored column to episodes table (if exists)
-    const hasEpisodesTable = await db.queryOne(`
+    const hasEpisodesTable = await db.get(`
       SELECT name FROM sqlite_master
       WHERE type='table' AND name='episodes'
     `);

@@ -1,5 +1,6 @@
 import { DatabaseConnection } from '../types/database.js';
 import { CleanSchemaMigration } from './migrations/20251015_001_clean_schema.js';
+import { AddMonitoredColumnMigration } from './migrations/20250114_001_add_monitored_column.js';
 
 interface MigrationRecord {
   version: string;
@@ -24,6 +25,12 @@ export class MigrationRunner {
         name: CleanSchemaMigration.migrationName,
         up: CleanSchemaMigration.up,
         down: CleanSchemaMigration.down,
+      },
+      {
+        version: AddMonitoredColumnMigration.version,
+        name: AddMonitoredColumnMigration.migrationName,
+        up: AddMonitoredColumnMigration.up,
+        down: AddMonitoredColumnMigration.down,
       },
     ];
   }
