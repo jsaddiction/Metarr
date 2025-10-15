@@ -32,14 +32,29 @@ CREATE INDEX idx_libraries_enabled ON libraries(enabled);
 
 ### Media Player Groups
 
+**Universal Group Architecture**: ALL media players belong to groups, regardless of type.
+
 ```sql
 CREATE TABLE media_player_groups (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
   type TEXT NOT NULL CHECK(type IN ('kodi', 'jellyfin', 'plex')),
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  max_members INTEGER NULL,  -- NULL = unlimited (Kodi), 1 = single-member (Jellyfin/Plex)
+  description TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE INDEX idx_media_player_groups_type ON media_player_groups(type);
+CREATE INDEX idx_media_player_groups_max_members ON media_player_groups(max_members);
+```
+
+**Group Constraints**:
+- **Kodi groups**: `max_members = NULL` (unlimited) - Multiple instances sharing MySQL database
+- **Jellyfin groups**: `max_members = 1` (single server) - One server per group
+- **Plex groups**: `max_members = 1` (single server) - One server per group
+
+```sql
 CREATE TABLE media_players (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   group_id INTEGER NOT NULL,
@@ -50,28 +65,78 @@ CREATE TABLE media_players (
   password TEXT,
   api_key TEXT,
   enabled BOOLEAN DEFAULT 1,
-  last_ping_at TIMESTAMP,
+  use_websocket BOOLEAN DEFAULT 1,
+  connection_status TEXT CHECK(connection_status IN ('connected', 'disconnected', 'error')),
+  json_rpc_version TEXT,
+  last_connected TIMESTAMP,
+  last_error TEXT,
+  last_sync TIMESTAMP,
+  config TEXT,  -- JSON blob for player-specific config
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (group_id) REFERENCES media_player_groups(id) ON DELETE CASCADE
 );
 
 CREATE INDEX idx_media_players_group ON media_players(group_id);
 CREATE INDEX idx_media_players_enabled ON media_players(enabled);
+CREATE INDEX idx_media_players_connection_status ON media_players(connection_status);
 ```
 
-### Path Mappings
+### Media Player Libraries
+
+Links media player **groups** (not individual players) to libraries.
 
 ```sql
-CREATE TABLE path_mappings (
+CREATE TABLE media_player_libraries (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  media_player_group_id INTEGER NOT NULL,
-  metarr_path TEXT NOT NULL,
-  player_path TEXT NOT NULL,
+  group_id INTEGER NOT NULL,
+  library_id INTEGER NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (media_player_group_id) REFERENCES media_player_groups(id) ON DELETE CASCADE
+  FOREIGN KEY (group_id) REFERENCES media_player_groups(id) ON DELETE CASCADE,
+  FOREIGN KEY (library_id) REFERENCES libraries(id) ON DELETE CASCADE,
+  UNIQUE(group_id, library_id)
 );
 
-CREATE INDEX idx_path_mappings_group ON path_mappings(media_player_group_id);
+CREATE INDEX idx_media_player_libraries_group ON media_player_libraries(group_id);
+CREATE INDEX idx_media_player_libraries_library ON media_player_libraries(library_id);
+```
+
+**Why group-level linking?**
+- Different groups can manage different libraries
+- Example: Living Room group → /movies, Kids Room group → /tvshows
+- Prevents unnecessary scans on irrelevant groups
+
+### Group Path Mappings
+
+Path mappings configured at **group level** (not player level).
+
+```sql
+CREATE TABLE media_player_group_path_mappings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  group_id INTEGER NOT NULL,
+  metarr_path TEXT NOT NULL,
+  player_path TEXT NOT NULL,
+  description TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (group_id) REFERENCES media_player_groups(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_group_path_mappings_group ON media_player_group_path_mappings(group_id);
+CREATE INDEX idx_group_path_mappings_metarr_path ON media_player_group_path_mappings(metarr_path);
+CREATE UNIQUE INDEX idx_group_path_mappings_unique ON media_player_group_path_mappings(group_id, metarr_path);
+```
+
+**Why group-level path mapping?**
+- All players in a group share the same path view
+- Kodi instances with shared MySQL see identical paths
+- Jellyfin/Plex servers have one path namespace
+- Simpler configuration: One mapping per group instead of N per player
+
+**Example**:
+```
+Metarr sees:       /mnt/media/movies/The Matrix (1999)/
+Kodi Group sees:   /movies/The Matrix (1999)/
 ```
 
 ## Movie Tables

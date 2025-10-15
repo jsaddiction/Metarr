@@ -29,6 +29,47 @@ export class MediaPlayerConnectionManager extends EventEmitter {
   }
 
   /**
+   * Validate group membership constraints
+   * Ensures groups don't exceed max_members limit
+   */
+  async validateGroupMembership(groupId: number, excludePlayerId?: number): Promise<void> {
+    const db = this.dbManager.getConnection();
+
+    // Get group max_members constraint
+    const groups = await db.query<{ max_members: number | null }>(
+      'SELECT max_members FROM media_player_groups WHERE id = ?',
+      [groupId]
+    );
+
+    if (groups.length === 0) {
+      throw new Error(`Media player group ${groupId} not found`);
+    }
+
+    const maxMembers = groups[0].max_members;
+
+    // NULL = unlimited (Kodi groups)
+    if (maxMembers === null) {
+      return;
+    }
+
+    // Count current members (exclude player being updated/removed)
+    const countQuery = excludePlayerId
+      ? 'SELECT COUNT(*) as count FROM media_players WHERE group_id = ? AND id != ?'
+      : 'SELECT COUNT(*) as count FROM media_players WHERE group_id = ?';
+
+    const countParams = excludePlayerId ? [groupId, excludePlayerId] : [groupId];
+    const result = await db.query<{ count: number }>(countQuery, countParams);
+    const currentCount = result[0].count;
+
+    // Check if adding a new member would exceed limit
+    if (currentCount >= maxMembers) {
+      throw new Error(
+        `Cannot add player to group ${groupId}: maximum ${maxMembers} member(s) allowed`
+      );
+    }
+  }
+
+  /**
    * Connect to a media player
    */
   async connectPlayer(player: MediaPlayer): Promise<void> {
@@ -375,5 +416,148 @@ export class MediaPlayerConnectionManager extends EventEmitter {
     }
 
     return player;
+  }
+
+  /**
+   * Ping one instance in a media player group (with fallback)
+   * Returns the player that responded successfully
+   */
+  async pingGroup(groupId: number): Promise<{
+    success: boolean;
+    playerId?: number;
+    playerName?: string;
+    error?: string;
+  }> {
+    const db = this.dbManager.getConnection();
+
+    // Get all enabled players in group
+    const players = await db.query<{
+      id: number;
+      name: string;
+      host: string;
+      port: number;
+      username: string | null;
+      password: string | null;
+    }>(
+      `SELECT id, name, host, port, username, password
+       FROM media_players
+       WHERE group_id = ? AND enabled = 1
+       ORDER BY id ASC`,
+      [groupId]
+    );
+
+    if (players.length === 0) {
+      return { success: false, error: 'No enabled players in group' };
+    }
+
+    // Try each player until one responds
+    for (const player of players) {
+      try {
+        const httpClient = new KodiHttpClient({
+          host: player.host,
+          port: player.port,
+          ...(player.username && { username: player.username }),
+          ...(player.password && { password: player.password }),
+        });
+
+        const pingResult = await httpClient.testConnection();
+
+        if (pingResult) {
+          logger.info('Group ping successful', {
+            groupId,
+            playerId: player.id,
+            playerName: player.name,
+          });
+
+          return {
+            success: true,
+            playerId: player.id,
+            playerName: player.name,
+          };
+        }
+      } catch (error: any) {
+        logger.warn('Player ping failed, trying next in group', {
+          groupId,
+          playerId: player.id,
+          error: error.message,
+        });
+        // Continue to next player
+      }
+    }
+
+    return { success: false, error: 'All players in group failed to respond' };
+  }
+
+  /**
+   * Send notification to one instance in a media player group (with fallback)
+   */
+  async notifyGroup(
+    groupId: number,
+    notification: {
+      title: string;
+      message: string;
+      image?: string;
+      displaytime?: number;
+    }
+  ): Promise<{
+    success: boolean;
+    playerId?: number;
+    playerName?: string;
+    error?: string;
+  }> {
+    const db = this.dbManager.getConnection();
+
+    // Get all enabled players in group
+    const players = await db.query<{
+      id: number;
+      name: string;
+    }>(
+      `SELECT id, name
+       FROM media_players
+       WHERE group_id = ? AND enabled = 1
+       ORDER BY id ASC`,
+      [groupId]
+    );
+
+    if (players.length === 0) {
+      return { success: false, error: 'No enabled players in group' };
+    }
+
+    // Try each player until one succeeds
+    for (const player of players) {
+      try {
+        const httpClient = this.httpClients.get(player.id);
+        if (!httpClient) {
+          logger.warn('HTTP client not available, trying next player', {
+            playerId: player.id,
+          });
+          continue;
+        }
+
+        await httpClient.showNotification(notification);
+
+        logger.info('Group notification sent successfully', {
+          groupId,
+          playerId: player.id,
+          playerName: player.name,
+          title: notification.title,
+        });
+
+        return {
+          success: true,
+          playerId: player.id,
+          playerName: player.name,
+        };
+      } catch (error: any) {
+        logger.warn('Player notification failed, trying next in group', {
+          groupId,
+          playerId: player.id,
+          error: error.message,
+        });
+        // Continue to next player
+      }
+    }
+
+    return { success: false, error: 'All players in group failed to show notification' };
   }
 }
