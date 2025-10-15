@@ -1,16 +1,16 @@
 # Frontend Overhaul Status
 
-**Last Updated**: 2025-01-14 16:00:00
-**Current Stage**: Stage 0 - Planning
-**Current Machine**: N/A (Planning phase)
-**Current Branch**: master
+**Last Updated**: 2025-01-14 16:15:00
+**Current Stage**: Stage 1 - Monitored/Unmonitored System
+**Current Machine**: Primary Development Machine
+**Current Branch**: feature/stage-1-monitored-system
 
 ---
 
 ## Overall Progress
 
-- [ ] Stage 0: Planning (IN PROGRESS - 95%)
-- [ ] Stage 1: Monitored System (NOT STARTED)
+- [x] Stage 0: Planning (COMPLETED 2025-01-14)
+- [ ] Stage 1: Monitored System (IN PROGRESS - 0%)
 - [ ] Stage 2: Lock System (NOT STARTED)
 - [ ] Stage 3: Asset Candidate Caching (NOT STARTED)
 - [ ] Stage 4: Status Pages (NOT STARTED)
@@ -23,34 +23,38 @@
 
 ## Current Stage Details
 
-### Stage 0: Planning
+### Stage 1: Monitored/Unmonitored System
 
 **Started**: 2025-01-14
-**Status**: IN PROGRESS - 95% complete
+**Backend Progress**: 0% (0/5 tasks)
+**Frontend Progress**: 0% (0/4 tasks)
 
-#### Planning Tasks
-- [x] Create FRONTEND_OVERHAUL_MIGRATION_PLAN.md
-- [x] Define git workflow for multi-machine development
-- [x] Document all backend API changes
-- [x] Define stage checkpoints
-- [x] Create FRONTEND_OVERHAUL_STATUS.md (this file)
-- [ ] Review and approve plan (USER ACTION REQUIRED)
+#### Backend Tasks
+- [ ] Migration: Add `monitored BOOLEAN DEFAULT 1` to movies, series, seasons, episodes
+- [ ] API: `POST /api/movies/:id/toggle-monitored`
+- [ ] API: `POST /api/series/:id/toggle-monitored` (cascades to seasons/episodes)
+- [ ] Service: Update `enrichMovie()` to skip if `monitored = 0`
+- [ ] Service: Update `updateAssets()` to skip unmonitored items
+
+#### Frontend Tasks
+- [ ] Component: BookmarkToggle component
+- [ ] Page: Add bookmark column to movies list
+- [ ] Page: Add bookmark toggle to movie edit page header
+- [ ] Hook: `useToggleMonitored` mutation hook
 
 #### Notes
-- Migration plan is comprehensive and ready for review
-- All 8 stages defined with clear tasks
-- Git workflow documented for multi-machine safety
-- Backend API changes documented per stage
-- Ready to proceed to Stage 1 upon approval
+- Starting with database migration
+- Will implement bookmark icon toggle like *arr stack
+- Unmonitored = frozen (no automation)
 
 ---
 
 ## Next Steps
 
-1. **User Review**: Review `FRONTEND_OVERHAUL_MIGRATION_PLAN.md`
-2. **Approval**: Confirm plan is acceptable
-3. **Start Stage 1**: Create branch `feature/stage-1-monitored-system`
-4. **Begin Work**: Add monitored column to database
+1. Create database migration for monitored column
+2. Implement toggle monitored API endpoints
+3. Build BookmarkToggle frontend component
+4. Test monitored/unmonitored behavior
 
 ---
 
@@ -108,6 +112,6 @@ Use this when updating status for stages 1-8:
 
 ---
 
-**Last Session Summary**: Created migration plan and status tracking documents. Ready for user review and approval to begin Stage 1.
+**Last Session Summary**: Completed Stage 0 - Planning. Committed and tagged migration plan documents. Created Stage 1 feature branch and updated status document.
 
-**Next Session Plan**: Upon approval, begin Stage 1 - Monitored/Unmonitored System implementation.
+**Next Session Plan**: Create database migration for monitored column, implement toggle API endpoints, build BookmarkToggle component.
