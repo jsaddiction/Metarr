@@ -252,6 +252,23 @@ export class KodiHttpClient {
   }
 
   /**
+   * Show notification on Kodi UI
+   */
+  async showNotification(params: {
+    title: string;
+    message: string;
+    image?: string;
+    displaytime?: number; // milliseconds (default: 5000)
+  }): Promise<string> {
+    return this.sendRequest<string>('GUI.ShowNotification', {
+      title: params.title,
+      message: params.message,
+      image: params.image || 'info', // 'info', 'warning', 'error', or image path
+      displaytime: params.displaytime || 5000,
+    });
+  }
+
+  /**
    * Update the base URL (useful if host/port changes)
    */
   updateConnection(options: KodiHttpClientOptions): void {
