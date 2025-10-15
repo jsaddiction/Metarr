@@ -454,6 +454,63 @@ Search this document for keywords to find original reasoning.
 
 ---
 
+## 🎬 Media Player Architecture (Stage 5)
+
+### Media Player Groups
+
+**Decision**: Link media player GROUPS to libraries (not individual players)
+
+**Why**: Kodi supports shared MySQL databases
+- Common setup: 3 Kodi instances (living room, bedroom, office) share one MySQL DB
+- Problem: Scanning all 3 instances → 3 concurrent scans on same DB → conflicts
+- Solution: Group instances that share a database, scan ONE instance per group
+
+**Implementation**:
+- `media_player_groups` table: Defines sets of instances sharing a database
+- `media_players.group_id`: Each instance belongs to a group
+- `media_player_libraries`: Links GROUPS (not players) to libraries
+- Scan logic: One scan per group (fallback if primary fails)
+
+**Alternatives Considered**:
+- Link individual players to libraries → Rejected: Causes concurrent scans on shared DB
+- Auto-detect shared databases → Rejected: Requires intrusive DB queries
+- Scan all instances always → Rejected: Wasteful, causes conflicts
+
+**Related**: Stage 5 (Kodi Integration)
+
+---
+
+### Group-Specific Library Targeting
+
+**Decision**: Different groups can manage different libraries
+
+**Why**: Flexibility for user setups
+
+**Example**: Living Room group manages /movies, Kids Room group manages /tvshows
+- Movie downloads → Scan only Living Room group
+- TV downloads → Scan only Kids Room group
+- No wasted scans on irrelevant groups
+
+**Alternative Considered**: All groups see all libraries → Rejected: Wasteful, confusing
+
+**Related**: `media_player_libraries` table
+
+---
+
+### Scan Fallback Logic
+
+**Decision**: If primary instance fails, try next instance in group
+
+**Why**: Resilience - primary instance might be offline
+
+**Implementation**: Loop through enabled instances until scan succeeds
+
+**Alternative Considered**: Fail immediately → Rejected: Not resilient
+
+**Related**: Stage 5 `triggerGroupScan()` method
+
+---
+
 ## 🎯 Quick Reference
 
 **Want to understand**:
@@ -462,6 +519,7 @@ Search this document for keywords to find original reasoning.
 - Stage workflow? → "Stage-Based Development"
 - Why webhooks? → "Webhook-First Automation"
 - Why locks? → Core Philosophy + "What We Decided NOT To Do" (Edit History)
+- Media player groups? → "Media Player Groups" (above)
 
 **Making a new choice?**:
 1. Document it here
