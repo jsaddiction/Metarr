@@ -194,7 +194,7 @@ export class App {
       const jobHandlers = new JobHandlers(
         this.dbManager.getConnection(),
         this.jobQueueService,
-        this.config.paths.cache || './data/cache',
+        path.join(process.cwd(), 'data', 'cache'), // Use default cache directory
         notificationConfig,
         this.connectionManager // Use existing MediaPlayerConnectionManager
       );
