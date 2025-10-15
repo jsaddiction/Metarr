@@ -12,7 +12,8 @@ import { MetarrWebSocketServer } from './services/websocketServer.js';
 import { websocketBroadcaster } from './services/websocketBroadcaster.js';
 import { WebSocketController } from './controllers/websocketController.js';
 import { cacheService } from './services/cacheService.js';
-import { JobQueueService } from './services/jobQueueService.js';
+import { JobQueueService } from './services/jobQueue/JobQueueService.js';
+import { SQLiteJobQueueStorage } from './services/jobQueue/storage/SQLiteJobQueueStorage.js';
 import { FileScannerScheduler } from './services/schedulers/FileScannerScheduler.js';
 import { ProviderUpdaterScheduler } from './services/schedulers/ProviderUpdaterScheduler.js';
 import { createScheduledFileScanHandler } from './services/jobHandlers/scheduledFileScanHandler.js';
@@ -177,8 +178,13 @@ export class App {
       await cacheService.initialize(this.dbManager);
       logger.info('Cache service initialized');
 
-      // Initialize and start job queue service
-      this.jobQueueService = new JobQueueService(this.dbManager.getConnection());
+      // Initialize job queue service with modular storage
+      const jobQueueStorage = new SQLiteJobQueueStorage(this.dbManager.getConnection());
+      this.jobQueueService = new JobQueueService(jobQueueStorage);
+
+      // Initialize job queue (crash recovery)
+      await this.jobQueueService.initialize();
+      logger.info('Job queue initialized (crash recovery complete)');
 
       // Register job handlers
       this.jobQueueService.registerHandler(
@@ -191,8 +197,9 @@ export class App {
       );
       logger.info('Job handlers registered');
 
+      // Start job queue processing
       this.jobQueueService.start();
-      logger.info('Job queue service initialized and started');
+      logger.info('Job queue service started');
 
       // Initialize schedulers (BEFORE API routes so they can be injected)
       this.fileScannerScheduler = new FileScannerScheduler(
