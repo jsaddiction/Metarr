@@ -1,9 +1,9 @@
 # Metarr Project Roadmap
 
 **Last Updated**: 2025-10-15
-**Current Stage**: Stage 4 Complete → Stage 5 Next
-**Current Branch**: `master` (after Stage 4 merge)
-**Next Branch**: `feature/stage-5-kodi`
+**Current Stage**: Stage 5 - Kodi Integration (In Progress)
+**Current Branch**: `feature/stage-5-kodi`
+**Next Branch**: `feature/stage-6-polish` (after Stage 5 complete)
 
 ---
 
