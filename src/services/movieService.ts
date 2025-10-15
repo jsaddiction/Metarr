@@ -1396,4 +1396,52 @@ export class MovieService {
       throw error;
     }
   }
+
+  /**
+   * Toggle monitored status for a movie
+   *
+   * Monitored = 1: Automation enabled, respects field locks
+   * Monitored = 0: Automation STOPPED, everything frozen
+   */
+  async toggleMonitored(movieId: number): Promise<{ id: number; monitored: boolean }> {
+    try {
+      const conn = this.dbManager.getConnection();
+
+      // Get current monitored status
+      const movie = await conn.queryOne(
+        'SELECT id, monitored FROM movies WHERE id = ?',
+        [movieId]
+      );
+
+      if (!movie) {
+        throw new Error('Movie not found');
+      }
+
+      // Toggle the status
+      const newMonitoredStatus = movie.monitored === 1 ? 0 : 1;
+
+      // Update database
+      await conn.execute(
+        'UPDATE movies SET monitored = ? WHERE id = ?',
+        [newMonitoredStatus, movieId]
+      );
+
+      logger.info('Toggled monitored status', {
+        movieId,
+        oldStatus: movie.monitored === 1,
+        newStatus: newMonitoredStatus === 1
+      });
+
+      return {
+        id: movieId,
+        monitored: newMonitoredStatus === 1
+      };
+    } catch (error: any) {
+      logger.error('Failed to toggle monitored status', {
+        movieId,
+        error: error.message
+      });
+      throw error;
+    }
+  }
 }

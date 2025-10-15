@@ -516,4 +516,44 @@ export class MovieController {
       next(error);
     }
   }
+
+  /**
+   * Toggle monitored status for a movie
+   * Endpoint: POST /api/movies/:id/toggle-monitored
+   *
+   * Monitored = 1: Automation enabled, respects field locks
+   * Monitored = 0: Automation STOPPED, everything frozen
+   */
+  async toggleMonitored(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const movieId = parseInt(req.params.id);
+
+      // Validate movie exists
+      const movie = await this.movieService.getById(movieId);
+      if (!movie) {
+        res.status(404).json({ error: 'Movie not found' });
+        return;
+      }
+
+      // Toggle monitored status
+      const result = await this.movieService.toggleMonitored(movieId);
+
+      // Broadcast WebSocket update for cross-tab sync
+      websocketBroadcaster.broadcastMoviesUpdated([movieId]);
+
+      logger.info('Toggled monitored status', {
+        movieId,
+        movieTitle: movie.title,
+        newMonitoredStatus: result.monitored
+      });
+
+      res.json(result);
+    } catch (error) {
+      logger.error('Toggle monitored failed', {
+        movieId: req.params.id,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+      next(error);
+    }
+  }
 }

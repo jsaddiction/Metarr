@@ -297,6 +297,12 @@ export const createApiRouter = (
     movieController.updateMetadata(req, res, next);
   });
 
+  // Toggle monitored status
+  router.post('/movies/:id/toggle-monitored', (req, res, next) => {
+    logger.debug('[Route Hit] /movies/:id/toggle-monitored with id:', req.params.id);
+    movieController.toggleMonitored(req, res, next);
+  });
+
   // Movie detail (MUST come last among movie routes)
   router.get('/movies/:id', (req, res, next) => {
     logger.debug('[Route Hit] /movies/:id with id:', req.params.id);
