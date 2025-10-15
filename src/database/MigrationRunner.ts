@@ -1,6 +1,7 @@
 import { DatabaseConnection } from '../types/database.js';
 import { CleanSchemaMigration } from './migrations/20251015_001_clean_schema.js';
 import { AddMonitoredColumnMigration } from './migrations/20250114_001_add_monitored_column.js';
+import { CreateAssetCandidatesMigration } from './migrations/20250114_003_create_asset_candidates.js';
 
 interface MigrationRecord {
   version: string;
@@ -31,6 +32,12 @@ export class MigrationRunner {
         name: AddMonitoredColumnMigration.migrationName,
         up: AddMonitoredColumnMigration.up,
         down: AddMonitoredColumnMigration.down,
+      },
+      {
+        version: CreateAssetCandidatesMigration.version,
+        name: CreateAssetCandidatesMigration.migrationName,
+        up: CreateAssetCandidatesMigration.up,
+        down: CreateAssetCandidatesMigration.down,
       },
     ];
   }
