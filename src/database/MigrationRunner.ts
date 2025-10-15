@@ -2,6 +2,7 @@ import { DatabaseConnection } from '../types/database.js';
 import { CleanSchemaMigration } from './migrations/20251015_001_clean_schema.js';
 import { AddMonitoredColumnMigration } from './migrations/20250114_001_add_monitored_column.js';
 import { CreateAssetCandidatesMigration } from './migrations/20250114_003_create_asset_candidates.js';
+import * as MediaPlayerLibrariesMigration from './migrations/20251015_003_media_player_libraries.js';
 
 interface MigrationRecord {
   version: string;
@@ -38,6 +39,12 @@ export class MigrationRunner {
         name: CreateAssetCandidatesMigration.migrationName,
         up: CreateAssetCandidatesMigration.up,
         down: CreateAssetCandidatesMigration.down,
+      },
+      {
+        version: '20251015_003',
+        name: 'create_media_player_libraries',
+        up: MediaPlayerLibrariesMigration.up,
+        down: MediaPlayerLibrariesMigration.down,
       },
     ];
   }

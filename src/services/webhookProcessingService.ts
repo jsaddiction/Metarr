@@ -464,63 +464,153 @@ export class WebhookProcessingService {
   }
 
   /**
-   * Notify all enabled media players to scan their libraries
+   * Notify all enabled media player groups to scan their libraries
+   * Group-aware: Scans one instance per group (not all instances)
+   * Fallback: If primary instance fails, tries next instance in group
    */
   private async notifyMediaPlayers(libraryId: number): Promise<void> {
     try {
       const db = this.dbManager.getConnection();
 
-      // Get all enabled media players for this library
-      const players = await db.query<{
+      // Get library path for path mapping
+      const libraries = await db.query<{ path: string }>(
+        'SELECT path FROM libraries WHERE id = ?',
+        [libraryId]
+      );
+
+      if (libraries.length === 0) {
+        logger.warn('Library not found', { libraryId });
+        return;
+      }
+
+      const libraryPath = libraries[0].path;
+
+      // Get all groups that manage this library
+      const groups = await db.query<{
         id: number;
         name: string;
         type: string;
       }>(
-        `SELECT mp.id, mp.name, mp.type
-         FROM media_players mp
-         INNER JOIN media_player_libraries mpl ON mp.id = mpl.player_id
-         WHERE mpl.library_id = ? AND mp.enabled = 1`,
+        `SELECT DISTINCT mpg.id, mpg.name, mpg.type
+         FROM media_player_groups mpg
+         INNER JOIN media_player_libraries mpl ON mpg.id = mpl.group_id
+         WHERE mpl.library_id = ?`,
         [libraryId]
       );
 
-      if (players.length === 0) {
-        logger.debug('No enabled media players found for library', { libraryId });
+      if (groups.length === 0) {
+        logger.debug('No media player groups manage this library', { libraryId });
         return;
       }
 
-      // Trigger scan for each player
-      for (const player of players) {
+      // Trigger scan for each group (one instance per group)
+      for (const group of groups) {
         try {
-          if (player.type === 'kodi') {
-            const httpClient = this.mediaPlayerManager.getHttpClient(player.id);
-            if (httpClient) {
-              await httpClient.scanVideoLibrary();
-              logger.info('Triggered library scan on media player', {
-                playerId: player.id,
-                playerName: player.name
-              });
-            } else {
-              logger.warn('HTTP client not available for player', { playerId: player.id });
-            }
-          } else {
-            logger.warn('Unsupported media player type', { type: player.type });
-          }
+          await this.triggerGroupScan(group.id, libraryPath);
         } catch (error: any) {
-          logger.error('Failed to notify media player', {
-            playerId: player.id,
-            playerName: player.name,
-            error: error.message
+          logger.error('Failed to trigger scan for group', {
+            groupId: group.id,
+            groupName: group.name,
+            error: error.message,
           });
-          // Continue with other players even if one fails
+          // Continue with other groups even if one fails
         }
       }
-
     } catch (error: any) {
       logger.error('Failed to notify media players', {
         libraryId,
-        error: error.message
+        error: error.message,
       });
       // Don't throw - notification failure shouldn't stop webhook processing
     }
+  }
+
+  /**
+   * Trigger scan on one instance in a media player group
+   * Implements fallback: tries next instance if first fails
+   */
+  private async triggerGroupScan(groupId: number, libraryPath: string): Promise<void> {
+    const db = this.dbManager.getConnection();
+
+    // Get all enabled players in this group, ordered by ID (first = primary)
+    const players = await db.query<{
+      id: number;
+      name: string;
+      type: string;
+    }>(
+      `SELECT id, name, type
+       FROM media_players
+       WHERE group_id = ? AND enabled = 1
+       ORDER BY id ASC`,
+      [groupId]
+    );
+
+    if (players.length === 0) {
+      logger.warn('No enabled players in group', { groupId });
+      return;
+    }
+
+    // Apply path mapping for this group (Metarr path → Player path)
+    let mappedPath: string;
+    try {
+      // Path mapping uses group_id, not player_id
+      mappedPath = await applyManagerPathMapping(db, 'kodi', libraryPath);
+      logger.debug('Applied path mapping for group scan', {
+        groupId,
+        metarrPath: libraryPath,
+        mappedPath,
+      });
+    } catch (error: any) {
+      logger.warn('Path mapping failed, using original path', {
+        groupId,
+        libraryPath,
+        error: error.message,
+      });
+      mappedPath = libraryPath;
+    }
+
+    // Try to scan on first available player (with fallback)
+    for (const player of players) {
+      try {
+        if (player.type !== 'kodi') {
+          logger.warn('Unsupported player type in group', {
+            playerId: player.id,
+            type: player.type,
+          });
+          continue;
+        }
+
+        const httpClient = this.mediaPlayerManager.getHttpClient(player.id);
+        if (!httpClient) {
+          logger.warn('HTTP client not available, trying next player', {
+            playerId: player.id,
+          });
+          continue;
+        }
+
+        // Trigger scan with mapped path
+        await httpClient.scanVideoLibrary({ directory: mappedPath });
+
+        logger.info('Triggered library scan on group primary', {
+          groupId,
+          playerId: player.id,
+          playerName: player.name,
+          path: mappedPath,
+        });
+
+        return; // Success - exit after first successful scan
+      } catch (error: any) {
+        logger.warn('Failed to scan on player, trying next in group', {
+          groupId,
+          playerId: player.id,
+          playerName: player.name,
+          error: error.message,
+        });
+        // Continue to next player (fallback)
+      }
+    }
+
+    // All players in group failed
+    logger.error('Failed to trigger scan on any player in group', { groupId });
   }
 }
