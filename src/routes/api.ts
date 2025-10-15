@@ -303,6 +303,22 @@ export const createApiRouter = (
     movieController.toggleMonitored(req, res, next);
   });
 
+  // Lock/unlock field endpoints
+  router.post('/movies/:id/lock-field', (req, res, next) => {
+    logger.debug('[Route Hit] /movies/:id/lock-field with id:', req.params.id);
+    movieController.lockField(req, res, next);
+  });
+
+  router.post('/movies/:id/unlock-field', (req, res, next) => {
+    logger.debug('[Route Hit] /movies/:id/unlock-field with id:', req.params.id);
+    movieController.unlockField(req, res, next);
+  });
+
+  router.post('/movies/:id/reset-metadata', (req, res, next) => {
+    logger.debug('[Route Hit] /movies/:id/reset-metadata with id:', req.params.id);
+    movieController.resetMetadata(req, res, next);
+  });
+
   // Movie detail (MUST come last among movie routes)
   router.get('/movies/:id', (req, res, next) => {
     logger.debug('[Route Hit] /movies/:id with id:', req.params.id);

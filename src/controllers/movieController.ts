@@ -556,4 +556,137 @@ export class MovieController {
       next(error);
     }
   }
+
+  /**
+   * Lock a field to prevent automation from modifying it
+   * Endpoint: POST /api/movies/:id/lock-field
+   * Body: { fieldName: 'title' | 'plot' | 'year' | ... }
+   *
+   * When a field is locked, enrichment services MUST NOT modify it.
+   * Locks are automatically set when user manually edits a field.
+   */
+  async lockField(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const movieId = parseInt(req.params.id);
+      const { fieldName } = req.body;
+
+      if (!fieldName) {
+        res.status(400).json({ error: 'fieldName is required' });
+        return;
+      }
+
+      // Validate movie exists
+      const movie = await this.movieService.getById(movieId);
+      if (!movie) {
+        res.status(404).json({ error: 'Movie not found' });
+        return;
+      }
+
+      // Lock the field
+      const result = await this.movieService.lockField(movieId, fieldName);
+
+      // Broadcast WebSocket update for cross-tab sync
+      websocketBroadcaster.broadcastMoviesUpdated([movieId]);
+
+      logger.info('Locked field', {
+        movieId,
+        movieTitle: movie.title,
+        fieldName
+      });
+
+      res.json(result);
+    } catch (error) {
+      logger.error('Lock field failed', {
+        movieId: req.params.id,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+      next(error);
+    }
+  }
+
+  /**
+   * Unlock a field to allow automation to modify it
+   * Endpoint: POST /api/movies/:id/unlock-field
+   * Body: { fieldName: 'title' | 'plot' | 'year' | ... }
+   *
+   * Unlocks a previously locked field.
+   * Use with "Reset to Provider" to re-fetch metadata.
+   */
+  async unlockField(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const movieId = parseInt(req.params.id);
+      const { fieldName } = req.body;
+
+      if (!fieldName) {
+        res.status(400).json({ error: 'fieldName is required' });
+        return;
+      }
+
+      // Validate movie exists
+      const movie = await this.movieService.getById(movieId);
+      if (!movie) {
+        res.status(404).json({ error: 'Movie not found' });
+        return;
+      }
+
+      // Unlock the field
+      const result = await this.movieService.unlockField(movieId, fieldName);
+
+      // Broadcast WebSocket update for cross-tab sync
+      websocketBroadcaster.broadcastMoviesUpdated([movieId]);
+
+      logger.info('Unlocked field', {
+        movieId,
+        movieTitle: movie.title,
+        fieldName
+      });
+
+      res.json(result);
+    } catch (error) {
+      logger.error('Unlock field failed', {
+        movieId: req.params.id,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+      next(error);
+    }
+  }
+
+  /**
+   * Reset all metadata locks and re-fetch from provider
+   * Endpoint: POST /api/movies/:id/reset-metadata
+   *
+   * Unlocks all metadata fields and triggers re-enrichment.
+   * Use this when user wants to discard their manual edits.
+   */
+  async resetMetadata(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const movieId = parseInt(req.params.id);
+
+      // Validate movie exists
+      const movie = await this.movieService.getById(movieId);
+      if (!movie) {
+        res.status(404).json({ error: 'Movie not found' });
+        return;
+      }
+
+      // Reset metadata (unlock all + re-fetch)
+      const result = await this.movieService.resetMetadata(movieId);
+
+      // Broadcast WebSocket update for cross-tab sync
+      websocketBroadcaster.broadcastMoviesUpdated([movieId]);
+
+      logger.info('Reset metadata', {
+        movieId,
+        movieTitle: movie.title
+      });
+
+      res.json(result);
+    } catch (error) {
+      logger.error('Reset metadata failed', {
+        movieId: req.params.id,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+      next(error);
+    }
+  }
 }

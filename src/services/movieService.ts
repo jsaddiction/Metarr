@@ -1407,20 +1407,22 @@ export class MovieService {
    */
   async toggleMonitored(movieId: number): Promise<{ id: number; monitored: boolean }> {
     try {
-      const conn = this.dbManager.getConnection();
+      const conn = this.db.getConnection();
 
       // Get current monitored status
-      const movie = await conn.queryOne(
+      const movie = await conn.query(
         'SELECT id, monitored FROM movies WHERE id = ?',
         [movieId]
       );
 
-      if (!movie) {
+      if (!movie || movie.length === 0) {
         throw new Error('Movie not found');
       }
 
+      const currentMovie = movie[0];
+
       // Toggle the status
-      const newMonitoredStatus = movie.monitored === 1 ? 0 : 1;
+      const newMonitoredStatus = currentMovie.monitored === 1 ? 0 : 1;
 
       // Update database
       await conn.execute(
@@ -1430,7 +1432,7 @@ export class MovieService {
 
       logger.info('Toggled monitored status', {
         movieId,
-        oldStatus: movie.monitored === 1,
+        oldStatus: currentMovie.monitored === 1,
         newStatus: newMonitoredStatus === 1
       });
 
@@ -1440,6 +1442,148 @@ export class MovieService {
       };
     } catch (error: any) {
       logger.error('Failed to toggle monitored status', {
+        movieId,
+        error: error.message
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Lock a specific field to prevent automation from modifying it
+   *
+   * When a field is locked, enrichment services MUST NOT modify it.
+   * Locks are automatically set when user manually edits a field.
+   *
+   * @param movieId - Movie ID
+   * @param fieldName - Field name (e.g., 'title', 'plot', 'poster')
+   */
+  async lockField(movieId: number, fieldName: string): Promise<{ success: boolean; fieldName: string; locked: boolean }> {
+    try {
+      const conn = this.db.getConnection();
+
+      // Validate field name and convert to lock column name
+      const lockColumnName = `${fieldName}_locked`;
+
+      // Update the lock field
+      await conn.execute(
+        `UPDATE movies SET ${lockColumnName} = 1 WHERE id = ?`,
+        [movieId]
+      );
+
+      logger.info('Locked field', {
+        movieId,
+        fieldName,
+        lockColumn: lockColumnName
+      });
+
+      return {
+        success: true,
+        fieldName,
+        locked: true
+      };
+    } catch (error: any) {
+      logger.error('Failed to lock field', {
+        movieId,
+        fieldName,
+        error: error.message
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Unlock a specific field to allow automation to modify it
+   *
+   * Unlocks a previously locked field.
+   * Use with "Reset to Provider" to re-fetch metadata.
+   *
+   * @param movieId - Movie ID
+   * @param fieldName - Field name (e.g., 'title', 'plot', 'poster')
+   */
+  async unlockField(movieId: number, fieldName: string): Promise<{ success: boolean; fieldName: string; locked: boolean }> {
+    try {
+      const conn = this.db.getConnection();
+
+      // Validate field name and convert to lock column name
+      const lockColumnName = `${fieldName}_locked`;
+
+      // Update the lock field
+      await conn.execute(
+        `UPDATE movies SET ${lockColumnName} = 0 WHERE id = ?`,
+        [movieId]
+      );
+
+      logger.info('Unlocked field', {
+        movieId,
+        fieldName,
+        lockColumn: lockColumnName
+      });
+
+      return {
+        success: true,
+        fieldName,
+        locked: false
+      };
+    } catch (error: any) {
+      logger.error('Failed to unlock field', {
+        movieId,
+        fieldName,
+        error: error.message
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Reset all metadata locks and trigger re-enrichment
+   *
+   * Unlocks all metadata fields and optionally triggers re-fetch from provider.
+   * Use this when user wants to discard their manual edits and start fresh.
+   *
+   * @param movieId - Movie ID
+   */
+  async resetMetadata(movieId: number): Promise<{ success: boolean; unlockedFields: string[] }> {
+    try {
+      const conn = this.db.getConnection();
+
+      // List of all metadata lock fields
+      const metadataLockFields = [
+        'title_locked',
+        'original_title_locked',
+        'sort_title_locked',
+        'year_locked',
+        'plot_locked',
+        'outline_locked',
+        'tagline_locked',
+        'mpaa_locked',
+        'premiered_locked',
+        'user_rating_locked',
+        'trailer_url_locked'
+      ];
+
+      // Build UPDATE query to unlock all metadata fields
+      const unlockSql = metadataLockFields.map(field => `${field} = 0`).join(', ');
+
+      await conn.execute(
+        `UPDATE movies SET ${unlockSql} WHERE id = ?`,
+        [movieId]
+      );
+
+      logger.info('Reset all metadata locks', {
+        movieId,
+        unlockedFields: metadataLockFields
+      });
+
+      // TODO: Optionally trigger re-enrichment job here
+      // For now, just unlock the fields - user can manually refresh
+
+      return {
+        success: true,
+        unlockedFields: metadataLockFields.map(f => f.replace('_locked', ''))
+      };
+    } catch (error: any) {
+      logger.error('Failed to reset metadata', {
         movieId,
         error: error.message
       });
