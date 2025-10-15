@@ -1,9 +1,9 @@
 # Metarr Project Roadmap
 
 **Last Updated**: 2025-10-15
-**Current Stage**: Stage 5 - Kodi Integration (In Progress)
-**Current Branch**: `feature/stage-5-kodi`
-**Next Branch**: `feature/stage-6-polish` (after Stage 5 complete)
+**Current Stage**: Stage 5 - Kodi Integration (Complete)
+**Current Branch**: `master`
+**Next Branch**: `feature/stage-6-polish`
 
 ---
 
@@ -13,16 +13,18 @@
 
 **Machine**: Check with `git branch` and `cat docs/PROJECT_ROADMAP.md`
 
-**Current Progress**: Stage 3 Complete (Asset Candidate Caching)
+**Current Progress**: Stage 5 Complete (Kodi Integration - Universal Group Architecture)
 
 **What's Working**:
 - ✅ Backend: Production-ready (Phase 6 complete + security hardening)
-- ✅ Database: Clean schema with content-addressed asset storage
+- ✅ Database: Clean schema with content-addressed asset storage + universal groups
 - ✅ Frontend: Stages 0-3 complete (Monitored, Locks, Asset Candidates)
 - ✅ Real-time: WebSocket broadcasting for live updates
 - ✅ Jobs: Background job queue with priority and circuit breaker
+- ✅ Webhooks: Radarr/Sonarr/Lidarr integration (Stage 4)
+- ✅ Media Players: Universal group architecture with group-level path mapping (Stage 5)
 
-**What's Next**: Stage 4 - Webhooks (Radarr/Sonarr Integration)
+**What's Next**: Stage 6 - Polish & Docker Deployment (v1.0 Release)
 
 ---
 
@@ -35,11 +37,11 @@
 - ✅ **Stage 2**: Field & Asset Locking (`stage-2-complete`)
 - ✅ **Stage 3**: Asset Candidate Caching (`stage-3-complete`)
 - ✅ **Stage 4**: Webhooks (Radarr/Sonarr/Lidarr) (`stage-4-complete`)
+- ✅ **Stage 5**: Universal Group Architecture (Kodi/Jellyfin/Plex) (`stage-5-complete`)
 
 ### v1.0 Critical Path (Required for Automation Flow)
 
-- ⏳ **Stage 5**: Kodi Integration (Player Notification) ← **NEXT**
-- ⏳ **Stage 6**: Polish & Docker Deployment (Community Release)
+- ⏳ **Stage 6**: Polish & Docker Deployment (Community Release) ← **NEXT**
 
 ### Post-v1.0 Features (Not Required for Initial Release)
 
@@ -58,8 +60,8 @@
 1. ✅ Movie monitoring system (on/off per movie)
 2. ✅ Field/asset locking (preserve user edits)
 3. ✅ Asset candidate caching (automatic selection + manual override)
-4. ⏳ Webhook receiver (Radarr/Sonarr → trigger enrichment)
-5. ⏳ Kodi integration (notify players after publish)
+4. ✅ Webhook receiver (Radarr/Sonarr → trigger enrichment)
+5. ✅ Media player integration (notify players after publish)
 6. ⏳ Docker deployment (ready for community)
 
 **When Complete**: User downloads movie via Radarr → Metarr enriches metadata → publishes assets → notifies Kodi → movie appears with full metadata
@@ -126,6 +128,47 @@
 **Completion**: Webhook → Enrich → Publish flow working end-to-end
 
 **Related Docs**: See [docs/WEBHOOKS.md](WEBHOOKS.md) for API specs, [docs/STAGE_DEFINITIONS.md](STAGE_DEFINITIONS.md) for detailed tasks
+
+---
+
+### Stage 5: Universal Group Architecture (Kodi/Jellyfin/Plex)
+
+**Branch**: `feature/stage-5-kodi` → **Merged to master**
+
+**Tag**: `stage-5-complete`
+
+**Goal**: Build solid framework for media player management with universal group architecture
+
+**Architecture Decision**: ALL players belong to groups (not just Kodi)
+- **Kodi groups**: max_members = NULL (unlimited) - Multiple instances sharing MySQL
+- **Jellyfin/Plex groups**: max_members = 1 - Single server per group
+- **Path mapping**: Group-level (not player-level)
+
+**Backend Work** (Complete):
+- Migration 003: `media_player_libraries` table (links groups to libraries)
+- Migration 004: Add `max_members` column to `media_player_groups`
+- Migration 005: Create `media_player_group_path_mappings` table
+- `MediaPlayerConnectionManager`: Added `validateGroupMembership()` method
+- `pathMappingService`: Added group-level path mapping functions
+- `webhookProcessingService`: Updated to use group path mapping
+- Group-aware scan coordination (one scan per group, fallback logic)
+- Group-aware ping and notification methods
+
+**Documentation** (Complete):
+- [DESIGN_DECISIONS.md](DESIGN_DECISIONS.md): Universal Group Architecture section
+- [ARCHITECTURE.md](ARCHITECTURE.md): Updated with group types and scan strategy
+- [DATABASE_SCHEMA.md](DATABASE_SCHEMA.md): Complete schema with all tables
+- [STAGE_5_KODI_INTEGRATION.md](STAGE_5_KODI_INTEGRATION.md): Implementation guide
+
+**Key Insights**:
+- Consistency: All player types use groups (no special cases)
+- Simplification: No branching logic (`if kodi vs if jellyfin`)
+- Future-proof: Easy to add Emby, Plex, etc.
+- Architecturally correct: Path mapping is group-level concern
+
+**Completion**: Universal group framework ready for all player types
+
+**Related Docs**: See [docs/STAGE_5_KODI_INTEGRATION.md](STAGE_5_KODI_INTEGRATION.md) for detailed architecture
 
 ---
 

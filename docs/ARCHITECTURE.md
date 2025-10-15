@@ -869,56 +869,104 @@ if (kodiMovie.file === expectedKodiPath) {
 }
 ```
 
-### 5. Kodi Groups (Even Standalone Instances)
+### 5. Universal Group Architecture
 
-**Why**: Consistent notification logic, playback state management
+**Core Principle**: ALL media players belong to groups, regardless of type.
+
+**Why**:
+- **Consistency**: Unified data model for Kodi, Jellyfin, and Plex
+- **Simplicity**: No branching logic (all code paths go through groups)
+- **Future-proof**: Easy to add new player types
+- **Correctness**: Path mapping is inherently a group-level concern
 
 **Structure**:
 ```sql
--- Every Kodi belongs to a group (even if group has 1 member)
+-- ALL players belong to groups with enforced constraints
 CREATE TABLE media_player_groups (
   id INTEGER PRIMARY KEY,
-  name TEXT,                     -- "Living Room + Bedroom"
-  type TEXT,                     -- 'kodi_shared', 'kodi_standalone'
-  shared_db_host TEXT,           -- MySQL host (if shared)
-  shared_db_name TEXT
+  name TEXT,                     -- "Home Kodi Instances" or "Main Jellyfin Server"
+  type TEXT,                     -- 'kodi', 'jellyfin', 'plex'
+  max_members INTEGER NULL,      -- NULL = unlimited (Kodi), 1 = single (Jellyfin/Plex)
+  description TEXT
 );
 
 CREATE TABLE media_players (
   id INTEGER PRIMARY KEY,
-  group_id INTEGER NOT NULL,     -- Always required
-  name TEXT,
-  type TEXT,                     -- 'kodi', 'jellyfin', 'plex'
+  group_id INTEGER NOT NULL,     -- Always required (every player has a group)
+  name TEXT,                     -- "Living Room Kodi" or "Main Jellyfin"
   host TEXT,
   port INTEGER,
+  enabled BOOLEAN DEFAULT 1,
   FOREIGN KEY (group_id) REFERENCES media_player_groups(id)
+);
+
+-- Group-level path mappings (not player-level)
+CREATE TABLE media_player_group_path_mappings (
+  id INTEGER PRIMARY KEY,
+  group_id INTEGER NOT NULL,
+  metarr_path TEXT,              -- /mnt/media/movies
+  player_path TEXT,              -- /movies (Kodi) or /data/movies (Jellyfin)
+  FOREIGN KEY (group_id) REFERENCES media_player_groups(id)
+);
+
+-- Groups linked to libraries (not individual players)
+CREATE TABLE media_player_libraries (
+  id INTEGER PRIMARY KEY,
+  group_id INTEGER NOT NULL,
+  library_id INTEGER NOT NULL,
+  FOREIGN KEY (group_id) REFERENCES media_player_groups(id),
+  FOREIGN KEY (library_id) REFERENCES libraries(id)
 );
 ```
 
+**Group Types**:
+
+| Type | max_members | Use Case | Scan Strategy |
+|------|-------------|----------|---------------|
+| Kodi | NULL (unlimited) | Multiple instances sharing MySQL database | Scan ONE instance per group (fallback if primary fails) |
+| Jellyfin | 1 (single server) | Single Jellyfin server | Scan the one server in group |
+| Plex | 1 (single server) | Single Plex server | Scan the one server in group |
+
 **Notification Strategy**:
 ```typescript
-async function notifyPlayers(libraryId: number, directory: string) {
+// Universal group-aware notification (works for ALL player types)
+async function notifyMediaPlayers(libraryId: number) {
   const library = await db.getLibrary(libraryId);
-  const groups = await db.getPlayerGroups(libraryId);
+  const groups = await db.getGroupsForLibrary(libraryId);
 
   for (const group of groups) {
-    if (group.type.startsWith('kodi')) {
-      // Notify all Kodi instances in group (serial)
-      const kodis = await db.getPlayersInGroup(group.id);
-      for (const kodi of kodis) {
-        const remotePath = applyPathMapping(directory, kodi);
-        await kodi.request('VideoLibrary.Scan', {
-          directory: remotePath
-        });
+    // Apply group-level path mapping (same logic for all types)
+    const mappedPath = await applyGroupPathMapping(db, group.id, library.path);
+
+    // Scan ONE instance per group (with fallback)
+    await triggerGroupScan(group.id, mappedPath);
+  }
+}
+
+async function triggerGroupScan(groupId: number, path: string) {
+  const players = await db.getEnabledPlayersInGroup(groupId);
+
+  // Try each player until one succeeds (fallback logic)
+  for (const player of players) {
+    try {
+      if (player.type === 'kodi') {
+        await kodiClient.scanVideoLibrary({ directory: path });
+      } else if (player.type === 'jellyfin') {
+        await jellyfinClient.refreshLibrary({ path });
       }
-    } else if (group.type === 'jellyfin') {
-      // Single Jellyfin instance
-      const jellyfin = await db.getPlayersInGroup(group.id)[0];
-      await jellyfin.refreshLibrary(library.jellyfin_library_id);
+      return; // Success - stop trying
+    } catch (error) {
+      continue; // Try next player
     }
   }
 }
 ```
+
+**Key Insights**:
+- No special cases: Jellyfin works exactly like Kodi (just with max_members=1)
+- Path mapping at group level: All players in group share same path view
+- Fallback resilience: If primary instance offline, try next in group
+- Different groups manage different libraries: Living Room → /movies, Kids Room → /tvshows
 
 **Fake Scan for UI Refresh**:
 ```typescript
