@@ -5,17 +5,44 @@
  */
 
 export type JobType =
-  | 'webhook' // Process webhook from Radarr/Sonarr/Lidarr
+  // Webhook-triggered (CRITICAL priority 1-2)
+  | 'webhook-received' // Initial webhook processing (fan-out coordinator)
   | 'scan-movie' // Scan movie directory for metadata/assets
-  | 'notify-players' // Notify media players to refresh
+
+  // Notification jobs (NORMAL priority 5-7, fan-out from webhooks)
+  | 'notify-kodi' // Notify Kodi media player groups
+  | 'notify-jellyfin' // Notify Jellyfin media server
+  | 'notify-plex' // Notify Plex media server (future)
+  | 'notify-discord' // Send Discord webhook notification
+  | 'notify-pushover' // Send Pushover push notification
+  | 'notify-email' // Send email notification (future)
+
+  // Asset management (NORMAL priority 5-7)
   | 'discover-assets' // Discover assets in filesystem
   | 'fetch-provider-assets' // Fetch assets from TMDB/TVDB
   | 'enrich-metadata' // Fetch metadata from providers
   | 'select-assets' // Auto-select assets (YOLO/Hybrid mode)
   | 'publish' // Publish entity to library
-  | 'library-scan' // Full library scan (user-initiated)
+
+  // Scheduled tasks (LOW priority 8-10)
   | 'scheduled-file-scan' // Scheduled filesystem scan (automatic)
-  | 'scheduled-provider-update'; // Scheduled provider update (automatic)
+  | 'scheduled-provider-update' // Scheduled provider update (automatic)
+  | 'scheduled-cleanup' // Cleanup old history/cache (automatic)
+
+  // User-initiated (HIGH priority 3-4)
+  | 'library-scan'; // Full library scan (user-initiated)
+
+/**
+ * Job progress for long-running jobs
+ * Broadcasted via WebSocket for real-time UI updates
+ */
+export interface JobProgress {
+  current: number; // Current step (e.g., 5)
+  total: number; // Total steps (e.g., 10)
+  percentage: number; // Percentage complete (0-100)
+  message?: string; // Current operation (e.g., "Scanning directory 5 of 10")
+  detail?: string; // Additional detail (e.g., "/movies/The Matrix")
+}
 
 /**
  * Job in active queue
@@ -34,6 +61,7 @@ export interface Job {
   created_at: string;
   started_at?: string | null;
   updated_at?: string;
+  progress?: JobProgress; // Optional progress tracking (not stored in DB)
 }
 
 /**

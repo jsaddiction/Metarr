@@ -1,4 +1,4 @@
-import { IJobQueueStorage, Job, JobType, QueueStats } from './types.js';
+import { IJobQueueStorage, Job, JobType, JobProgress, QueueStats } from './types.js';
 import { logger } from '../../middleware/logging.js';
 import { websocketBroadcaster } from '../websocketBroadcaster.js';
 
@@ -296,6 +296,35 @@ export class JobQueueService {
     });
 
     return deletedCount;
+  }
+
+  /**
+   * Update job progress and broadcast via WebSocket
+   * Use this in long-running job handlers to report progress
+   *
+   * @example
+   * await jobQueue.updateJobProgress(job.id, {
+   *   current: 5,
+   *   total: 10,
+   *   percentage: 50,
+   *   message: 'Scanning directory 5 of 10',
+   *   detail: '/movies/The Matrix'
+   * });
+   */
+  async updateJobProgress(jobId: number, progress: JobProgress): Promise<void> {
+    // Broadcast progress via WebSocket (don't store in DB)
+    websocketBroadcaster.broadcast('job:progress', {
+      jobId,
+      progress,
+    });
+
+    logger.debug('[JobQueueService] Job progress updated', {
+      service: 'JobQueueService',
+      operation: 'updateJobProgress',
+      jobId,
+      percentage: progress.percentage,
+      message: progress.message,
+    });
   }
 
   /**
