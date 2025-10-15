@@ -33,6 +33,11 @@ export interface Migration {
   down(): Promise<void>;
 }
 
+export interface MigrationInterface {
+  up(db: DatabaseConnection): Promise<void>;
+  down(db: DatabaseConnection): Promise<void>;
+}
+
 export interface QueryResult<T = any> {
   rows: T[];
   rowCount: number;
