@@ -323,9 +323,13 @@ Use this checklist when finishing a stage:
 
 **Git Operations**:
 - [ ] All changes committed: `git status` shows clean
+- [ ] Feature branch pushed: `git push origin feature/stage-X-name`
 - [ ] Branch merged to master: `git merge feature/stage-X-name`
 - [ ] Tag created: `git tag stage-X-complete`
-- [ ] Pushed to remote: `git push origin master --tags`
+- [ ] Master and tags pushed: `git push origin master --tags`
+- [ ] **Feature branch deleted locally**: `git branch -d feature/stage-X-name`
+- [ ] **Feature branch deleted remotely**: `git push origin --delete feature/stage-X-name`
+- [ ] Verify cleanup: `git branch -a` (should only show master)
 - [ ] Next branch created: `git checkout -b feature/stage-Y-name`
 
 **Documentation Updates**:

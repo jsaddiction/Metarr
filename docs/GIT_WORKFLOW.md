@@ -27,6 +27,8 @@ master (production-ready code)
 
 ### Branch Lifecycle
 
+**IMPORTANT**: Feature branches are temporary and MUST be deleted after merging!
+
 ```
 1. Create branch from master
 2. Work on stage (commit frequently)
@@ -34,8 +36,16 @@ master (production-ready code)
 4. Merge to master
 5. Tag completion (git tag stage-X-complete)
 6. Push master + tags
-7. Create next stage branch
+7. DELETE the merged branch (local and remote)
+8. Create next stage branch
 ```
+
+**Why Delete Branches?**
+- ✅ Keeps `git branch` output clean and focused
+- ✅ Prevents confusion about which branch is active
+- ✅ Master contains all completed work (branches are redundant)
+- ✅ Tags preserve stage completion history
+- ✅ Follows industry best practices (feature branch workflow)
 
 ---
 
@@ -143,23 +153,33 @@ cat docs/STAGE_DEFINITIONS.md | grep -A 20 "Stage X"
 git add docs/
 git commit -m "stage-X: docs: mark stage X as complete"
 
-# 4. Merge to master
+# 4. Push feature branch one final time
+git push origin feature/stage-X-name
+
+# 5. Merge to master
 git checkout master
 git pull origin master  # Get any changes from other work
 git merge feature/stage-X-name
 
-# 5. Resolve conflicts if any
+# 6. Resolve conflicts if any
 # (Usually none if working linearly through stages)
 
-# 6. Tag the completion
+# 7. Tag the completion
 git tag stage-X-complete
 git tag -l | tail -5  # Verify tag created
 
-# 7. Push everything
+# 8. Push master and tags
 git push origin master
 git push origin --tags
 
-# 8. Create next stage branch
+# 9. DELETE the merged branch (IMPORTANT!)
+git branch -d feature/stage-X-name              # Delete local branch
+git push origin --delete feature/stage-X-name   # Delete remote branch
+
+# 10. Verify branch is gone
+git branch -a  # Should only show master locally
+
+# 11. Create next stage branch
 git checkout -b feature/stage-Y-name
 ```
 
@@ -345,21 +365,31 @@ git pull origin feature/stage-X-name
 git log --oneline -5
 ```
 
-### Cleaning Up Branches
+### Cleaning Up Branches (REQUIRED After Every Merge!)
+
+**IMPORTANT**: Always delete feature branches immediately after merging to master!
 
 ```bash
-# List all branches
-git branch -a
+# After merging stage to master, ALWAYS do this:
 
-# Delete local branch (after merge)
+# 1. Delete local branch
 git branch -d feature/stage-X-name
 
-# Delete remote branch
+# 2. Delete remote branch
 git push origin --delete feature/stage-X-name
 
-# Prune deleted remote branches
+# 3. Prune deleted remote branch references
 git fetch --prune
+
+# 4. Verify cleanup
+git branch -a  # Should only show master locally
 ```
+
+**Why This Matters**:
+- Keeps repository clean and focused
+- Prevents confusion about which branches are active
+- Master + tags contain all history (branches are redundant)
+- Standard industry practice for feature branch workflow
 
 ---
 
@@ -414,6 +444,27 @@ git commit -m "stage-X: resolve merge conflicts"
 git merge --continue
 ```
 
+### "I have too many old branches cluttering my repo"
+
+```bash
+# List all branches
+git branch -a
+
+# Delete multiple local branches at once
+git branch -D branch1 branch2 branch3
+
+# Delete remote branches (WARNING: only delete merged branches!)
+git push origin --delete branch1 branch2 branch3
+
+# Prune tracking references to deleted remote branches
+git fetch --prune
+
+# Verify cleanup
+git branch -a  # Should only show master and current stage branch
+```
+
+**Best Practice**: After merging each stage to master, immediately delete the feature branch (both local and remote). This prevents branch clutter and keeps your workflow clean.
+
 ---
 
 ## 📚 Related Documentation
@@ -446,10 +497,13 @@ git push
 ### Stage Completion
 
 ```bash
-# Update docs, merge, tag
+# Update docs, merge, tag, DELETE branch
 git add docs/ && git commit -m "stage-X: docs: mark complete"
+git push origin feature/stage-X-name
 git checkout master && git merge feature/stage-X-name
 git tag stage-X-complete && git push origin master --tags
+git branch -d feature/stage-X-name
+git push origin --delete feature/stage-X-name
 git checkout -b feature/stage-Y-name
 ```
 
