@@ -6,7 +6,7 @@ import { AssetSelectionService } from './assetSelectionService.js';
 import { PublishingService } from './publishingService.js';
 import { TMDBClient } from './providers/tmdb/TMDBClient.js';
 import { NotificationConfigService } from './notificationConfigService.js';
-import { MediaPlayerGroupService } from './mediaPlayerGroupService.js';
+import { MediaPlayerConnectionManager } from './mediaPlayerConnectionManager.js';
 import { logger } from '../middleware/logging.js';
 
 /**
@@ -24,7 +24,7 @@ export class JobHandlers {
   private assetSelection: AssetSelectionService;
   private publishing: PublishingService;
   private notificationConfig: NotificationConfigService;
-  private mediaPlayerGroups: MediaPlayerGroupService;
+  private mediaPlayerManager: MediaPlayerConnectionManager;
   private tmdbClient: TMDBClient | undefined;
 
   constructor(
@@ -32,7 +32,7 @@ export class JobHandlers {
     jobQueue: JobQueueService,
     cacheDir: string,
     notificationConfig: NotificationConfigService,
-    mediaPlayerGroups: MediaPlayerGroupService,
+    mediaPlayerManager: MediaPlayerConnectionManager,
     tmdbClient?: TMDBClient
   ) {
     this.db = db;
@@ -42,7 +42,7 @@ export class JobHandlers {
     this.assetSelection = new AssetSelectionService(db);
     this.publishing = new PublishingService(db);
     this.notificationConfig = notificationConfig;
-    this.mediaPlayerGroups = mediaPlayerGroups;
+    this.mediaPlayerManager = mediaPlayerManager;
     this.tmdbClient = tmdbClient;
   }
 
@@ -119,6 +119,29 @@ export class JobHandlers {
       return;
     }
 
+    // Find library ID for path (needed for notifications)
+    let libraryId: number | null = null;
+
+    if (source === 'radarr' && job.payload.movie) {
+      // Apply path mapping and find library
+      const { applyManagerPathMapping } = await import('./pathMappingService.js');
+      const mappedPath = await applyManagerPathMapping(
+        this.db,
+        'radarr',
+        job.payload.movie.folderPath || job.payload.movie.path
+      );
+
+      // Find library by path
+      const libraries = await this.db.query<{ id: number }>(
+        `SELECT id FROM libraries WHERE ? LIKE path || '%' ORDER BY LENGTH(path) DESC LIMIT 1`,
+        [mappedPath]
+      );
+
+      if (libraries.length > 0) {
+        libraryId = libraries[0].id;
+      }
+    }
+
     // Fan-out: Create scan job (HIGH priority 3)
     if (source === 'radarr' && job.payload.movie) {
       const scanJobId = await this.jobQueue.addJob({
@@ -126,6 +149,7 @@ export class JobHandlers {
         priority: 3, // HIGH priority (user-triggered by download)
         payload: {
           movie: job.payload.movie,
+          libraryId,
         },
         retry_count: 0,
         max_retries: 3,
@@ -137,6 +161,7 @@ export class JobHandlers {
         webhookJobId: job.id,
         scanJobId,
         movieTitle: job.payload.movie.title,
+        libraryId,
       });
     } else if (source === 'sonarr' && job.payload.series) {
       // TODO: Implement series webhook handling
@@ -156,6 +181,7 @@ export class JobHandlers {
       handler: 'handleWebhookReceived',
       webhookJobId: job.id,
       enabledServices,
+      libraryId,
     });
 
     // Create job for each enabled notification service
@@ -165,6 +191,7 @@ export class JobHandlers {
         priority: 5, // NORMAL priority
         payload: {
           webhookPayload: job.payload, // Pass entire webhook payload
+          libraryId, // Pass libraryId for notifications
         },
         retry_count: 0,
         max_retries: 2, // Fewer retries for notifications
@@ -219,7 +246,8 @@ export class JobHandlers {
    * Handle notify-kodi job
    *
    * Payload: {
-   *   webhookPayload: { source, eventType, movie?, series?, episodes? }
+   *   webhookPayload: { source, eventType, movie?, series?, episodes? },
+   *   libraryId: number
    * }
    */
   private async handleNotifyKodi(job: Job): Promise<void> {
@@ -240,25 +268,160 @@ export class JobHandlers {
       jobId: job.id,
     });
 
-    const { webhookPayload } = job.payload;
+    const { libraryId } = job.payload;
 
-    // Notify all Kodi groups
-    if (webhookPayload.source === 'radarr' && webhookPayload.movie) {
-      await this.mediaPlayerGroups.notifyAllGroupsMovieAdded(
-        webhookPayload.movie.path,
-        webhookPayload.movie.title
-      );
-    } else if (webhookPayload.source === 'sonarr' && webhookPayload.series) {
-      await this.mediaPlayerGroups.notifyAllGroupsSeriesAdded(
-        webhookPayload.series.path,
-        webhookPayload.series.title
-      );
+    if (!libraryId) {
+      logger.warn('[JobHandlers] No libraryId in payload, cannot notify Kodi', {
+        service: 'JobHandlers',
+        handler: 'handleNotifyKodi',
+        jobId: job.id,
+      });
+      return;
+    }
+
+    // Get library path for path mapping
+    const libraries = await this.db.query<{ path: string }>(
+      'SELECT path FROM libraries WHERE id = ?',
+      [libraryId]
+    );
+
+    if (libraries.length === 0) {
+      logger.warn('[JobHandlers] Library not found, cannot notify Kodi', {
+        service: 'JobHandlers',
+        handler: 'handleNotifyKodi',
+        jobId: job.id,
+        libraryId,
+      });
+      return;
+    }
+
+    const libraryPath = libraries[0].path;
+
+    // Get all groups that manage this library
+    const groups = await this.db.query<{
+      id: number;
+      name: string;
+    }>(
+      `SELECT DISTINCT mpg.id, mpg.name
+       FROM media_player_groups mpg
+       INNER JOIN media_player_libraries mpl ON mpg.id = mpl.group_id
+       WHERE mpl.library_id = ? AND mpg.type = 'kodi'`,
+      [libraryId]
+    );
+
+    if (groups.length === 0) {
+      logger.debug('[JobHandlers] No Kodi groups manage this library', {
+        service: 'JobHandlers',
+        handler: 'handleNotifyKodi',
+        jobId: job.id,
+        libraryId,
+      });
+      return;
+    }
+
+    // Trigger scan for each Kodi group
+    for (const group of groups) {
+      try {
+        await this.triggerKodiGroupScan(group.id, libraryPath);
+      } catch (error: any) {
+        logger.error('[JobHandlers] Failed to trigger scan for Kodi group', {
+          service: 'JobHandlers',
+          handler: 'handleNotifyKodi',
+          groupId: group.id,
+          groupName: group.name,
+          error: error.message,
+        });
+        // Continue with other groups even if one fails
+      }
     }
 
     logger.info('[JobHandlers] Kodi notification sent', {
       service: 'JobHandlers',
       handler: 'handleNotifyKodi',
       jobId: job.id,
+      groupsNotified: groups.length,
+    });
+  }
+
+  /**
+   * Trigger scan on one instance in a Kodi group (with fallback)
+   */
+  private async triggerKodiGroupScan(groupId: number, libraryPath: string): Promise<void> {
+    // Get all enabled Kodi players in this group
+    const players = await this.db.query<{
+      id: number;
+      name: string;
+    }>(
+      `SELECT id, name
+       FROM media_players
+       WHERE group_id = ? AND enabled = 1 AND type = 'kodi'
+       ORDER BY id ASC`,
+      [groupId]
+    );
+
+    if (players.length === 0) {
+      logger.warn('[JobHandlers] No enabled Kodi players in group', {
+        service: 'JobHandlers',
+        groupId,
+      });
+      return;
+    }
+
+    // Apply group-level path mapping
+    let mappedPath: string;
+    try {
+      const { applyGroupPathMapping } = await import('./pathMappingService.js');
+      mappedPath = await applyGroupPathMapping(this.db, groupId, libraryPath);
+    } catch (error: any) {
+      logger.warn('[JobHandlers] Group path mapping failed, using original path', {
+        service: 'JobHandlers',
+        groupId,
+        libraryPath,
+        error: error.message,
+      });
+      mappedPath = libraryPath;
+    }
+
+    // Try each player until one succeeds (fallback)
+    for (const player of players) {
+      try {
+        const httpClient = this.mediaPlayerManager.getHttpClient(player.id);
+        if (!httpClient) {
+          logger.warn('[JobHandlers] HTTP client not available, trying next player', {
+            service: 'JobHandlers',
+            playerId: player.id,
+          });
+          continue;
+        }
+
+        // Trigger scan with mapped path
+        await httpClient.scanVideoLibrary({ directory: mappedPath });
+
+        logger.info('[JobHandlers] Triggered library scan on Kodi group', {
+          service: 'JobHandlers',
+          groupId,
+          playerId: player.id,
+          playerName: player.name,
+          path: mappedPath,
+        });
+
+        return; // Success - exit after first successful scan
+      } catch (error: any) {
+        logger.warn('[JobHandlers] Failed to scan on Kodi player, trying next', {
+          service: 'JobHandlers',
+          groupId,
+          playerId: player.id,
+          playerName: player.name,
+          error: error.message,
+        });
+        // Continue to next player (fallback)
+      }
+    }
+
+    // All players failed
+    logger.error('[JobHandlers] Failed to trigger scan on any Kodi player in group', {
+      service: 'JobHandlers',
+      groupId,
     });
   }
 

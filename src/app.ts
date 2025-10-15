@@ -15,7 +15,6 @@ import { cacheService } from './services/cacheService.js';
 import { JobQueueService } from './services/jobQueue/JobQueueService.js';
 import { SQLiteJobQueueStorage } from './services/jobQueue/storage/SQLiteJobQueueStorage.js';
 import { NotificationConfigService } from './services/notificationConfigService.js';
-import { MediaPlayerGroupService } from './services/mediaPlayerGroupService.js';
 import { JobHandlers } from './services/jobHandlers.js';
 import { FileScannerScheduler } from './services/schedulers/FileScannerScheduler.js';
 import { ProviderUpdaterScheduler } from './services/schedulers/ProviderUpdaterScheduler.js';
@@ -191,17 +190,13 @@ export class App {
       const notificationConfig = new NotificationConfigService(this.dbManager.getConnection());
       logger.info('Notification config service initialized');
 
-      // Initialize media player group service
-      const mediaPlayerGroups = new MediaPlayerGroupService(this.dbManager.getConnection());
-      logger.info('Media player group service initialized');
-
       // Initialize job handlers with all dependencies
       const jobHandlers = new JobHandlers(
         this.dbManager.getConnection(),
         this.jobQueueService,
         this.config.paths.cache || './data/cache',
         notificationConfig,
-        mediaPlayerGroups
+        this.connectionManager // Use existing MediaPlayerConnectionManager
       );
 
       // Register all job handlers with job queue
