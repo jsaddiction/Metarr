@@ -34,6 +34,7 @@ export interface Movie {
   title: string;
   year?: number;
   studio?: string;
+  monitored: boolean;
   assetCounts: AssetCounts;
   assetStatuses: AssetStatuses;
 }

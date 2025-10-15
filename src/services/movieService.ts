@@ -48,6 +48,7 @@ export interface Movie {
   title: string;
   year?: number;
   studio?: string;
+  monitored: boolean;
   assetCounts: AssetCounts;
   assetStatuses: AssetStatuses;
 }
@@ -171,6 +172,7 @@ export class MovieService {
       title: row.title || '[Unknown]',
       year: row.year,
       studio: row.studio_name,
+      monitored: row.monitored === 1,
       assetCounts: {
         poster: row.poster_count || 0,
         fanart: row.fanart_count || 0,
