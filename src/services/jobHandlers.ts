@@ -219,28 +219,60 @@ export class JobHandlers {
         appendToResponse: ['credits', 'keywords', 'release_dates']
       });
 
-      // Update movie in database with enriched metadata
-      await this.db.execute(
-        `UPDATE movies SET
-          original_title = ?,
-          plot = ?,
-          tagline = ?,
-          runtime = ?,
-          rating = ?,
-          state = 'enriched',
-          enriched_at = CURRENT_TIMESTAMP
-         WHERE id = ?`,
-        [
-          movie.original_title,
-          movie.overview,
-          movie.tagline,
-          movie.runtime,
-          movie.vote_average,
-          entityId
-        ]
-      );
+      // Get current lock status for all fields
+      const locks = await this.getFieldLocks(entityType, entityId);
 
-      logger.info(`Metadata enriched for movie ${entityId}`);
+      // Build UPDATE query dynamically, skipping locked fields
+      const updates: string[] = [];
+      const values: any[] = [];
+
+      if (!locks.original_title_locked) {
+        updates.push('original_title = ?');
+        values.push(movie.original_title);
+      }
+
+      if (!locks.plot_locked) {
+        updates.push('plot = ?');
+        values.push(movie.overview);
+      }
+
+      if (!locks.tagline_locked) {
+        updates.push('tagline = ?');
+        values.push(movie.tagline);
+      }
+
+      if (!locks.runtime_locked) {
+        updates.push('runtime = ?');
+        values.push(movie.runtime);
+      }
+
+      // rating field doesn't have a lock in schema, skip for now
+      // if (!locks.rating_locked) {
+      //   updates.push('rating = ?');
+      //   values.push(movie.vote_average);
+      // }
+
+      // Always update state and enriched_at (not locked fields)
+      updates.push('state = ?');
+      updates.push('enriched_at = CURRENT_TIMESTAMP');
+      values.push('enriched');
+
+      // Add entityId for WHERE clause
+      values.push(entityId);
+
+      if (updates.length > 2) { // More than just state and enriched_at
+        await this.db.execute(
+          `UPDATE movies SET ${updates.join(', ')} WHERE id = ?`,
+          values
+        );
+
+        logger.info(`Metadata enriched for movie ${entityId}`, {
+          updatedFields: updates.length - 2, // Exclude state and enriched_at
+          skippedLocked: Object.keys(locks).filter(k => locks[k]).length
+        });
+      } else {
+        logger.info(`All metadata fields locked for movie ${entityId}, skipping enrichment`);
+      }
     }
     // TODO: Add TVDB support
   }
@@ -605,6 +637,64 @@ export class JobHandlers {
       logger.error(`Error checking monitored status for ${entityType} ${entityId}:`, error);
       // On error, default to monitored (allow operation to proceed)
       return true;
+    }
+  }
+
+  /**
+   * Get field lock status for an entity
+   *
+   * Returns an object with all *_locked fields for the entity.
+   * Locked fields (value = 1) should NOT be modified by automation.
+   *
+   * @param entityType - Entity type ('movie', 'series', etc.)
+   * @param entityId - Entity ID
+   * @returns Object with lock status for each field
+   */
+  private async getFieldLocks(entityType: string, entityId: number): Promise<Record<string, boolean>> {
+    try {
+      let tableName: string;
+
+      if (entityType === 'movie') {
+        tableName = 'movies';
+      } else if (entityType === 'series') {
+        tableName = 'series';
+      } else if (entityType === 'season') {
+        tableName = 'seasons';
+      } else if (entityType === 'episode') {
+        tableName = 'episodes';
+      } else {
+        // Unknown entity type, return empty locks (allow all)
+        logger.warn(`Unknown entity type ${entityType}, returning empty locks`);
+        return {};
+      }
+
+      // Query all *_locked columns for the entity
+      const result = await this.db.query<any>(
+        `SELECT * FROM ${tableName} WHERE id = ?`,
+        [entityId]
+      );
+
+      if (result.length === 0) {
+        // Entity not found, return empty locks (allow all)
+        logger.warn(`Entity ${entityType} ${entityId} not found, returning empty locks`);
+        return {};
+      }
+
+      const row = result[0];
+      const locks: Record<string, boolean> = {};
+
+      // Extract all *_locked columns and convert to boolean
+      for (const key in row) {
+        if (key.endsWith('_locked')) {
+          locks[key] = row[key] === 1;
+        }
+      }
+
+      return locks;
+    } catch (error: any) {
+      logger.error(`Error getting field locks for ${entityType} ${entityId}:`, error);
+      // On error, return empty locks (allow all operations to proceed)
+      return {};
     }
   }
 }
