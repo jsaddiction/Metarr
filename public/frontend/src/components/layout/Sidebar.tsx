@@ -25,7 +25,8 @@ import {
   faSpinner,
   faBan,
   faSliders,
-  faBook
+  faBook,
+  faHome
 } from '@fortawesome/free-solid-svg-icons';
 interface SidebarProps {
   isCollapsed?: boolean;
@@ -136,6 +137,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ isCollapsed = false, isMobileO
   }, [location.pathname]);
 
   const navigationItems: NavigationItem[] = [
+    {
+      icon: faHome,
+      label: 'Dashboard',
+      path: '/',
+      exact: true,
+    },
     {
       icon: faSquareBinary,
       label: 'Metadata',
