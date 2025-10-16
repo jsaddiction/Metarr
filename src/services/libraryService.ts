@@ -15,7 +15,16 @@ export class LibraryService {
       const db = this.dbManager.getConnection();
       const rows = await db.query<any[]>('SELECT * FROM libraries ORDER BY name ASC');
 
-      return rows.map(this.mapRowToLibrary);
+      // Add stats to each library
+      const libraries = await Promise.all(
+        rows.map(async (row) => {
+          const library = this.mapRowToLibrary(row);
+          library.stats = await this.getLibraryStats(library.id, library.type);
+          return library;
+        })
+      );
+
+      return libraries;
     } catch (error: any) {
       logger.error('Failed to get libraries', { error: error.message });
       throw new Error(`Failed to retrieve libraries: ${error.message}`);
@@ -649,10 +658,10 @@ export class LibraryService {
         enriched: 0,
       };
 
-      // Get last scan time from library_scan_history
+      // Get last scan time from scan_jobs
       const scanQuery = `
         SELECT completed_at
-        FROM library_scan_history
+        FROM scan_jobs
         WHERE library_id = ?
           AND status = 'completed'
         ORDER BY completed_at DESC
