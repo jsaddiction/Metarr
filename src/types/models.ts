@@ -145,6 +145,13 @@ export interface Library {
   path: string;
   createdAt: Date;
   updatedAt: Date;
+  stats?: {
+    total: number;
+    unidentified: number;
+    identified: number;
+    enriched: number;
+    lastScan: string | null;
+  };
 }
 
 export interface ScanJob {

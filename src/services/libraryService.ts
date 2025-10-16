@@ -34,7 +34,12 @@ export class LibraryService {
         return null;
       }
 
-      return this.mapRowToLibrary(rows[0]);
+      const library = this.mapRowToLibrary(rows[0]);
+
+      // Add stats
+      library.stats = await this.getLibraryStats(id, library.type);
+
+      return library;
     } catch (error: any) {
       logger.error(`Failed to get library ${id}`, { error: error.message });
       throw new Error(`Failed to retrieve library: ${error.message}`);
@@ -583,6 +588,100 @@ export class LibraryService {
     } catch (error: any) {
       logger.error('Failed to browse path', { path, error: error.message });
       throw new Error(`Failed to browse directory: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get library statistics (total items, counts by identification_status)
+   */
+  private async getLibraryStats(
+    libraryId: number,
+    type: MediaLibraryType
+  ): Promise<{
+    total: number;
+    unidentified: number;
+    identified: number;
+    enriched: number;
+    lastScan: string | null;
+  }> {
+    const db = this.dbManager.getConnection();
+
+    // Determine table name based on library type
+    let tableName: string;
+    switch (type) {
+      case 'movie':
+        tableName = 'movies';
+        break;
+      case 'tv':
+        tableName = 'series';
+        break;
+      case 'music':
+        tableName = 'artists';
+        break;
+      default:
+        return {
+          total: 0,
+          unidentified: 0,
+          identified: 0,
+          enriched: 0,
+          lastScan: null,
+        };
+    }
+
+    try {
+      // Get counts by identification_status
+      const statsQuery = `
+        SELECT
+          COUNT(*) as total,
+          SUM(CASE WHEN identification_status = 'unidentified' THEN 1 ELSE 0 END) as unidentified,
+          SUM(CASE WHEN identification_status = 'identified' THEN 1 ELSE 0 END) as identified,
+          SUM(CASE WHEN identification_status = 'enriched' THEN 1 ELSE 0 END) as enriched
+        FROM ${tableName}
+        WHERE library_id = ?
+          AND deleted_at IS NULL
+      `;
+
+      const statsRows = await db.query<any>(statsQuery, [libraryId]);
+      const stats = (Array.isArray(statsRows) ? statsRows[0] : statsRows) || {
+        total: 0,
+        unidentified: 0,
+        identified: 0,
+        enriched: 0,
+      };
+
+      // Get last scan time from library_scan_history
+      const scanQuery = `
+        SELECT completed_at
+        FROM library_scan_history
+        WHERE library_id = ?
+          AND status = 'completed'
+        ORDER BY completed_at DESC
+        LIMIT 1
+      `;
+
+      const scanRows = await db.query<any>(scanQuery, [libraryId]);
+      const scanResult = Array.isArray(scanRows) ? scanRows[0] : scanRows;
+      const lastScan = scanResult?.completed_at || null;
+
+      return {
+        total: Number(stats.total) || 0,
+        unidentified: Number(stats.unidentified) || 0,
+        identified: Number(stats.identified) || 0,
+        enriched: Number(stats.enriched) || 0,
+        lastScan,
+      };
+    } catch (error: any) {
+      logger.error(`Failed to get stats for library ${libraryId}`, {
+        error: error.message,
+      });
+      // Return empty stats on error
+      return {
+        total: 0,
+        unidentified: 0,
+        identified: 0,
+        enriched: 0,
+        lastScan: null,
+      };
     }
   }
 

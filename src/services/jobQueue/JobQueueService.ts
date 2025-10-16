@@ -269,6 +269,13 @@ export class JobQueueService {
   }
 
   /**
+   * Get active jobs (pending or processing)
+   */
+  async getActiveJobs(filters?: any): Promise<Job[]> {
+    return await this.storage.listJobs(filters);
+  }
+
+  /**
    * Get queue statistics
    */
   async getStats(): Promise<QueueStats> {

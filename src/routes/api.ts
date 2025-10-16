@@ -5,7 +5,7 @@ import { MovieController } from '../controllers/movieController.js';
 import { IgnorePatternController } from '../controllers/ignorePatternController.js';
 import { ImageController } from '../controllers/imageController.js';
 import { AssetController } from '../controllers/assetController.js';
-// import { JobController } from '../controllers/jobController.js'; // TODO: Re-enable when implementing job routes
+import { JobController } from '../controllers/jobController.js';
 import { AutomationConfigController } from '../controllers/automationConfigController.js';
 import { DatabaseManager } from '../database/DatabaseManager.js';
 import { MediaPlayerConnectionManager } from '../services/mediaPlayerConnectionManager.js';
@@ -16,7 +16,6 @@ import { MovieService } from '../services/movieService.js';
 import { IgnorePatternService } from '../services/ignorePatternService.js';
 import { ImageService } from '../services/imageService.js';
 import { JobQueueService } from '../services/jobQueue/JobQueueService.js';
-// import { JobHandlers } from '../services/jobHandlers.js'; // TODO: Re-enable when implementing job routes
 import { AutomationConfigService } from '../services/automationConfigService.js';
 import { AssetSelectionService } from '../services/assetSelectionService.js';
 import { AssetCandidateService } from '../services/assetCandidateService.js';
@@ -109,9 +108,8 @@ export const createApiRouter = (
   // Initialize asset controller
   const assetController = new AssetController(db);
 
-  // TODO: Job controller disabled - job queue now initialized in app.ts
-  // Re-enable when JobQueueService methods are implemented (getRecentJobs, etc.)
-  // const jobController = new JobController(jobQueue);
+  // Initialize job controller
+  const jobController = new JobController(jobQueueService);
 
   // Initialize scheduler controller (optional - only if schedulers provided)
   const schedulerController =
@@ -409,16 +407,12 @@ export const createApiRouter = (
   router.get('/assets/needs-publishing/:entityType/:entityId', assetController.needsPublishing);
   router.get('/assets/needs-publishing/:entityType', assetController.getEntitiesNeedingPublish);
 
-  // Job Routes - DISABLED: Job controller commented out until JobQueueService methods implemented
-  // TODO: Re-enable after implementing missing JobQueueService methods and uncommenting jobController above
-  // logger.debug('[API Router] Registering job routes');
-  // router.get('/jobs/stats', jobController.getStats);
-  // router.get('/jobs/recent', jobController.getRecent); // TODO: Implement in JobQueueService
-  // router.get('/jobs/by-type/:type', jobController.getByType); // TODO: Implement in JobQueueService
-  // router.get('/jobs/:jobId', jobController.getJob);
-  // router.post('/jobs/:jobId/retry', jobController.retry); // TODO: Implement in JobQueueService
-  // router.delete('/jobs/:jobId', jobController.cancel); // TODO: Implement in JobQueueService
-  // router.post('/jobs/clear-old', jobController.clearOld); // TODO: Implement in JobQueueService
+  // Job Routes
+  logger.debug('[API Router] Registering job routes');
+  router.get('/jobs/stats', jobController.getStats);
+  router.get('/jobs', jobController.getActive);
+  router.get('/jobs/history', jobController.getHistory);
+  router.get('/jobs/:jobId', jobController.getJob);
 
   // Automation Config Routes
   logger.debug('[API Router] Registering automation config routes');

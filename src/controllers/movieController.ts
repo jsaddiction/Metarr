@@ -22,6 +22,7 @@ export class MovieController {
       const filters: any = {};
 
       if (req.query.status) filters.status = req.query.status as string;
+      if (req.query.identificationStatus) filters.identificationStatus = req.query.identificationStatus as string;
       if (req.query.libraryId) filters.libraryId = parseInt(req.query.libraryId as string);
       if (req.query.limit) filters.limit = parseInt(req.query.limit as string);
       if (req.query.offset) filters.offset = parseInt(req.query.offset as string);

@@ -49,12 +49,14 @@ export interface Movie {
   year?: number;
   studio?: string;
   monitored: boolean;
+  identification_status: 'unidentified' | 'identified' | 'enriched';
   assetCounts: AssetCounts;
   assetStatuses: AssetStatuses;
 }
 
 export interface MovieFilters {
   status?: string;
+  identificationStatus?: 'unidentified' | 'identified' | 'enriched';
   libraryId?: number;
   limit?: number;
   offset?: number;
@@ -75,6 +77,11 @@ export class MovieService {
     if (filters?.status) {
       whereClauses.push('m.status = ?');
       params.push(filters.status);
+    }
+
+    if (filters?.identificationStatus) {
+      whereClauses.push('m.identification_status = ?');
+      params.push(filters.identificationStatus);
     }
 
     if (filters?.libraryId) {
@@ -167,6 +174,7 @@ export class MovieService {
       year: row.year,
       studio: row.studio_name,
       monitored: row.monitored === 1,
+      identification_status: row.identification_status || 'unidentified',
       assetCounts: {
         poster: row.poster_count || 0,
         fanart: row.fanart_count || 0,
