@@ -60,7 +60,10 @@ function formatJobDescription(job: JobHistoryRecord): string {
     case 'notify-plex':
       return `Notified ${job.payload.playerName || 'media player'}`;
     case 'directory-scan':
-      return `Scanned ${job.payload.path || 'directory'}`;
+      // Extract just the directory name from the full path
+      const directoryPath = job.payload.directoryPath || job.payload.path || 'directory';
+      const dirName = directoryPath.split('/').pop() || directoryPath;
+      return `Scanned ${dirName}`;
     case 'cache-asset':
       return `Cached ${job.payload.assetType || 'asset'}`;
     case 'scheduled-file-scan':
@@ -107,7 +110,7 @@ export const RecentActivityList: React.FC<RecentActivityListProps> = ({ jobs }) 
                 </span>
               )}
               <span className="text-xs text-muted-foreground flex-shrink-0">
-                {(job.duration_ms / 1000).toFixed(1)}s
+                {Math.abs(job.duration_ms / 1000).toFixed(1)}s
               </span>
             </div>
           </div>

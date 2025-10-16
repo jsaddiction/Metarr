@@ -112,16 +112,18 @@ export class SQLiteJobQueueStorage implements IJobQueueStorage {
     }
 
     const job = jobs[0];
-    const now = Date.now();
-    const startedAt = new Date(job.started_at).getTime();
-    const duration = now - startedAt;
 
-    // Archive to history
+    // Archive to history - let SQLite calculate duration using its own datetime functions
     await this.db.execute(
       `INSERT INTO job_history (
         job_id, type, priority, payload, status, error, retry_count,
         created_at, started_at, completed_at, duration_ms
-      ) VALUES (?, ?, ?, ?, 'completed', NULL, ?, ?, ?, CURRENT_TIMESTAMP, ?)`,
+      ) VALUES (
+        ?, ?, ?, ?, 'completed', NULL, ?,
+        ?, ?,
+        CURRENT_TIMESTAMP,
+        CAST((julianday(CURRENT_TIMESTAMP) - julianday(?)) * 86400000 AS INTEGER)
+      )`,
       [
         jobId,
         job.type,
@@ -130,7 +132,7 @@ export class SQLiteJobQueueStorage implements IJobQueueStorage {
         job.retry_count,
         job.created_at,
         job.started_at,
-        duration,
+        job.started_at, // Used for duration calculation
       ]
     );
 
@@ -182,15 +184,18 @@ export class SQLiteJobQueueStorage implements IJobQueueStorage {
       });
     } else {
       // No retries left: Archive and remove
-      const now = Date.now();
-      const startedAt = job.started_at ? new Date(job.started_at).getTime() : now;
-      const duration = now - startedAt;
+      const startedAtValue = job.started_at || new Date().toISOString();
 
       await this.db.execute(
         `INSERT INTO job_history (
           job_id, type, priority, payload, status, error, retry_count,
           created_at, started_at, completed_at, duration_ms
-        ) VALUES (?, ?, ?, ?, 'failed', ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)`,
+        ) VALUES (
+          ?, ?, ?, ?, 'failed', ?, ?,
+          ?, ?,
+          CURRENT_TIMESTAMP,
+          CAST((julianday(CURRENT_TIMESTAMP) - julianday(?)) * 86400000 AS INTEGER)
+        )`,
         [
           jobId,
           job.type,
@@ -199,8 +204,8 @@ export class SQLiteJobQueueStorage implements IJobQueueStorage {
           error,
           newRetryCount,
           job.created_at,
-          job.started_at || new Date().toISOString(),
-          duration,
+          startedAtValue,
+          startedAtValue, // Used for duration calculation
         ]
       );
 
