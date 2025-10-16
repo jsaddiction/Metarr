@@ -133,7 +133,7 @@ export class WebhookService {
 
     // Create job with priority 1 (critical)
     const jobId = await this.jobQueue.addJob({
-      type: 'webhook',
+      type: 'webhook-received', // Updated to new job type
       priority: 1,
       payload: {
         source: 'radarr',
@@ -148,6 +148,7 @@ export class WebhookService {
           filePath: webhook.movieFile?.path
         }
       },
+      retry_count: 0,
       max_retries: 3
     });
 
@@ -173,7 +174,7 @@ export class WebhookService {
 
     // Create job with priority 1 (critical)
     const jobId = await this.jobQueue.addJob({
-      type: 'webhook',
+      type: 'webhook-received', // Updated to new job type
       priority: 1,
       payload: {
         source: 'sonarr',
@@ -197,6 +198,7 @@ export class WebhookService {
           relativePath: webhook.episodeFile.relativePath
         } : undefined
       },
+      retry_count: 0,
       max_retries: 3
     });
 
@@ -222,7 +224,7 @@ export class WebhookService {
 
     // Create job with priority 1 (critical)
     const jobId = await this.jobQueue.addJob({
-      type: 'webhook',
+      type: 'webhook-received', // Updated to new job type
       priority: 1,
       payload: {
         source: 'lidarr',
@@ -236,6 +238,7 @@ export class WebhookService {
         albums: webhook.albums,
         tracks: webhook.tracks
       },
+      retry_count: 0,
       max_retries: 3
     });
 

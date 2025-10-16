@@ -25,11 +25,12 @@ import { logger } from '../../../middleware/logging.js';
  * - Distributed support (multiple workers)
  */
 export class RedisJobQueueStorage implements IJobQueueStorage {
-  constructor(private redis: any) {
+  constructor(_redis: any) {
     // Redis client (ioredis or node-redis)
+    // Intentionally unused - stored for future implementation
   }
 
-  async addJob(job: Omit<Job, 'id' | 'created_at'>): Promise<number> {
+  async addJob(_job: Omit<Job, 'id' | 'created_at'>): Promise<number> {
     logger.error('[RedisJobQueueStorage] Not implemented', {
       service: 'RedisJobQueueStorage',
       operation: 'addJob',
@@ -45,7 +46,7 @@ export class RedisJobQueueStorage implements IJobQueueStorage {
     throw new Error('Redis storage not yet implemented. Use SQLiteJobQueueStorage for now.');
   }
 
-  async completeJob(jobId: number, result?: any): Promise<void> {
+  async completeJob(_jobId: number, _result?: any): Promise<void> {
     logger.error('[RedisJobQueueStorage] Not implemented', {
       service: 'RedisJobQueueStorage',
       operation: 'completeJob',
@@ -53,7 +54,7 @@ export class RedisJobQueueStorage implements IJobQueueStorage {
     throw new Error('Redis storage not yet implemented. Use SQLiteJobQueueStorage for now.');
   }
 
-  async failJob(jobId: number, error: string): Promise<void> {
+  async failJob(_jobId: number, _error: string): Promise<void> {
     logger.error('[RedisJobQueueStorage] Not implemented', {
       service: 'RedisJobQueueStorage',
       operation: 'failJob',
@@ -61,7 +62,7 @@ export class RedisJobQueueStorage implements IJobQueueStorage {
     throw new Error('Redis storage not yet implemented. Use SQLiteJobQueueStorage for now.');
   }
 
-  async getJob(jobId: number): Promise<Job | null> {
+  async getJob(_jobId: number): Promise<Job | null> {
     logger.error('[RedisJobQueueStorage] Not implemented', {
       service: 'RedisJobQueueStorage',
       operation: 'getJob',
@@ -69,7 +70,7 @@ export class RedisJobQueueStorage implements IJobQueueStorage {
     throw new Error('Redis storage not yet implemented. Use SQLiteJobQueueStorage for now.');
   }
 
-  async listJobs(filters?: JobFilters): Promise<Job[]> {
+  async listJobs(_filters?: JobFilters): Promise<Job[]> {
     logger.error('[RedisJobQueueStorage] Not implemented', {
       service: 'RedisJobQueueStorage',
       operation: 'listJobs',
@@ -77,7 +78,7 @@ export class RedisJobQueueStorage implements IJobQueueStorage {
     throw new Error('Redis storage not yet implemented. Use SQLiteJobQueueStorage for now.');
   }
 
-  async getJobHistory(filters?: JobHistoryFilters): Promise<JobHistoryRecord[]> {
+  async getJobHistory(_filters?: JobHistoryFilters): Promise<JobHistoryRecord[]> {
     logger.error('[RedisJobQueueStorage] Not implemented', {
       service: 'RedisJobQueueStorage',
       operation: 'getJobHistory',
@@ -93,7 +94,7 @@ export class RedisJobQueueStorage implements IJobQueueStorage {
     throw new Error('Redis storage not yet implemented. Use SQLiteJobQueueStorage for now.');
   }
 
-  async cleanupHistory(retentionDays: { completed: number; failed: number }): Promise<number> {
+  async cleanupHistory(_retentionDays: { completed: number; failed: number }): Promise<number> {
     logger.error('[RedisJobQueueStorage] Not implemented', {
       service: 'RedisJobQueueStorage',
       operation: 'cleanupHistory',

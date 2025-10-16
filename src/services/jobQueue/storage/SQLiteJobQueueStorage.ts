@@ -98,7 +98,7 @@ export class SQLiteJobQueueStorage implements IJobQueueStorage {
     };
   }
 
-  async completeJob(jobId: number, result?: any): Promise<void> {
+  async completeJob(jobId: number, _result?: any): Promise<void> {
     // Get job data
     const jobs = await this.db.query<any>('SELECT * FROM job_queue WHERE id = ?', [jobId]);
 

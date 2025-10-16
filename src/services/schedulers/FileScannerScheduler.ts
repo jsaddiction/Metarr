@@ -102,6 +102,8 @@ export class FileScannerScheduler {
             type: 'scheduled-file-scan',
             priority: 9, // Low priority (automated maintenance)
             payload: { libraryId },
+            retry_count: 0,
+            max_retries: 3,
           });
 
           logger.info('Queued file scan job for library', {
@@ -136,6 +138,8 @@ export class FileScannerScheduler {
       type: 'scheduled-file-scan',
       priority: 4, // Higher priority for manual triggers
       payload: { libraryId, manual: true },
+      retry_count: 0,
+      max_retries: 3,
     });
 
     // Update last_run timestamp so next scheduled scan waits full interval

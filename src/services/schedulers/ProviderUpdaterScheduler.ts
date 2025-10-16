@@ -102,6 +102,8 @@ export class ProviderUpdaterScheduler {
             type: 'scheduled-provider-update',
             priority: 7, // Normal priority (automated, but important)
             payload: { libraryId },
+            retry_count: 0,
+            max_retries: 3,
           });
 
           logger.info('Queued provider update job for library', {
@@ -136,6 +138,8 @@ export class ProviderUpdaterScheduler {
       type: 'scheduled-provider-update',
       priority: 4, // Higher priority for manual triggers
       payload: { libraryId, manual: true },
+      retry_count: 0,
+      max_retries: 3,
     });
 
     // Update last_run timestamp so next scheduled update waits full interval

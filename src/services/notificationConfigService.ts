@@ -1,4 +1,4 @@
-import { IDatabase } from '../types/database.js';
+import { DatabaseConnection } from '../types/database.js';
 import { logger } from '../middleware/logging.js';
 
 /**
@@ -31,7 +31,7 @@ export interface NotificationConfig {
  * ```
  */
 export class NotificationConfigService {
-  constructor(private db: IDatabase) {}
+  constructor(private db: DatabaseConnection) {}
 
   /**
    * Get all enabled notification services
@@ -136,7 +136,7 @@ export class NotificationConfigService {
       enabled,
     });
 
-    await this.db.run(
+    await this.db.execute(
       `UPDATE notification_config
        SET enabled = ?, updated_at = CURRENT_TIMESTAMP
        WHERE service = ?`,
@@ -160,7 +160,7 @@ export class NotificationConfigService {
       notificationService: service,
     });
 
-    await this.db.run(
+    await this.db.execute(
       `UPDATE notification_config
        SET config = ?, updated_at = CURRENT_TIMESTAMP
        WHERE service = ?`,

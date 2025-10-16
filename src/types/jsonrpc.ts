@@ -497,7 +497,8 @@ export type KodiMethod =
   | 'AudioLibrary.Clean'
   | 'System.GetProperties'
   | 'Application.GetProperties'
-  | 'Application.SetVolume';
+  | 'Application.SetVolume'
+  | 'GUI.ShowNotification'; // Display notification to user
 
 // Version Detection Response
 export interface DetectedVersion {
