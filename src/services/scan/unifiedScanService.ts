@@ -13,8 +13,9 @@ import { DatabaseManager } from '../../database/DatabaseManager.js';
 // } from '../hash/hashService.js';
 import { parseFullMovieNfos } from '../nfo/nfoParser.js';
 import { generateMovieNFOFromDatabase } from '../nfo/nfoGenerator.js';
+import { trackNFOFile } from '../nfo/nfoFileTracking.js';
 import { extractAndStoreMediaInfo } from '../media/ffprobeService.js';
-import { discoverAndStoreAssets } from '../media/assetDiscovery_flexible.js';
+import { discoverAndStoreAssets } from '../media/assetDiscovery_unified.js';
 import { detectAndStoreUnknownFiles } from '../media/unknownFilesDetection.js';
 import { IgnorePatternService } from '../ignorePatternService.js';
 import { findOrCreateMovie, MovieLookupContext } from './movieLookupService.js';
@@ -245,8 +246,10 @@ export async function scanMovieDirectory(
           // Generate clean NFO from database (database is source of truth)
           await generateMovieNFOFromDatabase(db, movieId, movieDir);
 
-          // TODO: Hash tracking not in clean schema - implement if needed
-          // const nfoPath = path.join(movieDir, 'movie.nfo');
+          // Track NFO file in text_files table (unified file system)
+          if (nfoFiles.length > 0) {
+            await trackNFOFile(db, nfoFiles[0], 'movie', movieId, nfoData);
+          }
 
           logger.info('Parsed and stored NFO metadata', {
             movieId,

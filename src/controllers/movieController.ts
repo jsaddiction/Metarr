@@ -125,6 +125,16 @@ export class MovieController {
     }
   }
 
+  async getAllFiles(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const movieId = parseInt(req.params.id);
+      const files = await this.movieService.getAllFiles(movieId);
+      res.json(files);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   async getImages(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const movieId = parseInt(req.params.id);

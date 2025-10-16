@@ -1,6 +1,7 @@
 import { DatabaseManager } from '../../database/DatabaseManager.js';
 import { LibraryScanService } from '../libraryScanService.js';
 import { Job } from '../jobQueueService.js';
+import { JobQueueService } from '../jobQueue/JobQueueService.js';
 import { logger } from '../../middleware/logging.js';
 
 /**
@@ -10,9 +11,10 @@ import { logger } from '../../middleware/logging.js';
  * to detect filesystem changes (new/moved/deleted files by *arr).
  */
 export function createScheduledFileScanHandler(
-  dbManager: DatabaseManager
+  dbManager: DatabaseManager,
+  jobQueue: JobQueueService
 ): (job: Job) => Promise<void> {
-  const libraryScanService = new LibraryScanService(dbManager);
+  const libraryScanService = new LibraryScanService(dbManager, jobQueue);
 
   return async (job: Job): Promise<void> => {
     const { libraryId, manual } = job.payload;

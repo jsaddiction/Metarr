@@ -113,6 +113,11 @@ export class SQLiteJobQueueStorage implements IJobQueueStorage {
 
     const job = jobs[0];
 
+    // Calculate duration if started_at is available
+    const duration = job.started_at
+      ? Date.now() - new Date(job.started_at).getTime()
+      : 0;
+
     // Archive to history - let SQLite calculate duration using its own datetime functions
     await this.db.execute(
       `INSERT INTO job_history (

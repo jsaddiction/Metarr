@@ -76,7 +76,7 @@ export class ImageController {
         return;
       }
 
-      const image = await this.imageService.uploadCustomImage(
+      const cacheFileId = await this.imageService.uploadCustomImage(
         'movie',
         movieId,
         imageType,
@@ -88,8 +88,8 @@ export class ImageController {
         success: true,
         message: 'Image uploaded successfully',
         image: {
-          ...image,
-          cache_url: `/api/images/${image.id}/file`,
+          id: cacheFileId,
+          cache_url: `/api/images/${cacheFileId}/file`,
         },
       });
     } catch (error) {

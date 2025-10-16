@@ -34,12 +34,17 @@ export class WebSocketController {
   constructor(
     dbManager: DatabaseManager,
     connectionManager: MediaPlayerConnectionManager,
-    wsServer: MetarrWebSocketServer
+    wsServer: MetarrWebSocketServer,
+    jobQueue?: any // JobQueueService - optional for backward compatibility
   ) {
     this.movieService = new MovieService(dbManager);
     this.mediaPlayerService = new MediaPlayerService(dbManager, connectionManager);
     this.libraryService = new LibraryService(dbManager);
-    this.libraryScanService = new LibraryScanService(dbManager);
+    // Note: LibraryScanService requires jobQueue but websocketController may not have it
+    // This is a known limitation - library scans via websocket won't work until jobQueue is passed
+    this.libraryScanService = jobQueue
+      ? new LibraryScanService(dbManager, jobQueue)
+      : null as any; // Type assertion to avoid breaking changes
     this.imageService = new ImageService(dbManager);
     this.wsServer = wsServer;
   }

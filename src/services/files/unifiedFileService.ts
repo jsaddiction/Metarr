@@ -1,0 +1,486 @@
+/**
+ * Unified File Service
+ *
+ * Handles all file operations for the unified file system architecture.
+ * Manages library → cache lifecycle, deduplication, and reference counting.
+ */
+
+import fs from 'fs/promises';
+import path from 'path';
+import crypto from 'crypto';
+import sharp from 'sharp';
+import { DatabaseConnection } from '../../types/database.js';
+import { logger } from '../../middleware/logging.js';
+
+// ============================================================
+// TYPE DEFINITIONS
+// ============================================================
+
+export interface ImageFileRecord {
+  id?: number;
+  entityType: 'movie' | 'episode' | 'series' | 'season' | 'actor';
+  entityId: number;
+  filePath: string;
+  fileName: string;
+  fileSize: number;
+  fileHash: string;
+  perceptualHash?: string;
+  location: 'library' | 'cache';
+  imageType: 'poster' | 'fanart' | 'banner' | 'clearlogo' | 'clearart' | 'discart' | 'landscape' | 'keyart' | 'thumb' | 'actor_thumb' | 'unknown';
+  width: number;
+  height: number;
+  format: string;
+  sourceType?: 'provider' | 'local' | 'user';
+  sourceUrl?: string;
+  providerName?: string;
+  classificationScore?: number;
+  isPublished?: boolean;
+  libraryFileId?: number;
+  cacheFileId?: number;
+  referenceCount?: number;
+}
+
+export interface VideoFileRecord {
+  id?: number;
+  entityType: 'movie' | 'episode';
+  entityId: number;
+  filePath: string;
+  fileName: string;
+  fileSize: number;
+  fileHash?: string;
+  location: 'library' | 'cache';
+  videoType: 'main' | 'trailer' | 'sample' | 'extra';
+  codec?: string;
+  width?: number;
+  height?: number;
+  durationSeconds?: number;
+  bitrate?: number;
+  framerate?: number;
+  hdrType?: string;
+  audioCodec?: string;
+  audioChannels?: number;
+  audioLanguage?: string;
+  sourceType?: 'provider' | 'local' | 'user';
+  sourceUrl?: string;
+  providerName?: string;
+  classificationScore?: number;
+  libraryFileId?: number;
+  cacheFileId?: number;
+  referenceCount?: number;
+}
+
+export interface TextFileRecord {
+  id?: number;
+  entityType: 'movie' | 'episode';
+  entityId: number;
+  filePath: string;
+  fileName: string;
+  fileSize: number;
+  fileHash?: string;
+  location: 'library' | 'cache';
+  textType: 'nfo' | 'subtitle';
+  subtitleLanguage?: string;
+  subtitleFormat?: string;
+  nfoIsValid?: boolean;
+  nfoHasTmdbId?: boolean;
+  nfoNeedsRegen?: boolean;
+  sourceType?: 'provider' | 'local' | 'user';
+  sourceUrl?: string;
+  libraryFileId?: number;
+  cacheFileId?: number;
+  referenceCount?: number;
+}
+
+// ============================================================
+// IMAGE FILE OPERATIONS
+// ============================================================
+
+/**
+ * Insert image file record into database
+ */
+export async function insertImageFile(
+  db: DatabaseConnection,
+  record: ImageFileRecord
+): Promise<number> {
+  const result = await db.execute(
+    `INSERT INTO image_files (
+      entity_type, entity_id, file_path, file_name, file_size, file_hash,
+      perceptual_hash, location, image_type, width, height, format,
+      source_type, source_url, provider_name, classification_score,
+      is_published, library_file_id, cache_file_id, reference_count,
+      discovered_at, last_accessed_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+    [
+      record.entityType,
+      record.entityId,
+      record.filePath,
+      record.fileName,
+      record.fileSize,
+      record.fileHash,
+      record.perceptualHash || null,
+      record.location,
+      record.imageType,
+      record.width,
+      record.height,
+      record.format,
+      record.sourceType || null,
+      record.sourceUrl || null,
+      record.providerName || null,
+      record.classificationScore || null,
+      record.isPublished ? 1 : 0,
+      record.libraryFileId || null,
+      record.cacheFileId || null,
+      record.referenceCount || 0
+    ]
+  );
+
+  logger.debug('Inserted image file', {
+    id: result.insertId,
+    location: record.location,
+    imageType: record.imageType,
+    fileName: record.fileName
+  });
+
+  return result.insertId!;
+}
+
+/**
+ * Find existing cached image by hash
+ */
+export async function findCachedImageByHash(
+  db: DatabaseConnection,
+  fileHash: string
+): Promise<ImageFileRecord | null> {
+  const rows = await db.query<any>(
+    `SELECT * FROM image_files WHERE file_hash = ? AND location = 'cache' LIMIT 1`,
+    [fileHash]
+  );
+
+  if (!rows || rows.length === 0) return null;
+
+  const row = rows[0] as any;
+  return {
+    id: row.id,
+    entityType: row.entity_type,
+    entityId: row.entity_id,
+    filePath: row.file_path,
+    fileName: row.file_name,
+    fileSize: row.file_size,
+    fileHash: row.file_hash,
+    perceptualHash: row.perceptual_hash || null,
+    location: row.location,
+    imageType: row.image_type,
+    width: row.width,
+    height: row.height,
+    format: row.format,
+    sourceType: row.source_type,
+    sourceUrl: row.source_url || null,
+    providerName: row.provider_name || null,
+    classificationScore: row.classification_score || null,
+    isPublished: Boolean(row.is_published),
+    libraryFileId: row.library_file_id || null,
+    cacheFileId: row.cache_file_id || null,
+    referenceCount: row.reference_count || 0
+  };
+}
+
+/**
+ * Cache an image file (copy library → cache or store provider download)
+ * Returns cache file ID
+ */
+export async function cacheImageFile(
+  db: DatabaseConnection,
+  libraryFileId: number | null,
+  sourceFilePath: string,
+  entityType: 'movie' | 'episode' | 'series' | 'season' | 'actor',
+  entityId: number,
+  imageType: string,
+  sourceType: 'provider' | 'local' | 'user' = 'local',
+  sourceUrl?: string,
+  providerName?: string
+): Promise<number> {
+  // Calculate hash
+  const fileBuffer = await fs.readFile(sourceFilePath);
+  const fileHash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
+
+  // Check if already cached
+  const existing = await findCachedImageByHash(db, fileHash);
+  if (existing) {
+    logger.info('Image already cached, reusing', {
+      existingId: existing.id,
+      fileHash,
+      referenceCount: existing.referenceCount
+    });
+
+    // Increment reference count
+    await db.execute(
+      `UPDATE image_files SET reference_count = reference_count + 1, last_accessed_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      [existing.id]
+    );
+
+    // Link library file to cache (if library file exists)
+    if (libraryFileId) {
+      await db.execute(
+        `UPDATE image_files SET cache_file_id = ? WHERE id = ?`,
+        [existing.id, libraryFileId]
+      );
+    }
+
+    return existing.id!;
+  }
+
+  // New image - create cache file
+  const cacheDir = path.join(process.cwd(), 'data', 'cache', 'images', fileHash.slice(0, 2), fileHash.slice(2, 4));
+  await fs.mkdir(cacheDir, { recursive: true });
+
+  const ext = path.extname(sourceFilePath);
+  const cachePath = path.join(cacheDir, `${fileHash}${ext}`);
+
+  // Copy to cache
+  await fs.copyFile(sourceFilePath, cachePath);
+
+  // Get image metadata
+  const metadata = await sharp(cachePath).metadata();
+
+  // Insert cache record
+  const cacheFileId = await insertImageFile(db, {
+    entityType,
+    entityId,
+    filePath: cachePath,
+    fileName: `${fileHash}${ext}`,
+    fileSize: fileBuffer.length,
+    fileHash,
+    location: 'cache',
+    imageType: imageType as any,
+    width: metadata.width!,
+    height: metadata.height!,
+    format: metadata.format!,
+    sourceType,
+    ...(sourceUrl && { sourceUrl }),
+    ...(providerName && { providerName }),
+    isPublished: true,
+    ...(libraryFileId && { libraryFileId }),
+    referenceCount: 1
+  });
+
+  // Link library file to cache (if library file exists)
+  if (libraryFileId) {
+    await db.execute(
+      `UPDATE image_files SET cache_file_id = ? WHERE id = ?`,
+      [cacheFileId, libraryFileId]
+    );
+  }
+
+  logger.info('Cached new image file', {
+    cacheFileId,
+    fileHash,
+    cachePath,
+    sourceType,
+    providerName
+  });
+
+  return cacheFileId;
+}
+
+/**
+ * Increment reference count for cached file
+ */
+export async function incrementImageReferenceCount(
+  db: DatabaseConnection,
+  cacheFileId: number
+): Promise<void> {
+  await db.execute(
+    `UPDATE image_files SET reference_count = reference_count + 1, last_accessed_at = CURRENT_TIMESTAMP WHERE id = ?`,
+    [cacheFileId]
+  );
+}
+
+/**
+ * Decrement reference count for cached file
+ * Optionally delete if reference count reaches 0
+ */
+export async function decrementImageReferenceCount(
+  db: DatabaseConnection,
+  cacheFileId: number,
+  deleteIfZero: boolean = false
+): Promise<void> {
+  await db.execute(
+    `UPDATE image_files SET reference_count = GREATEST(0, reference_count - 1) WHERE id = ?`,
+    [cacheFileId]
+  );
+
+  if (deleteIfZero) {
+    const rows = await db.query<any>(
+      `SELECT id, file_path, reference_count FROM image_files WHERE id = ? AND reference_count = 0`,
+      [cacheFileId]
+    );
+
+    if (rows && rows.length > 0) {
+      const filePath = (rows[0] as any).file_path;
+      try {
+        await fs.unlink(filePath);
+        await db.execute(`DELETE FROM image_files WHERE id = ?`, [cacheFileId]);
+        logger.info('Deleted unreferenced cache file', { cacheFileId, filePath });
+      } catch (error: any) {
+        logger.error('Failed to delete cache file', { cacheFileId, error: error.message });
+      }
+    }
+  }
+}
+
+// ============================================================
+// VIDEO FILE OPERATIONS
+// ============================================================
+
+/**
+ * Insert video file record into database
+ */
+export async function insertVideoFile(
+  db: DatabaseConnection,
+  record: VideoFileRecord
+): Promise<number> {
+  const result = await db.execute(
+    `INSERT INTO video_files (
+      entity_type, entity_id, file_path, file_name, file_size, file_hash,
+      location, video_type, codec, width, height, duration_seconds,
+      bitrate, framerate, hdr_type, audio_codec, audio_channels, audio_language,
+      source_type, source_url, provider_name, classification_score,
+      library_file_id, cache_file_id, reference_count,
+      discovered_at, last_accessed_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+    [
+      record.entityType,
+      record.entityId,
+      record.filePath,
+      record.fileName,
+      record.fileSize,
+      record.fileHash || null,
+      record.location,
+      record.videoType,
+      record.codec || null,
+      record.width || null,
+      record.height || null,
+      record.durationSeconds || null,
+      record.bitrate || null,
+      record.framerate || null,
+      record.hdrType || null,
+      record.audioCodec || null,
+      record.audioChannels || null,
+      record.audioLanguage || null,
+      record.sourceType || null,
+      record.sourceUrl || null,
+      record.providerName || null,
+      record.classificationScore || null,
+      record.libraryFileId || null,
+      record.cacheFileId || null,
+      record.referenceCount || 0
+    ]
+  );
+
+  logger.debug('Inserted video file', {
+    id: result.insertId,
+    location: record.location,
+    videoType: record.videoType,
+    fileName: record.fileName
+  });
+
+  return result.insertId!;
+}
+
+// ============================================================
+// TEXT FILE OPERATIONS
+// ============================================================
+
+/**
+ * Insert text file record into database
+ */
+export async function insertTextFile(
+  db: DatabaseConnection,
+  record: TextFileRecord
+): Promise<number> {
+  const result = await db.execute(
+    `INSERT INTO text_files (
+      entity_type, entity_id, file_path, file_name, file_size, file_hash,
+      location, text_type, subtitle_language, subtitle_format,
+      nfo_is_valid, nfo_has_tmdb_id, nfo_needs_regen,
+      source_type, source_url,
+      library_file_id, cache_file_id, reference_count,
+      discovered_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+    [
+      record.entityType,
+      record.entityId,
+      record.filePath,
+      record.fileName,
+      record.fileSize,
+      record.fileHash || null,
+      record.location,
+      record.textType,
+      record.subtitleLanguage || null,
+      record.subtitleFormat || null,
+      record.nfoIsValid !== undefined ? (record.nfoIsValid ? 1 : 0) : null,
+      record.nfoHasTmdbId !== undefined ? (record.nfoHasTmdbId ? 1 : 0) : null,
+      record.nfoNeedsRegen !== undefined ? (record.nfoNeedsRegen ? 1 : 0) : null,
+      record.sourceType || null,
+      record.sourceUrl || null,
+      record.libraryFileId || null,
+      record.cacheFileId || null,
+      record.referenceCount || 0
+    ]
+  );
+
+  logger.debug('Inserted text file', {
+    id: result.insertId,
+    location: record.location,
+    textType: record.textType,
+    fileName: record.fileName
+  });
+
+  return result.insertId!;
+}
+
+/**
+ * Calculate SHA256 hash for a file
+ */
+export async function calculateFileHash(filePath: string): Promise<string> {
+  const buffer = await fs.readFile(filePath);
+  return crypto.createHash('sha256').update(buffer).digest('hex');
+}
+
+// ============================================================
+// QUERY HELPERS
+// ============================================================
+
+/**
+ * Get all files for an entity
+ */
+export async function getEntityFiles(
+  db: DatabaseConnection,
+  entityType: 'movie' | 'episode',
+  entityId: number
+): Promise<{
+  videoFiles: VideoFileRecord[];
+  imageFiles: ImageFileRecord[];
+  textFiles: TextFileRecord[];
+}> {
+  const [videoFiles, imageFiles, textFiles] = await Promise.all([
+    db.query<any[]>(
+      `SELECT * FROM video_files WHERE entity_type = ? AND entity_id = ? ORDER BY video_type, file_name`,
+      [entityType, entityId]
+    ),
+    db.query<any[]>(
+      `SELECT * FROM image_files WHERE entity_type = ? AND entity_id = ? ORDER BY image_type, file_name`,
+      [entityType, entityId]
+    ),
+    db.query<any[]>(
+      `SELECT * FROM text_files WHERE entity_type = ? AND entity_id = ? ORDER BY text_type, file_name`,
+      [entityType, entityId]
+    )
+  ]);
+
+  return {
+    videoFiles: videoFiles as any,
+    imageFiles: imageFiles as any,
+    textFiles: textFiles as any
+  };
+}

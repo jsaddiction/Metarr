@@ -276,6 +276,11 @@ export const createApiRouter = (
     movieController.verifyAssets(req, res, next);
   });
 
+  router.get('/movies/:id/files', (req, res, next) => {
+    logger.debug('[Route Hit] /movies/:id/files with id:', req.params.id);
+    movieController.getAllFiles(req, res, next);
+  });
+
   router.get('/movies/:id/images', (req, res, next) => {
     logger.debug('[Route Hit] /movies/:id/images with id:', req.params.id);
     movieController.getImages(req, res, next);

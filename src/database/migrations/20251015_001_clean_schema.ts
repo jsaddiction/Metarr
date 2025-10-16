@@ -3,15 +3,20 @@ import { DatabaseConnection } from '../../types/database.js';
 /**
  * Clean Schema Migration - Streamlined Architecture
  *
- * Based on DATABASE_SCHEMA.md - Simplified design with:
- * - 3 states instead of 6 (unidentified, identified, enriched)
- * - Content-addressed cache with hash sharding
+ * UNIFIED FILE SYSTEM ARCHITECTURE:
+ * - Type-specific file tables (video_files, image_files, audio_files, text_files)
+ * - Location tracking (library | cache) in same table
+ * - Direct FK relationships (no abstract cache_assets layer)
+ * - Deduplication via file_hash
+ * - Provider tracking (source_url, provider_name)
+ * - Reference counting for cache cleanup
+ *
+ * Other features:
+ * - 3 states (unidentified, identified, enriched)
  * - Job queue with priority levels
  * - Field locking for user overrides
  * - 30-day soft deletes
- * - Media player groups
- * - Path mappings
- * - Playback state management
+ * - Media player groups with path mappings
  */
 
 export class CleanSchemaMigration {
@@ -20,6 +25,23 @@ export class CleanSchemaMigration {
 
   static async up(db: DatabaseConnection): Promise<void> {
     console.log('🚀 Running clean schema migration...');
+
+    // ============================================================
+    // DROP OLD TABLES (if upgrading from previous schema)
+    // ============================================================
+
+    console.log('🧹 Cleaning up old tables if they exist...');
+
+    // Drop old cache/asset tables (replaced by unified file system)
+    await db.execute('DROP TABLE IF EXISTS asset_references').catch(() => {});
+    await db.execute('DROP TABLE IF EXISTS trailers').catch(() => {});
+    await db.execute('DROP TABLE IF EXISTS cache_assets').catch(() => {});
+
+    // Drop old unknown_files if it exists (will be recreated with new schema)
+    await db.execute('DROP INDEX IF EXISTS idx_unknown_files_category').catch(() => {});
+    await db.execute('DROP TABLE IF EXISTS unknown_files').catch(() => {});
+
+    console.log('✅ Old tables cleaned up');
 
     // ============================================================
     // CORE TABLES
@@ -112,71 +134,181 @@ export class CleanSchemaMigration {
     await db.execute('CREATE UNIQUE INDEX idx_group_path_mappings_unique ON media_player_group_path_mappings(group_id, metarr_path)');
 
     // ============================================================
-    // CACHE & ASSET TABLES
+    // UNIFIED FILE SYSTEM TABLES
     // ============================================================
 
-    // Cache Assets (Content-Addressed Storage)
+    // Video Files (main movies, trailers, samples, extras)
     await db.execute(`
-      CREATE TABLE cache_assets (
+      CREATE TABLE video_files (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        content_hash TEXT UNIQUE NOT NULL,
+        entity_type TEXT NOT NULL CHECK(entity_type IN ('movie', 'episode')),
+        entity_id INTEGER NOT NULL,
         file_path TEXT NOT NULL,
+        file_name TEXT NOT NULL,
         file_size INTEGER NOT NULL,
-        mime_type TEXT NOT NULL,
+        file_hash TEXT,
+        location TEXT NOT NULL CHECK(location IN ('library', 'cache')),
+        video_type TEXT NOT NULL CHECK(video_type IN ('main', 'trailer', 'sample', 'extra')),
+        codec TEXT,
         width INTEGER,
         height INTEGER,
-        perceptual_hash TEXT,
-        source_type TEXT NOT NULL CHECK(source_type IN ('provider', 'local', 'user')),
+        duration_seconds INTEGER,
+        bitrate INTEGER,
+        framerate REAL,
+        hdr_type TEXT,
+        audio_codec TEXT,
+        audio_channels INTEGER,
+        audio_language TEXT,
+        source_type TEXT CHECK(source_type IN ('provider', 'local', 'user')),
         source_url TEXT,
         provider_name TEXT,
+        classification_score INTEGER,
+        library_file_id INTEGER,
+        cache_file_id INTEGER,
         reference_count INTEGER DEFAULT 0,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        last_accessed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        discovered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        last_accessed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (library_file_id) REFERENCES video_files(id) ON DELETE SET NULL,
+        FOREIGN KEY (cache_file_id) REFERENCES video_files(id) ON DELETE SET NULL
       )
     `);
 
-    await db.execute('CREATE UNIQUE INDEX idx_cache_assets_hash ON cache_assets(content_hash)');
-    await db.execute('CREATE INDEX idx_cache_assets_phash ON cache_assets(perceptual_hash)');
-    await db.execute('CREATE INDEX idx_cache_assets_type ON cache_assets(source_type)');
-    await db.execute('CREATE INDEX idx_cache_assets_refs ON cache_assets(reference_count)');
+    await db.execute('CREATE INDEX idx_video_files_entity ON video_files(entity_type, entity_id)');
+    await db.execute('CREATE INDEX idx_video_files_type ON video_files(video_type)');
+    await db.execute('CREATE INDEX idx_video_files_location ON video_files(location)');
+    await db.execute('CREATE INDEX idx_video_files_hash ON video_files(file_hash)');
 
-    // Asset References (Track where assets are used)
+    console.log('✅ video_files table created');
+
+    // Image Files (posters, fanart, banners, logos, actor thumbs, etc.)
     await db.execute(`
-      CREATE TABLE asset_references (
+      CREATE TABLE image_files (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        cache_asset_id INTEGER NOT NULL,
-        entity_type TEXT NOT NULL CHECK(entity_type IN ('movie', 'series', 'season', 'episode', 'artist', 'album')),
+        entity_type TEXT NOT NULL CHECK(entity_type IN ('movie', 'episode', 'series', 'season', 'actor')),
         entity_id INTEGER NOT NULL,
-        asset_type TEXT NOT NULL CHECK(asset_type IN ('poster', 'fanart', 'banner', 'logo', 'clearart', 'thumb', 'discart')),
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (cache_asset_id) REFERENCES cache_assets(id) ON DELETE CASCADE,
-        UNIQUE(entity_type, entity_id, asset_type)
+        file_path TEXT NOT NULL,
+        file_name TEXT NOT NULL,
+        file_size INTEGER NOT NULL,
+        file_hash TEXT NOT NULL,
+        perceptual_hash TEXT,
+        location TEXT NOT NULL CHECK(location IN ('library', 'cache')),
+        image_type TEXT NOT NULL CHECK(image_type IN (
+          'poster', 'fanart', 'banner', 'clearlogo', 'clearart', 'discart',
+          'landscape', 'keyart', 'thumb', 'actor_thumb', 'unknown'
+        )),
+        width INTEGER NOT NULL,
+        height INTEGER NOT NULL,
+        format TEXT NOT NULL,
+        source_type TEXT CHECK(source_type IN ('provider', 'local', 'user')),
+        source_url TEXT,
+        provider_name TEXT,
+        classification_score INTEGER,
+        is_published BOOLEAN DEFAULT 0,
+        library_file_id INTEGER,
+        cache_file_id INTEGER,
+        reference_count INTEGER DEFAULT 0,
+        discovered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        last_accessed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (library_file_id) REFERENCES image_files(id) ON DELETE SET NULL,
+        FOREIGN KEY (cache_file_id) REFERENCES image_files(id) ON DELETE SET NULL
       )
     `);
 
-    await db.execute('CREATE INDEX idx_asset_refs_cache ON asset_references(cache_asset_id)');
-    await db.execute('CREATE INDEX idx_asset_refs_entity ON asset_references(entity_type, entity_id)');
+    await db.execute('CREATE INDEX idx_image_files_entity ON image_files(entity_type, entity_id)');
+    await db.execute('CREATE INDEX idx_image_files_type ON image_files(image_type)');
+    await db.execute('CREATE INDEX idx_image_files_location ON image_files(location)');
+    await db.execute('CREATE INDEX idx_image_files_hash ON image_files(file_hash)');
+    await db.execute('CREATE INDEX idx_image_files_published ON image_files(is_published)');
 
-    // Trailers
+    console.log('✅ image_files table created');
+
+    // Audio Files (theme songs)
     await db.execute(`
-      CREATE TABLE trailers (
+      CREATE TABLE audio_files (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        cache_asset_id INTEGER NOT NULL,
         entity_type TEXT NOT NULL CHECK(entity_type IN ('movie', 'series')),
         entity_id INTEGER NOT NULL,
-        title TEXT,
-        duration INTEGER,
-        quality TEXT,
-        locked BOOLEAN DEFAULT 0,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (cache_asset_id) REFERENCES cache_assets(id) ON DELETE CASCADE
+        file_path TEXT NOT NULL,
+        file_name TEXT NOT NULL,
+        file_size INTEGER NOT NULL,
+        file_hash TEXT,
+        location TEXT NOT NULL CHECK(location IN ('library', 'cache')),
+        audio_type TEXT NOT NULL CHECK(audio_type IN ('theme', 'unknown')),
+        codec TEXT,
+        duration_seconds INTEGER,
+        bitrate INTEGER,
+        source_type TEXT CHECK(source_type IN ('provider', 'local', 'user')),
+        source_url TEXT,
+        provider_name TEXT,
+        classification_score INTEGER,
+        library_file_id INTEGER,
+        cache_file_id INTEGER,
+        reference_count INTEGER DEFAULT 0,
+        discovered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (library_file_id) REFERENCES audio_files(id) ON DELETE SET NULL,
+        FOREIGN KEY (cache_file_id) REFERENCES audio_files(id) ON DELETE SET NULL
       )
     `);
 
-    await db.execute('CREATE INDEX idx_trailers_cache ON trailers(cache_asset_id)');
-    await db.execute('CREATE INDEX idx_trailers_entity ON trailers(entity_type, entity_id)');
+    await db.execute('CREATE INDEX idx_audio_files_entity ON audio_files(entity_type, entity_id)');
+    await db.execute('CREATE INDEX idx_audio_files_location ON audio_files(location)');
 
-    console.log('✅ Cache and asset tables created');
+    console.log('✅ audio_files table created');
+
+    // Text Files (NFO, subtitles)
+    await db.execute(`
+      CREATE TABLE text_files (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        entity_type TEXT NOT NULL CHECK(entity_type IN ('movie', 'episode')),
+        entity_id INTEGER NOT NULL,
+        file_path TEXT NOT NULL,
+        file_name TEXT NOT NULL,
+        file_size INTEGER NOT NULL,
+        file_hash TEXT,
+        location TEXT NOT NULL CHECK(location IN ('library', 'cache')),
+        text_type TEXT NOT NULL CHECK(text_type IN ('nfo', 'subtitle')),
+        subtitle_language TEXT,
+        subtitle_format TEXT,
+        nfo_is_valid BOOLEAN,
+        nfo_has_tmdb_id BOOLEAN,
+        nfo_needs_regen BOOLEAN DEFAULT 0,
+        source_type TEXT CHECK(source_type IN ('provider', 'local', 'user')),
+        source_url TEXT,
+        library_file_id INTEGER,
+        cache_file_id INTEGER,
+        reference_count INTEGER DEFAULT 0,
+        discovered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (library_file_id) REFERENCES text_files(id) ON DELETE SET NULL,
+        FOREIGN KEY (cache_file_id) REFERENCES text_files(id) ON DELETE SET NULL
+      )
+    `);
+
+    await db.execute('CREATE INDEX idx_text_files_entity ON text_files(entity_type, entity_id)');
+    await db.execute('CREATE INDEX idx_text_files_type ON text_files(text_type)');
+    await db.execute('CREATE INDEX idx_text_files_location ON text_files(location)');
+    await db.execute('CREATE INDEX idx_text_files_nfo_regen ON text_files(nfo_needs_regen)');
+
+    console.log('✅ text_files table created');
+
+    // Unknown Files (minimal tracking for deletion UI)
+    await db.execute(`
+      CREATE TABLE unknown_files (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        entity_type TEXT NOT NULL CHECK(entity_type IN ('movie', 'episode')),
+        entity_id INTEGER NOT NULL,
+        file_path TEXT NOT NULL UNIQUE,
+        file_name TEXT NOT NULL,
+        file_size INTEGER NOT NULL,
+        extension TEXT NOT NULL,
+        discovered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await db.execute('CREATE INDEX idx_unknown_files_entity ON unknown_files(entity_type, entity_id)');
+    await db.execute('CREATE INDEX idx_unknown_files_extension ON unknown_files(extension)');
+
+    console.log('✅ unknown_files table created');
+    console.log('✅ Unified file system tables created');
 
     // ============================================================
     // MOVIE TABLES
@@ -234,15 +366,15 @@ export class CleanSchemaMigration {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (library_id) REFERENCES libraries(id) ON DELETE CASCADE,
-        FOREIGN KEY (poster_id) REFERENCES cache_assets(id),
-        FOREIGN KEY (fanart_id) REFERENCES cache_assets(id),
-        FOREIGN KEY (logo_id) REFERENCES cache_assets(id),
-        FOREIGN KEY (clearart_id) REFERENCES cache_assets(id),
-        FOREIGN KEY (banner_id) REFERENCES cache_assets(id),
-        FOREIGN KEY (thumb_id) REFERENCES cache_assets(id),
-        FOREIGN KEY (discart_id) REFERENCES cache_assets(id),
-        FOREIGN KEY (keyart_id) REFERENCES cache_assets(id),
-        FOREIGN KEY (landscape_id) REFERENCES cache_assets(id)
+        FOREIGN KEY (poster_id) REFERENCES image_files(id),
+        FOREIGN KEY (fanart_id) REFERENCES image_files(id),
+        FOREIGN KEY (logo_id) REFERENCES image_files(id),
+        FOREIGN KEY (clearart_id) REFERENCES image_files(id),
+        FOREIGN KEY (banner_id) REFERENCES image_files(id),
+        FOREIGN KEY (thumb_id) REFERENCES image_files(id),
+        FOREIGN KEY (discart_id) REFERENCES image_files(id),
+        FOREIGN KEY (keyart_id) REFERENCES image_files(id),
+        FOREIGN KEY (landscape_id) REFERENCES image_files(id)
       )
     `);
 
@@ -264,8 +396,8 @@ export class CleanSchemaMigration {
         poster_id INTEGER,
         fanart_id INTEGER,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (poster_id) REFERENCES cache_assets(id),
-        FOREIGN KEY (fanart_id) REFERENCES cache_assets(id)
+        FOREIGN KEY (poster_id) REFERENCES image_files(id),
+        FOREIGN KEY (fanart_id) REFERENCES image_files(id)
       )
     `);
 
@@ -332,12 +464,12 @@ export class CleanSchemaMigration {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (library_id) REFERENCES libraries(id) ON DELETE CASCADE,
-        FOREIGN KEY (poster_id) REFERENCES cache_assets(id),
-        FOREIGN KEY (fanart_id) REFERENCES cache_assets(id),
-        FOREIGN KEY (banner_id) REFERENCES cache_assets(id),
-        FOREIGN KEY (logo_id) REFERENCES cache_assets(id),
-        FOREIGN KEY (clearart_id) REFERENCES cache_assets(id),
-        FOREIGN KEY (thumb_id) REFERENCES cache_assets(id)
+        FOREIGN KEY (poster_id) REFERENCES image_files(id),
+        FOREIGN KEY (fanart_id) REFERENCES image_files(id),
+        FOREIGN KEY (banner_id) REFERENCES image_files(id),
+        FOREIGN KEY (logo_id) REFERENCES image_files(id),
+        FOREIGN KEY (clearart_id) REFERENCES image_files(id),
+        FOREIGN KEY (thumb_id) REFERENCES image_files(id)
       )
     `);
 
@@ -368,10 +500,10 @@ export class CleanSchemaMigration {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (series_id) REFERENCES series(id) ON DELETE CASCADE,
-        FOREIGN KEY (poster_id) REFERENCES cache_assets(id),
-        FOREIGN KEY (fanart_id) REFERENCES cache_assets(id),
-        FOREIGN KEY (banner_id) REFERENCES cache_assets(id),
-        FOREIGN KEY (thumb_id) REFERENCES cache_assets(id),
+        FOREIGN KEY (poster_id) REFERENCES image_files(id),
+        FOREIGN KEY (fanart_id) REFERENCES image_files(id),
+        FOREIGN KEY (banner_id) REFERENCES image_files(id),
+        FOREIGN KEY (thumb_id) REFERENCES image_files(id),
         UNIQUE(series_id, season_number)
       )
     `);
@@ -409,7 +541,7 @@ export class CleanSchemaMigration {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (series_id) REFERENCES series(id) ON DELETE CASCADE,
         FOREIGN KEY (season_id) REFERENCES seasons(id) ON DELETE CASCADE,
-        FOREIGN KEY (thumb_id) REFERENCES cache_assets(id),
+        FOREIGN KEY (thumb_id) REFERENCES image_files(id),
         UNIQUE(season_id, episode_number)
       )
     `);
@@ -454,10 +586,10 @@ export class CleanSchemaMigration {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (library_id) REFERENCES libraries(id) ON DELETE CASCADE,
-        FOREIGN KEY (thumb_id) REFERENCES cache_assets(id),
-        FOREIGN KEY (fanart_id) REFERENCES cache_assets(id),
-        FOREIGN KEY (banner_id) REFERENCES cache_assets(id),
-        FOREIGN KEY (logo_id) REFERENCES cache_assets(id)
+        FOREIGN KEY (thumb_id) REFERENCES image_files(id),
+        FOREIGN KEY (fanart_id) REFERENCES image_files(id),
+        FOREIGN KEY (banner_id) REFERENCES image_files(id),
+        FOREIGN KEY (logo_id) REFERENCES image_files(id)
       )
     `);
 
@@ -490,7 +622,7 @@ export class CleanSchemaMigration {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (artist_id) REFERENCES artists(id) ON DELETE CASCADE,
-        FOREIGN KEY (thumb_id) REFERENCES cache_assets(id)
+        FOREIGN KEY (thumb_id) REFERENCES image_files(id)
       )
     `);
 
@@ -583,7 +715,7 @@ export class CleanSchemaMigration {
         forced BOOLEAN DEFAULT 0,
         default_stream BOOLEAN DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (cache_asset_id) REFERENCES cache_assets(id)
+        FOREIGN KEY (cache_asset_id) REFERENCES text_files(id)
       )
     `);
 
@@ -605,7 +737,7 @@ export class CleanSchemaMigration {
         imdb_id TEXT,
         thumb_id INTEGER,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (thumb_id) REFERENCES cache_assets(id),
+        FOREIGN KEY (thumb_id) REFERENCES image_files(id),
         UNIQUE(name)
       )
     `);
@@ -653,7 +785,7 @@ export class CleanSchemaMigration {
         imdb_id TEXT,
         thumb_id INTEGER,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (thumb_id) REFERENCES cache_assets(id),
+        FOREIGN KEY (thumb_id) REFERENCES image_files(id),
         UNIQUE(name)
       )
     `);
@@ -1016,24 +1148,8 @@ export class CleanSchemaMigration {
       );
     }
 
-    // Unknown Files (detected during scan)
-    await db.execute(`
-      CREATE TABLE unknown_files (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        entity_type TEXT NOT NULL CHECK(entity_type IN ('movie', 'episode')),
-        entity_id INTEGER NOT NULL,
-        file_path TEXT NOT NULL,
-        file_name TEXT NOT NULL,
-        file_size INTEGER NOT NULL,
-        file_hash TEXT,
-        extension TEXT NOT NULL,
-        category TEXT NOT NULL CHECK(category IN ('video', 'image', 'archive', 'text', 'other')),
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-
-    await db.execute('CREATE INDEX idx_unknown_files_entity ON unknown_files(entity_type, entity_id)');
-    await db.execute('CREATE INDEX idx_unknown_files_category ON unknown_files(category)');
+    // Unknown Files - Already created in Unified File System section above
+    // (No duplicate creation needed)
 
     console.log('✅ Configuration tables created');
 

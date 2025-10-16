@@ -334,24 +334,58 @@ export class MovieService {
     return this.db.query<any>(query, [movieId]);
   }
 
-  async getImages(_movieId: number): Promise<any[]> {
-    // TODO: Query cache_assets via movies FK columns for clean schema
-    // Clean schema: movies.poster_id, movies.fanart_id, etc. → cache_assets
-    return [];
+  async getImages(movieId: number): Promise<any[]> {
+    const conn = this.db.getConnection();
+
+    // Query image_files for cache images
+    const images = await conn.query(
+      `SELECT
+        id, entity_type, entity_id, file_path, file_name, file_size,
+        image_type, width, height, format, source_type, source_url, provider_name,
+        classification_score, reference_count, discovered_at
+      FROM image_files
+      WHERE entity_type = 'movie' AND entity_id = ? AND location = 'cache'
+      ORDER BY image_type, classification_score DESC`,
+      [movieId]
+    );
+
+    return images;
   }
 
-  async getExtras(_movieId: number): Promise<{
+  async getExtras(movieId: number): Promise<{
     trailer: any | null;
     subtitles: any[];
     themeSong: any | null;
   }> {
-    // TODO: Query trailers and subtitles for clean schema
-    // Clean schema: trailers.cache_asset_id → cache_assets
-    // Clean schema: subtitle_streams.cache_asset_id → cache_assets (where stream_index IS NULL)
+    const conn = this.db.getConnection();
+
+    // Get trailer (video_file with video_type='trailer')
+    const trailers = await conn.query(
+      `SELECT * FROM video_files
+       WHERE entity_type = 'movie' AND entity_id = ? AND video_type = 'trailer'
+       LIMIT 1`,
+      [movieId]
+    );
+
+    // Get subtitles (text_files with text_type='subtitle')
+    const subtitles = await conn.query(
+      `SELECT * FROM text_files
+       WHERE entity_type = 'movie' AND entity_id = ? AND text_type = 'subtitle'`,
+      [movieId]
+    );
+
+    // Get theme song (audio_file with audio_type='theme')
+    const themes = await conn.query(
+      `SELECT * FROM audio_files
+       WHERE entity_type = 'movie' AND entity_id = ? AND audio_type = 'theme'
+       LIMIT 1`,
+      [movieId]
+    );
+
     return {
-      trailer: null,
-      subtitles: [],
-      themeSong: null
+      trailer: trailers.length > 0 ? trailers[0] : null,
+      subtitles: subtitles,
+      themeSong: themes.length > 0 ? themes[0] : null
     };
   }
 
@@ -1534,6 +1568,105 @@ export class MovieService {
       };
     } catch (error: any) {
       logger.error('Failed to reset metadata', {
+        movieId,
+        error: error.message
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Get all files for a movie from unified file system
+   * Returns aggregated view of all file types (video, image, audio, text, unknown)
+   */
+  async getAllFiles(movieId: number): Promise<any> {
+    try {
+      const conn = this.db.getConnection();
+
+      // Get video files
+      const videoFiles = await conn.query(
+        `SELECT
+          id, file_path, file_name, file_size, location, video_type,
+          codec, width, height, duration_seconds, bitrate, framerate, hdr_type,
+          audio_codec, audio_channels, audio_language,
+          source_type, source_url, provider_name, classification_score,
+          is_published, library_file_id, cache_file_id, discovered_at
+        FROM video_files
+        WHERE entity_type = 'movie' AND entity_id = ?
+        ORDER BY video_type, discovered_at DESC`,
+        [movieId]
+      );
+
+      // Get image files
+      const imageFiles = await conn.query(
+        `SELECT
+          id, file_path, file_name, file_size, location, image_type,
+          width, height, format, perceptual_hash,
+          source_type, source_url, provider_name, classification_score,
+          is_published, library_file_id, cache_file_id, reference_count, discovered_at
+        FROM image_files
+        WHERE entity_type = 'movie' AND entity_id = ?
+        ORDER BY image_type, classification_score DESC, discovered_at DESC`,
+        [movieId]
+      );
+
+      // Get audio files
+      const audioFiles = await conn.query(
+        `SELECT
+          id, file_path, file_name, file_size, location, audio_type,
+          codec, duration_seconds, bitrate, sample_rate, channels, language,
+          source_type, source_url, provider_name, classification_score,
+          is_published, library_file_id, cache_file_id, discovered_at
+        FROM audio_files
+        WHERE entity_type = 'movie' AND entity_id = ?
+        ORDER BY audio_type, discovered_at DESC`,
+        [movieId]
+      );
+
+      // Get text files (NFO, subtitles, etc.)
+      const textFiles = await conn.query(
+        `SELECT
+          id, file_path, file_name, file_size, location, text_type,
+          encoding, language, nfo_is_valid, nfo_has_tmdb_id, nfo_needs_regen,
+          source_type, source_url, provider_name, classification_score,
+          is_published, library_file_id, cache_file_id, discovered_at
+        FROM text_files
+        WHERE entity_type = 'movie' AND entity_id = ?
+        ORDER BY text_type, discovered_at DESC`,
+        [movieId]
+      );
+
+      // Get unknown files
+      const unknownFiles = await conn.query(
+        `SELECT
+          id, file_path, file_name, file_size, extension,
+          user_ignored, discovered_at
+        FROM unknown_files
+        WHERE entity_type = 'movie' AND entity_id = ?
+        ORDER BY discovered_at DESC`,
+        [movieId]
+      );
+
+      logger.debug('Retrieved all files for movie', {
+        movieId,
+        counts: {
+          video: videoFiles.length,
+          image: imageFiles.length,
+          audio: audioFiles.length,
+          text: textFiles.length,
+          unknown: unknownFiles.length
+        }
+      });
+
+      return {
+        video: videoFiles,
+        images: imageFiles,
+        audio: audioFiles,
+        text: textFiles,
+        unknown: unknownFiles
+      };
+    } catch (error: any) {
+      logger.error('Failed to get all files for movie', {
         movieId,
         error: error.message
       });

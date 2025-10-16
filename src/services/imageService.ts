@@ -2,10 +2,13 @@ import { DatabaseManager } from '../database/DatabaseManager.js';
 import * as fs from 'fs-extra';
 import * as fsSync from 'fs'; // For createReadStream
 import * as path from 'path';
-import * as crypto from 'crypto';
 import axios from 'axios';
 import sharp from 'sharp';
 import { logger } from '../middleware/logging.js';
+import {
+  cacheImageFile,
+} from './files/unifiedFileService.js';
+import { DatabaseConnection } from '../types/database.js';
 
 export interface Image {
   id: number;
@@ -31,6 +34,7 @@ export interface ProviderImage {
   height: number;
   vote_average: number;
   file_path: string;
+  providerName?: string;
 }
 
 export class ImageService {
@@ -48,12 +52,25 @@ export class ImageService {
   }
 
   /**
-   * Get all images for an entity
+   * Get all images for an entity (unified file system)
+   * Returns cache files (location='cache') for the entity
    */
-  async getImages(entityType: string, entityId: number, imageType?: string): Promise<Image[]> {
+  async getImages(entityType: string, entityId: number, imageType?: string): Promise<any[]> {
     let query = `
-      SELECT * FROM images
-      WHERE entity_type = ? AND entity_id = ? AND deleted_on IS NULL
+      SELECT
+        id, entity_type, entity_id, file_path, file_name, file_size, file_hash,
+        perceptual_hash, location, image_type, width, height, format,
+        source_type, source_url, provider_name, classification_score,
+        is_published, library_file_id, cache_file_id, reference_count,
+        discovered_at, last_accessed_at,
+        0 as locked,
+        NULL as vote_average,
+        NULL as url,
+        NULL as deleted_on,
+        discovered_at as created_at,
+        last_accessed_at as updated_at
+      FROM image_files
+      WHERE entity_type = ? AND entity_id = ? AND location = 'cache'
     `;
     const params: any[] = [entityType, entityId];
 
@@ -62,27 +79,51 @@ export class ImageService {
       params.push(imageType);
     }
 
-    query += ' ORDER BY locked DESC, vote_average DESC, width * height DESC';
+    query += ' ORDER BY classification_score DESC, width * height DESC, discovered_at DESC';
 
-    const rows = await this.dbManager.query<Image>(query, params);
+    const rows = await this.dbManager.query<any>(query, params);
     return rows;
   }
 
   /**
-   * Get single image by ID
+   * Get single image by ID (unified file system)
    */
-  async getImageById(imageId: number): Promise<Image | null> {
-    const rows = await this.dbManager.query<Image>(
-      'SELECT * FROM images WHERE id = ? AND deleted_on IS NULL',
+  async getImageById(imageId: number): Promise<any | null> {
+    const rows = await this.dbManager.query<any>(
+      `SELECT
+        id, entity_type, entity_id, file_path, file_name, file_size, file_hash,
+        perceptual_hash, location, image_type, width, height, format,
+        source_type, source_url, provider_name, classification_score,
+        is_published, library_file_id, cache_file_id, reference_count,
+        discovered_at, last_accessed_at,
+        file_path as cache_path,
+        NULL as url,
+        NULL as deleted_on,
+        0 as locked,
+        NULL as vote_average,
+        discovered_at as created_at,
+        last_accessed_at as updated_at
+      FROM image_files
+      WHERE id = ?`,
       [imageId]
     );
     return rows[0] || null;
   }
 
   /**
-   * Download image from URL to cache directory
+   * Download image from provider URL and store in unified file system
+   * Returns the cache file ID
    */
-  async downloadImageToCache(url: string, entityId: number, imageType: string): Promise<string> {
+  async downloadImageToCache(
+    url: string,
+    entityId: number,
+    entityType: 'movie' | 'episode' | 'series' | 'season' | 'actor',
+    imageType: string,
+    providerName: string
+  ): Promise<number> {
+    const db = this.dbManager.getConnection() as DatabaseConnection;
+
+    // Download to temp location
     const response = await axios.get(url, { responseType: 'arraybuffer' });
     const buffer = Buffer.from(response.data);
 
@@ -94,16 +135,42 @@ export class ImageService {
       ext = url.match(/\.(png|jpg|jpeg)$/i)![0];
     }
 
-    // Generate unique filename using hash
-    const hash = crypto.randomBytes(8).toString('hex');
-    const filename = `${imageType}_${hash}${ext}`;
-    const entityDir = path.join(this.cacheDir, entityId.toString());
-    await fs.ensureDir(entityDir);
+    // Save to temp file
+    const tempPath = path.join(
+      this.tempDir,
+      `provider_${Date.now()}_${Math.random().toString(36).substr(2, 9)}${ext}`
+    );
+    await fs.writeFile(tempPath, buffer);
 
-    const cachePath = path.join(entityDir, filename);
-    await fs.writeFile(cachePath, buffer);
+    try {
+      // Cache using unified file service (handles deduplication)
+      const cacheFileId = await cacheImageFile(
+        db,
+        null, // No library file ID (this is from provider)
+        tempPath,
+        entityType,
+        entityId,
+        imageType,
+        'provider',
+        url,
+        providerName
+      );
 
-    return cachePath;
+      logger.info('Downloaded and cached provider image', {
+        cacheFileId,
+        providerName,
+        imageType,
+        entityId,
+        url
+      });
+
+      return cacheFileId;
+    } finally {
+      // Cleanup temp file
+      if (await fs.pathExists(tempPath)) {
+        await fs.remove(tempPath);
+      }
+    }
   }
 
   /**
@@ -166,28 +233,18 @@ export class ImageService {
   }
 
   /**
-   * Select best N images from provider candidates
+   * Select best N images from provider candidates using unified file system
+   * Downloads images, stores in cache, and updates movie FK columns
    */
   async selectImages(
     entityId: number,
-    entityType: string,
+    entityType: 'movie' | 'episode' | 'series' | 'season' | 'actor',
     imageType: string,
     candidates: ProviderImage[],
-    requiredCount: number
-  ): Promise<Image[]> {
-    // Get already-locked images
-    const lockedImages = await this.dbManager.query<Image>(
-      `SELECT * FROM images
-       WHERE entity_type = ? AND entity_id = ? AND image_type = ? AND locked = 1 AND deleted_on IS NULL`,
-      [entityType, entityId, imageType]
-    );
-
-    const lockedCount = lockedImages.length;
-    const neededCount = requiredCount - lockedCount;
-
-    if (neededCount <= 0) {
-      return lockedImages;
-    }
+    requiredCount: number,
+    providerName: string = 'unknown'
+  ): Promise<number[]> {
+    const db = this.dbManager.getConnection() as DatabaseConnection;
 
     // Sort candidates by vote_average and resolution
     const sorted = candidates.sort((a, b) => {
@@ -199,7 +256,7 @@ export class ImageService {
 
     // Download top candidates to temp directory
     const tempDownloads = [];
-    for (const candidate of sorted.slice(0, Math.min(sorted.length, neededCount * 3))) {
+    for (const candidate of sorted.slice(0, Math.min(sorted.length, requiredCount * 3))) {
       const tempPath = path.join(
         this.tempDir,
         `${entityId}_${imageType}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}${path.extname(candidate.file_path)}`
@@ -223,12 +280,12 @@ export class ImageService {
       }
     }
 
-    // Select top N, filtering duplicates
+    // Select top N, filtering duplicates by perceptual hash
     const selected = [];
     const selectedHashes: string[] = [];
 
     for (const candidate of tempDownloads) {
-      if (selected.length >= neededCount) break;
+      if (selected.length >= requiredCount) break;
 
       // Check similarity against already-selected images
       let isSimilar = false;
@@ -246,38 +303,40 @@ export class ImageService {
       }
     }
 
-    // Move selected to cache and insert into database
-    const images: Image[] = [];
+    // Cache selected images using unified file service
+    const cacheFileIds: number[] = [];
     for (const candidate of selected) {
-      const hash = crypto.randomBytes(8).toString('hex');
-      const ext = path.extname(candidate.file_path);
-      const filename = `${imageType}_${hash}${ext}`;
-      const entityDir = path.join(this.cacheDir, entityId.toString());
-      await fs.ensureDir(entityDir);
-
-      const cachePath = path.join(entityDir, filename);
-      await fs.move(candidate.tempPath, cachePath);
-
-      const result = await this.dbManager.execute(
-        `INSERT INTO images (
-          entity_type, entity_id, image_type, url, cache_path,
-          width, height, vote_average, perceptual_hash, locked
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-        [
+      try {
+        const cacheFileId = await cacheImageFile(
+          db,
+          null, // No library file ID (from provider)
+          candidate.tempPath,
           entityType,
           entityId,
           imageType,
+          'provider',
           candidate.url,
-          cachePath,
-          candidate.width,
-          candidate.height,
-          candidate.vote_average,
-          candidate.pHash,
-        ]
-      );
+          candidate.providerName || providerName
+        );
 
-      const image = await this.getImageById(result.insertId!);
-      if (image) images.push(image);
+        cacheFileIds.push(cacheFileId);
+
+        logger.info('Selected and cached provider image', {
+          cacheFileId,
+          providerName: candidate.providerName || providerName,
+          imageType,
+          entityId,
+          voteAverage: candidate.vote_average,
+          dimensions: `${candidate.width}x${candidate.height}`
+        });
+      } catch (error: any) {
+        logger.error('Failed to cache selected image', {
+          imageType,
+          entityId,
+          url: candidate.url,
+          error: error.message
+        });
+      }
     }
 
     // Cleanup temp files
@@ -287,20 +346,53 @@ export class ImageService {
       }
     }
 
-    return [...lockedImages, ...images];
+    // Update movie FK column if this is a primary image type
+    if (cacheFileIds.length > 0 && (entityType === 'movie' || entityType === 'series')) {
+      const primaryImageTypes = ['poster', 'fanart', 'banner', 'clearlogo', 'clearart', 'landscape'];
+      if (primaryImageTypes.includes(imageType)) {
+        const columnName = `${imageType}_id`;
+        const tableName = entityType === 'movie' ? 'movies' : 'series';
+
+        try {
+          await db.execute(
+            `UPDATE ${tableName} SET ${columnName} = ? WHERE id = ?`,
+            [cacheFileIds[0], entityId] // Use first (best) image
+          );
+
+          logger.debug('Updated entity FK column', {
+            tableName,
+            columnName,
+            entityId,
+            cacheFileId: cacheFileIds[0]
+          });
+        } catch (error: any) {
+          // Column may not exist for this entity type, that's OK
+          logger.debug('Failed to update entity FK column (may not exist)', {
+            tableName,
+            columnName,
+            error: error.message
+          });
+        }
+      }
+    }
+
+    return cacheFileIds;
   }
 
   /**
-   * Upload custom user image
+   * Upload custom user image using unified file system
+   * Returns cache file ID
    */
   async uploadCustomImage(
-    entityType: string,
+    entityType: 'movie' | 'episode' | 'series' | 'season' | 'actor',
     entityId: number,
     imageType: string,
     buffer: Buffer,
     filename: string
-  ): Promise<Image> {
-    // Save to temp first to calculate hash
+  ): Promise<number> {
+    const db = this.dbManager.getConnection() as DatabaseConnection;
+
+    // Save to temp first
     const ext = path.extname(filename);
     const tempPath = path.join(
       this.tempDir,
@@ -308,96 +400,252 @@ export class ImageService {
     );
     await fs.writeFile(tempPath, buffer);
 
-    // Calculate perceptual hash
-    const pHash = await this.calculatePerceptualHash(tempPath);
-    const dimensions = await this.getImageDimensions(tempPath);
+    try {
+      // Cache using unified file service
+      const cacheFileId = await cacheImageFile(
+        db,
+        null, // No library file ID (user upload)
+        tempPath,
+        entityType,
+        entityId,
+        imageType,
+        'user'
+      );
 
-    // Move to cache
-    const hash = crypto.randomBytes(8).toString('hex');
-    const cacheFilename = `${imageType}_custom_${hash}${ext}`;
-    const entityDir = path.join(this.cacheDir, entityId.toString());
-    await fs.ensureDir(entityDir);
+      logger.info('Uploaded and cached user image', {
+        cacheFileId,
+        imageType,
+        entityId,
+        filename
+      });
 
-    const cachePath = path.join(entityDir, cacheFilename);
-    await fs.move(tempPath, cachePath);
+      // Update movie FK column if applicable
+      const primaryImageTypes = ['poster', 'fanart', 'banner', 'clearlogo', 'clearart', 'landscape'];
+      if (primaryImageTypes.includes(imageType) && (entityType === 'movie' || entityType === 'series')) {
+        const columnName = `${imageType}_id`;
+        const tableName = entityType === 'movie' ? 'movies' : 'series';
 
-    // Insert into database with locked=1
-    const result = await this.dbManager.execute(
-      `INSERT INTO images (
-        entity_type, entity_id, image_type, cache_path,
-        width, height, perceptual_hash, locked
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
-      [entityType, entityId, imageType, cachePath, dimensions.width, dimensions.height, pHash]
-    );
+        try {
+          await db.execute(
+            `UPDATE ${tableName} SET ${columnName} = ? WHERE id = ?`,
+            [cacheFileId, entityId]
+          );
+        } catch (error: any) {
+          logger.debug('Failed to update entity FK column (may not exist)', {
+            tableName,
+            columnName,
+            error: error.message
+          });
+        }
+      }
 
-    const image = await this.getImageById(result.insertId!);
-    if (!image) throw new Error('Failed to retrieve uploaded image');
-
-    return image;
+      return cacheFileId;
+    } finally {
+      // Cleanup temp file
+      if (await fs.pathExists(tempPath)) {
+        await fs.remove(tempPath);
+      }
+    }
   }
 
   /**
-   * Lock/unlock an image
+   * Lock/unlock an image (unified file system)
+   * Note: In unified file system, locking is not per-image but per-field at entity level
+   * This method is deprecated but kept for backward compatibility
    */
   async setImageLock(imageId: number, locked: boolean): Promise<void> {
-    await this.dbManager.execute('UPDATE images SET locked = ? WHERE id = ?', [
-      locked ? 1 : 0,
+    logger.warn('setImageLock is deprecated - locking should be done at entity field level', {
       imageId,
-    ]);
+      locked
+    });
+    // No-op in unified file system
+    // Field locks are managed at movies.poster_locked, movies.fanart_locked, etc.
   }
 
   /**
-   * Delete an image
+   * Delete an image (unified file system)
    */
   async deleteImage(imageId: number): Promise<void> {
     const image = await this.getImageById(imageId);
     if (!image) throw new Error('Image not found');
 
-    // Delete cache file if exists
-    if (image.cache_path && (await fs.pathExists(image.cache_path))) {
-      await fs.remove(image.cache_path);
-    }
-
-    // Delete library file if exists
+    // Delete file from disk
     if (image.file_path && (await fs.pathExists(image.file_path))) {
       await fs.remove(image.file_path);
     }
 
-    // Delete from database
-    await this.dbManager.execute('DELETE FROM images WHERE id = ?', [imageId]);
+    // If this is a cache file with references, decrement reference count
+    if (image.location === 'cache' && image.reference_count > 0) {
+      await this.dbManager.execute(
+        'UPDATE image_files SET reference_count = reference_count - 1 WHERE id = ?',
+        [imageId]
+      );
+
+      logger.info('Decremented image reference count', {
+        imageId,
+        newRefCount: image.reference_count - 1
+      });
+
+      // Only delete from database if no more references
+      if (image.reference_count - 1 <= 0) {
+        await this.dbManager.execute('DELETE FROM image_files WHERE id = ?', [imageId]);
+        logger.info('Deleted image file record (no references)', { imageId });
+      }
+    } else {
+      // Delete from database immediately if not a referenced cache file
+      await this.dbManager.execute('DELETE FROM image_files WHERE id = ?', [imageId]);
+      logger.info('Deleted image file record', { imageId });
+    }
   }
 
   /**
-   * Copy image from cache to library directory
+   * Copy image from cache to library directory (unified file system)
    */
   async copyToLibrary(imageId: number, libraryPath: string): Promise<void> {
     const image = await this.getImageById(imageId);
     if (!image) throw new Error('Image not found');
-    if (!image.cache_path) throw new Error('Image has no cache path');
+    if (!image.file_path) throw new Error('Image has no file path');
 
     await fs.ensureDir(path.dirname(libraryPath));
-    await fs.copy(image.cache_path, libraryPath);
+    await fs.copy(image.file_path, libraryPath);
 
-    await this.dbManager.execute('UPDATE images SET file_path = ? WHERE id = ?', [
-      libraryPath,
+    logger.info('Copied image to library', {
       imageId,
-    ]);
+      fromPath: image.file_path,
+      toPath: libraryPath
+    });
+
+    // If this was a cache-only file, create a library entry
+    if (image.location === 'cache') {
+      // Create library file entry linked to cache
+      const db = this.dbManager.getConnection();
+      await db.execute(
+        `INSERT INTO image_files (
+          entity_type, entity_id, file_path, file_name, file_size, file_hash,
+          location, image_type, width, height, format, source_type,
+          is_published, cache_file_id
+        ) VALUES (?, ?, ?, ?, ?, ?, 'library', ?, ?, ?, ?, ?, 1, ?)`,
+        [
+          image.entity_type,
+          image.entity_id,
+          libraryPath,
+          path.basename(libraryPath),
+          image.file_size,
+          image.file_hash,
+          image.image_type,
+          image.width,
+          image.height,
+          image.format,
+          image.source_type,
+          imageId
+        ]
+      );
+
+      logger.info('Created library file entry linked to cache', {
+        cacheFileId: imageId,
+        libraryPath
+      });
+    }
   }
 
   /**
-   * Recover missing library images from cache
+   * Recover missing library images from cache (unified file system)
+   * Finds cache files and creates corresponding library files
    */
   async recoverMissingImages(entityType: string, entityId: number): Promise<number> {
-    const images = await this.getImages(entityType, entityId);
+    const db = this.dbManager.getConnection();
     let recoveredCount = 0;
 
-    for (const image of images) {
-      if (image.file_path && !(await fs.pathExists(image.file_path))) {
-        if (image.cache_path && (await fs.pathExists(image.cache_path))) {
-          await fs.ensureDir(path.dirname(image.file_path));
-          await fs.copy(image.cache_path, image.file_path);
-          recoveredCount++;
-        }
+    // Get all cache images for this entity
+    const cacheImages = await db.query(
+      `SELECT * FROM image_files WHERE entity_type = ? AND entity_id = ? AND location = 'cache'`,
+      [entityType, entityId]
+    );
+
+    // Get movie/entity details for library path construction
+    const entity = await db.query(
+      `SELECT file_path FROM movies WHERE id = ?`,
+      [entityId]
+    );
+
+    if (!entity || entity.length === 0) {
+      logger.warn('Entity not found for image recovery', { entityType, entityId });
+      return 0;
+    }
+
+    const entityFilePath = entity[0].file_path;
+    const libraryDir = path.dirname(entityFilePath);
+    const baseFilename = path.basename(entityFilePath, path.extname(entityFilePath));
+
+    for (const cacheImage of cacheImages) {
+      // Check if cache file exists
+      if (!(await fs.pathExists(cacheImage.file_path))) {
+        continue;
+      }
+
+      // Construct library path using Kodi naming
+      const ext = path.extname(cacheImage.file_path);
+      let libraryPath = '';
+
+      switch (cacheImage.image_type) {
+        case 'poster':
+          libraryPath = path.join(libraryDir, `${baseFilename}-poster${ext}`);
+          break;
+        case 'fanart':
+          libraryPath = path.join(libraryDir, `${baseFilename}-fanart${ext}`);
+          break;
+        case 'banner':
+          libraryPath = path.join(libraryDir, `${baseFilename}-banner${ext}`);
+          break;
+        case 'clearlogo':
+          libraryPath = path.join(libraryDir, `${baseFilename}-clearlogo${ext}`);
+          break;
+        case 'clearart':
+          libraryPath = path.join(libraryDir, `${baseFilename}-clearart${ext}`);
+          break;
+        default:
+          libraryPath = path.join(libraryDir, `${baseFilename}-${cacheImage.image_type}${ext}`);
+      }
+
+      // Copy from cache to library
+      try {
+        await fs.ensureDir(path.dirname(libraryPath));
+        await fs.copy(cacheImage.file_path, libraryPath);
+
+        // Create library file entry
+        await db.execute(
+          `INSERT INTO image_files (
+            entity_type, entity_id, file_path, file_name, file_size, file_hash,
+            location, image_type, width, height, format, source_type,
+            is_published, cache_file_id
+          ) VALUES (?, ?, ?, ?, ?, ?, 'library', ?, ?, ?, ?, ?, 1, ?)`,
+          [
+            cacheImage.entity_type,
+            cacheImage.entity_id,
+            libraryPath,
+            path.basename(libraryPath),
+            cacheImage.file_size,
+            cacheImage.file_hash,
+            cacheImage.image_type,
+            cacheImage.width,
+            cacheImage.height,
+            cacheImage.format,
+            cacheImage.source_type,
+            cacheImage.id
+          ]
+        );
+
+        recoveredCount++;
+        logger.info('Recovered image from cache', {
+          cacheFileId: cacheImage.id,
+          libraryPath,
+          imageType: cacheImage.image_type
+        });
+      } catch (error: any) {
+        logger.error('Failed to recover image from cache', {
+          cacheFileId: cacheImage.id,
+          error: error.message
+        });
       }
     }
 
@@ -405,8 +653,7 @@ export class ImageService {
   }
 
   /**
-   * Serve image from cache or library path
-   * Priority: cache_path -> library_path -> file_path
+   * Serve image from file_path (unified file system)
    */
   async getImageStream(
     imageId: number
@@ -414,28 +661,7 @@ export class ImageService {
     const image = await this.getImageById(imageId);
     if (!image) return null;
 
-    // Try to serve from cache_path first
-    if (image.cache_path && (await fs.pathExists(image.cache_path))) {
-      const ext = path.extname(image.cache_path).toLowerCase();
-      const contentType = ext === '.png' ? 'image/png' : 'image/jpeg';
-      return {
-        stream: fsSync.createReadStream(image.cache_path),
-        contentType,
-      };
-    }
-
-    // Fall back to library_path (for images discovered in library)
-    const libraryPath = (image as any).library_path;
-    if (libraryPath && (await fs.pathExists(libraryPath))) {
-      const ext = path.extname(libraryPath).toLowerCase();
-      const contentType = ext === '.png' ? 'image/png' : 'image/jpeg';
-      return {
-        stream: fsSync.createReadStream(libraryPath),
-        contentType,
-      };
-    }
-
-    // Fall back to file_path (legacy)
+    // In unified file system, file_path is the definitive location
     if (image.file_path && (await fs.pathExists(image.file_path))) {
       const ext = path.extname(image.file_path).toLowerCase();
       const contentType = ext === '.png' ? 'image/png' : 'image/jpeg';
@@ -444,6 +670,12 @@ export class ImageService {
         contentType,
       };
     }
+
+    logger.warn('Image file not found on disk', {
+      imageId,
+      file_path: image.file_path,
+      location: image.location
+    });
 
     return null;
   }
