@@ -3,6 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import { formatDistance } from 'date-fns';
 import { Button } from '../ui/button';
 import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '../ui/table';
+import {
   Webhook,
   FolderSearch,
   Download,
@@ -12,6 +20,8 @@ import {
   Calendar,
   Search,
   LucideIcon,
+  CheckCircle2,
+  XCircle,
 } from 'lucide-react';
 
 interface JobHistoryRecord {
@@ -87,37 +97,53 @@ export const RecentActivityList: React.FC<RecentActivityListProps> = ({ jobs }) 
   }
 
   return (
-    <div className="space-y-2">
-      {jobs.map((job) => {
-        const Icon = jobTypeIcons[job.type] || FolderSearch;
+    <div className="space-y-3">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead className="w-[80px]">Result</TableHead>
+            <TableHead className="w-[140px]">When</TableHead>
+            <TableHead>Action</TableHead>
+            <TableHead className="w-[100px] text-right">Duration</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {jobs.map((job) => {
+            const Icon = jobTypeIcons[job.type] || FolderSearch;
 
-        return (
-          <div key={job.id} className="flex items-start gap-3 text-sm py-2">
-            <div className="text-muted-foreground whitespace-nowrap text-xs mt-0.5">
-              {formatDistance(new Date(job.completed_at), new Date(), {
-                addSuffix: true,
-              })}
-            </div>
-            <div className="flex items-center gap-2 flex-1 min-w-0">
-              <Icon className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
-              <span className="truncate">{formatJobDescription(job)}</span>
-              {job.status === 'completed' && (
-                <span className="text-green-600 flex-shrink-0">✓</span>
-              )}
-              {job.status === 'failed' && (
-                <span className="text-red-600 flex-shrink-0" title={job.error || 'Failed'}>
-                  ✗
-                </span>
-              )}
-              <span className="text-xs text-muted-foreground flex-shrink-0">
-                {Math.abs(job.duration_ms / 1000).toFixed(1)}s
-              </span>
-            </div>
-          </div>
-        );
-      })}
+            return (
+              <TableRow key={job.id}>
+                <TableCell>
+                  {job.status === 'completed' ? (
+                    <CheckCircle2 className="h-4 w-4 text-green-600" />
+                  ) : (
+                    <XCircle
+                      className="h-4 w-4 text-red-600"
+                      title={job.error || 'Failed'}
+                    />
+                  )}
+                </TableCell>
+                <TableCell className="text-muted-foreground text-xs">
+                  {formatDistance(new Date(job.completed_at), new Date(), {
+                    addSuffix: true,
+                  })}
+                </TableCell>
+                <TableCell>
+                  <div className="flex items-center gap-2">
+                    <Icon className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                    <span className="truncate">{formatJobDescription(job)}</span>
+                  </div>
+                </TableCell>
+                <TableCell className="text-right text-xs text-muted-foreground">
+                  {Math.abs(job.duration_ms / 1000).toFixed(1)}s
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
 
-      <div className="pt-2">
+      <div className="pt-1">
         <Button variant="link" className="h-auto p-0" onClick={() => navigate('/activity/history')}>
           View All History →
         </Button>
