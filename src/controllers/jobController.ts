@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { JobQueueService } from '../services/jobQueueService.js';
+import { JobQueueService } from '../services/jobQueue/JobQueueService.js';
 import { logger } from '../middleware/logging.js';
 
 /**
@@ -55,22 +55,45 @@ export class JobController {
   };
 
   /**
-   * GET /api/jobs/history
-   * Get job history (completed/failed jobs)
+   * GET /api/jobs
+   * Get active jobs (pending or processing)
    */
-  getHistory = async (req: Request, res: Response): Promise<void> => {
+  getActive = async (req: Request, res: Response): Promise<void> => {
     try {
-      const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 100;
       const type = req.query.type as string | undefined;
-      const status = req.query.status as 'completed' | 'failed' | undefined;
+      const status = req.query.status as 'pending' | 'processing' | undefined;
 
-      const jobs = await this.jobQueue.getJobHistory({
+      const jobs = await this.jobQueue.getActiveJobs({
         ...(type && { type: type as any }),
         ...(status && { status }),
         limit,
       });
 
       res.json({ jobs });
+    } catch (error: any) {
+      logger.error('Error getting active jobs:', error);
+      res.status(500).json({ error: error.message });
+    }
+  };
+
+  /**
+   * GET /api/jobs/history
+   * Get job history (completed/failed jobs)
+   */
+  getHistory = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 100;
+      const type = req.query.type as string | undefined;
+      const status = req.query.status as 'completed' | 'failed' | undefined;
+
+      const history = await this.jobQueue.getJobHistory({
+        ...(type && { type: type as any }),
+        ...(status && { status }),
+        limit,
+      });
+
+      res.json({ history });
     } catch (error: any) {
       logger.error('Error getting job history:', error);
       res.status(500).json({ error: error.message });
