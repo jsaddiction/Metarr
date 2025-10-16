@@ -2,8 +2,10 @@ import React from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
+import { Toaster } from 'sonner';
 import { WebSocketProvider } from './contexts/WebSocketContext';
 import { Layout } from './components/layout/Layout';
+import { Dashboard } from './pages/Dashboard';
 import { Movies } from './pages/metadata/Movies';
 import { MovieEdit } from './pages/metadata/MovieEdit';
 import { Series } from './pages/Series';
@@ -48,6 +50,7 @@ function usePageTitle() {
   }
 
   const pathMap: Record<string, string> = {
+    '/': 'Dashboard',
     '/metadata/movies': 'Movies',
     '/metadata/series': 'Series',
     '/metadata/music': 'Music',
@@ -79,8 +82,8 @@ function AppRoutes() {
   return (
     <Layout title={title}>
       <Routes>
-        {/* Redirect root to movies metadata */}
-        <Route path="/" element={<Navigate to="/metadata/movies" replace />} />
+        {/* Dashboard */}
+        <Route path="/" element={<Dashboard />} />
 
         {/* Metadata routes */}
         <Route path="/metadata/movies" element={<Movies />} />
@@ -117,7 +120,7 @@ function AppRoutes() {
         <Route path="/settings/notifications" element={<Notifications />} />
 
         {/* Fallback for unknown routes */}
-        <Route path="*" element={<Navigate to="/metadata/movies" replace />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Layout>
   );
@@ -128,6 +131,7 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <WebSocketProvider>
         <AppRoutes />
+        <Toaster position="bottom-right" />
         {import.meta.env.DEV && <ReactQueryDevtools initialIsOpen={false} />}
       </WebSocketProvider>
     </QueryClientProvider>
