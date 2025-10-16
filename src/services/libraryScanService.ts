@@ -3,14 +3,16 @@ import { DatabaseManager } from '../database/DatabaseManager.js';
 import { Library, ScanJob } from '../types/models.js';
 import { logger } from '../middleware/logging.js';
 import { getSubdirectories } from './nfo/nfoDiscovery.js';
-import { scanMovieDirectory } from './scan/unifiedScanService.js';
 import { websocketBroadcaster } from './websocketBroadcaster.js';
-import path from 'path';
+import { JobQueueService } from './jobQueue/JobQueueService.js';
 
 export class LibraryScanService extends EventEmitter {
   private activeScansCancellationFlags: Map<number, boolean> = new Map();
 
-  constructor(private dbManager: DatabaseManager) {
+  constructor(
+    private dbManager: DatabaseManager,
+    private jobQueue: JobQueueService
+  ) {
     super();
   }
 
@@ -51,11 +53,11 @@ export class LibraryScanService extends EventEmitter {
         throw new Error('A scan is already running for this library');
       }
 
-      // Create scan job
+      // Create scan job with new schema
       const result = await db.execute(
-        `INSERT INTO scan_jobs (library_id, status, started_at, progress_current, progress_total, errors_count)
-         VALUES (?, ?, CURRENT_TIMESTAMP, ?, ?, ?)`,
-        [libraryId, 'running', 0, 0, 0]
+        `INSERT INTO scan_jobs (library_id, status, started_at)
+         VALUES (?, ?, CURRENT_TIMESTAMP)`,
+        [libraryId, 'scanning'] // Start in 'scanning' status (we skip 'discovering' for now)
       );
 
       const scanJobId = result.insertId!;
@@ -140,7 +142,7 @@ export class LibraryScanService extends EventEmitter {
         return false;
       }
 
-      if (scanJob.status !== 'running') {
+      if (scanJob.status === 'completed' || scanJob.status === 'failed' || scanJob.status === 'cancelled') {
         logger.warn(`Cannot cancel scan: Scan job ${scanJobId} is not running (status: ${scanJob.status})`);
         return false;
       }
@@ -244,9 +246,9 @@ export class LibraryScanService extends EventEmitter {
       websocketBroadcaster.broadcastScanFailed(
         scanJob.id,
         library.id,
-        scanJob.progressCurrent || 0,
-        scanJob.progressTotal || 0,
-        scanJob.errorsCount || 0
+        scanJob.directoriesScanned,
+        scanJob.directoriesTotal,
+        scanJob.errorsCount
       );
 
       // Emit error event
@@ -263,6 +265,7 @@ export class LibraryScanService extends EventEmitter {
 
   /**
    * Scan a movie library
+   * Phase 1: Discovery - Find all directories and emit directory-scan jobs
    */
   private async scanMovieLibrary(scanJob: ScanJob, library: Library): Promise<{
     added: number;
@@ -271,117 +274,104 @@ export class LibraryScanService extends EventEmitter {
     failed: number;
   }> {
     const db = this.dbManager.getConnection();
+
+    logger.info(`Phase 1: Directory Discovery started`, {
+      scanJobId: scanJob.id,
+      libraryPath: library.path
+    });
+
+    // Phase 1: Discover all movie directories
     const movieDirs = await getSubdirectories(library.path);
 
-    // Update total count
-    await db.execute('UPDATE scan_jobs SET progress_total = ? WHERE id = ?', [
-      movieDirs.length,
-      scanJob.id,
-    ]);
+    // Update total count and mark discovery complete
+    await db.execute(
+      `UPDATE scan_jobs
+       SET directories_total = ?,
+           status = 'scanning',
+           discovery_completed_at = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+      [movieDirs.length, scanJob.id]
+    );
 
-    this.emitProgress(scanJob.id, library.id, 0, movieDirs.length, '');
+    this.emitProgress(scanJob.id, library.id, 0, movieDirs.length, 'Discovery complete, queuing directory scans...');
 
-    // Statistics tracking
-    let addedCount = 0;
-    let updatedCount = 0;
-    let totalErrors = 0;
+    logger.info(`Phase 1: Discovery complete. Found ${movieDirs.length} directories`, {
+      scanJobId: scanJob.id,
+      directoriesFound: movieDirs.length
+    });
 
-    // Process all movie directories found on filesystem using unified scan
-    for (let i = 0; i < movieDirs.length; i++) {
-      // Check for cancellation before processing each directory
+    // Phase 2: Emit directory-scan jobs for each directory (job queue pattern)
+    let queuedCount = 0;
+    for (const movieDir of movieDirs) {
+      // Check for cancellation before queueing
       if (this.isScanCancelled(scanJob.id)) {
-        logger.info(`Scan cancelled, stopping directory processing`, {
+        logger.info(`Scan cancelled during job queuing`, {
           scanJobId: scanJob.id,
-          processed: i,
+          queued: queuedCount,
           total: movieDirs.length
         });
         break;
       }
 
-      const movieDir = movieDirs[i];
-      const movieName = path.basename(movieDir);
-
       try {
-        // Update progress
-        await db.execute(
-          'UPDATE scan_jobs SET progress_current = ?, current_file = ? WHERE id = ?',
-          [i + 1, movieDir, scanJob.id]
-        );
-
-        this.emitProgress(scanJob.id, library.id, i + 1, movieDirs.length, movieDir);
-
-        // Use unified scan service with scheduled_scan trigger
-        const scanResult = await scanMovieDirectory(this.dbManager, library.id, movieDir, {
-          trigger: 'scheduled_scan',
+        // Emit directory-scan job with NORMAL priority (5)
+        await this.jobQueue.addJob({
+          type: 'directory-scan',
+          priority: 5,
+          payload: {
+            scanJobId: scanJob.id,
+            libraryId: library.id,
+            directoryPath: movieDir,
+          },
+          retry_count: 0,
+          max_retries: 3,
         });
 
-        // Log result and broadcast WebSocket updates for real-time UI updates
-        if (scanResult.isNewMovie && scanResult.movieId !== undefined) {
-          addedCount++;
-          logger.info(`Added new movie: ${movieName}`, {
-            movieId: scanResult.movieId,
-            assetsFound: scanResult.assetsFound,
-            unknownFiles: scanResult.unknownFilesFound,
-          });
-          // Broadcast movie added immediately
-          websocketBroadcaster.broadcastMoviesAdded([scanResult.movieId]);
-        } else if (scanResult.directoryChanged && scanResult.movieId !== undefined) {
-          updatedCount++;
-          logger.info(`Updated movie: ${movieName}`, {
-            movieId: scanResult.movieId,
-            nfoRegenerated: scanResult.nfoRegenerated,
-            streamsExtracted: scanResult.streamsExtracted,
-            unknownFiles: scanResult.unknownFilesFound,
-          });
-          // Broadcast movie updated immediately
-          websocketBroadcaster.broadcastMoviesUpdated([scanResult.movieId]);
-        } else {
-          logger.debug(`Movie unchanged: ${movieName}`, {
-            movieId: scanResult.movieId,
-          });
-        }
+        queuedCount++;
 
-        // Count errors
-        if (scanResult.errors.length > 0) {
-          totalErrors += scanResult.errors.length;
-          logger.warn(`Scan errors for ${movieName}`, {
-            errors: scanResult.errors,
-          });
+        // Update queued count periodically (every 10 directories)
+        if (queuedCount % 10 === 0) {
+          await db.execute(
+            'UPDATE scan_jobs SET directories_queued = ?, current_operation = ? WHERE id = ?',
+            [queuedCount, `Queued ${queuedCount}/${movieDirs.length} directories`, scanJob.id]
+          );
         }
       } catch (error: any) {
-        logger.error(`Failed to scan movie directory: ${movieDir}`, { error: error.message });
-        totalErrors++;
+        logger.error(`Failed to queue directory-scan job for ${movieDir}`, {
+          error: error.message,
+          scanJobId: scanJob.id
+        });
         await this.incrementErrorCount(scanJob.id);
       }
     }
 
-    // Note: Soft delete functionality removed in clean schema
-    // Movies that no longer exist on filesystem will remain in database
-    // Future enhancement: Implement hard delete or status flag for missing files
-    let markedForDeletionCount = 0;
+    // Update final queued count
+    await db.execute(
+      'UPDATE scan_jobs SET directories_queued = ?, current_operation = ? WHERE id = ?',
+      [queuedCount, `All ${queuedCount} directories queued for scanning`, scanJob.id]
+    );
 
-    // Update final error count
-    if (totalErrors > 0) {
-      await db.execute('UPDATE scan_jobs SET errors_count = ? WHERE id = ?', [
-        totalErrors,
-        scanJob.id,
-      ]);
-    }
-
-    logger.info(`Completed movie library scan`, {
-      libraryId: library.id,
-      scanned: movieDirs.length,
-      added: addedCount,
-      updated: updatedCount,
-      deleted: markedForDeletionCount,
-      errors: totalErrors,
+    logger.info(`Phase 2: Directory scan jobs queued`, {
+      scanJobId: scanJob.id,
+      queuedJobs: queuedCount,
+      totalDirectories: movieDirs.length
     });
 
+    this.emitProgress(
+      scanJob.id,
+      library.id,
+      0,
+      queuedCount,
+      `${queuedCount} directory scan jobs queued`
+    );
+
+    // Return placeholder stats (actual stats will be calculated by job handlers)
+    // The scan_jobs table will track real-time progress as jobs complete
     return {
-      added: addedCount,
-      updated: updatedCount,
-      deleted: markedForDeletionCount,
-      failed: totalErrors,
+      added: 0,
+      updated: 0,
+      deleted: 0,
+      failed: 0,
     };
   }
 
@@ -398,7 +388,7 @@ export class LibraryScanService extends EventEmitter {
     });
 
     // Mark as completed for now
-    await db.execute('UPDATE scan_jobs SET progress_total = 0, progress_current = 0 WHERE id = ?', [
+    await db.execute('UPDATE scan_jobs SET directories_total = 0, directories_scanned = 0 WHERE id = ?', [
       scanJob.id,
     ]);
 
@@ -446,15 +436,53 @@ export class LibraryScanService extends EventEmitter {
       id: row.id,
       libraryId: row.library_id,
       status: row.status,
-      progressCurrent: row.progress_current,
-      progressTotal: row.progress_total,
-      currentFile: row.current_file || undefined,
-      errorsCount: row.errors_count,
+
+      // Phase 1: Directory Discovery
+      directoriesTotal: row.directories_total || 0,
+      directoriesQueued: row.directories_queued || 0,
+
+      // Phase 2: Directory Scanning
+      directoriesScanned: row.directories_scanned || 0,
+      moviesFound: row.movies_found || 0,
+      moviesNew: row.movies_new || 0,
+      moviesUpdated: row.movies_updated || 0,
+
+      // Phase 3: Asset Caching
+      assetsQueued: row.assets_queued || 0,
+      assetsCached: row.assets_cached || 0,
+
+      // Phase 4: Enrichment
+      enrichmentQueued: row.enrichment_queued || 0,
+      enrichmentCompleted: row.enrichment_completed || 0,
+
+      // Timing
       startedAt: new Date(row.started_at),
+
+      // Errors
+      errorsCount: row.errors_count || 0,
     };
 
+    // Add optional fields only if they exist
+    if (row.discovery_completed_at) {
+      scanJob.discoveryCompletedAt = new Date(row.discovery_completed_at);
+    }
+    if (row.scanning_completed_at) {
+      scanJob.scanningCompletedAt = new Date(row.scanning_completed_at);
+    }
+    if (row.caching_completed_at) {
+      scanJob.cachingCompletedAt = new Date(row.caching_completed_at);
+    }
     if (row.completed_at) {
       scanJob.completedAt = new Date(row.completed_at);
+    }
+    if (row.last_error) {
+      scanJob.lastError = row.last_error;
+    }
+    if (row.current_operation) {
+      scanJob.currentOperation = row.current_operation;
+    }
+    if (row.options) {
+      scanJob.options = JSON.parse(row.options);
     }
 
     return scanJob;

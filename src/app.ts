@@ -120,9 +120,14 @@ export class App {
 
   private initializeApiRoutes(): void {
     // API routes (with dependency injection) - requires DB connection
+    if (!this.jobQueueService) {
+      throw new Error('JobQueueService not initialized. Must call start() before initializing API routes.');
+    }
+
     const apiRoutes = createApiRouter(
       this.dbManager,
       this.connectionManager,
+      this.jobQueueService,
       this.fileScannerScheduler,
       this.providerUpdaterScheduler
     );
@@ -193,6 +198,7 @@ export class App {
       // Initialize job handlers with all dependencies
       const jobHandlers = new JobHandlers(
         this.dbManager.getConnection(),
+        this.dbManager, // Pass dbManager for scanMovieDirectory
         this.jobQueueService,
         path.join(process.cwd(), 'data', 'cache'), // Use default cache directory
         notificationConfig,

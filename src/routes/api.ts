@@ -5,7 +5,7 @@ import { MovieController } from '../controllers/movieController.js';
 import { IgnorePatternController } from '../controllers/ignorePatternController.js';
 import { ImageController } from '../controllers/imageController.js';
 import { AssetController } from '../controllers/assetController.js';
-import { JobController } from '../controllers/jobController.js';
+// import { JobController } from '../controllers/jobController.js'; // TODO: Re-enable when implementing job routes
 import { AutomationConfigController } from '../controllers/automationConfigController.js';
 import { DatabaseManager } from '../database/DatabaseManager.js';
 import { MediaPlayerConnectionManager } from '../services/mediaPlayerConnectionManager.js';
@@ -15,12 +15,12 @@ import { LibraryScanService } from '../services/libraryScanService.js';
 import { MovieService } from '../services/movieService.js';
 import { IgnorePatternService } from '../services/ignorePatternService.js';
 import { ImageService } from '../services/imageService.js';
-import { JobQueueService } from '../services/jobQueueService.js';
-import { JobHandlers } from '../services/jobHandlers.js';
+import { JobQueueService } from '../services/jobQueue/JobQueueService.js';
+// import { JobHandlers } from '../services/jobHandlers.js'; // TODO: Re-enable when implementing job routes
 import { AutomationConfigService } from '../services/automationConfigService.js';
 import { AssetSelectionService } from '../services/assetSelectionService.js';
 import { AssetCandidateService } from '../services/assetCandidateService.js';
-import { tmdbService } from '../services/providers/TMDBService.js';
+// import { tmdbService } from '../services/providers/TMDBService.js'; // TODO: Re-enable if needed
 import { ProviderConfigService } from '../services/providerConfigService.js';
 import { ProviderConfigController } from '../controllers/providerConfigController.js';
 import { PriorityConfigService } from '../services/priorityConfigService.js';
@@ -42,6 +42,7 @@ import '../services/providers/index.js';
 export const createApiRouter = (
   dbManager: DatabaseManager,
   connectionManager: MediaPlayerConnectionManager,
+  jobQueueService: JobQueueService,
   fileScannerScheduler?: FileScannerScheduler,
   providerUpdaterScheduler?: ProviderUpdaterScheduler
 ): Router => {
@@ -53,7 +54,7 @@ export const createApiRouter = (
 
   // Initialize library services and controller
   const libraryService = new LibraryService(dbManager);
-  const libraryScanService = new LibraryScanService(dbManager);
+  const libraryScanService = new LibraryScanService(dbManager, jobQueueService);
   const libraryController = new LibraryController(libraryService, libraryScanService);
 
   // Get database connection for services that need it
@@ -93,15 +94,9 @@ export const createApiRouter = (
   // Initialize image service
   imageService.initialize().catch(err => logger.error('Failed to initialize image service:', err));
 
-  // Initialize job queue and handlers
-  const jobQueue = new JobQueueService(db);
-
-  // Get TMDB client if available
-  const tmdbClient = tmdbService.isEnabled() ? tmdbService.getClient() : undefined;
-
-  const jobHandlers = new JobHandlers(db, './data/cache', tmdbClient);
-  jobHandlers.registerHandlers(jobQueue);
-  jobQueue.start(); // Start processing jobs
+  // Note: Job queue is now initialized in app.ts and passed through connectionManager
+  // This is legacy code that should be removed when routes are refactored
+  // TODO: Remove this after refactoring routes to not need jobQueue locally
 
   // Initialize automation config service and controller
   const automationConfigService = new AutomationConfigService(db);
@@ -111,9 +106,12 @@ export const createApiRouter = (
   const priorityConfigService = new PriorityConfigService(db);
   const priorityConfigController = new PriorityConfigController(priorityConfigService);
 
-  // Initialize asset and job controllers
+  // Initialize asset controller
   const assetController = new AssetController(db);
-  const jobController = new JobController(jobQueue);
+
+  // TODO: Job controller disabled - job queue now initialized in app.ts
+  // Re-enable when JobQueueService methods are implemented (getRecentJobs, etc.)
+  // const jobController = new JobController(jobQueue);
 
   // Initialize scheduler controller (optional - only if schedulers provided)
   const schedulerController =
@@ -411,15 +409,16 @@ export const createApiRouter = (
   router.get('/assets/needs-publishing/:entityType/:entityId', assetController.needsPublishing);
   router.get('/assets/needs-publishing/:entityType', assetController.getEntitiesNeedingPublish);
 
-  // Job Routes
-  logger.debug('[API Router] Registering job routes');
-  router.get('/jobs/stats', jobController.getStats);
-  router.get('/jobs/recent', jobController.getRecent);
-  router.get('/jobs/by-type/:type', jobController.getByType);
-  router.get('/jobs/:jobId', jobController.getJob);
-  router.post('/jobs/:jobId/retry', jobController.retry);
-  router.delete('/jobs/:jobId', jobController.cancel);
-  router.post('/jobs/clear-old', jobController.clearOld);
+  // Job Routes - DISABLED: Job controller commented out until JobQueueService methods implemented
+  // TODO: Re-enable after implementing missing JobQueueService methods and uncommenting jobController above
+  // logger.debug('[API Router] Registering job routes');
+  // router.get('/jobs/stats', jobController.getStats);
+  // router.get('/jobs/recent', jobController.getRecent); // TODO: Implement in JobQueueService
+  // router.get('/jobs/by-type/:type', jobController.getByType); // TODO: Implement in JobQueueService
+  // router.get('/jobs/:jobId', jobController.getJob);
+  // router.post('/jobs/:jobId/retry', jobController.retry); // TODO: Implement in JobQueueService
+  // router.delete('/jobs/:jobId', jobController.cancel); // TODO: Implement in JobQueueService
+  // router.post('/jobs/clear-old', jobController.clearOld); // TODO: Implement in JobQueueService
 
   // Automation Config Routes
   logger.debug('[API Router] Registering automation config routes');

@@ -30,7 +30,11 @@ export type JobType =
   | 'scheduled-cleanup' // Cleanup old history/cache (automatic)
 
   // User-initiated (HIGH priority 3-4)
-  | 'library-scan'; // Full library scan (user-initiated)
+  | 'library-scan' // Full library scan (user-initiated)
+
+  // Multi-phase scanning (NEW architecture - priority 6-7)
+  | 'directory-scan' // Scan a single directory (Phase 2)
+  | 'cache-asset'; // Copy asset to cache (Phase 3)
 
 /**
  * Job progress for long-running jobs

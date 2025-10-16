@@ -18,7 +18,6 @@ import { discoverAndStoreAssets } from '../media/assetDiscovery_flexible.js';
 import { detectAndStoreUnknownFiles } from '../media/unknownFilesDetection.js';
 import { IgnorePatternService } from '../ignorePatternService.js';
 import { findOrCreateMovie, MovieLookupContext } from './movieLookupService.js';
-import { tmdbService } from '../providers/TMDBService.js';
 
 /**
  * Unified Scan Service
@@ -224,34 +223,16 @@ export async function scanMovieDirectory(
         logger.debug(`Parsed NFO data - valid: ${nfoData.valid}, tmdbId: ${nfoData.tmdbId}`, { movieId });
 
         if (nfoData.valid && !nfoData.ambiguous) {
-          // If we have a TMDB ID, enrich metadata from TMDB
-          if (nfoData.tmdbId && tmdbService.isEnabled()) {
-            try {
-              logger.info(`Fetching metadata from TMDB for movie ${nfoData.tmdbId}`, { movieId });
-              const tmdbClient = tmdbService.getClient();
-              const tmdbMovie = await tmdbClient.getMovie(nfoData.tmdbId, {
-                appendToResponse: ['credits', 'release_dates', 'keywords'],
-              });
+          // Phase 2: Store NFO data directly (no provider API calls)
+          // Provider enrichment will happen in Phase 4 via separate enrichment jobs
+          metadataToStore = nfoData;
 
-              // Merge TMDB data with NFO data (NFO takes precedence for existing fields)
-              metadataToStore = mergeTmdbWithNfo(tmdbMovie, nfoData);
-              logger.info(`Enriched metadata from TMDB`, {
-                movieId,
-                title: metadataToStore.title,
-                year: metadataToStore.year,
-              });
-            } catch (error: any) {
-              logger.warn(`Failed to fetch TMDB metadata, using NFO data only`, {
-                movieId,
-                tmdbId: nfoData.tmdbId,
-                error: error.message,
-              });
-              metadataToStore = nfoData;
-            }
-          } else {
-            // No TMDB ID or TMDB disabled, use NFO data as-is
-            metadataToStore = nfoData;
-          }
+          logger.info(`NFO data ready for storage`, {
+            movieId,
+            title: metadataToStore.title,
+            year: metadataToStore.year,
+            tmdbId: metadataToStore.tmdbId,
+          });
 
           // Store metadata in database
           logger.info(`Storing metadata in database`, {
@@ -580,106 +561,6 @@ async function storeMovieMetadata(
       [movieId, collection.id]
     );
   }
-}
-
-/**
- * Merge TMDB movie data with NFO data
- * NFO data takes precedence for fields that are present
- */
-function mergeTmdbWithNfo(tmdbMovie: any, nfoData: any): any {
-  const merged: any = {
-    ...nfoData, // Start with NFO data
-  };
-
-  // TMDB provides these if not in NFO
-  if (!merged.title && tmdbMovie.title) merged.title = tmdbMovie.title;
-  if (!merged.originalTitle && tmdbMovie.original_title) merged.originalTitle = tmdbMovie.original_title;
-  if (!merged.year && tmdbMovie.release_date) {
-    merged.year = parseInt(tmdbMovie.release_date.split('-')[0]);
-  }
-  if (!merged.plot && tmdbMovie.overview) merged.plot = tmdbMovie.overview;
-  if (!merged.tagline && tmdbMovie.tagline) merged.tagline = tmdbMovie.tagline;
-  if (!merged.premiered && tmdbMovie.release_date) merged.premiered = tmdbMovie.release_date;
-  if (!merged.runtime && tmdbMovie.runtime) merged.runtime = tmdbMovie.runtime;
-
-  // Genres from TMDB
-  if ((!merged.genres || merged.genres.length === 0) && tmdbMovie.genres) {
-    merged.genres = tmdbMovie.genres.map((g: any) => g.name);
-  }
-
-  // Production companies (studios)
-  if ((!merged.studios || merged.studios.length === 0) && tmdbMovie.production_companies) {
-    merged.studios = tmdbMovie.production_companies.map((c: any) => c.name);
-  }
-
-  // Production countries
-  if ((!merged.countries || merged.countries.length === 0) && tmdbMovie.production_countries) {
-    merged.countries = tmdbMovie.production_countries.map((c: any) => c.name);
-  }
-
-  // Credits (cast and crew)
-  if (tmdbMovie.credits) {
-    // Actors
-    if ((!merged.actors || merged.actors.length === 0) && tmdbMovie.credits.cast) {
-      merged.actors = tmdbMovie.credits.cast.slice(0, 20).map((actor: any, index: number) => ({
-        name: actor.name,
-        role: actor.character,
-        order: index,
-        thumb: actor.profile_path ? `https://image.tmdb.org/t/p/original${actor.profile_path}` : undefined,
-      }));
-    }
-
-    // Directors
-    if ((!merged.directors || merged.directors.length === 0) && tmdbMovie.credits.crew) {
-      const directors = tmdbMovie.credits.crew.filter((c: any) => c.job === 'Director');
-      if (directors.length > 0) {
-        merged.directors = directors.map((d: any) => d.name);
-      }
-    }
-
-    // Writers
-    if ((!merged.credits || merged.credits.length === 0) && tmdbMovie.credits.crew) {
-      const writers = tmdbMovie.credits.crew.filter(
-        (c: any) => c.department === 'Writing'
-      );
-      if (writers.length > 0) {
-        merged.credits = writers.map((w: any) => w.name);
-      }
-    }
-  }
-
-  // Ratings
-  if ((!merged.ratings || merged.ratings.length === 0) && tmdbMovie.vote_average) {
-    merged.ratings = [
-      {
-        source: 'tmdb',
-        value: tmdbMovie.vote_average,
-        votes: tmdbMovie.vote_count,
-        default: true,
-      },
-    ];
-  }
-
-  // Collection/Set
-  if (!merged.set && tmdbMovie.belongs_to_collection) {
-    merged.set = {
-      name: tmdbMovie.belongs_to_collection.name,
-      overview: tmdbMovie.belongs_to_collection.overview,
-    };
-  }
-
-  // MPAA rating from release_dates
-  if (!merged.mpaa && tmdbMovie.release_dates?.results) {
-    const usRelease = tmdbMovie.release_dates.results.find((r: any) => r.iso_3166_1 === 'US');
-    if (usRelease && usRelease.release_dates && usRelease.release_dates.length > 0) {
-      const certification = usRelease.release_dates[0].certification;
-      if (certification) {
-        merged.mpaa = certification;
-      }
-    }
-  }
-
-  return merged;
 }
 
 /**

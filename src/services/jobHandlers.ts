@@ -18,6 +18,7 @@ import { logger } from '../middleware/logging.js';
 
 export class JobHandlers {
   private db: DatabaseConnection;
+  private dbManager: any; // DatabaseManager - using any for now to avoid circular dependency
   private jobQueue: JobQueueService;
   private assetDiscovery: AssetDiscoveryService;
   private providerAssets: ProviderAssetService;
@@ -29,6 +30,7 @@ export class JobHandlers {
 
   constructor(
     db: DatabaseConnection,
+    dbManager: any, // DatabaseManager
     jobQueue: JobQueueService,
     cacheDir: string,
     notificationConfig: NotificationConfigService,
@@ -36,6 +38,7 @@ export class JobHandlers {
     tmdbClient?: TMDBClient
   ) {
     this.db = db;
+    this.dbManager = dbManager;
     this.jobQueue = jobQueue;
     this.assetDiscovery = new AssetDiscoveryService(db, cacheDir);
     this.providerAssets = new ProviderAssetService(db, cacheDir, tmdbClient);
@@ -74,6 +77,10 @@ export class JobHandlers {
     jobQueue.registerHandler('scheduled-file-scan', this.handleScheduledFileScan.bind(this));
     jobQueue.registerHandler('scheduled-provider-update', this.handleScheduledProviderUpdate.bind(this));
     jobQueue.registerHandler('scheduled-cleanup', this.handleScheduledCleanup.bind(this));
+
+    // Multi-phase scanning (new job queue architecture)
+    jobQueue.registerHandler('directory-scan', this.handleDirectoryScan.bind(this));
+    jobQueue.registerHandler('cache-asset', this.handleCacheAsset.bind(this));
   }
 
   /**
@@ -595,8 +602,12 @@ export class JobHandlers {
 
   /**
    * Process series webhook
+   * TODO: Implement series/episode processing
+   * Currently unused - will be implemented when series support is added
    */
-  private async processSeriesWebhook(series: any, episodes: any[]): Promise<void> {
+  // @ts-expect-error - Intentionally unused until series support is implemented
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  private async _processSeriesWebhook(series: any, episodes: any[]): Promise<void> {
     // Similar to movie webhook but for series/episodes
     logger.info(`Processing series webhook: ${series.title}`, { episodes: episodes?.length || 0 });
     // TODO: Implement series/episode processing
@@ -1262,5 +1273,258 @@ export class JobHandlers {
     // - Remove orphaned cache files (no database reference)
     // - Remove temporary download files older than X days
     // - Cleanup old log files
+  }
+
+  /**
+   * Handle directory-scan job (NEW multi-phase architecture)
+   *
+   * Scans a single directory and extracts all metadata/assets.
+   * Does NOT call provider APIs - that's queued separately.
+   *
+   * Payload: {
+   *   scanJobId: number,      // Parent scan job for progress tracking
+   *   libraryId: number,
+   *   directoryPath: string,
+   *   libraryType: 'movie' | 'tv' | 'music',
+   *   options?: ScanOptions   // Scan configuration flags
+   * }
+   */
+  private async handleDirectoryScan(job: Job): Promise<void> {
+    const { scanJobId, libraryId, directoryPath } = job.payload;
+    // const { options } = job.payload; // TODO: Use options when implementing skip flags
+
+    logger.info('[JobHandlers] Starting directory scan', {
+      service: 'JobHandlers',
+      handler: 'handleDirectoryScan',
+      jobId: job.id,
+      scanJobId,
+      directoryPath,
+    });
+
+    try {
+      // Import unified scan service dynamically
+      const { scanMovieDirectory } = await import('./scan/unifiedScanService.js');
+
+      // Update current operation
+      await this.db.execute(`
+        UPDATE scan_jobs
+        SET current_operation = ?
+        WHERE id = ?
+      `, [`Scanning ${directoryPath}`, scanJobId]);
+
+      // Scan the directory (NO provider API calls)
+      const scanResult = await scanMovieDirectory(this.dbManager, libraryId, directoryPath, {
+        trigger: 'scheduled_scan',
+      });
+
+      // Update scan_jobs progress
+      const isNew = scanResult.isNewMovie ? 1 : 0;
+      const isUpdated = scanResult.directoryChanged ? 1 : 0;
+
+      await this.db.execute(`
+        UPDATE scan_jobs
+        SET directories_scanned = directories_scanned + 1,
+            movies_found = movies_found + 1,
+            movies_new = movies_new + ?,
+            movies_updated = movies_updated + ?,
+            assets_queued = assets_queued + ?,
+            current_operation = ?
+        WHERE id = ?
+      `, [
+        isNew,
+        isUpdated,
+        scanResult.assetsFound.images + scanResult.assetsFound.trailers + scanResult.assetsFound.subtitles,
+        `Scanned ${directoryPath}`,
+        scanJobId
+      ]);
+
+      logger.info('[JobHandlers] Directory scan complete', {
+        service: 'JobHandlers',
+        handler: 'handleDirectoryScan',
+        jobId: job.id,
+        movieId: scanResult.movieId,
+        isNew: scanResult.isNewMovie,
+        assetsFound: scanResult.assetsFound,
+      });
+
+      // TODO: Queue cache-asset jobs for discovered assets
+      // This will be implemented when we add asset caching logic
+
+    } catch (error: any) {
+      logger.error('[JobHandlers] Directory scan failed', {
+        service: 'JobHandlers',
+        handler: 'handleDirectoryScan',
+        jobId: job.id,
+        directoryPath,
+        error: error.message,
+        stack: error.stack,
+      });
+
+      // Update error count in scan_jobs
+      await this.db.execute(`
+        UPDATE scan_jobs
+        SET errors_count = errors_count + 1,
+            last_error = ?
+        WHERE id = ?
+      `, [error.message, scanJobId]);
+
+      // Don't throw - let other directory scans continue
+    }
+  }
+
+  /**
+   * Handle cache-asset job (NEW multi-phase architecture)
+   *
+   * Copies an asset from library to cache directory.
+   *
+   * Payload: {
+   *   scanJobId: number,      // Parent scan job for progress tracking
+   *   entityType: 'movie' | 'series' | 'episode',
+   *   entityId: number,
+   *   assetType: 'poster' | 'fanart' | 'trailer' | 'subtitle',
+   *   sourcePath: string,     // Path to asset in library
+   *   language?: string       // For subtitles
+   * }
+   */
+  private async handleCacheAsset(job: Job): Promise<void> {
+    const { scanJobId, entityType, entityId, assetType, sourcePath, language } = job.payload;
+
+    logger.info('[JobHandlers] Starting asset caching', {
+      service: 'JobHandlers',
+      handler: 'handleCacheAsset',
+      jobId: job.id,
+      scanJobId,
+      assetType,
+      sourcePath,
+    });
+
+    try {
+      // Import required modules
+      const fs = await import('fs/promises');
+      const path = await import('path');
+      const crypto = await import('crypto');
+
+      // Read source file
+      const fileBuffer = await fs.readFile(sourcePath);
+
+      // Calculate SHA256 hash
+      const hash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
+      const ext = path.extname(sourcePath);
+
+      // Determine cache directory structure
+      // data/cache/{entityType}/{entityId}/{assetType}_{hash}.ext
+      const cacheDir = path.join('data', 'cache', entityType, String(entityId));
+      await fs.mkdir(cacheDir, { recursive: true });
+
+      // Build cache filename
+      let cacheFilename = `${assetType}_${hash}${ext}`;
+      if (language && assetType === 'subtitle') {
+        cacheFilename = `subtitle_${language}_${hash}${ext}`;
+      }
+
+      const cachePath = path.join(cacheDir, cacheFilename);
+
+      // Copy file to cache (only if not already exists)
+      try {
+        await fs.access(cachePath);
+        logger.debug('[JobHandlers] Asset already cached', {
+          service: 'JobHandlers',
+          handler: 'handleCacheAsset',
+          cachePath,
+        });
+      } catch {
+        // File doesn't exist, copy it
+        await fs.copyFile(sourcePath, cachePath);
+        logger.info('[JobHandlers] Asset copied to cache', {
+          service: 'JobHandlers',
+          handler: 'handleCacheAsset',
+          sourcePath,
+          cachePath,
+          hash,
+        });
+      }
+
+      // Store cache path in database based on asset type
+      if (assetType === 'poster' || assetType === 'fanart') {
+        // Check if image already exists in database
+        const existing = await this.db.query<{ id: number }>(
+          `SELECT id FROM images WHERE entity_type = ? AND entity_id = ? AND asset_type = ? AND cache_path = ?`,
+          [entityType, entityId, assetType, cachePath]
+        );
+
+        if (existing.length === 0) {
+          await this.db.execute(
+            `INSERT INTO images (entity_type, entity_id, asset_type, cache_path, library_path, source, hash, discovered_at)
+             VALUES (?, ?, ?, ?, ?, 'local', ?, CURRENT_TIMESTAMP)`,
+            [entityType, entityId, assetType, cachePath, sourcePath, hash]
+          );
+        }
+      } else if (assetType === 'trailer') {
+        const existing = await this.db.query<{ id: number }>(
+          `SELECT id FROM trailers WHERE entity_type = ? AND entity_id = ? AND cache_path = ?`,
+          [entityType, entityId, cachePath]
+        );
+
+        if (existing.length === 0) {
+          await this.db.execute(
+            `INSERT INTO trailers (entity_type, entity_id, cache_path, local_path, source, hash, discovered_at)
+             VALUES (?, ?, ?, ?, 'local', ?, CURRENT_TIMESTAMP)`,
+            [entityType, entityId, cachePath, sourcePath, hash]
+          );
+        }
+      } else if (assetType === 'subtitle') {
+        const existing = await this.db.query<{ id: number }>(
+          `SELECT id FROM subtitle_streams WHERE movie_id = ? AND cache_path = ?`,
+          [entityId, cachePath]
+        );
+
+        if (existing.length === 0) {
+          await this.db.execute(
+            `INSERT INTO subtitle_streams (movie_id, cache_path, file_path, language, hash)
+             VALUES (?, ?, ?, ?, ?)`,
+            [entityId, cachePath, sourcePath, language || 'unknown', hash]
+          );
+        }
+      }
+
+      // Update scan_jobs progress
+      if (scanJobId) {
+        await this.db.execute(`
+          UPDATE scan_jobs
+          SET assets_cached = assets_cached + 1
+          WHERE id = ?
+        `, [scanJobId]);
+      }
+
+      logger.info('[JobHandlers] Asset caching complete', {
+        service: 'JobHandlers',
+        handler: 'handleCacheAsset',
+        jobId: job.id,
+        cachePath,
+      });
+
+    } catch (error: any) {
+      logger.error('[JobHandlers] Asset caching failed', {
+        service: 'JobHandlers',
+        handler: 'handleCacheAsset',
+        jobId: job.id,
+        assetType,
+        sourcePath,
+        error: error.message,
+        stack: error.stack,
+      });
+
+      // Update error count
+      if (scanJobId) {
+        await this.db.execute(`
+          UPDATE scan_jobs
+          SET errors_count = errors_count + 1,
+              last_error = ?
+          WHERE id = ?
+        `, [error.message, scanJobId]);
+      }
+
+      // Don't throw - let other asset caching jobs continue
+    }
   }
 }

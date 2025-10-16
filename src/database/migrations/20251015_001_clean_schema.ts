@@ -48,9 +48,13 @@ export class CleanSchemaMigration {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
         type TEXT NOT NULL CHECK(type IN ('kodi', 'jellyfin', 'plex')),
+        max_members INTEGER NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
+
+    await db.execute('CREATE INDEX idx_media_player_groups_type ON media_player_groups(type)');
+    await db.execute('CREATE INDEX idx_media_player_groups_max_members ON media_player_groups(max_members)');
 
     // Media Players
     await db.execute(`
@@ -73,19 +77,39 @@ export class CleanSchemaMigration {
     await db.execute('CREATE INDEX idx_media_players_group ON media_players(group_id)');
     await db.execute('CREATE INDEX idx_media_players_enabled ON media_players(enabled)');
 
-    // Path Mappings
+    // Media Player Libraries (Group-Library Junction)
     await db.execute(`
-      CREATE TABLE path_mappings (
+      CREATE TABLE media_player_libraries (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        media_player_group_id INTEGER NOT NULL,
-        metarr_path TEXT NOT NULL,
-        player_path TEXT NOT NULL,
+        group_id INTEGER NOT NULL,
+        library_id INTEGER NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (media_player_group_id) REFERENCES media_player_groups(id) ON DELETE CASCADE
+        FOREIGN KEY (group_id) REFERENCES media_player_groups(id) ON DELETE CASCADE,
+        FOREIGN KEY (library_id) REFERENCES libraries(id) ON DELETE CASCADE,
+        UNIQUE(group_id, library_id)
       )
     `);
 
-    await db.execute('CREATE INDEX idx_path_mappings_group ON path_mappings(media_player_group_id)');
+    await db.execute('CREATE INDEX idx_media_player_libraries_group ON media_player_libraries(group_id)');
+    await db.execute('CREATE INDEX idx_media_player_libraries_library ON media_player_libraries(library_id)');
+
+    // Media Player Group Path Mappings
+    await db.execute(`
+      CREATE TABLE media_player_group_path_mappings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        group_id INTEGER NOT NULL,
+        metarr_path TEXT NOT NULL,
+        player_path TEXT NOT NULL,
+        description TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (group_id) REFERENCES media_player_groups(id) ON DELETE CASCADE
+      )
+    `);
+
+    await db.execute('CREATE INDEX idx_group_path_mappings_group ON media_player_group_path_mappings(group_id)');
+    await db.execute('CREATE INDEX idx_group_path_mappings_metarr_path ON media_player_group_path_mappings(metarr_path)');
+    await db.execute('CREATE UNIQUE INDEX idx_group_path_mappings_unique ON media_player_group_path_mappings(group_id, metarr_path)');
 
     // ============================================================
     // CACHE & ASSET TABLES
@@ -190,6 +214,8 @@ export class CleanSchemaMigration {
         banner_id INTEGER,
         thumb_id INTEGER,
         discart_id INTEGER,
+        keyart_id INTEGER,
+        landscape_id INTEGER,
         title_locked BOOLEAN DEFAULT 0,
         plot_locked BOOLEAN DEFAULT 0,
         poster_locked BOOLEAN DEFAULT 0,
@@ -199,6 +225,9 @@ export class CleanSchemaMigration {
         banner_locked BOOLEAN DEFAULT 0,
         thumb_locked BOOLEAN DEFAULT 0,
         discart_locked BOOLEAN DEFAULT 0,
+        keyart_locked BOOLEAN DEFAULT 0,
+        landscape_locked BOOLEAN DEFAULT 0,
+        monitored BOOLEAN NOT NULL DEFAULT 1,
         identification_status TEXT DEFAULT 'unidentified' CHECK(identification_status IN ('unidentified', 'identified', 'enriched')),
         enrichment_priority INTEGER DEFAULT 5,
         deleted_at TIMESTAMP,
@@ -211,13 +240,16 @@ export class CleanSchemaMigration {
         FOREIGN KEY (clearart_id) REFERENCES cache_assets(id),
         FOREIGN KEY (banner_id) REFERENCES cache_assets(id),
         FOREIGN KEY (thumb_id) REFERENCES cache_assets(id),
-        FOREIGN KEY (discart_id) REFERENCES cache_assets(id)
+        FOREIGN KEY (discart_id) REFERENCES cache_assets(id),
+        FOREIGN KEY (keyart_id) REFERENCES cache_assets(id),
+        FOREIGN KEY (landscape_id) REFERENCES cache_assets(id)
       )
     `);
 
     await db.execute('CREATE INDEX idx_movies_library ON movies(library_id)');
     await db.execute('CREATE INDEX idx_movies_tmdb ON movies(tmdb_id)');
     await db.execute('CREATE INDEX idx_movies_imdb ON movies(imdb_id)');
+    await db.execute('CREATE INDEX idx_movies_monitored ON movies(monitored)');
     await db.execute('CREATE INDEX idx_movies_identification ON movies(identification_status)');
     await db.execute('CREATE INDEX idx_movies_deleted ON movies(deleted_at)');
     await db.execute('CREATE INDEX idx_movies_file_path ON movies(file_path)');
@@ -796,6 +828,71 @@ export class CleanSchemaMigration {
     await db.execute('CREATE INDEX idx_job_deps_job ON job_dependencies(job_id)');
     await db.execute('CREATE INDEX idx_job_deps_depends ON job_dependencies(depends_on_job_id)');
 
+    // Job History (completed/failed jobs archive)
+    await db.execute(`
+      CREATE TABLE job_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        job_id INTEGER NOT NULL,
+        type TEXT NOT NULL,
+        priority INTEGER NOT NULL,
+        payload TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('completed', 'failed')),
+        error TEXT,
+        retry_count INTEGER NOT NULL DEFAULT 0,
+        created_at DATETIME NOT NULL,
+        started_at DATETIME NOT NULL,
+        completed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        duration_ms INTEGER
+      )
+    `);
+
+    await db.execute('CREATE INDEX idx_job_history_type_date ON job_history(type, completed_at DESC)');
+    await db.execute('CREATE INDEX idx_job_history_cleanup ON job_history(status, completed_at)');
+    await db.execute('CREATE INDEX idx_job_queue_pickup ON job_queue(status, priority ASC, created_at ASC) WHERE status = \'pending\'');
+    await db.execute('CREATE INDEX idx_job_queue_processing ON job_queue(status) WHERE status = \'processing\'');
+
+    // Library Scheduler Configuration
+    await db.execute(`
+      CREATE TABLE library_scheduler_config (
+        library_id INTEGER PRIMARY KEY,
+        file_scanner_enabled BOOLEAN NOT NULL DEFAULT 0,
+        file_scanner_interval_hours INTEGER NOT NULL DEFAULT 4,
+        file_scanner_last_run TIMESTAMP NULL,
+        provider_updater_enabled BOOLEAN NOT NULL DEFAULT 0,
+        provider_updater_interval_hours INTEGER NOT NULL DEFAULT 168,
+        provider_updater_last_run TIMESTAMP NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (library_id) REFERENCES libraries(id) ON DELETE CASCADE
+      )
+    `);
+
+    // Notification Configuration
+    await db.execute(`
+      CREATE TABLE notification_config (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        service TEXT NOT NULL UNIQUE CHECK (service IN ('kodi', 'jellyfin', 'plex', 'discord', 'pushover', 'email')),
+        enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0, 1)),
+        config TEXT,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await db.execute('CREATE INDEX idx_notification_config_service ON notification_config(service)');
+    await db.execute('CREATE INDEX idx_notification_config_enabled ON notification_config(enabled) WHERE enabled = 1');
+
+    // Insert default notification configurations
+    await db.execute(`
+      INSERT INTO notification_config (service, enabled, config) VALUES
+        ('kodi', 0, '{}'),
+        ('jellyfin', 0, '{}'),
+        ('plex', 0, '{}'),
+        ('discord', 0, '{}'),
+        ('pushover', 0, '{}'),
+        ('email', 0, '{}')
+    `);
+
     console.log('✅ Job queue tables created');
 
     // ============================================================
@@ -941,22 +1038,52 @@ export class CleanSchemaMigration {
     console.log('✅ Configuration tables created');
 
     // ============================================================
-    // SCAN JOBS TABLE (for library scanning)
+    // SCAN JOBS TABLE (for library scanning - Multi-Phase Architecture)
     // ============================================================
 
     await db.execute(`
       CREATE TABLE scan_jobs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         library_id INTEGER NOT NULL,
-        status TEXT NOT NULL CHECK(status IN ('pending', 'running', 'completed', 'failed', 'cancelled')),
-        progress_current INTEGER DEFAULT 0,
-        progress_total INTEGER DEFAULT 0,
-        current_file TEXT,
-        errors_count INTEGER DEFAULT 0,
-        started_at TIMESTAMP,
+
+        -- Phase tracking
+        status TEXT NOT NULL DEFAULT 'discovering' CHECK(status IN ('discovering', 'scanning', 'caching', 'enriching', 'completed', 'failed', 'cancelled')),
+
+        -- Phase 1: Directory Discovery
+        directories_total INTEGER DEFAULT 0,
+        directories_queued INTEGER DEFAULT 0,
+
+        -- Phase 2: Directory Scanning
+        directories_scanned INTEGER DEFAULT 0,
+        movies_found INTEGER DEFAULT 0,
+        movies_new INTEGER DEFAULT 0,
+        movies_updated INTEGER DEFAULT 0,
+
+        -- Phase 3: Asset Caching
+        assets_queued INTEGER DEFAULT 0,
+        assets_cached INTEGER DEFAULT 0,
+
+        -- Phase 4: Enrichment
+        enrichment_queued INTEGER DEFAULT 0,
+        enrichment_completed INTEGER DEFAULT 0,
+
+        -- Timing
+        started_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        discovery_completed_at TIMESTAMP,
+        scanning_completed_at TIMESTAMP,
+        caching_completed_at TIMESTAMP,
         completed_at TIMESTAMP,
-        error_message TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+        -- Errors
+        errors_count INTEGER DEFAULT 0,
+        last_error TEXT,
+
+        -- Current operation (for debugging)
+        current_operation TEXT,
+
+        -- Scan options (JSON)
+        options TEXT,
+
         FOREIGN KEY (library_id) REFERENCES libraries(id) ON DELETE CASCADE
       )
     `);

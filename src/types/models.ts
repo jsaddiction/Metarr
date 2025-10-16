@@ -150,13 +150,58 @@ export interface Library {
 export interface ScanJob {
   id: number;
   libraryId: number;
-  status: 'running' | 'completed' | 'failed' | 'cancelled';
-  progressCurrent: number;
-  progressTotal: number;
-  currentFile?: string;
-  errorsCount: number;
+
+  // Phase tracking
+  status: 'discovering' | 'scanning' | 'caching' | 'enriching' | 'completed' | 'failed' | 'cancelled';
+
+  // Phase 1: Directory Discovery
+  directoriesTotal: number;
+  directoriesQueued: number;
+
+  // Phase 2: Directory Scanning
+  directoriesScanned: number;
+  moviesFound: number;
+  moviesNew: number;
+  moviesUpdated: number;
+
+  // Phase 3: Asset Caching
+  assetsQueued: number;
+  assetsCached: number;
+
+  // Phase 4: Enrichment
+  enrichmentQueued: number;
+  enrichmentCompleted: number;
+
+  // Timing
   startedAt: Date;
+  discoveryCompletedAt?: Date;
+  scanningCompletedAt?: Date;
+  cachingCompletedAt?: Date;
   completedAt?: Date;
+
+  // Errors
+  errorsCount: number;
+  lastError?: string;
+
+  // Current operation (for debugging)
+  currentOperation?: string;
+
+  // Scan options (JSON)
+  options?: ScanOptions;
+}
+
+export interface ScanOptions {
+  // Phase control
+  enableCaching?: boolean;
+  enableEnrichment?: boolean;
+
+  // Development flags
+  skipAssetDiscovery?: boolean;
+  skipFFprobe?: boolean;
+  maxDirectories?: number;
+
+  // Enrichment control
+  enrichmentMode?: 'none' | 'metadata-only' | 'full';
 }
 
 export interface NFOIds {
