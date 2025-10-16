@@ -429,7 +429,7 @@ async function storeMovieMetadata(
       nfoData.premiered,
       nfoData.tmdbId,
       nfoData.imdbId,
-      'enriched', // Changed from 'identified' to 'enriched' since we have full metadata
+      nfoData.tmdbId ? 'identified' : 'unidentified', // 'identified' if we have TMDB ID, 'enriched' only after provider API fetch
       movieId,
     ]
   );
