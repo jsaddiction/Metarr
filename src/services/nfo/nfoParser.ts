@@ -1,4 +1,5 @@
 import fs from 'fs/promises';
+import path from 'path';
 import { parseStringPromise } from 'xml2js';
 import { logger } from '../../middleware/logging.js';
 import {
@@ -13,6 +14,78 @@ import {
   RatingData,
   SetData,
 } from '../../types/models.js';
+
+/**
+ * NFO File metadata for intelligent merging
+ */
+interface NFOFileMetadata {
+  path: string;
+  fileName: string;
+  priority: number;
+  data: Partial<FullMovieNFO>;
+  mtime?: Date;
+}
+
+/**
+ * NFO File naming priority
+ * Higher number = higher priority
+ */
+enum NFOPriority {
+  UNKNOWN = 0,
+  MOVIE_DOT_NFO = 10,      // movie.nfo (Jellyfin/Kodi fallback)
+  ANY_FILENAME_NFO = 20,   // <anyname>.nfo
+  EXACT_MATCH_NFO = 30,    // Exact video filename match (highest)
+}
+
+/**
+ * Extract provider IDs from raw text using regex (fallback for malformed XML)
+ */
+function extractIdsFromRawText(rawText: string): NFOIds {
+  const ids: NFOIds = {};
+
+  // TMDB ID: <tmdbid>603</tmdbid> or <uniqueid type="tmdb">603</uniqueid>
+  const tmdbMatch = rawText.match(/<(?:tmdbid|uniqueid[^>]*type="tmdb"[^>]*)>(\d+)/i);
+  if (tmdbMatch) {
+    const tmdbId = parseInt(tmdbMatch[1], 10);
+    if (tmdbId > 0) {
+      ids.tmdbId = tmdbId;
+    }
+  }
+
+  // IMDB ID: <imdbid>tt0133093</imdbid> or <uniqueid type="imdb">tt0133093</uniqueid>
+  const imdbMatch = rawText.match(/<(?:imdbid|uniqueid[^>]*type="imdb"[^>]*)>(tt\d{6,})/i);
+  if (imdbMatch) {
+    ids.imdbId = imdbMatch[1];
+  }
+
+  return ids;
+}
+
+/**
+ * Determine NFO file priority based on naming convention
+ * Requires video file basename for exact match detection
+ */
+function determineNFOPriority(nfoPath: string, videoBasename?: string): number {
+  const fileName = path.basename(nfoPath);
+  const fileNameLower = fileName.toLowerCase();
+
+  // Exact video filename match (highest priority)
+  if (videoBasename && fileName === `${videoBasename}.nfo`) {
+    return NFOPriority.EXACT_MATCH_NFO;
+  }
+
+  // movie.nfo (Kodi/Jellyfin fallback)
+  if (fileNameLower === 'movie.nfo' || fileNameLower === 'movie.txt') {
+    return NFOPriority.MOVIE_DOT_NFO;
+  }
+
+  // Any other .nfo/.txt file
+  if (fileNameLower.endsWith('.nfo') || fileNameLower.endsWith('.txt')) {
+    return NFOPriority.ANY_FILENAME_NFO;
+  }
+
+  return NFOPriority.UNKNOWN;
+}
 
 /**
  * Parse movie NFO files and extract IDs
@@ -461,10 +534,18 @@ export async function parseEpisodeNfo(nfoPath: string): Promise<ParsedEpisodeNFO
 // ========================================
 
 /**
- * Parse movie NFO files and extract FULL metadata
- * This is the comprehensive version that extracts all metadata fields
+ * Parse movie NFO files and extract FULL metadata with intelligent merging
+ *
+ * This is the comprehensive version that:
+ * 1. Extracts provider IDs with conflict resolution (Kodi-named files win)
+ * 2. Falls back to regex extraction for malformed XML
+ * 3. Intelligently merges metadata from multiple files
+ * 4. Uses file modification time as last resort for conflicts
+ *
+ * @param nfoPaths - Array of NFO file paths to parse
+ * @param videoBasename - Optional video filename (without extension) for exact match priority
  */
-export async function parseFullMovieNfos(nfoPaths: string[]): Promise<FullMovieNFO> {
+export async function parseFullMovieNfos(nfoPaths: string[], videoBasename?: string): Promise<FullMovieNFO> {
   if (nfoPaths.length === 0) {
     return {
       valid: false,
@@ -473,76 +554,271 @@ export async function parseFullMovieNfos(nfoPaths: string[]): Promise<FullMovieN
     };
   }
 
-  // For movies, typically there's one primary NFO
-  // If multiple exist, we'll merge them (last one wins for scalars, combine for arrays)
-  let mergedData: Partial<FullMovieNFO> = {
-    valid: false,
-    ambiguous: false,
-  };
-
-  const allIds: NFOIds[] = [];
+  // Parse all NFO files with priority detection
+  const parsedFiles: NFOFileMetadata[] = [];
 
   for (const nfoPath of nfoPaths) {
     try {
       const content = await fs.readFile(nfoPath, 'utf-8');
       const trimmedContent = content.trim();
+      const stats = await fs.stat(nfoPath);
+      let movieData: Partial<FullMovieNFO> = {};
 
+      // Try XML parsing first
       if (trimmedContent.startsWith('<')) {
-        // Parse XML NFO
-        const parsed = await parseStringPromise(content);
-        const movieData = extractFullMovieMetadata(parsed);
-
-        // Merge data
-        mergedData = { ...mergedData, ...movieData };
-
-        // Track IDs for ambiguity check
-        if (movieData.tmdbId || movieData.imdbId) {
-          const idObject: NFOIds = {};
-          if (movieData.tmdbId !== undefined) idObject.tmdbId = movieData.tmdbId;
-          if (movieData.imdbId !== undefined) idObject.imdbId = movieData.imdbId;
-          allIds.push(idObject);
+        try {
+          const parsed = await parseStringPromise(content);
+          movieData = extractFullMovieMetadata(parsed);
+        } catch (xmlError: any) {
+          // XML parse failed - fallback to regex extraction
+          logger.debug(`XML parse failed for ${nfoPath}, attempting regex fallback`, {
+            error: xmlError.message
+          });
+          const regexIds = extractIdsFromRawText(trimmedContent);
+          if (regexIds.tmdbId || regexIds.imdbId) {
+            movieData = regexIds;
+          }
         }
       } else {
-        // URL-based NFO (only has IDs)
+        // URL-based NFO (Radarr .txt format)
         const ids = extractIdsFromUrls(trimmedContent);
         if (ids.tmdbId || ids.imdbId) {
-          if (ids.tmdbId) mergedData.tmdbId = ids.tmdbId;
-          if (ids.imdbId) mergedData.imdbId = ids.imdbId;
-          allIds.push(ids);
+          movieData = ids;
         }
+      }
+
+      // Only include files that have at least some data
+      if (Object.keys(movieData).length > 0) {
+        parsedFiles.push({
+          path: nfoPath,
+          fileName: path.basename(nfoPath),
+          priority: determineNFOPriority(nfoPath, videoBasename),
+          data: movieData,
+          mtime: stats.mtime,
+        });
       }
     } catch (error: any) {
       logger.debug(`Failed to parse NFO file ${nfoPath}`, { error: error.message });
     }
   }
 
-  // Check for ID conflicts
-  if (allIds.length > 0) {
-    const tmdbIds = allIds.filter(id => id.tmdbId).map(id => id.tmdbId);
-    const imdbIds = allIds.filter(id => id.imdbId).map(id => id.imdbId);
+  if (parsedFiles.length === 0) {
+    logger.warn('No provider ID found in NFO files');
+    return {
+      valid: false,
+      ambiguous: false,
+      error: 'No valid data extracted from NFO files',
+    };
+  }
+
+  // Sort by priority (highest first)
+  parsedFiles.sort((a, b) => {
+    if (b.priority !== a.priority) {
+      return b.priority - a.priority;
+    }
+    // If priorities equal, use newest modification time
+    if (a.mtime && b.mtime) {
+      return b.mtime.getTime() - a.mtime.getTime();
+    }
+    return 0;
+  });
+
+  // Check for provider ID conflicts
+  const filesWithIds = parsedFiles.filter(f => f.data.tmdbId || f.data.imdbId);
+
+  if (filesWithIds.length > 1) {
+    const tmdbIds = filesWithIds.map(f => f.data.tmdbId).filter(Boolean);
+    const imdbIds = filesWithIds.map(f => f.data.imdbId).filter(Boolean);
 
     const uniqueTmdbIds = [...new Set(tmdbIds)];
     const uniqueImdbIds = [...new Set(imdbIds)];
 
-    // Check for ambiguity
+    // Conflict detected - use highest priority file (Kodi-named wins)
     if (uniqueTmdbIds.length > 1 || uniqueImdbIds.length > 1) {
-      return {
-        ...mergedData,
-        valid: false,
-        ambiguous: true,
-        error: 'Multiple conflicting IDs found across NFO files',
-        tmdbId: uniqueTmdbIds.length === 1 ? uniqueTmdbIds[0] : undefined,
-        imdbId: uniqueImdbIds.length === 1 ? uniqueImdbIds[0] : undefined,
-      } as FullMovieNFO;
-    }
+      const winner = filesWithIds[0]; // Highest priority file
+      logger.warn('Provider ID conflict detected - using Kodi-named file', {
+        winner: { file: winner.fileName, tmdbId: winner.data.tmdbId, priority: winner.priority },
+        conflictingFiles: filesWithIds.slice(1).map(f => ({
+          file: f.fileName,
+          tmdbId: f.data.tmdbId
+        }))
+      });
 
-    // Valid IDs
-    if (uniqueTmdbIds[0] !== undefined) mergedData.tmdbId = uniqueTmdbIds[0];
-    if (uniqueImdbIds[0] !== undefined) mergedData.imdbId = uniqueImdbIds[0];
-    mergedData.valid = true;
+      // Discard all files except the winner
+      parsedFiles.length = 0;
+      parsedFiles.push(winner);
+    }
   }
 
-  return mergedData as FullMovieNFO;
+  // Extract provider IDs from highest priority file
+  const primaryFile = parsedFiles[0];
+  const tmdbId = primaryFile.data.tmdbId;
+  const imdbId = primaryFile.data.imdbId;
+
+  if (!tmdbId && !imdbId) {
+    logger.warn('No provider ID found in NFO files');
+    // Still return metadata for UI display (title/year from directory name)
+    return {
+      valid: false,
+      ambiguous: false,
+      error: 'No provider ID found',
+      ...mergeMetadata(parsedFiles),
+    };
+  }
+
+  // Merge metadata from all files with matching provider IDs
+  const mergedData = mergeMetadata(parsedFiles);
+
+  return {
+    ...mergedData,
+    tmdbId,
+    imdbId,
+    valid: true,
+    ambiguous: false,
+  } as FullMovieNFO;
+}
+
+/**
+ * Merge metadata from multiple NFO files with intelligent field-level rules
+ * Kodi-named files take priority for scalars, arrays are merged with deduplication
+ */
+function mergeMetadata(files: NFOFileMetadata[]): Partial<FullMovieNFO> {
+  if (files.length === 0) return {};
+  if (files.length === 1) return files[0].data;
+
+  const merged: Partial<FullMovieNFO> = {};
+  const kodiFile = files[0]; // Highest priority file (sorted earlier)
+
+  // SCALARS: Use Kodi-named file value, fill gaps from other files
+  const scalarFields: (keyof FullMovieNFO)[] = [
+    'title', 'originalTitle', 'sortTitle', 'year', 'plot', 'outline',
+    'tagline', 'mpaa', 'premiered', 'runtime', 'userRating', 'trailerUrl'
+  ];
+
+  for (const field of scalarFields) {
+    // Use Kodi value if present
+    if (kodiFile.data[field] !== undefined) {
+      // For plot/outline, prefer longest version
+      if ((field === 'plot' || field === 'outline') && typeof kodiFile.data[field] === 'string') {
+        (merged as any)[field] = kodiFile.data[field];
+
+        // Check other files for longer versions
+        for (const file of files.slice(1)) {
+          if (typeof file.data[field] === 'string' &&
+              (file.data[field] as string).length > ((merged as any)[field] as string).length) {
+            (merged as any)[field] = file.data[field];
+          }
+        }
+      } else {
+        (merged as any)[field] = kodiFile.data[field];
+      }
+    } else {
+      // Fill gap from other files
+      for (const file of files) {
+        if (file.data[field] !== undefined) {
+          (merged as any)[field] = file.data[field];
+          break;
+        }
+      }
+    }
+  }
+
+  // ARRAYS: Intelligent union merge
+  const actors = mergeActorsArray(files, kodiFile);
+  if (actors !== undefined) merged.actors = actors;
+
+  const directors = mergeStringArray(files.map(f => f.data.directors || []));
+  if (directors !== undefined) merged.directors = directors;
+
+  const credits = mergeStringArray(files.map(f => f.data.credits || []));
+  if (credits !== undefined) merged.credits = credits;
+
+  const genres = mergeStringArray(files.map(f => f.data.genres || []));
+  if (genres !== undefined) merged.genres = genres;
+
+  const studios = mergeStringArray(files.map(f => f.data.studios || []));
+  if (studios !== undefined) merged.studios = studios;
+
+  const countries = mergeStringArray(files.map(f => f.data.countries || []));
+  if (countries !== undefined) merged.countries = countries;
+
+  const tags = mergeStringArray(files.map(f => f.data.tags || []));
+  if (tags !== undefined) merged.tags = tags;
+
+  const ratings = mergeRatingsArray(files.map(f => f.data.ratings || []));
+  if (ratings !== undefined) merged.ratings = ratings;
+
+  // SET INFO: Prefer complete data (with overview)
+  const setInfos = files.map(f => f.data.set).filter(Boolean) as SetData[];
+  if (setInfos.length > 0) {
+    merged.set = setInfos.find(s => s.overview) || setInfos[0];
+  }
+
+  return merged;
+}
+
+/**
+ * Merge actor arrays with deduplication by name
+ * Kodi file roles/orders take priority
+ */
+function mergeActorsArray(files: NFOFileMetadata[], kodiFile: NFOFileMetadata): ActorData[] | undefined {
+  const actorMap = new Map<string, ActorData>();
+  const kodiActors = kodiFile.data.actors || [];
+
+  // First, add all Kodi actors (highest priority)
+  for (const actor of kodiActors) {
+    actorMap.set(actor.name, actor);
+  }
+
+  // Then merge actors from other files (don't overwrite Kodi data)
+  for (const file of files) {
+    if (file === kodiFile) continue;
+
+    for (const actor of file.data.actors || []) {
+      if (!actorMap.has(actor.name)) {
+        actorMap.set(actor.name, actor);
+      }
+    }
+  }
+
+  const actors = Array.from(actorMap.values());
+  return actors.length > 0 ? actors.sort((a, b) => (a.order ?? 999) - (b.order ?? 999)) : undefined;
+}
+
+/**
+ * Merge string arrays with deduplication
+ */
+function mergeStringArray(arrays: string[][]): string[] | undefined {
+  const uniqueSet = new Set<string>();
+
+  for (const arr of arrays) {
+    for (const item of arr) {
+      uniqueSet.add(item);
+    }
+  }
+
+  const result = Array.from(uniqueSet);
+  return result.length > 0 ? result : undefined;
+}
+
+/**
+ * Merge ratings arrays, keeping highest votes per source
+ */
+function mergeRatingsArray(arrays: RatingData[][]): RatingData[] | undefined {
+  const ratingMap = new Map<string, RatingData>();
+
+  for (const arr of arrays) {
+    for (const rating of arr) {
+      const existing = ratingMap.get(rating.source);
+
+      if (!existing || (rating.votes && (!existing.votes || rating.votes > existing.votes))) {
+        ratingMap.set(rating.source, rating);
+      }
+    }
+  }
+
+  const result = Array.from(ratingMap.values());
+  return result.length > 0 ? result : undefined;
 }
 
 /**

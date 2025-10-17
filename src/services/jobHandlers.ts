@@ -1351,6 +1351,11 @@ export class JobHandlers {
         assetsFound: scanResult.assetsFound,
       });
 
+      // Broadcast to frontend when new movie is added for real-time UI updates
+      if (scanResult.isNewMovie && scanResult.movieId) {
+        websocketBroadcaster.broadcastMoviesAdded([scanResult.movieId]);
+      }
+
       // TODO: Queue cache-asset jobs for discovered assets
       // This will be implemented when we add asset caching logic
 

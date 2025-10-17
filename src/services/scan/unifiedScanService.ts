@@ -12,13 +12,12 @@ import { DatabaseManager } from '../../database/DatabaseManager.js';
 //   hashFile,
 // } from '../hash/hashService.js';
 import { parseFullMovieNfos } from '../nfo/nfoParser.js';
-import { generateMovieNFOFromDatabase } from '../nfo/nfoGenerator.js';
 import { trackNFOFile } from '../nfo/nfoFileTracking.js';
 import { extractAndStoreMediaInfo } from '../media/ffprobeService.js';
 import { discoverAndStoreAssets } from '../media/assetDiscovery_unified.js';
 import { detectAndStoreUnknownFiles } from '../media/unknownFilesDetection.js';
 import { IgnorePatternService } from '../ignorePatternService.js';
-import { findOrCreateMovie, MovieLookupContext } from './movieLookupService.js';
+import { findOrCreateMovie, rehashMovieFile, MovieLookupContext } from './movieLookupService.js';
 
 /**
  * Unified Scan Service
@@ -173,7 +172,9 @@ export async function scanMovieDirectory(
       // Try to get TMDB ID from NFO files
       const nfoFiles = await findMovieNfos(movieDir);
       if (nfoFiles.length > 0) {
-        const nfoData = await parseFullMovieNfos(nfoFiles);
+        // Extract video basename (without extension) for exact NFO match priority
+        const videoBasename = path.basename(videoFilePath, path.extname(videoFilePath));
+        const nfoData = await parseFullMovieNfos(nfoFiles, videoBasename);
         if (nfoData.valid && !nfoData.ambiguous) {
           tmdbIdToUse = nfoData.tmdbId;
           imdbIdToUse = imdbIdToUse || nfoData.imdbId;
@@ -220,7 +221,9 @@ export async function scanMovieDirectory(
       let metadataToStore: any = null;
 
       if (nfoFiles.length > 0) {
-        const nfoData = await parseFullMovieNfos(nfoFiles);
+        // Extract video basename (without extension) for exact NFO match priority
+        const videoBasename = path.basename(videoFilePath, path.extname(videoFilePath));
+        const nfoData = await parseFullMovieNfos(nfoFiles, videoBasename);
         logger.debug(`Parsed NFO data - valid: ${nfoData.valid}, tmdbId: ${nfoData.tmdbId}`, { movieId });
 
         if (nfoData.valid && !nfoData.ambiguous) {
@@ -243,9 +246,6 @@ export async function scanMovieDirectory(
           });
           await storeMovieMetadata(db, movieId, metadataToStore);
 
-          // Generate clean NFO from database (database is source of truth)
-          await generateMovieNFOFromDatabase(db, movieId, movieDir);
-
           // Track NFO file in text_files table (unified file system)
           if (nfoFiles.length > 0) {
             await trackNFOFile(db, nfoFiles[0], 'movie', movieId, nfoData);
@@ -263,9 +263,7 @@ export async function scanMovieDirectory(
         logger.debug('No NFO files found, movie needs identification', { movieDir });
       }
 
-      // TODO: Hash tracking not in clean schema - implement if needed
-      // const dirHashResult = await hashDirectoryFingerprint(movieDir);
-      // const videoHashResult = await hashFile(videoFilePath);
+      // Note: File hash is already computed and stored during movie creation (see createMovie)
 
       // Extract stream details with FFprobe
       try {
@@ -317,28 +315,36 @@ export async function scanMovieDirectory(
         trigger: context?.trigger || 'unknown',
       });
 
-      // TODO: Change detection temporarily disabled - hash columns not in clean schema
-      // For now, always rescan everything
-      logger.debug('Rescanning all components (change detection disabled)', { movieId });
-      result.directoryChanged = true;
-
-      // Always regenerate NFO on rescan (for now)
+      // Re-hash file to detect upgrades/quality changes
+      let fileHashChanged = false;
       try {
-        logger.info('Regenerating NFO from database', { movieId });
-        await generateMovieNFOFromDatabase(db, movieId, movieDir);
-        result.nfoRegenerated = true;
+        fileHashChanged = await rehashMovieFile(db, movieId, videoFilePath);
+        result.videoChanged = fileHashChanged;
+
+        if (fileHashChanged) {
+          logger.info('File hash changed - detected upgrade/modification', { movieId });
+        } else {
+          logger.debug('File hash unchanged - no video modification detected', { movieId });
+        }
       } catch (error: any) {
-        logger.warn('NFO regeneration failed', { movieId, error: error.message });
+        logger.warn('Failed to rehash movie file', { movieId, error: error.message });
+        // Assume changed to be safe
+        fileHashChanged = true;
+        result.videoChanged = true;
       }
 
-      // Always re-extract streams on rescan (for now)
-      try {
-        logger.info('Re-extracting video streams', { movieId });
-        await extractAndStoreMediaInfo(db, 'movie', movieId, videoFilePath);
-        result.streamsExtracted = true;
-        result.videoChanged = true;
-      } catch (error: any) {
-        result.errors.push(`FFprobe failed: ${error.message}`);
+      // If file hash changed, re-extract stream details
+      if (fileHashChanged) {
+        // Re-extract streams (video was upgraded/modified)
+        try {
+          logger.info('File changed - re-extracting video streams', { movieId });
+          await extractAndStoreMediaInfo(db, 'movie', movieId, videoFilePath);
+          result.streamsExtracted = true;
+        } catch (error: any) {
+          result.errors.push(`FFprobe failed: ${error.message}`);
+        }
+
+        // Note: NFO regeneration will happen during enrichment job, not scan job
       }
 
       // Re-discover assets (always, since directory changed)
@@ -579,7 +585,8 @@ async function findMovieNfos(movieDir: string): Promise<string[]> {
 
     for (const file of files) {
       const lowerFile = file.toLowerCase();
-      if (lowerFile.endsWith('.nfo') || lowerFile === 'movie.xml') {
+      // Scan for .nfo, .txt (Radarr URL files), and legacy movie.xml
+      if (lowerFile.endsWith('.nfo') || lowerFile.endsWith('.txt') || lowerFile === 'movie.xml') {
         nfoFiles.push(path.join(movieDir, file));
       }
     }

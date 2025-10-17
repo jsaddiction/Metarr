@@ -13,6 +13,66 @@ import { DatabaseConnection } from '../../types/database.js';
 import { logger } from '../../middleware/logging.js';
 
 // ============================================================
+// UTILITY FUNCTIONS
+// ============================================================
+
+/**
+ * Clean up empty parent directories after file deletion
+ * Recursively removes empty directories up to the cache root
+ *
+ * Example: /data/cache/images/ab/cd/file.jpg deleted
+ * - Removes /data/cache/images/ab/cd if empty
+ * - Removes /data/cache/images/ab if empty
+ * - Stops at /data/cache/images (cache root)
+ */
+async function cleanupEmptyDirectories(filePath: string, cacheRoot: string): Promise<void> {
+  try {
+    let currentDir = path.dirname(filePath);
+    const absoluteCacheRoot = path.resolve(cacheRoot);
+
+    // Walk up directory tree until we reach cache root
+    while (currentDir !== absoluteCacheRoot && currentDir.startsWith(absoluteCacheRoot)) {
+      try {
+        const entries = await fs.readdir(currentDir);
+
+        if (entries.length === 0) {
+          // Directory is empty, delete it
+          await fs.rmdir(currentDir);
+          logger.debug('Removed empty cache directory', { directory: currentDir });
+
+          // Move up to parent directory
+          currentDir = path.dirname(currentDir);
+        } else {
+          // Directory not empty, stop climbing
+          break;
+        }
+      } catch (error: any) {
+        // Directory doesn't exist or can't be read - stop climbing
+        logger.debug('Stopped directory cleanup', {
+          directory: currentDir,
+          reason: error.code || error.message
+        });
+        break;
+      }
+    }
+
+    // Ensure cache root still exists (safety check)
+    try {
+      await fs.access(absoluteCacheRoot);
+    } catch (error: any) {
+      // Cache root was deleted - recreate it
+      await fs.mkdir(absoluteCacheRoot, { recursive: true });
+      logger.warn('Recreated cache root directory', { cacheRoot: absoluteCacheRoot });
+    }
+  } catch (error: any) {
+    logger.warn('Failed to cleanup empty directories', {
+      filePath,
+      error: error.message
+    });
+  }
+}
+
+// ============================================================
 // TYPE DEFINITIONS
 // ============================================================
 
@@ -321,6 +381,10 @@ export async function decrementImageReferenceCount(
         await fs.unlink(filePath);
         await db.execute(`DELETE FROM image_files WHERE id = ?`, [cacheFileId]);
         logger.info('Deleted unreferenced cache file', { cacheFileId, filePath });
+
+        // Clean up empty parent directories
+        const cacheRoot = path.join(process.cwd(), 'data', 'cache', 'images');
+        await cleanupEmptyDirectories(filePath, cacheRoot);
       } catch (error: any) {
         logger.error('Failed to delete cache file', { cacheFileId, error: error.message });
       }

@@ -3,6 +3,7 @@ import { DatabaseConnection } from '../types/database.js';
 import { Library, MediaLibraryType, DirectoryEntry } from '../types/models.js';
 import { logger } from '../middleware/logging.js';
 import { validateDirectory, browseDirectory, getAvailableDrives } from './nfo/nfoDiscovery.js';
+import { cleanupEmptyCacheDirectories } from './files/cacheCleanup.js';
 
 export class LibraryService {
   constructor(private dbManager: DatabaseManager) {}
@@ -197,6 +198,12 @@ export class LibraryService {
       // Delete these + their thumbnails from cache
       // ========================================
       await this.cleanupOrphanedEntities(db);
+
+      // ========================================
+      // Step 4: Clean up empty cache directories
+      // After deleting all files, remove empty subdirectories from cache
+      // ========================================
+      await cleanupEmptyCacheDirectories();
 
       logger.info(`Completed deletion of library ${id}`, { name: library.name });
     } catch (error: any) {
