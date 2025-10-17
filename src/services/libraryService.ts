@@ -175,25 +175,26 @@ export class LibraryService {
       // ========================================
       // Step 1: Delete cached physical files FIRST (while we can still query DB)
       // Query file paths while movies/file records still exist, then delete from disk
+      // CRITICAL: Only delete CACHE files, NEVER library files (user's data)
       // ========================================
       await this.deleteCachedPhysicalFiles(db, id);
 
       // ========================================
-      // Step 2: Delete file records (image_files, video_files, etc.)
-      // These are NOT cascade-deleted because entity_id has no FK constraint
-      // Must delete explicitly before deleting movies
-      // ========================================
-      await this.deleteFileRecordsForLibrary(db, id);
-
-      // ========================================
-      // Step 3: Delete the library
-      // CASCADE automatically deletes: movies, series, episodes, and all junction tables
+      // Step 2: Delete the library
+      // CASCADE automatically deletes:
+      // - movies → (via trigger) → image_files, video_files, audio_files, text_files, unknown_files
+      // - movies → (via FK) → movie_actors, movie_crew, movie_genres, movie_studios, movie_collection_members
+      // - series → (via FK) → seasons → (via FK) → episodes → (via trigger) → episode files
+      // - series → (via FK) → series_genres, series_studios
+      // - artists → (via FK) → albums → (via FK) → tracks
       // ========================================
       await db.execute('DELETE FROM libraries WHERE id = ?', [id]);
-      logger.info(`Deleted library ${id} (movies/series cascaded)`, { name: library.name });
+      logger.info(`Deleted library ${id} (cascaded all entities and files)`, { name: library.name });
 
       // ========================================
-      // Step 4: Clean up orphaned entities (actors, genres, etc. with no references)
+      // Step 3: Clean up orphaned metadata entities
+      // After cascade deletion, some actors/crew/genres may be orphaned (no remaining references)
+      // Delete these + their thumbnails from cache
       // ========================================
       await this.cleanupOrphanedEntities(db);
 
@@ -205,75 +206,17 @@ export class LibraryService {
   }
 
   /**
-   * Delete file records for a library (BEFORE deleting movies/series)
-   * File records have entity_id but no FK constraint, so they must be deleted explicitly
+   * NOTE: File record deletion is now handled by CASCADE DELETE TRIGGERS
+   * See migration 20251015_001_clean_schema.ts for trigger definitions
+   *
+   * Triggers automatically delete file records when parent entities are deleted:
+   * - delete_movie_files: movies → image_files, video_files, audio_files, text_files, unknown_files
+   * - delete_episode_files: episodes → (same)
+   * - delete_series_files: series → image_files, audio_files
+   * - delete_season_files: seasons → image_files
+   * - delete_actor_files: actors → image_files
+   * - delete_artist_files: artists → image_files, audio_files
    */
-  private async deleteFileRecordsForLibrary(db: DatabaseConnection, libraryId: number): Promise<void> {
-    try {
-      // Delete image files belonging to movies/series/episodes in this library
-      const imagesResult = await db.execute(`
-        DELETE FROM image_files
-        WHERE (entity_type = 'movie' AND entity_id IN (SELECT id FROM movies WHERE library_id = ?))
-           OR (entity_type = 'series' AND entity_id IN (SELECT id FROM series WHERE library_id = ?))
-           OR (entity_type = 'episode' AND entity_id IN (
-             SELECT e.id FROM episodes e
-             INNER JOIN series s ON e.series_id = s.id
-             WHERE s.library_id = ?
-           ))
-      `, [libraryId, libraryId, libraryId]);
-      const imagesDeleted = imagesResult.affectedRows || 0;
-
-      // Delete video files belonging to movies/episodes in this library
-      const videosResult = await db.execute(`
-        DELETE FROM video_files
-        WHERE (entity_type = 'movie' AND entity_id IN (SELECT id FROM movies WHERE library_id = ?))
-           OR (entity_type = 'episode' AND entity_id IN (
-             SELECT e.id FROM episodes e
-             INNER JOIN series s ON e.series_id = s.id
-             WHERE s.library_id = ?
-           ))
-      `, [libraryId, libraryId]);
-      const videosDeleted = videosResult.affectedRows || 0;
-
-      // Delete text files belonging to movies/episodes in this library
-      const textResult = await db.execute(`
-        DELETE FROM text_files
-        WHERE (entity_type = 'movie' AND entity_id IN (SELECT id FROM movies WHERE library_id = ?))
-           OR (entity_type = 'episode' AND entity_id IN (
-             SELECT e.id FROM episodes e
-             INNER JOIN series s ON e.series_id = s.id
-             WHERE s.library_id = ?
-           ))
-      `, [libraryId, libraryId]);
-      const textDeleted = textResult.affectedRows || 0;
-
-      // Delete audio files belonging to movies/series in this library
-      const audioResult = await db.execute(`
-        DELETE FROM audio_files
-        WHERE (entity_type = 'movie' AND entity_id IN (SELECT id FROM movies WHERE library_id = ?))
-           OR (entity_type = 'series' AND entity_id IN (SELECT id FROM series WHERE library_id = ?))
-      `, [libraryId, libraryId]);
-      const audioDeleted = audioResult.affectedRows || 0;
-
-      // Delete unknown files belonging to movies in this library
-      const unknownResult = await db.execute(`
-        DELETE FROM unknown_files
-        WHERE entity_type = 'movie' AND entity_id IN (SELECT id FROM movies WHERE library_id = ?)
-      `, [libraryId]);
-      const unknownDeleted = unknownResult.affectedRows || 0;
-
-      logger.info(`Deleted file records for library ${libraryId}`, {
-        images: imagesDeleted,
-        videos: videosDeleted,
-        text: textDeleted,
-        audio: audioDeleted,
-        unknown: unknownDeleted,
-      });
-    } catch (error: any) {
-      logger.error(`Failed to delete file records for library ${libraryId}`, { error: error.message });
-      throw error; // Throw because this blocks library deletion
-    }
-  }
 
   /**
    * Delete all cached physical files from disk (unified file system)
@@ -467,71 +410,132 @@ export class LibraryService {
   }
 
   /**
-   * Clean up orphaned entities that are no longer referenced by any media
+   * Clean up orphaned metadata entities that are no longer referenced by any media
+   * Also deletes their thumbnails from cache via CASCADE trigger (delete_actor_files)
    */
   private async cleanupOrphanedEntities(db: DatabaseConnection): Promise<void> {
+    const fs = await import('fs/promises');
+
     try {
       let totalCleaned = 0;
 
-      // Clean up actors with no references
+      // ========================================
+      // Step 1: Get orphaned actor IDs BEFORE deletion (to delete their thumbnails)
+      // ========================================
+      const orphanedActors = (await db.query(
+        `SELECT id, thumb_id FROM actors
+         WHERE id NOT IN (
+           SELECT DISTINCT actor_id FROM movie_actors
+           UNION
+           SELECT DISTINCT actor_id FROM episode_actors
+         )`
+      )) as Array<{ id: number; thumb_id: number | null }>;
+
+      // Delete actor thumbnails from cache
+      for (const actor of orphanedActors) {
+        if (actor.thumb_id) {
+          try {
+            const thumbs = (await db.query(
+              `SELECT file_path FROM image_files
+               WHERE id = ? AND location = 'cache'`,
+              [actor.thumb_id]
+            )) as Array<{ file_path: string }>;
+
+            for (const thumb of thumbs) {
+              await fs.unlink(thumb.file_path).catch((err) => {
+                if (err.code !== 'ENOENT') {
+                  logger.warn(`Failed to delete actor thumbnail: ${thumb.file_path}`, { error: err.message });
+                }
+              });
+            }
+          } catch (err: any) {
+            logger.warn(`Failed to query actor thumbnail for actor ${actor.id}`, { error: err.message });
+          }
+        }
+      }
+
+      // Delete orphaned actors (trigger will delete their image_files records)
       const actorsResult = await db.execute(`
         DELETE FROM actors
         WHERE id NOT IN (
-          SELECT DISTINCT actor_id FROM movies_actors
+          SELECT DISTINCT actor_id FROM movie_actors
           UNION
-          SELECT DISTINCT actor_id FROM series_actors
-          UNION
-          SELECT DISTINCT actor_id FROM episodes_actors
+          SELECT DISTINCT actor_id FROM episode_actors
         )
       `);
       const actorsCleaned = actorsResult.affectedRows || 0;
       totalCleaned += actorsCleaned;
 
-      // Clean up genres with no references
+      // ========================================
+      // Step 2: Get orphaned crew IDs BEFORE deletion (to delete their thumbnails)
+      // ========================================
+      const orphanedCrew = (await db.query(
+        `SELECT id, thumb_id FROM crew
+         WHERE id NOT IN (
+           SELECT DISTINCT crew_id FROM movie_crew
+           UNION
+           SELECT DISTINCT crew_id FROM episode_crew
+         )`
+      )) as Array<{ id: number; thumb_id: number | null }>;
+
+      // Delete crew thumbnails from cache
+      for (const crewMember of orphanedCrew) {
+        if (crewMember.thumb_id) {
+          try {
+            const thumbs = (await db.query(
+              `SELECT file_path FROM image_files
+               WHERE id = ? AND location = 'cache'`,
+              [crewMember.thumb_id]
+            )) as Array<{ file_path: string }>;
+
+            for (const thumb of thumbs) {
+              await fs.unlink(thumb.file_path).catch((err) => {
+                if (err.code !== 'ENOENT') {
+                  logger.warn(`Failed to delete crew thumbnail: ${thumb.file_path}`, { error: err.message });
+                }
+              });
+            }
+          } catch (err: any) {
+            logger.warn(`Failed to query crew thumbnail for crew ${crewMember.id}`, { error: err.message });
+          }
+        }
+      }
+
+      // Delete orphaned crew
+      const crewResult = await db.execute(`
+        DELETE FROM crew
+        WHERE id NOT IN (
+          SELECT DISTINCT crew_id FROM movie_crew
+          UNION
+          SELECT DISTINCT crew_id FROM episode_crew
+        )
+      `);
+      const crewCleaned = crewResult.affectedRows || 0;
+      totalCleaned += crewCleaned;
+
+      // ========================================
+      // Step 3: Clean up genres (no thumbnails)
+      // ========================================
       const genresResult = await db.execute(`
         DELETE FROM genres
         WHERE id NOT IN (
-          SELECT DISTINCT genre_id FROM movies_genres
+          SELECT DISTINCT genre_id FROM movie_genres
           UNION
           SELECT DISTINCT genre_id FROM series_genres
+          UNION
+          SELECT DISTINCT genre_id FROM music_genres
         )
       `);
       const genresCleaned = genresResult.affectedRows || 0;
       totalCleaned += genresCleaned;
 
-      // Clean up directors with no references
-      const directorsResult = await db.execute(`
-        DELETE FROM directors
-        WHERE id NOT IN (
-          SELECT DISTINCT director_id FROM movies_directors
-          UNION
-          SELECT DISTINCT director_id FROM series_directors
-          UNION
-          SELECT DISTINCT director_id FROM episodes_directors
-        )
-      `);
-      const directorsCleaned = directorsResult.affectedRows || 0;
-      totalCleaned += directorsCleaned;
-
-      // Clean up writers with no references
-      const writersResult = await db.execute(`
-        DELETE FROM writers
-        WHERE id NOT IN (
-          SELECT DISTINCT writer_id FROM movies_writers
-          UNION
-          SELECT DISTINCT writer_id FROM series_writers
-          UNION
-          SELECT DISTINCT writer_id FROM episodes_writers
-        )
-      `);
-      const writersCleaned = writersResult.affectedRows || 0;
-      totalCleaned += writersCleaned;
-
-      // Clean up studios with no references
+      // ========================================
+      // Step 4: Clean up studios (no thumbnails)
+      // ========================================
       const studiosResult = await db.execute(`
         DELETE FROM studios
         WHERE id NOT IN (
-          SELECT DISTINCT studio_id FROM movies_studios
+          SELECT DISTINCT studio_id FROM movie_studios
           UNION
           SELECT DISTINCT studio_id FROM series_studios
         )
@@ -539,44 +543,27 @@ export class LibraryService {
       const studiosCleaned = studiosResult.affectedRows || 0;
       totalCleaned += studiosCleaned;
 
-      // Clean up countries with no references
-      const countriesResult = await db.execute(`
-        DELETE FROM countries
-        WHERE id NOT IN (
-          SELECT DISTINCT country_id FROM movies_countries
-        )
-      `);
-      const countriesCleaned = countriesResult.affectedRows || 0;
-      totalCleaned += countriesCleaned;
-
-      // Clean up tags with no references
-      const tagsResult = await db.execute(`
-        DELETE FROM tags
-        WHERE id NOT IN (
-          SELECT DISTINCT tag_id FROM movies_tags
-          UNION
-          SELECT DISTINCT tag_id FROM series_tags
-        )
-      `);
-      const tagsCleaned = tagsResult.affectedRows || 0;
-      totalCleaned += tagsCleaned;
-
-      if (totalCleaned > 0) {
-        logger.info(`Cleaned up ${totalCleaned} orphaned entities`, {
-          actors: actorsCleaned,
-          genres: genresCleaned,
-          directors: directorsCleaned,
-          writers: writersCleaned,
-          studios: studiosCleaned,
-          countries: countriesCleaned,
-          tags: tagsCleaned,
-        });
-      }
+      logger.info('Cleaned up orphaned entities', {
+        actors: actorsCleaned,
+        crew: crewCleaned,
+        genres: genresCleaned,
+        studios: studiosCleaned,
+        total: totalCleaned,
+      });
     } catch (error: any) {
-      logger.error('Failed to cleanup orphaned entities', { error: error.message });
-      // Don't throw - this is a cleanup operation
+      logger.error('Failed to clean up orphaned entities', { error: error.message });
+      // Don't throw - orphan cleanup is nice-to-have, not critical
     }
   }
+
+  /**
+   * NOTE: Old cleanup code removed - countries and tags tables don't exist in current schema
+   * If they are added in future, cleanup should follow the same pattern as above:
+   * 1. Query orphaned entities
+   * 2. Delete their thumbnails (if they have any)
+   * 3. Delete the entity records (triggers handle file_records)
+   */
+
 
   /**
    * Get available drives (Windows only)

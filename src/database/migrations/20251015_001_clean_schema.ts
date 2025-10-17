@@ -1217,6 +1217,86 @@ export class CleanSchemaMigration {
     await db.execute('CREATE INDEX idx_scan_jobs_library ON scan_jobs(library_id)');
     await db.execute('CREATE INDEX idx_scan_jobs_status ON scan_jobs(status)');
 
+    // ============================================================
+    // CASCADE DELETE TRIGGERS FOR FILE TABLES
+    // ============================================================
+    // Since file tables use polymorphic associations (entity_type + entity_id),
+    // we need triggers to implement CASCADE behavior when parent entities are deleted.
+    // This ensures: Library deleted → Movies deleted → File records deleted
+
+    console.log('🔗 Creating CASCADE delete triggers for file tables...');
+
+    // Trigger: Delete movie files when movie is deleted
+    await db.execute(`
+      CREATE TRIGGER delete_movie_files
+      AFTER DELETE ON movies
+      FOR EACH ROW
+      BEGIN
+        DELETE FROM image_files WHERE entity_type = 'movie' AND entity_id = OLD.id;
+        DELETE FROM video_files WHERE entity_type = 'movie' AND entity_id = OLD.id;
+        DELETE FROM audio_files WHERE entity_type = 'movie' AND entity_id = OLD.id;
+        DELETE FROM text_files WHERE entity_type = 'movie' AND entity_id = OLD.id;
+        DELETE FROM unknown_files WHERE entity_type = 'movie' AND entity_id = OLD.id;
+      END;
+    `);
+
+    // Trigger: Delete episode files when episode is deleted
+    await db.execute(`
+      CREATE TRIGGER delete_episode_files
+      AFTER DELETE ON episodes
+      FOR EACH ROW
+      BEGIN
+        DELETE FROM image_files WHERE entity_type = 'episode' AND entity_id = OLD.id;
+        DELETE FROM video_files WHERE entity_type = 'episode' AND entity_id = OLD.id;
+        DELETE FROM audio_files WHERE entity_type = 'episode' AND entity_id = OLD.id;
+        DELETE FROM text_files WHERE entity_type = 'episode' AND entity_id = OLD.id;
+        DELETE FROM unknown_files WHERE entity_type = 'episode' AND entity_id = OLD.id;
+      END;
+    `);
+
+    // Trigger: Delete series files when series is deleted
+    await db.execute(`
+      CREATE TRIGGER delete_series_files
+      AFTER DELETE ON series
+      FOR EACH ROW
+      BEGIN
+        DELETE FROM image_files WHERE entity_type = 'series' AND entity_id = OLD.id;
+        DELETE FROM audio_files WHERE entity_type = 'series' AND entity_id = OLD.id;
+      END;
+    `);
+
+    // Trigger: Delete season files when season is deleted
+    await db.execute(`
+      CREATE TRIGGER delete_season_files
+      AFTER DELETE ON seasons
+      FOR EACH ROW
+      BEGIN
+        DELETE FROM image_files WHERE entity_type = 'season' AND entity_id = OLD.id;
+      END;
+    `);
+
+    // Trigger: Delete actor files when actor is deleted
+    await db.execute(`
+      CREATE TRIGGER delete_actor_files
+      AFTER DELETE ON actors
+      FOR EACH ROW
+      BEGIN
+        DELETE FROM image_files WHERE entity_type = 'actor' AND entity_id = OLD.id;
+      END;
+    `);
+
+    // Trigger: Delete artist files when artist is deleted
+    await db.execute(`
+      CREATE TRIGGER delete_artist_files
+      AFTER DELETE ON artists
+      FOR EACH ROW
+      BEGIN
+        DELETE FROM image_files WHERE entity_type = 'artist' AND entity_id = OLD.id;
+        DELETE FROM audio_files WHERE entity_type = 'artist' AND entity_id = OLD.id;
+      END;
+    `);
+
+    console.log('✅ CASCADE delete triggers created');
     console.log('✅ Clean schema migration completed successfully!');
   }
 
