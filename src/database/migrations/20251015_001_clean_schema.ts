@@ -237,6 +237,9 @@ export class CleanSchemaMigration {
         codec TEXT,
         duration_seconds INTEGER,
         bitrate INTEGER,
+        sample_rate INTEGER,
+        channels INTEGER,
+        language TEXT,
         source_type TEXT CHECK(source_type IN ('provider', 'local', 'user')),
         source_url TEXT,
         provider_name TEXT,
@@ -274,6 +277,8 @@ export class CleanSchemaMigration {
         nfo_needs_regen BOOLEAN DEFAULT 0,
         source_type TEXT CHECK(source_type IN ('provider', 'local', 'user')),
         source_url TEXT,
+        provider_name TEXT,
+        classification_score INTEGER,
         library_file_id INTEGER,
         cache_file_id INTEGER,
         reference_count INTEGER DEFAULT 0,
@@ -300,12 +305,14 @@ export class CleanSchemaMigration {
         file_name TEXT NOT NULL,
         file_size INTEGER NOT NULL,
         extension TEXT NOT NULL,
+        category TEXT CHECK(category IN ('video', 'image', 'archive', 'text', 'other')),
         discovered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
 
     await db.execute('CREATE INDEX idx_unknown_files_entity ON unknown_files(entity_type, entity_id)');
     await db.execute('CREATE INDEX idx_unknown_files_extension ON unknown_files(extension)');
+    await db.execute('CREATE INDEX idx_unknown_files_category ON unknown_files(category)');
 
     console.log('✅ unknown_files table created');
     console.log('✅ Unified file system tables created');
@@ -342,6 +349,7 @@ export class CleanSchemaMigration {
         poster_id INTEGER,
         fanart_id INTEGER,
         logo_id INTEGER,
+        clearlogo_id INTEGER,
         clearart_id INTEGER,
         banner_id INTEGER,
         thumb_id INTEGER,
@@ -353,6 +361,7 @@ export class CleanSchemaMigration {
         poster_locked BOOLEAN DEFAULT 0,
         fanart_locked BOOLEAN DEFAULT 0,
         logo_locked BOOLEAN DEFAULT 0,
+        clearlogo_locked BOOLEAN DEFAULT 0,
         clearart_locked BOOLEAN DEFAULT 0,
         banner_locked BOOLEAN DEFAULT 0,
         thumb_locked BOOLEAN DEFAULT 0,
@@ -369,6 +378,7 @@ export class CleanSchemaMigration {
         FOREIGN KEY (poster_id) REFERENCES image_files(id),
         FOREIGN KEY (fanart_id) REFERENCES image_files(id),
         FOREIGN KEY (logo_id) REFERENCES image_files(id),
+        FOREIGN KEY (clearlogo_id) REFERENCES image_files(id),
         FOREIGN KEY (clearart_id) REFERENCES image_files(id),
         FOREIGN KEY (banner_id) REFERENCES image_files(id),
         FOREIGN KEY (thumb_id) REFERENCES image_files(id),

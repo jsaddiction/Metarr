@@ -7,6 +7,7 @@ import { PublishingService } from './publishingService.js';
 import { TMDBClient } from './providers/tmdb/TMDBClient.js';
 import { NotificationConfigService } from './notificationConfigService.js';
 import { MediaPlayerConnectionManager } from './mediaPlayerConnectionManager.js';
+import { websocketBroadcaster } from './websocketBroadcaster.js';
 import { logger } from '../middleware/logging.js';
 
 /**
@@ -899,6 +900,9 @@ export class JobHandlers {
 
             processed++;
             logger.info(`Created movie ${movieId}: ${title}${year ? ` (${year})` : ''}`);
+
+            // Broadcast to frontend that a new movie was added
+            websocketBroadcaster.broadcastMoviesAdded([movieId]);
           }
           // Series handling would go here (more complex)
           else if (libraryType === 'series') {

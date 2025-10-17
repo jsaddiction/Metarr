@@ -5,7 +5,9 @@ import { LibraryCard } from '../../components/library/LibraryCard';
 import { LibraryConfigModal } from '../../components/library/LibraryConfigModal';
 import { ScannerSettings } from '../../components/library/ScannerSettings';
 import { useLibraries, useActiveScans, useCreateLibrary, useUpdateLibrary, useDeleteLibrary, useStartLibraryScan } from '../../hooks/useLibraryScans';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { AnimatedTabs, AnimatedTabsContent } from '../../components/ui/AnimatedTabs';
+
+type TabType = 'libraries' | 'scanner';
 
 export const Libraries: React.FC = () => {
   // Use TanStack Query hooks for data fetching
@@ -18,6 +20,7 @@ export const Libraries: React.FC = () => {
   const deleteLibrary = useDeleteLibrary();
   const startScan = useStartLibraryScan();
 
+  const [activeTab, setActiveTab] = useState<TabType>('libraries');
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [selectedLibrary, setSelectedLibrary] = useState<Library | undefined>();
 
@@ -124,17 +127,16 @@ export const Libraries: React.FC = () => {
         </p>
       </div>
 
-      <Tabs defaultValue="libraries" className="space-y-6">
-        <TabsList>
-          <TabsTrigger value="libraries">
-            Libraries
-          </TabsTrigger>
-          <TabsTrigger value="scanner">
-            Scanner Settings
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="libraries" className="space-y-6">
+      <AnimatedTabs
+        value={activeTab}
+        onValueChange={(value) => setActiveTab(value as TabType)}
+        tabs={[
+          { value: 'libraries', label: 'Libraries' },
+          { value: 'scanner', label: 'Scanner Settings' },
+        ]}
+        className="mb-6"
+      >
+        <AnimatedTabsContent value="libraries" className="space-y-6">
           {loading ? (
             <div className="text-center py-12">
               <p className="text-neutral-400">Loading libraries...</p>
@@ -172,12 +174,12 @@ export const Libraries: React.FC = () => {
               )}
             </>
           )}
-        </TabsContent>
+        </AnimatedTabsContent>
 
-        <TabsContent value="scanner" className="space-y-6">
+        <AnimatedTabsContent value="scanner" className="space-y-6">
           <ScannerSettings />
-        </TabsContent>
-      </Tabs>
+        </AnimatedTabsContent>
+      </AnimatedTabs>
 
       <LibraryConfigModal
         isOpen={showConfigModal}

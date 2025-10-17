@@ -76,24 +76,32 @@ export interface UnknownFile {
 
 /**
  * Fetch movie images
+ *
+ * @deprecated Use useMovie(movieId, ['files']) instead - images available at movie.files.images
+ * This hook is kept for backward compatibility but will be removed in a future version.
  */
 export const useMovieImages = (movieId: number | null) => {
   return useQuery<ImagesByType, Error>({
     queryKey: ['movieImages', movieId],
     queryFn: async () => {
       if (!movieId) throw new Error('Movie ID is required');
-      const response = await fetch(`/api/movies/${movieId}/images`);
-      if (!response.ok) throw new Error('Failed to fetch images');
+
+      // Use the new include parameter approach
+      const response = await fetch(`/api/movies/${movieId}?include=files`);
+      if (!response.ok) throw new Error('Failed to fetch movie data');
       const data = await response.json();
 
-      // Group images by type
+      // Extract and group images by type from files.images
       const grouped: ImagesByType = {};
-      data.images.forEach((img: any) => {
-        if (!grouped[img.image_type]) {
-          grouped[img.image_type] = [];
-        }
-        grouped[img.image_type].push(img);
-      });
+      if (data.files && data.files.images) {
+        data.files.images.forEach((img: any) => {
+          const type = img.file_type || img.image_type;
+          if (!grouped[type]) {
+            grouped[type] = [];
+          }
+          grouped[type].push(img);
+        });
+      }
 
       return grouped;
     },
@@ -180,14 +188,15 @@ export const useDeleteImage = (movieId: number) => {
 };
 
 /**
- * Recover missing images from cache
+ * Rebuild all assets from cache (replaces old recover images functionality)
+ * This rebuilds ALL assets (images, trailers, subtitles, etc.) not just images
  */
-export const useRecoverImages = (movieId: number) => {
+export const useRebuildAssets = (movieId: number) => {
   const queryClient = useQueryClient();
 
-  return useMutation<{ recoveredCount: number; message: string }, Error, void>({
+  return useMutation<{ message: string }, Error, void>({
     mutationFn: async () => {
-      const response = await fetch(`/api/movies/${movieId}/images/recover`, {
+      const response = await fetch(`/api/movies/${movieId}/rebuild-assets`, {
         method: 'POST',
       });
 
@@ -198,22 +207,80 @@ export const useRecoverImages = (movieId: number) => {
       return response.json();
     },
     onSuccess: () => {
+      // Invalidate all file-related queries
+      queryClient.invalidateQueries({ queryKey: ['movie', movieId] });
       queryClient.invalidateQueries({ queryKey: ['movieImages', movieId] });
+      queryClient.invalidateQueries({ queryKey: ['movieExtras', movieId] });
     },
   });
 };
 
 /**
  * Fetch movie extras (trailer, subtitles, theme song)
+ *
+ * @deprecated Use useMovie(movieId, ['files']) instead - extras available at movie.files.videos, movie.files.text, movie.files.audio
+ * This hook is kept for backward compatibility but will be removed in a future version.
  */
 export const useMovieExtras = (movieId: number | null) => {
   return useQuery<MovieExtras, Error>({
     queryKey: ['movieExtras', movieId],
     queryFn: async () => {
       if (!movieId) throw new Error('Movie ID is required');
-      const response = await fetch(`/api/movies/${movieId}/extras`);
-      if (!response.ok) throw new Error('Failed to fetch extras');
-      return response.json();
+
+      // Use the new include parameter approach
+      const response = await fetch(`/api/movies/${movieId}?include=files`);
+      if (!response.ok) throw new Error('Failed to fetch movie data');
+      const data = await response.json();
+
+      // Extract extras from files
+      const extras: MovieExtras = {
+        trailer: null,
+        subtitles: [],
+        themeSong: null,
+      };
+
+      if (data.files) {
+        // Find trailer from videos
+        if (data.files.videos && data.files.videos.length > 0) {
+          const trailer = data.files.videos.find((v: any) => v.file_type === 'trailer');
+          if (trailer) {
+            extras.trailer = {
+              id: trailer.id,
+              localPath: trailer.file_path,
+              quality: trailer.resolution,
+              size: trailer.file_size,
+            };
+          }
+        }
+
+        // Map subtitles from text files
+        if (data.files.text && data.files.text.length > 0) {
+          extras.subtitles = data.files.text
+            .filter((t: any) => t.file_type === 'subtitle')
+            .map((t: any) => ({
+              id: t.id,
+              language: t.language || 'unknown',
+              filePath: t.file_path,
+              forced: false,
+              size: t.file_size,
+            }));
+        }
+
+        // Find theme song from audio files
+        if (data.files.audio && data.files.audio.length > 0) {
+          const theme = data.files.audio.find((a: any) => a.file_type === 'theme');
+          if (theme) {
+            extras.themeSong = {
+              id: theme.id,
+              filePath: theme.file_path,
+              duration: theme.duration,
+              size: theme.file_size,
+            };
+          }
+        }
+      }
+
+      return extras;
     },
     enabled: !!movieId,
     staleTime: 5 * 60 * 1000, // 5 minutes
@@ -291,16 +358,23 @@ export const useDeleteThemeSong = (movieId: number) => {
 
 /**
  * Fetch unknown files for a movie
+ *
+ * @deprecated Use useMovie(movieId, ['files']) instead - unknown files available at movie.files.unknown
+ * This hook is kept for backward compatibility but will be removed in a future version.
  */
 export const useUnknownFiles = (movieId: number | null) => {
   return useQuery<UnknownFile[], Error>({
     queryKey: ['unknownFiles', movieId],
     queryFn: async () => {
       if (!movieId) throw new Error('Movie ID is required');
-      const response = await fetch(`/api/movies/${movieId}/unknown-files`);
-      if (!response.ok) throw new Error('Failed to fetch unknown files');
+
+      // Use the new include parameter approach
+      const response = await fetch(`/api/movies/${movieId}?include=files`);
+      if (!response.ok) throw new Error('Failed to fetch movie data');
       const data = await response.json();
-      return data.unknownFiles || [];
+
+      // Return unknown files from the files object
+      return data.files?.unknown || [];
     },
     enabled: !!movieId,
     staleTime: 30 * 1000, // 30 seconds - shorter since these are transient

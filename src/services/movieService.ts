@@ -92,57 +92,45 @@ export class MovieService {
     const limit = filters?.limit || 1000;
     const offset = filters?.offset || 0;
 
-    // Optimized query using JOINs + aggregation instead of subqueries
+    // Optimized query using scalar subqueries instead of JOINs to avoid Cartesian product
     const query = `
       SELECT
         m.*,
 
-        -- Get first studio name for display
-        MAX(CASE WHEN studio_row = 1 THEN s.name END) as studio_name,
+        -- Get first studio name (scalar subquery)
+        (SELECT s.name FROM studios s
+         INNER JOIN movie_studios ms ON s.id = ms.studio_id
+         WHERE ms.movie_id = m.id
+         ORDER BY ms.studio_id LIMIT 1) as studio_name,
 
-        -- Entity counts for NFO completeness check
-        COUNT(DISTINCT mg.genre_id) as genre_count,
-        COUNT(DISTINCT ma.actor_id) as actor_count,
-        COUNT(DISTINCT mcd.crew_id) as director_count,
-        COUNT(DISTINCT mcw.crew_id) as writer_count,
-        COUNT(DISTINCT ms.studio_id) as studio_count,
+        -- Entity counts for NFO completeness check (scalar subqueries)
+        (SELECT COUNT(*) FROM movie_genres WHERE movie_id = m.id) as genre_count,
+        (SELECT COUNT(*) FROM movie_actors WHERE movie_id = m.id) as actor_count,
+        (SELECT COUNT(*) FROM movie_crew WHERE movie_id = m.id AND role = 'director') as director_count,
+        (SELECT COUNT(*) FROM movie_crew WHERE movie_id = m.id AND role = 'writer') as writer_count,
+        (SELECT COUNT(DISTINCT studio_id) FROM movie_studios WHERE movie_id = m.id) as studio_count,
 
-        -- Asset counts (clean schema: assets are FK columns, not separate table)
-        -- Just check if FK columns are populated (1 if not null, 0 if null)
-        CASE WHEN m.poster_id IS NOT NULL THEN 1 ELSE 0 END as poster_count,
-        CASE WHEN m.fanart_id IS NOT NULL THEN 1 ELSE 0 END as fanart_count,
-        0 as landscape_count,
-        0 as keyart_count,
-        CASE WHEN m.banner_id IS NOT NULL THEN 1 ELSE 0 END as banner_count,
-        CASE WHEN m.clearart_id IS NOT NULL THEN 1 ELSE 0 END as clearart_count,
-        CASE WHEN m.logo_id IS NOT NULL THEN 1 ELSE 0 END as clearlogo_count,
-        CASE WHEN m.discart_id IS NOT NULL THEN 1 ELSE 0 END as discart_count,
-        0 as trailer_count,
-        0 as subtitle_count,
-        0 as theme_count
+        -- NFO parsed timestamp (scalar subquery)
+        (SELECT MAX(discovered_at) FROM text_files
+         WHERE entity_type = 'movie' AND entity_id = m.id AND text_type = 'nfo') as nfo_parsed_at,
+
+        -- Asset counts from unified file system (scalar subqueries - much faster!)
+        (SELECT COUNT(*) FROM image_files WHERE entity_type = 'movie' AND entity_id = m.id AND image_type = 'poster') as poster_count,
+        (SELECT COUNT(*) FROM image_files WHERE entity_type = 'movie' AND entity_id = m.id AND image_type = 'fanart') as fanart_count,
+        (SELECT COUNT(*) FROM image_files WHERE entity_type = 'movie' AND entity_id = m.id AND image_type = 'landscape') as landscape_count,
+        (SELECT COUNT(*) FROM image_files WHERE entity_type = 'movie' AND entity_id = m.id AND image_type = 'keyart') as keyart_count,
+        (SELECT COUNT(*) FROM image_files WHERE entity_type = 'movie' AND entity_id = m.id AND image_type = 'banner') as banner_count,
+        (SELECT COUNT(*) FROM image_files WHERE entity_type = 'movie' AND entity_id = m.id AND image_type = 'clearart') as clearart_count,
+        (SELECT COUNT(*) FROM image_files WHERE entity_type = 'movie' AND entity_id = m.id AND image_type = 'clearlogo') as clearlogo_count,
+        (SELECT COUNT(*) FROM image_files WHERE entity_type = 'movie' AND entity_id = m.id AND image_type = 'discart') as discart_count,
+        (SELECT COUNT(*) FROM video_files WHERE entity_type = 'movie' AND entity_id = m.id AND video_type = 'trailer') as trailer_count,
+        (SELECT COUNT(*) FROM text_files WHERE entity_type = 'movie' AND entity_id = m.id AND text_type = 'subtitle') as subtitle_count,
+        (SELECT COUNT(*) FROM audio_files WHERE entity_type = 'movie' AND entity_id = m.id AND audio_type = 'theme') as theme_count
 
       FROM movies m
 
-      -- Studio join with row numbering to get first studio
-      LEFT JOIN (
-        SELECT
-          movie_id,
-          studio_id,
-          ROW_NUMBER() OVER (PARTITION BY movie_id ORDER BY studio_id) as studio_row
-        FROM movie_studios
-      ) ms_numbered ON m.id = ms_numbered.movie_id
-      LEFT JOIN studios s ON ms_numbered.studio_id = s.id AND ms_numbered.studio_row = 1
-
-      -- Entity relationships for NFO status (clean schema)
-      LEFT JOIN movie_genres mg ON m.id = mg.movie_id
-      LEFT JOIN movie_actors ma ON m.id = ma.movie_id
-      LEFT JOIN movie_crew mcd ON m.id = mcd.movie_id AND mcd.role = 'director'
-      LEFT JOIN movie_crew mcw ON m.id = mcw.movie_id AND mcw.role = 'writer'
-      LEFT JOIN movie_studios ms ON m.id = ms.movie_id
-
       WHERE ${whereClauses.join(' AND ')}
 
-      GROUP BY m.id
       ORDER BY m.title ASC
       LIMIT ? OFFSET ?
     `;
@@ -286,7 +274,7 @@ export class MovieService {
     };
   }
 
-  async getById(movieId: number): Promise<any | null> {
+  async getById(movieId: number, include: string[] = ['files']): Promise<any | null> {
     // Get base movie data with all fields
     const movieQuery = `SELECT * FROM movies WHERE id = ?`;
     const movies = await this.db.query<any>(movieQuery, [movieId]);
@@ -306,7 +294,7 @@ export class MovieService {
       this.db.query<any>('SELECT s.* FROM studios s JOIN movie_studios ms ON s.id = ms.studio_id WHERE ms.movie_id = ?', [movieId]),
     ]);
 
-    return {
+    const result: any = {
       ...movie,
       actors: actors.map(a => ({ name: a.name, role: a.role, order: a.sort_order })),
       genres: genres.map(g => g.name),
@@ -314,6 +302,22 @@ export class MovieService {
       writers: writers.map(w => w.name),
       studios: studios.map(s => s.name),
     };
+
+    // Conditionally include files based on ?include parameter
+    // Default includes 'files' for backward compatibility
+    if (include.includes('files')) {
+      result.files = await this.getAllFiles(movieId);
+    }
+
+    // Future: Support other includes
+    // if (include.includes('candidates')) {
+    //   result.candidates = await assetCandidateService.getAllCandidates('movie', movieId);
+    // }
+    // if (include.includes('locks')) {
+    //   result.locks = this.getFieldLocks(movie);
+    // }
+
+    return result;
   }
 
   async getUnknownFiles(movieId: number): Promise<any[]> {
@@ -640,25 +644,15 @@ export class MovieService {
    * File will remain in library but won't appear in unknown files list
    */
   async ignoreUnknownFile(movieId: number, fileId: number): Promise<any> {
-    const conn = this.db.getConnection();
+    // NOTE: Ignore functionality not yet implemented in schema
+    // The unknown_files table doesn't have an 'ignored' column yet
+    // For now, this is a no-op that returns success
+    logger.info('Ignore unknown file requested (not implemented)', { movieId, fileId });
 
-    try {
-      // Mark file as ignored
-      await conn.execute(
-        'UPDATE unknown_files SET ignored = 1 WHERE id = ? AND entity_id = ? AND entity_type = ?',
-        [fileId, movieId, 'movie']
-      );
-
-      logger.info('Marked unknown file as ignored', { movieId, fileId });
-
-      return {
-        success: true,
-        message: 'File marked as ignored',
-      };
-    } catch (error: any) {
-      logger.error('Failed to ignore unknown file', { movieId, fileId, error: error.message });
-      throw error;
-    }
+    return {
+      success: true,
+      message: 'Ignore functionality not yet implemented',
+    };
   }
 
   /**
@@ -1590,7 +1584,7 @@ export class MovieService {
           codec, width, height, duration_seconds, bitrate, framerate, hdr_type,
           audio_codec, audio_channels, audio_language,
           source_type, source_url, provider_name, classification_score,
-          is_published, library_file_id, cache_file_id, discovered_at
+          library_file_id, cache_file_id, discovered_at
         FROM video_files
         WHERE entity_type = 'movie' AND entity_id = ?
         ORDER BY video_type, discovered_at DESC`,
@@ -1603,7 +1597,7 @@ export class MovieService {
           id, file_path, file_name, file_size, location, image_type,
           width, height, format, perceptual_hash,
           source_type, source_url, provider_name, classification_score,
-          is_published, library_file_id, cache_file_id, reference_count, discovered_at
+          library_file_id, cache_file_id, reference_count, discovered_at
         FROM image_files
         WHERE entity_type = 'movie' AND entity_id = ?
         ORDER BY image_type, classification_score DESC, discovered_at DESC`,
@@ -1616,7 +1610,7 @@ export class MovieService {
           id, file_path, file_name, file_size, location, audio_type,
           codec, duration_seconds, bitrate, sample_rate, channels, language,
           source_type, source_url, provider_name, classification_score,
-          is_published, library_file_id, cache_file_id, discovered_at
+          library_file_id, cache_file_id, discovered_at
         FROM audio_files
         WHERE entity_type = 'movie' AND entity_id = ?
         ORDER BY audio_type, discovered_at DESC`,
@@ -1627,9 +1621,9 @@ export class MovieService {
       const textFiles = await conn.query(
         `SELECT
           id, file_path, file_name, file_size, location, text_type,
-          encoding, language, nfo_is_valid, nfo_has_tmdb_id, nfo_needs_regen,
+          subtitle_language, subtitle_format, nfo_is_valid, nfo_has_tmdb_id, nfo_needs_regen,
           source_type, source_url, provider_name, classification_score,
-          is_published, library_file_id, cache_file_id, discovered_at
+          library_file_id, cache_file_id, discovered_at
         FROM text_files
         WHERE entity_type = 'movie' AND entity_id = ?
         ORDER BY text_type, discovered_at DESC`,
@@ -1640,7 +1634,7 @@ export class MovieService {
       const unknownFiles = await conn.query(
         `SELECT
           id, file_path, file_name, file_size, extension,
-          user_ignored, discovered_at
+          category, discovered_at
         FROM unknown_files
         WHERE entity_type = 'movie' AND entity_id = ?
         ORDER BY discovered_at DESC`,

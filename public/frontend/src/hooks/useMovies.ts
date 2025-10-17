@@ -24,21 +24,35 @@ export const useMovies = (options?: UseMoviesOptions) => {
 };
 
 /**
- * Fetch a single movie by ID with full details
- * This fetches complete movie data including cast, crew, images, etc.
- * The list view (['movies']) only has summary data for performance.
+ * Fetch a single movie by ID with optional includes
+ *
+ * @param id - Movie ID
+ * @param include - Array of additional data to include: 'files', 'candidates', 'locks'
+ *
+ * Examples:
+ * - useMovie(1) - Metadata only (lightweight)
+ * - useMovie(1, ['files']) - Metadata + all files (edit page)
+ * - useMovie(1, ['files', 'candidates', 'locks']) - Full data
  */
-export const useMovie = (id?: number | null) => {
+export const useMovie = (id?: number | null, include?: string[]) => {
   return useQuery<Movie, Error>({
-    queryKey: ['movie', id],
+    queryKey: include ? ['movie', id, include] : ['movie', id],
     queryFn: async () => {
       if (!id) throw new Error('Movie ID is required');
 
-      // Fetch full movie details from the API
-      const response = await fetch(`/api/movies/${id}`);
+      // Build query string with include parameter
+      const params = new URLSearchParams();
+      if (include && include.length > 0) {
+        params.set('include', include.join(','));
+      }
+
+      const url = `/api/movies/${id}${params.toString() ? `?${params}` : ''}`;
+      const response = await fetch(url);
+
       if (!response.ok) {
         throw new Error(`Failed to fetch movie: ${response.statusText}`);
       }
+
       return response.json();
     },
     enabled: !!id,

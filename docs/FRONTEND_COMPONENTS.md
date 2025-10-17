@@ -64,19 +64,20 @@ The Movies page implements a comprehensive metadata tracking system with fuzzy s
 
 ## Movie Edit Page (MovieEdit)
 - **URL Pattern**: `/metadata/movies/:id/edit`
+- **Data Loading**: Uses `useMovie(movieId, ['files'])` to load full movie data including all files in single request
 - **Header Section**:
   - Back button (FontAwesome arrow-left icon) - navigates to `/metadata/movies`
   - Dynamic title: "Edit Movie: {movieTitle}"
   - Save button (primary style with save icon)
-- **Tabbed Interface**:
+- **Tabbed Interface**: Uses AnimatedTabs component
   - Three tabs: Metadata, Images, Extras
-  - Active tab styling: primary purple border-bottom and text color
-  - Inactive tabs: neutral text with hover effects
-  - Tab transitions: smooth color and border animations
+  - Smooth sliding indicator animation
+  - Keyboard navigation support
+  - Tab transitions: smooth sliding indicator with 300ms animation
 - **Tab Content** (Current Implementation):
   - **Metadata Tab**: Placeholder for full metadata editing (scalar and array data with modal system)
-  - **Images Tab**: Placeholder for image asset management (poster, fanart, etc.)
-  - **Extras Tab**: Placeholder for extras management (trailers, subtitles, themes)
+  - **Images Tab**: Image asset management (poster, fanart, etc.) with rebuild assets functionality
+  - **Extras Tab**: Extras management (trailers, subtitles, themes) with unknown files handling
 - **Navigation Behavior**:
   - Clicking a movie row in Movies page navigates to edit page
   - Sidebar maintains "Movies" active state using path pattern matching
@@ -189,6 +190,116 @@ When developing or modifying components, always test in both themes:
 **See also**: `docs/LIGHT_MODE_TESTING_CHECKLIST.md` for comprehensive testing procedures.
 
 ## Reusable UI Components
+
+### AnimatedTabs Component (`components/ui/AnimatedTabs.tsx`)
+
+A reusable tabbed interface component built on Radix UI with smooth sliding indicator animation.
+
+**Features**:
+- **Smooth Sliding Indicator**: 300ms transition animation that slides between active tabs
+- **Full Keyboard Navigation**: Built on Radix UI primitives (Arrow keys, Home, End, Tab)
+- **Accessibility**: ARIA attributes, screen reader support, focus management
+- **Flexible Content**: Supports text labels, icons, or custom React elements
+- **Theme-Aware**: Adapts to dark/light mode automatically
+- **TypeScript**: Fully typed with generic value types
+
+**Props**:
+```typescript
+interface AnimatedTabsProps<T extends string> {
+  value: T;
+  onValueChange: (value: T) => void;
+  tabs: Array<{
+    value: T;
+    label: React.ReactNode;
+  }>;
+  children: React.ReactNode;
+  className?: string;
+}
+```
+
+**Usage Example**:
+```tsx
+import { AnimatedTabs, AnimatedTabsContent } from '@/components/ui/AnimatedTabs';
+
+type TabType = 'metadata' | 'images' | 'extras';
+
+const [activeTab, setActiveTab] = useState<TabType>('metadata');
+
+<AnimatedTabs
+  value={activeTab}
+  onValueChange={(value) => setActiveTab(value)}
+  tabs={[
+    { value: 'metadata', label: 'Metadata' },
+    { value: 'images', label: 'Images' },
+    { value: 'extras', label: 'Extras' },
+  ]}
+  className="mb-6"
+>
+  <AnimatedTabsContent value="metadata" className="space-y-6">
+    {/* Metadata content */}
+  </AnimatedTabsContent>
+  <AnimatedTabsContent value="images" className="space-y-6">
+    {/* Images content */}
+  </AnimatedTabsContent>
+  <AnimatedTabsContent value="extras" className="space-y-6">
+    {/* Extras content */}
+  </AnimatedTabsContent>
+</AnimatedTabs>
+```
+
+**Usage with Icons (DataSelection Example)**:
+```tsx
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faFilm, faTv, faMusic } from '@fortawesome/free-solid-svg-icons';
+
+<AnimatedTabs
+  value={activeTab}
+  onValueChange={(value) => setActiveTab(value as MediaType)}
+  tabs={[
+    {
+      value: 'movies',
+      label: (
+        <span className="flex items-center gap-2">
+          <FontAwesomeIcon icon={faFilm} />
+          <span>Movies</span>
+        </span>
+      ),
+    },
+    {
+      value: 'tvshows',
+      label: (
+        <span className="flex items-center gap-2">
+          <FontAwesomeIcon icon={faTv} />
+          <span>TV Shows</span>
+        </span>
+      ),
+    },
+    // ...
+  ]}
+>
+  {/* Tab content */}
+</AnimatedTabs>
+```
+
+**Implementation Details**:
+- Built on `@radix-ui/react-tabs` for accessibility and keyboard navigation
+- Sliding indicator uses CSS transforms for smooth 60fps animation
+- Indicator position calculated dynamically based on active tab
+- Uses `useEffect` to update indicator position when active tab changes
+- Content fades in/out with CSS transitions (200ms)
+
+**When to Use**:
+- Multi-section forms or settings pages (Providers, Libraries)
+- Different views of the same data (MovieEdit: Metadata, Images, Extras)
+- Categorized configuration options (DataSelection: Movies, TV Shows, Music)
+- Any interface with 2-5 related sections that shouldn't be shown simultaneously
+
+**Migration from shadcn/ui Tabs**:
+The AnimatedTabs component replaces shadcn/ui Tabs throughout the application. Key differences:
+- Uses state-based `value`/`onValueChange` instead of uncontrolled component
+- Includes sliding indicator animation (shadcn/ui has underline only)
+- Simpler API with single `tabs` array prop
+- Compatible with FontAwesome icons and custom label components
 
 ### TestButton Component (`components/ui/TestButton.tsx`)
 
@@ -310,8 +421,19 @@ interface TestButtonProps {
 ### Settings (Expandable Menu)
 - `/settings/general` - Application-wide configurations and preferences
 - `/settings/providers` - API keys and provider-specific settings (TMDB, TVDB, MusicBrainz, etc.)
+  - **Tabbed Interface**: AnimatedTabs with 3 tabs (Providers, Asset Selection, Metadata Selection)
+  - **Providers Tab**: API key configuration and connection testing for metadata providers
+  - **Asset Selection Tab**: Choose which asset types to download (posters, fanart, etc.)
+  - **Metadata Selection Tab**: Configure which metadata fields to fetch from providers
+- `/settings/data-selection` - Provider priority configuration for movies, TV shows, and music
+  - **Tabbed Interface**: AnimatedTabs with FontAwesome icons (Movies, TV Shows, Music)
+  - **Drag-and-Drop**: Reorder providers to set priority for metadata/asset selection
+  - **Provider Cards**: Visual cards showing enabled providers with priority order
 - `/settings/files` - Naming conventions and file management settings
 - `/settings/libraries` - Library management with scan controls and real-time progress
+  - **Tabbed Interface**: AnimatedTabs with 2 tabs (Libraries, Scanner Settings)
+  - **Libraries Tab**: Add/edit/delete libraries, trigger scans, view scan progress
+  - **Scanner Settings Tab**: Configure scanner behavior and options
 - `/settings/media-players` - Kodi, Jellyfin, Plex configurations
 - `/settings/notifications` - Email, Discord, Slack, push notification settings
 

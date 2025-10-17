@@ -37,7 +37,12 @@ export class MovieController {
   async getById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const movieId = parseInt(req.params.id);
-      const movie = await this.movieService.getById(movieId);
+
+      // Parse ?include query parameter (comma-separated list: files,candidates,locks)
+      const includeParam = req.query.include as string;
+      const include = includeParam ? includeParam.split(',').map(s => s.trim()) : ['files'];
+
+      const movie = await this.movieService.getById(movieId, include);
 
       if (!movie) {
         res.status(404).json({ error: 'Movie not found' });
@@ -50,15 +55,7 @@ export class MovieController {
     }
   }
 
-  async getUnknownFiles(req: Request, res: Response, next: NextFunction): Promise<void> {
-    try {
-      const movieId = parseInt(req.params.id);
-      const unknownFiles = await this.movieService.getUnknownFiles(movieId);
-      res.json({ unknownFiles });
-    } catch (error) {
-      next(error);
-    }
-  }
+  // REMOVED: getUnknownFiles - now available in getById() as files.unknown
 
   async assignUnknownFile(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
@@ -125,42 +122,8 @@ export class MovieController {
     }
   }
 
-  async getAllFiles(req: Request, res: Response, next: NextFunction): Promise<void> {
-    try {
-      const movieId = parseInt(req.params.id);
-      const files = await this.movieService.getAllFiles(movieId);
-      res.json(files);
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  async getImages(req: Request, res: Response, next: NextFunction): Promise<void> {
-    try {
-      const movieId = parseInt(req.params.id);
-      const images = await this.movieService.getImages(movieId);
-
-      // Add cache_url for frontend display
-      const imagesWithUrl = images.map(img => ({
-        ...img,
-        cache_url: `/api/images/${img.id}/file`
-      }));
-
-      res.json({ images: imagesWithUrl });
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  async getExtras(req: Request, res: Response, next: NextFunction): Promise<void> {
-    try {
-      const movieId = parseInt(req.params.id);
-      const extras = await this.movieService.getExtras(movieId);
-      res.json(extras);
-    } catch (error) {
-      next(error);
-    }
-  }
+  // REMOVED: getAllFiles, getImages, getExtras
+  // Files are now included in getById() response automatically
 
   async refreshMovie(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {

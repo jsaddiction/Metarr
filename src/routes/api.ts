@@ -247,10 +247,8 @@ export const createApiRouter = (
     movieController.saveAssets(req, res, next);
   });
 
-  router.get('/movies/:id/unknown-files', (req, res, next) => {
-    logger.debug('[Route Hit] /movies/:id/unknown-files with id:', req.params.id);
-    movieController.getUnknownFiles(req, res, next);
-  });
+  // REMOVED: /movies/:id/unknown-files
+  // Unknown files are now available in GET /movies/:id as files.unknown
 
   router.post('/movies/:id/unknown-files/:fileId/assign', (req, res, next) => {
     logger.debug('[Route Hit] /movies/:id/unknown-files/:fileId/assign with id:', req.params.id, 'fileId:', req.params.fileId);
@@ -276,20 +274,8 @@ export const createApiRouter = (
     movieController.verifyAssets(req, res, next);
   });
 
-  router.get('/movies/:id/files', (req, res, next) => {
-    logger.debug('[Route Hit] /movies/:id/files with id:', req.params.id);
-    movieController.getAllFiles(req, res, next);
-  });
-
-  router.get('/movies/:id/images', (req, res, next) => {
-    logger.debug('[Route Hit] /movies/:id/images with id:', req.params.id);
-    movieController.getImages(req, res, next);
-  });
-
-  router.get('/movies/:id/extras', (req, res, next) => {
-    logger.debug('[Route Hit] /movies/:id/extras with id:', req.params.id);
-    movieController.getExtras(req, res, next);
-  });
+  // REMOVED: /movies/:id/files, /movies/:id/images, /movies/:id/extras
+  // Files are now included in GET /movies/:id response
 
   // Refresh movie metadata (user-initiated)
   router.post('/movies/:id/refresh', (req, res, next) => {
@@ -366,12 +352,10 @@ export const createApiRouter = (
     imageController.serveImage(req, res, next);
   });
 
-  // Movie image routes
-  router.get('/movies/:id/images', (req, res, next) => {
-    logger.debug('[Route Hit] /movies/:id/images with id:', req.params.id);
-    imageController.getMovieImages(req, res, next);
-  });
+  // REMOVED: GET /movies/:id/images
+  // Images are now included in GET /movies/:id?include=files response as files.images
 
+  // Movie image routes
   router.post(
     '/movies/:id/images/upload',
     imageController.upload.single('image'),
@@ -381,10 +365,8 @@ export const createApiRouter = (
     }
   );
 
-  router.post('/movies/:id/images/recover', (req, res, next) => {
-    logger.debug('[Route Hit] /movies/:id/images/recover with id:', req.params.id);
-    imageController.recoverImages(req, res, next);
-  });
+  // REMOVED: POST /movies/:id/images/recover
+  // Not part of the workflow - assets are rebuilt via /movies/:id/rebuild-assets
 
   // Generic image operations
   router.patch('/images/:id/lock', (req, res, next) => {

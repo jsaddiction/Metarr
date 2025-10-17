@@ -8,7 +8,7 @@
 
 export interface AssetTypeSpec {
   /** Asset type identifier (matches DB column name without _id suffix) */
-  type: 'poster' | 'fanart' | 'banner' | 'logo' | 'clearart' | 'discart' | 'keyart' | 'landscape' | 'thumb';
+  type: 'poster' | 'fanart' | 'banner' | 'clearlogo' | 'clearart' | 'discart' | 'keyart' | 'landscape' | 'thumb';
 
   /** Keywords to search for in filename (case-insensitive) */
   keywords: string[];
@@ -70,7 +70,7 @@ export const MOVIE_ASSET_SPECS: AssetTypeSpec[] = [
     description: 'Horizontal banner format artwork',
   },
   {
-    type: 'logo',
+    type: 'clearlogo',
     keywords: ['clearlogo', 'logo'],
     aspectRatio: { target: 800/310, tolerance: 0.3 }, // ~2.6:1 ratio (flexible)
     minDimensions: { width: 400, height: 155 },

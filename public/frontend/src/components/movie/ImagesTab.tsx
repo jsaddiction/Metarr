@@ -17,7 +17,7 @@ import {
   useUploadImage,
   useToggleImageLock,
   useDeleteImage,
-  useRecoverImages,
+  useRebuildAssets,
 } from '../../hooks/useMovieAssets';
 import { AssetSelectionDialog } from '../asset/AssetSelectionDialog';
 import { AssetCard } from '../asset/AssetCard';
@@ -67,7 +67,7 @@ export const ImagesTab: React.FC<ImagesTabProps> = ({ movieId }) => {
   const uploadImageMutation = useUploadImage(movieId);
   const toggleLockMutation = useToggleImageLock(movieId);
   const deleteImageMutation = useDeleteImage(movieId);
-  const recoverImagesMutation = useRecoverImages(movieId);
+  const rebuildAssetsMutation = useRebuildAssets(movieId);
 
   const [uploadType, setUploadType] = useState<string | null>(null);
   const [fullscreenImage, setFullscreenImage] = useState<Image | null>(null);
@@ -147,14 +147,14 @@ export const ImagesTab: React.FC<ImagesTabProps> = ({ movieId }) => {
     }
   };
 
-  const handleRecoverImages = async () => {
+  const handleRebuildAssets = async () => {
     try {
-      const result = await recoverImagesMutation.mutateAsync();
-      alert(result.message || `Successfully recovered ${result.recoveredCount} image(s)`);
+      const result = await rebuildAssetsMutation.mutateAsync();
+      alert(result.message || 'Successfully rebuilt all assets from cache');
       // Success - TanStack Query will automatically refetch
     } catch (error) {
-      console.error('Failed to recover images:', error);
-      alert('Failed to recover images');
+      console.error('Failed to rebuild assets:', error);
+      alert('Failed to rebuild assets');
     }
   };
 
@@ -202,14 +202,14 @@ export const ImagesTab: React.FC<ImagesTabProps> = ({ movieId }) => {
         aria-label="Upload image file"
       />
 
-      {/* Recovery button */}
+      {/* Rebuild Assets button */}
       <div className="card bg-neutral-800/50">
         <div className="card-body py-3 flex flex-row items-center justify-between">
           <div className="text-sm text-neutral-300">
-            Missing images from library? Recover them from cache.
+            Missing assets from library? Rebuild all assets (images, trailers, subtitles) from cache.
           </div>
-          <button onClick={handleRecoverImages} className="btn btn-secondary btn-sm">
-            Recover Images
+          <button onClick={handleRebuildAssets} className="btn btn-secondary btn-sm">
+            Rebuild Assets
           </button>
         </div>
       </div>

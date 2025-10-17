@@ -18,12 +18,12 @@ import {
   faTag,
   faExclamationTriangle,
 } from '@fortawesome/free-solid-svg-icons';
+import { AnimatedTabs, AnimatedTabsContent } from '../../components/ui/AnimatedTabs';
 import { MetadataTab } from '../../components/movie/MetadataTab';
 import { ImagesTab } from '../../components/movie/ImagesTab';
 import { ExtrasTab } from '../../components/movie/ExtrasTab';
 import { useMovie } from '../../hooks/useMovies';
 import {
-  useUnknownFiles,
   useAssignUnknownFile,
   useIgnoreUnknownFile,
   useIgnoreUnknownFilePattern,
@@ -42,11 +42,12 @@ export const MovieEdit: React.FC = () => {
   const navigate = useNavigate();
   const movieId = id ? parseInt(id) : null;
 
-  // Fetch movie data with TanStack Query
-  const { data: movie, isLoading: movieLoading, error: movieError } = useMovie(movieId);
+  // Fetch movie data with full file data using ?include=files parameter
+  const { data: movie, isLoading: movieLoading, error: movieError } = useMovie(movieId, ['files']);
 
-  // Fetch unknown files with TanStack Query
-  const { data: unknownFiles = [], isLoading: loadingUnknownFiles } = useUnknownFiles(movieId);
+  // Extract unknown files from movie.files.unknown (comes with the movie data now)
+  const unknownFiles = movie?.files?.unknown || [];
+  const loadingUnknownFiles = movieLoading;
 
   // Mutations for unknown files
   const assignFileMutation = useAssignUnknownFile(movieId!);
@@ -300,66 +301,39 @@ export const MovieEdit: React.FC = () => {
         </h1>
       </div>
 
-      {/* Tabs */}
-      <div className="border-b border-neutral-700 mb-6">
-        <nav className="flex space-x-8">
-          <button
-            onClick={() => setActiveTab('metadata')}
-            className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
-              activeTab === 'metadata'
-                ? 'border-primary-500 text-primary-500'
-                : 'border-transparent text-neutral-400 hover:text-neutral-300 hover:border-neutral-300'
-            }`}
-          >
-            Metadata
-          </button>
-          <button
-            onClick={() => setActiveTab('images')}
-            className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
-              activeTab === 'images'
-                ? 'border-primary-500 text-primary-500'
-                : 'border-transparent text-neutral-400 hover:text-neutral-300 hover:border-neutral-300'
-            }`}
-          >
-            Images
-          </button>
-          <button
-            onClick={() => setActiveTab('extras')}
-            className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
-              activeTab === 'extras'
-                ? 'border-primary-500 text-primary-500'
-                : 'border-transparent text-neutral-400 hover:text-neutral-300 hover:border-neutral-300'
-            }`}
-          >
-            Extras
-          </button>
-          <button
-            onClick={() => setActiveTab('unknown-files')}
-            className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
-              activeTab === 'unknown-files'
-                ? 'border-primary-500 text-primary-500'
-                : 'border-transparent text-neutral-400 hover:text-neutral-300 hover:border-neutral-300'
-            }`}
-          >
-            Unknown Files
-            {unknownFiles.length > 0 && (
-              <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-error/20 text-error">
+      {/* Animated Tabs */}
+      <AnimatedTabs
+        value={activeTab}
+        onValueChange={(value) => setActiveTab(value as TabType)}
+        tabs={[
+          { value: 'metadata', label: 'Metadata' },
+          { value: 'images', label: 'Images' },
+          { value: 'extras', label: 'Extras' },
+          {
+            value: 'unknown-files',
+            label: 'Unknown Files',
+            badge: unknownFiles.length > 0 ? (
+              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-error/20 text-error">
                 {unknownFiles.length}
               </span>
-            )}
-          </button>
-        </nav>
-      </div>
+            ) : undefined,
+          },
+        ]}
+        className="mb-6"
+      >
+        <AnimatedTabsContent value="metadata">
+          {id && <MetadataTab movieId={parseInt(id)} />}
+        </AnimatedTabsContent>
 
-      {/* Tab Content */}
-      <div>
-        {activeTab === 'metadata' && id && <MetadataTab movieId={parseInt(id)} />}
+        <AnimatedTabsContent value="images">
+          {id && <ImagesTab movieId={parseInt(id)} />}
+        </AnimatedTabsContent>
 
-        {activeTab === 'images' && id && <ImagesTab movieId={parseInt(id)} />}
+        <AnimatedTabsContent value="extras">
+          {id && <ExtrasTab movieId={parseInt(id)} />}
+        </AnimatedTabsContent>
 
-        {activeTab === 'extras' && id && <ExtrasTab movieId={parseInt(id)} />}
-
-        {activeTab === 'unknown-files' && (
+        <AnimatedTabsContent value="unknown-files">
           <div className="card">
             <div className="card-body">
               <h2 className="text-xl font-semibold text-white mb-2">Unknown Files</h2>
@@ -480,8 +454,8 @@ export const MovieEdit: React.FC = () => {
               )}
             </div>
           </div>
-        )}
-      </div>
+        </AnimatedTabsContent>
+      </AnimatedTabs>
 
       {/* Resolve Unknown File Modal */}
       {assignModal && (() => {

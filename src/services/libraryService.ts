@@ -173,21 +173,24 @@ export class LibraryService {
       logger.info(`Starting deletion of library ${library.name}`, { libraryId: id });
 
       // ========================================
-      // Step 1: Delete cached files for this library
+      // Step 1: Delete cached physical files FIRST (while we can still query DB)
+      // Query file paths while movies/file records still exist, then delete from disk
       // ========================================
-      await this.deleteCachedFilesForLibrary(db, id);
+      await this.deleteCachedPhysicalFiles(db, id);
 
       // ========================================
-      // Step 2: Delete database records for assets (images, trailers, subtitles)
-      // These use polymorphic associations so they don't CASCADE automatically
+      // Step 2: Delete file records (image_files, video_files, etc.)
+      // These are NOT cascade-deleted because entity_id has no FK constraint
+      // Must delete explicitly before deleting movies
       // ========================================
-      await this.deleteAssetRecordsForLibrary(db, id);
+      await this.deleteFileRecordsForLibrary(db, id);
 
       // ========================================
-      // Step 3: Delete the library (CASCADE will handle movies, series, and linking tables)
+      // Step 3: Delete the library
+      // CASCADE automatically deletes: movies, series, episodes, and all junction tables
       // ========================================
       await db.execute('DELETE FROM libraries WHERE id = ?', [id]);
-      logger.info(`Deleted library ${id} and all associated media records`, { name: library.name });
+      logger.info(`Deleted library ${id} (movies/series cascaded)`, { name: library.name });
 
       // ========================================
       // Step 4: Clean up orphaned entities (actors, genres, etc. with no references)
@@ -202,158 +205,187 @@ export class LibraryService {
   }
 
   /**
-   * Delete database records for assets (images, trailers, subtitles)
-   * These use polymorphic associations so CASCADE doesn't work automatically
+   * Delete file records for a library (BEFORE deleting movies/series)
+   * File records have entity_id but no FK constraint, so they must be deleted explicitly
    */
-  private async deleteAssetRecordsForLibrary(db: DatabaseConnection, libraryId: number): Promise<void> {
+  private async deleteFileRecordsForLibrary(db: DatabaseConnection, libraryId: number): Promise<void> {
     try {
-      // Delete images
-      const imagesResult = await db.execute(
-        `DELETE FROM images
-         WHERE (entity_type = 'movie' AND entity_id IN (SELECT id FROM movies WHERE library_id = ?))
-         OR (entity_type = 'series' AND entity_id IN (SELECT id FROM series WHERE library_id = ?))`,
-        [libraryId, libraryId]
-      );
+      // Delete image files belonging to movies/series/episodes in this library
+      const imagesResult = await db.execute(`
+        DELETE FROM image_files
+        WHERE (entity_type = 'movie' AND entity_id IN (SELECT id FROM movies WHERE library_id = ?))
+           OR (entity_type = 'series' AND entity_id IN (SELECT id FROM series WHERE library_id = ?))
+           OR (entity_type = 'episode' AND entity_id IN (
+             SELECT e.id FROM episodes e
+             INNER JOIN series s ON e.series_id = s.id
+             WHERE s.library_id = ?
+           ))
+      `, [libraryId, libraryId, libraryId]);
       const imagesDeleted = imagesResult.affectedRows || 0;
 
-      // Delete trailers
-      const trailersResult = await db.execute(
-        `DELETE FROM trailers
-         WHERE (entity_type = 'movie' AND entity_id IN (SELECT id FROM movies WHERE library_id = ?))
-         OR (entity_type = 'series' AND entity_id IN (SELECT id FROM series WHERE library_id = ?))`,
-        [libraryId, libraryId]
-      );
-      const trailersDeleted = trailersResult.affectedRows || 0;
+      // Delete video files belonging to movies/episodes in this library
+      const videosResult = await db.execute(`
+        DELETE FROM video_files
+        WHERE (entity_type = 'movie' AND entity_id IN (SELECT id FROM movies WHERE library_id = ?))
+           OR (entity_type = 'episode' AND entity_id IN (
+             SELECT e.id FROM episodes e
+             INNER JOIN series s ON e.series_id = s.id
+             WHERE s.library_id = ?
+           ))
+      `, [libraryId, libraryId]);
+      const videosDeleted = videosResult.affectedRows || 0;
 
-      // Delete subtitles
-      const subtitlesResult = await db.execute(
-        `DELETE FROM subtitles
-         WHERE (entity_type = 'movie' AND entity_id IN (SELECT id FROM movies WHERE library_id = ?))
-         OR (entity_type = 'series' AND entity_id IN (SELECT id FROM series WHERE library_id = ?))`,
-        [libraryId, libraryId]
-      );
-      const subtitlesDeleted = subtitlesResult.affectedRows || 0;
+      // Delete text files belonging to movies/episodes in this library
+      const textResult = await db.execute(`
+        DELETE FROM text_files
+        WHERE (entity_type = 'movie' AND entity_id IN (SELECT id FROM movies WHERE library_id = ?))
+           OR (entity_type = 'episode' AND entity_id IN (
+             SELECT e.id FROM episodes e
+             INNER JOIN series s ON e.series_id = s.id
+             WHERE s.library_id = ?
+           ))
+      `, [libraryId, libraryId]);
+      const textDeleted = textResult.affectedRows || 0;
 
-      // Delete unknown files
-      const unknownFilesResult = await db.execute(
-        `DELETE FROM unknown_files
-         WHERE entity_type = 'movie' AND entity_id IN (SELECT id FROM movies WHERE library_id = ?)`,
-        [libraryId]
-      );
-      const unknownFilesDeleted = unknownFilesResult.affectedRows || 0;
+      // Delete audio files belonging to movies/series in this library
+      const audioResult = await db.execute(`
+        DELETE FROM audio_files
+        WHERE (entity_type = 'movie' AND entity_id IN (SELECT id FROM movies WHERE library_id = ?))
+           OR (entity_type = 'series' AND entity_id IN (SELECT id FROM series WHERE library_id = ?))
+      `, [libraryId, libraryId]);
+      const audioDeleted = audioResult.affectedRows || 0;
 
-      logger.info(`Deleted asset records for library ${libraryId}`, {
+      // Delete unknown files belonging to movies in this library
+      const unknownResult = await db.execute(`
+        DELETE FROM unknown_files
+        WHERE entity_type = 'movie' AND entity_id IN (SELECT id FROM movies WHERE library_id = ?)
+      `, [libraryId]);
+      const unknownDeleted = unknownResult.affectedRows || 0;
+
+      logger.info(`Deleted file records for library ${libraryId}`, {
         images: imagesDeleted,
-        trailers: trailersDeleted,
-        subtitles: subtitlesDeleted,
-        unknownFiles: unknownFilesDeleted,
+        videos: videosDeleted,
+        text: textDeleted,
+        audio: audioDeleted,
+        unknown: unknownDeleted,
       });
     } catch (error: any) {
-      logger.error(`Failed to delete asset records for library ${libraryId}`, {
-        error: error.message,
-      });
-      throw error;
+      logger.error(`Failed to delete file records for library ${libraryId}`, { error: error.message });
+      throw error; // Throw because this blocks library deletion
     }
   }
 
   /**
-   * Delete all cached files for a library (images, trailers, subtitles, etc.)
+   * Delete all cached physical files from disk (unified file system)
+   * Note: This queries orphaned file records that were just deleted, so it won't find anything
+   * TODO: Query BEFORE deletion to get file paths, or keep file paths list
    */
-  private async deleteCachedFilesForLibrary(db: DatabaseConnection, libraryId: number): Promise<void> {
+  private async deleteCachedPhysicalFiles(db: DatabaseConnection, libraryId: number): Promise<void> {
     const fs = await import('fs/promises');
 
     try {
       let totalDeleted = 0;
+      const deletedPaths: string[] = [];
+
+      // Helper function to delete files from cache
+      const deleteFiles = async (files: Array<{ file_path: string }>) => {
+        for (const file of files) {
+          if (!file.file_path) continue;
+          try {
+            await fs.unlink(file.file_path);
+            totalDeleted++;
+            deletedPaths.push(file.file_path);
+            logger.debug(`Deleted cached file: ${file.file_path}`);
+          } catch (err: any) {
+            // File might not exist or already deleted
+            if (err.code !== 'ENOENT') {
+              logger.warn(`Failed to delete cached file: ${file.file_path}`, { error: err.message });
+            }
+          }
+        }
+      };
 
       // ========================================
-      // Delete cached images
+      // Delete cached image files
       // ========================================
       const images = (await db.query(
-        `SELECT DISTINCT i.cache_path
-         FROM images i
-         INNER JOIN movies m ON i.entity_type = 'movie' AND i.entity_id = m.id
-         WHERE m.library_id = ? AND i.cache_path IS NOT NULL
-         UNION
-         SELECT DISTINCT i.cache_path
-         FROM images i
-         INNER JOIN series s ON i.entity_type = 'series' AND i.entity_id = s.id
-         WHERE s.library_id = ? AND i.cache_path IS NOT NULL`,
+        `SELECT DISTINCT file_path
+         FROM image_files
+         WHERE location = 'cache'
+           AND (
+             (entity_type = 'movie' AND entity_id IN (SELECT id FROM movies WHERE library_id = ?))
+             OR (entity_type = 'episode' AND entity_id IN (
+               SELECT e.id FROM episodes e
+               INNER JOIN series s ON e.series_id = s.id
+               WHERE s.library_id = ?
+             ))
+           )`,
         [libraryId, libraryId]
-      )) as Array<{ cache_path: string }>;
-
-      for (const image of images) {
-        try {
-          await fs.unlink(image.cache_path);
-          totalDeleted++;
-          logger.debug(`Deleted cached image: ${image.cache_path}`);
-        } catch (err: any) {
-          // File might not exist or already deleted
-          if (err.code !== 'ENOENT') {
-            logger.warn(`Failed to delete cached image: ${image.cache_path}`, { error: err.message });
-          }
-        }
-      }
+      )) as Array<{ file_path: string }>;
+      await deleteFiles(images);
 
       // ========================================
-      // Delete cached trailers
+      // Delete cached video files (trailers)
       // ========================================
-      const trailers = (await db.query(
-        `SELECT DISTINCT t.cache_path
-         FROM trailers t
-         INNER JOIN movies m ON t.entity_type = 'movie' AND t.entity_id = m.id
-         WHERE m.library_id = ? AND t.cache_path IS NOT NULL
-         UNION
-         SELECT DISTINCT t.cache_path
-         FROM trailers t
-         INNER JOIN series s ON t.entity_type = 'series' AND t.entity_id = s.id
-         WHERE s.library_id = ? AND t.cache_path IS NOT NULL`,
+      const videos = (await db.query(
+        `SELECT DISTINCT file_path
+         FROM video_files
+         WHERE location = 'cache'
+           AND (
+             (entity_type = 'movie' AND entity_id IN (SELECT id FROM movies WHERE library_id = ?))
+             OR (entity_type = 'episode' AND entity_id IN (
+               SELECT e.id FROM episodes e
+               INNER JOIN series s ON e.series_id = s.id
+               WHERE s.library_id = ?
+             ))
+           )`,
         [libraryId, libraryId]
-      )) as Array<{ cache_path: string }>;
-
-      for (const trailer of trailers) {
-        try {
-          await fs.unlink(trailer.cache_path);
-          totalDeleted++;
-          logger.debug(`Deleted cached trailer: ${trailer.cache_path}`);
-        } catch (err: any) {
-          if (err.code !== 'ENOENT') {
-            logger.warn(`Failed to delete cached trailer: ${trailer.cache_path}`, { error: err.message });
-          }
-        }
-      }
+      )) as Array<{ file_path: string }>;
+      await deleteFiles(videos);
 
       // ========================================
-      // Delete cached subtitles
+      // Delete cached text files (subtitles, NFOs)
       // ========================================
-      const subtitles = (await db.query(
-        `SELECT DISTINCT s.cache_path
-         FROM subtitles s
-         INNER JOIN movies m ON s.entity_type = 'movie' AND s.entity_id = m.id
-         WHERE m.library_id = ? AND s.cache_path IS NOT NULL
-         UNION
-         SELECT DISTINCT s.cache_path
-         FROM subtitles sub
-         INNER JOIN series ser ON sub.entity_type = 'series' AND sub.entity_id = ser.id
-         WHERE ser.library_id = ? AND sub.cache_path IS NOT NULL`,
+      const textFiles = (await db.query(
+        `SELECT DISTINCT file_path
+         FROM text_files
+         WHERE location = 'cache'
+           AND (
+             (entity_type = 'movie' AND entity_id IN (SELECT id FROM movies WHERE library_id = ?))
+             OR (entity_type = 'episode' AND entity_id IN (
+               SELECT e.id FROM episodes e
+               INNER JOIN series s ON e.series_id = s.id
+               WHERE s.library_id = ?
+             ))
+           )`,
         [libraryId, libraryId]
-      )) as Array<{ cache_path: string }>;
+      )) as Array<{ file_path: string }>;
+      await deleteFiles(textFiles);
 
-      for (const subtitle of subtitles) {
-        try {
-          await fs.unlink(subtitle.cache_path);
-          totalDeleted++;
-          logger.debug(`Deleted cached subtitle: ${subtitle.cache_path}`);
-        } catch (err: any) {
-          if (err.code !== 'ENOENT') {
-            logger.warn(`Failed to delete cached subtitle: ${subtitle.cache_path}`, { error: err.message });
-          }
-        }
-      }
+      // ========================================
+      // Delete cached audio files (theme songs)
+      // ========================================
+      const audioFiles = (await db.query(
+        `SELECT DISTINCT file_path
+         FROM audio_files
+         WHERE location = 'cache'
+           AND (
+             (entity_type = 'movie' AND entity_id IN (SELECT id FROM movies WHERE library_id = ?))
+             OR (entity_type = 'episode' AND entity_id IN (
+               SELECT e.id FROM episodes e
+               INNER JOIN series s ON e.series_id = s.id
+               WHERE s.library_id = ?
+             ))
+           )`,
+        [libraryId, libraryId]
+      )) as Array<{ file_path: string }>;
+      await deleteFiles(audioFiles);
 
       logger.info(`Deleted ${totalDeleted} cached files for library ${libraryId}`, {
         images: images.length,
-        trailers: trailers.length,
-        subtitles: subtitles.length,
+        videos: videos.length,
+        textFiles: textFiles.length,
+        audioFiles: audioFiles.length,
       });
 
       // ========================================

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faFilm, faTv, faMusic, faQuestionCircle, faSpinner } from '@fortawesome/free-solid-svg-icons';
+import { AnimatedTabs, AnimatedTabsContent } from '../../components/ui/AnimatedTabs';
 import { dataSelectionApi, providerApi } from '../../utils/api';
 import { ProviderPriorityEditor } from '../../components/provider/ProviderPriorityEditor';
 import type { DataSelectionConfig, ProviderWithMetadata } from '../../types/provider';
@@ -120,109 +121,178 @@ export const DataSelection: React.FC = () => {
       </div>
 
       {/* Media Type Tabs */}
-      <div className="mb-6 border-b border-neutral-700">
-        <nav className="flex gap-1" role="tablist" aria-label="Media type tabs">
-          <button
-            id="tab-movies"
-            role="tab"
-            aria-selected={activeTab === 'movies'}
-            aria-controls="tabpanel-movies"
-            onClick={() => setActiveTab('movies')}
-            className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === 'movies'
-                ? 'border-primary-500 text-primary-400'
-                : 'border-transparent text-neutral-400 hover:text-neutral-300'
-            }`}
-          >
-            <FontAwesomeIcon icon={faFilm} />
-            <span>Movies</span>
-          </button>
-
-          <button
-            id="tab-tvshows"
-            role="tab"
-            aria-selected={activeTab === 'tvshows'}
-            aria-controls="tabpanel-tvshows"
-            onClick={() => setActiveTab('tvshows')}
-            className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === 'tvshows'
-                ? 'border-primary-500 text-primary-400'
-                : 'border-transparent text-neutral-400 hover:text-neutral-300'
-            }`}
-          >
-            <FontAwesomeIcon icon={faTv} />
-            <span>TV Shows</span>
-          </button>
-
-          <button
-            id="tab-music"
-            role="tab"
-            aria-selected={activeTab === 'music'}
-            aria-controls="tabpanel-music"
-            onClick={() => setActiveTab('music')}
-            className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === 'music'
-                ? 'border-primary-500 text-primary-400'
-                : 'border-transparent text-neutral-400 hover:text-neutral-300'
-            }`}
-          >
-            <FontAwesomeIcon icon={faMusic} />
-            <span>Music</span>
-          </button>
-        </nav>
-      </div>
-
-      {/* Tab Content */}
-      <div
-        id={`tabpanel-${activeTab}`}
-        role="tabpanel"
-        aria-labelledby={`tab-${activeTab}`}
-        className="space-y-6"
+      <AnimatedTabs
+        value={activeTab}
+        onValueChange={(value) => setActiveTab(value as MediaType)}
+        tabs={[
+          {
+            value: 'movies',
+            label: (
+              <span className="flex items-center gap-2">
+                <FontAwesomeIcon icon={faFilm} />
+                <span>Movies</span>
+              </span>
+            ),
+          },
+          {
+            value: 'tvshows',
+            label: (
+              <span className="flex items-center gap-2">
+                <FontAwesomeIcon icon={faTv} />
+                <span>TV Shows</span>
+              </span>
+            ),
+          },
+          {
+            value: 'music',
+            label: (
+              <span className="flex items-center gap-2">
+                <FontAwesomeIcon icon={faMusic} />
+                <span>Music</span>
+              </span>
+            ),
+          },
+        ]}
+        className="mb-6"
       >
-        {/* Metadata Priority Section */}
-        <div>
-          <h2 className="text-lg font-semibold text-white mb-4">Metadata Priority</h2>
-          <div className="bg-neutral-800 border border-neutral-700 rounded-lg p-4">
-            {mode === 'balanced' ? (
-              <BalancedModeDisplay
-                category="metadata"
-                mediaType={activeTab}
-                providers={providers}
-              />
-            ) : (
-              <CustomModeEditor
-                category="metadata"
-                mediaType={activeTab}
-                config={config}
-                providers={providers}
-              />
-            )}
+        <AnimatedTabsContent value="movies" className="space-y-6">
+          {/* Metadata Priority Section */}
+          <div>
+            <h2 className="text-lg font-semibold text-white mb-4">Metadata Priority</h2>
+            <div className="bg-neutral-800 border border-neutral-700 rounded-lg p-4">
+              {mode === 'balanced' ? (
+                <BalancedModeDisplay
+                  category="metadata"
+                  mediaType="movies"
+                  providers={providers}
+                />
+              ) : (
+                <CustomModeEditor
+                  category="metadata"
+                  mediaType="movies"
+                  config={config}
+                  providers={providers}
+                />
+              )}
+            </div>
           </div>
-        </div>
 
-        <hr className="border-neutral-700" />
+          <hr className="border-neutral-700" />
 
-        {/* Image Priority Section */}
-        <div>
-          <h2 className="text-lg font-semibold text-white mb-4">Image Priority</h2>
-          <div className="bg-neutral-800 border border-neutral-700 rounded-lg p-4">
-            {mode === 'balanced' ? (
-              <BalancedModeDisplay
-                category="images"
-                mediaType={activeTab}
-                providers={providers}
-              />
-            ) : (
-              <CustomModeEditor
-                category="images"
-                mediaType={activeTab}
-                config={config}
-                providers={providers}
-              />
-            )}
+          {/* Image Priority Section */}
+          <div>
+            <h2 className="text-lg font-semibold text-white mb-4">Image Priority</h2>
+            <div className="bg-neutral-800 border border-neutral-700 rounded-lg p-4">
+              {mode === 'balanced' ? (
+                <BalancedModeDisplay
+                  category="images"
+                  mediaType="movies"
+                  providers={providers}
+                />
+              ) : (
+                <CustomModeEditor
+                  category="images"
+                  mediaType="movies"
+                  config={config}
+                  providers={providers}
+                />
+              )}
+            </div>
           </div>
-        </div>
-      </div>
+        </AnimatedTabsContent>
+
+        <AnimatedTabsContent value="tvshows" className="space-y-6">
+          {/* Metadata Priority Section */}
+          <div>
+            <h2 className="text-lg font-semibold text-white mb-4">Metadata Priority</h2>
+            <div className="bg-neutral-800 border border-neutral-700 rounded-lg p-4">
+              {mode === 'balanced' ? (
+                <BalancedModeDisplay
+                  category="metadata"
+                  mediaType="tvshows"
+                  providers={providers}
+                />
+              ) : (
+                <CustomModeEditor
+                  category="metadata"
+                  mediaType="tvshows"
+                  config={config}
+                  providers={providers}
+                />
+              )}
+            </div>
+          </div>
+
+          <hr className="border-neutral-700" />
+
+          {/* Image Priority Section */}
+          <div>
+            <h2 className="text-lg font-semibold text-white mb-4">Image Priority</h2>
+            <div className="bg-neutral-800 border border-neutral-700 rounded-lg p-4">
+              {mode === 'balanced' ? (
+                <BalancedModeDisplay
+                  category="images"
+                  mediaType="tvshows"
+                  providers={providers}
+                />
+              ) : (
+                <CustomModeEditor
+                  category="images"
+                  mediaType="tvshows"
+                  config={config}
+                  providers={providers}
+                />
+              )}
+            </div>
+          </div>
+        </AnimatedTabsContent>
+
+        <AnimatedTabsContent value="music" className="space-y-6">
+          {/* Metadata Priority Section */}
+          <div>
+            <h2 className="text-lg font-semibold text-white mb-4">Metadata Priority</h2>
+            <div className="bg-neutral-800 border border-neutral-700 rounded-lg p-4">
+              {mode === 'balanced' ? (
+                <BalancedModeDisplay
+                  category="metadata"
+                  mediaType="music"
+                  providers={providers}
+                />
+              ) : (
+                <CustomModeEditor
+                  category="metadata"
+                  mediaType="music"
+                  config={config}
+                  providers={providers}
+                />
+              )}
+            </div>
+          </div>
+
+          <hr className="border-neutral-700" />
+
+          {/* Image Priority Section */}
+          <div>
+            <h2 className="text-lg font-semibold text-white mb-4">Image Priority</h2>
+            <div className="bg-neutral-800 border border-neutral-700 rounded-lg p-4">
+              {mode === 'balanced' ? (
+                <BalancedModeDisplay
+                  category="images"
+                  mediaType="music"
+                  providers={providers}
+                />
+              ) : (
+                <CustomModeEditor
+                  category="images"
+                  mediaType="music"
+                  config={config}
+                  providers={providers}
+                />
+              )}
+            </div>
+          </div>
+        </AnimatedTabsContent>
+      </AnimatedTabs>
 
       {/* Mode Help Modal */}
       {showModeHelp && (

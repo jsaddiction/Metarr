@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { AnimatedTabs, AnimatedTabsContent } from '../../components/ui/AnimatedTabs';
 import { useProviders } from '../../hooks/useProviders';
 import { ProviderWithMetadata } from '../../types/provider';
 import { AddProviderCard } from '../../components/provider/AddProviderCard';
@@ -18,6 +18,7 @@ type TabType = 'providers' | 'assets' | 'metadata';
 export const Providers: React.FC = () => {
   const { data: providers = [], isLoading, error } = useProviders();
   const { data: strategy } = useAutoSelectionStrategy();
+  const [activeTab, setActiveTab] = useState<TabType>('providers');
   const [showAddModal, setShowAddModal] = useState(false);
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState<ProviderWithMetadata | undefined>();
@@ -50,20 +51,17 @@ export const Providers: React.FC = () => {
         </p>
       </div>
 
-      <Tabs defaultValue="providers" className="space-y-6">
-        <TabsList>
-          <TabsTrigger value="providers">
-            Providers
-          </TabsTrigger>
-          <TabsTrigger value="assets">
-            Asset Selection
-          </TabsTrigger>
-          <TabsTrigger value="metadata">
-            Metadata Selection
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="providers" className="space-y-6">
+      <AnimatedTabs
+        value={activeTab}
+        onValueChange={(value) => setActiveTab(value as TabType)}
+        tabs={[
+          { value: 'providers', label: 'Providers' },
+          { value: 'assets', label: 'Asset Selection' },
+          { value: 'metadata', label: 'Metadata Selection' },
+        ]}
+        className="mb-6"
+      >
+        <AnimatedTabsContent value="providers" className="space-y-6">
           {isLoading && (
             <div className="text-center py-12">
               <p className="text-muted-foreground">Loading providers...</p>
@@ -107,24 +105,24 @@ export const Providers: React.FC = () => {
               )}
             </>
           )}
-        </TabsContent>
+        </AnimatedTabsContent>
 
-        <TabsContent value="assets" className="space-y-6">
+        <AnimatedTabsContent value="assets" className="space-y-6">
           <p className="text-sm text-muted-foreground">
             Provider priority for assets (quality trumps priority)
           </p>
           <AutoSelectionStrategyToggle />
           {strategy === 'custom' && <AssetTypePriorityConfig />}
-        </TabsContent>
+        </AnimatedTabsContent>
 
-        <TabsContent value="metadata" className="space-y-6">
+        <AnimatedTabsContent value="metadata" className="space-y-6">
           <p className="text-sm text-muted-foreground">
             Provider priority for metadata fields
           </p>
           <AutoSelectionStrategyToggle />
           {strategy === 'custom' && <MetadataFieldPriorityConfig />}
-        </TabsContent>
-      </Tabs>
+        </AnimatedTabsContent>
+      </AnimatedTabs>
 
       {/* Modals */}
       <AddProviderModal

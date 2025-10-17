@@ -217,23 +217,21 @@ export async function buildKnownFilesSet(
       }
     }
 
-    // Add images from cache_assets via movie FK columns
-    // Clean schema: movies table has FK columns pointing to cache_assets
+    // Add images from unified file system (image_files table)
     if (entityType === 'movie') {
       const images = await db.query<any[]>(
-        `SELECT ca.file_path
-         FROM cache_assets ca
-         INNER JOIN movies m ON (
-           ca.id = m.poster_id OR ca.id = m.fanart_id OR
-           ca.id = m.banner_id OR ca.id = m.clearart_id OR
-           ca.id = m.logo_id OR ca.id = m.discart_id OR
-           ca.id = m.thumb_id
-         )
-         WHERE m.id = ? AND ca.file_path IS NOT NULL`,
-        [entityId]
+        `SELECT file_path
+         FROM image_files
+         WHERE entity_type = ? AND entity_id = ? AND file_path IS NOT NULL`,
+        [entityType, entityId]
       );
 
-      logger.debug('Found cached asset image paths', { entityType, entityId, count: images.length, paths: images.map((i: any) => i.file_path) });
+      logger.debug('Found image file paths from unified file system', {
+        entityType,
+        entityId,
+        count: images.length,
+        paths: images.map((i: any) => i.file_path)
+      });
 
       for (const image of images) {
         if ((image as any).file_path) {
@@ -242,13 +240,12 @@ export async function buildKnownFilesSet(
       }
     }
 
-    // Add trailers from cache_assets (clean schema: trailers table has cache_asset_id FK)
+    // Add trailers from unified file system (video_files with video_type = 'trailer')
     if (entityType === 'movie') {
       const trailers = await db.query<any[]>(
-        `SELECT ca.file_path
-         FROM trailers t
-         INNER JOIN cache_assets ca ON t.cache_asset_id = ca.id
-         WHERE t.entity_type = ? AND t.entity_id = ? AND ca.file_path IS NOT NULL`,
+        `SELECT file_path
+         FROM video_files
+         WHERE entity_type = ? AND entity_id = ? AND video_type = 'trailer' AND file_path IS NOT NULL`,
         [entityType, entityId]
       );
 
@@ -259,12 +256,11 @@ export async function buildKnownFilesSet(
       }
     }
 
-    // Add external subtitles from database (clean schema: stream_index IS NULL for external)
+    // Add external subtitles from unified file system (text_files with text_type = 'subtitle')
     const subtitles = await db.query<any[]>(
-      `SELECT ca.file_path
-       FROM subtitle_streams ss
-       LEFT JOIN cache_assets ca ON ss.cache_asset_id = ca.id
-       WHERE ss.entity_type = ? AND ss.entity_id = ? AND ss.stream_index IS NULL AND ca.file_path IS NOT NULL`,
+      `SELECT file_path
+       FROM text_files
+       WHERE entity_type = ? AND entity_id = ? AND text_type = 'subtitle' AND file_path IS NOT NULL`,
       [entityType, entityId]
     );
 
