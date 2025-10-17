@@ -223,13 +223,9 @@ git checkout feature/stage-X-name
 git checkout -b feature/stage-X-name
 
 # 6. Start servers (YOU control these, not Claude!)
-npm run dev:backend     # Terminal 1
-npm run dev:frontend    # Terminal 2
+npm run dev:all         # Runs both backend + frontend concurrently
 
-# 7. Delete old logs
-rm logs/*.*
-
-# 8. Begin work
+# 7. Begin work (logs auto-deleted on backend startup)
 ```
 
 ### Completing a Stage
@@ -292,12 +288,18 @@ git checkout -b feature/stage-Y-name
 **CRITICAL**: YOU (the human) control all Node.js servers, NOT Claude!
 
 **Rules for Claude**:
-- ❌ NEVER run `npm run dev`, `npm start`, or any Node.js server commands
+- ❌ NEVER run `npm run dev`, `npm run dev:all`, `npm start`, or any server commands
 - ❌ NEVER kill Node processes (`pkill node`, `killall node`)
-- ✅ Ask you to restart servers when file changes require it
-- ✅ Tell you when hot-reload should handle changes automatically
+- ✅ Inform you that nodemon will auto-restart after file changes
+- ✅ Ask you to restart servers only when absolutely necessary
 
-**Why**: Killing Node processes is suicidal - Claude loses all context if you have to restart the conversation.
+**What Claude CAN run**:
+- ✅ `npm run build` - Build production assets
+- ✅ `npm run typecheck` - Type checking
+- ✅ `npm run lint` / `npm run lint:fix` - Linting
+- ✅ `npm run format` - Code formatting
+
+**Why**: Killing Node processes terminates Claude's session, losing all context.
 
 ### Git Workflow
 
@@ -309,9 +311,11 @@ git checkout -b feature/stage-Y-name
 ### Database Changes
 
 - Development uses SQLite (`data/metarr.sqlite`)
-- Fresh start: Delete DB file + run `npm run migrate`
-- Clean schema: `20251015_001_clean_schema.ts`
-- Always delete logs when restarting: `rm logs/*.*`
+- **Pre-release strategy**: All schema changes in `20251015_001_clean_schema.ts`
+- Nodemon auto-restarts on file changes
+- Temporary cleanup code auto-deletes old database
+- Logs auto-deleted on backend startup
+- **Post-release**: Traditional migration flow (protect user data)
 
 ---
 

@@ -4,53 +4,70 @@
 
 Detailed architecture documentation is located in `docs/`. **Read specific files only when needed for the current task** to avoid context overload.
 
+The documentation follows a hierarchical structure: **WHAT** (overview) → **WHY** (design) → **HOW** (implementation).
+
+---
+
+## TIER 1: WHAT - Understanding Metarr
+
 ### Application Overview
 
 Metarr is a web-based metadata management application inspired by MediaElch, designed for Docker deployment. It provides intelligent metadata management with **user control first**, bridging media managers (Sonarr/Radarr/Lidarr) and media players (Kodi/Jellyfin/Plex).
 
 **Core Principle**: "Intelligent Defaults with Manual Override Capability"
-- Initial setup: User chooses automation level (Manual, YOLO, or Hybrid)
+
 - Manual edits are sacred: Locks prevent automation from overwriting user changes
 - Webhooks (if enabled): Fully automated for hands-off operation
 - Cache as source of truth: Immutable, content-addressed storage protects against data loss
 
-### Quick Start Documentation
+### Navigation Documents (Start Here)
 
-**For Resuming Work** (Most Important):
 1. **[PROJECT_ROADMAP.md](docs/PROJECT_ROADMAP.md)** - **START HERE** - Current status, what's done, what's next
 2. **[STAGE_DEFINITIONS.md](docs/STAGE_DEFINITIONS.md)** - Detailed stage plans and tasks
 3. **[GIT_WORKFLOW.md](docs/GIT_WORKFLOW.md)** - Branch strategy, commit conventions, development rules
 
-**For Understanding Design**:
+---
+
+## TIER 2: WHY - Design Philosophy
+
+### Understanding Design Decisions
+
 1. **[DESIGN_DECISIONS.md](docs/DESIGN_DECISIONS.md)** - Why we made specific architectural choices
 2. **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** - Complete architectural vision and design principles
 
-**Core Architecture**:
-- **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** - System design, data flow, technology stack
-- **[DATABASE_SCHEMA.md](docs/DATABASE_SCHEMA.md)** - Complete schema with new tables (asset_candidates, cache_inventory, publish_log)
-- **[WORKFLOWS.md](docs/WORKFLOWS.md)** - Two-phase scanning, enrichment pipeline, operational workflows
+---
+
+## TIER 3: HOW - Implementation Details
+
+### Core Systems
+
+- **[DATABASE_SCHEMA.md](docs/DATABASE_SCHEMA.md)** - Complete schema with asset tables and field locking
+- **[WORKFLOWS.md](docs/WORKFLOWS.md)** - Two-phase scanning, enrichment, publishing, field locking, automation
 - **[API_ARCHITECTURE.md](docs/API_ARCHITECTURE.md)** - REST API + WebSocket communication
+- **[JOB_QUEUE_ARCHITECTURE.md](docs/JOB_QUEUE_ARCHITECTURE.md)** - Background job system with priorities
+- **[UNIFIED_FILE_SYSTEM.md](docs/UNIFIED_FILE_SYSTEM.md)** - Asset storage (cache + library, two-copy architecture)
+- **[WEBSOCKET_JOB_PROGRESS.md](docs/WEBSOCKET_JOB_PROGRESS.md)** - Real-time progress updates
 
-**Feature Areas**:
-- **[ASSET_MANAGEMENT.md](docs/ASSET_MANAGEMENT.md)** - Three-tier asset system (Candidates → Cache → Library)
-- **[AUTOMATION_AND_WEBHOOKS.md](docs/AUTOMATION_AND_WEBHOOKS.md)** - Automation levels, webhook handling, field locking
-- **[PUBLISHING_WORKFLOW.md](docs/PUBLISHING_WORKFLOW.md)** - Dirty state, transactional publishing, player notification
-- **[FIELD_LOCKING.md](docs/FIELD_LOCKING.md)** - Field-level locking system
+### External Integrations
 
-**External Integrations**:
+- **[WEBHOOKS.md](docs/WEBHOOKS.md)** - Radarr/Sonarr/Lidarr webhook handling and automation
 - **[METADATA_PROVIDERS.md](docs/METADATA_PROVIDERS.md)** - TMDB, TVDB integration, rate limiting
 - **[KODI_API.md](docs/KODI_API.md)** - Kodi JSON-RPC reference
-- **[WEBHOOKS.md](docs/WEBHOOKS.md)** - Radarr/Sonarr webhook handling
-- **[NFO_PARSING.md](docs/NFO_PARSING.md)** - Kodi NFO format
+- **[NFO_PARSING.md](docs/NFO_PARSING.md)** - Kodi NFO format parsing
 
-**System**:
+### System Architecture
+
 - **[PATH_MAPPING.md](docs/PATH_MAPPING.md)** - Path translation between systems
-- **[NOTIFICATIONS_AND_LOGGING.md](docs/NOTIFICATIONS_AND_LOGGING.md)** - Logging, notifications
+- **[NOTIFICATIONS_AND_LOGGING.md](docs/NOTIFICATIONS_AND_LOGGING.md)** - Logging, notifications, retention
+- **[BACKEND_ARCHITECTURE_RULES.md](docs/BACKEND_ARCHITECTURE_RULES.md)** - Backend coding standards
+
+### Frontend & Testing
+
+- **[UI_DESIGN.md](docs/UI_DESIGN.md)** - Layout, color scheme, component patterns
+- **[FRONTEND_COMPONENTS.md](docs/FRONTEND_COMPONENTS.md)** - React components reference
 - **[TESTING.md](docs/TESTING.md)** - Test infrastructure, writing tests, current status
 
-**Frontend**:
-- **[UI_DESIGN.md](docs/UI_DESIGN.md)** - Layout, color scheme
-- **[FRONTEND_COMPONENTS.md](docs/FRONTEND_COMPONENTS.md)** - React components
+---
 
 ## Executive Summary
 
@@ -60,19 +77,19 @@ Metarr is a **web-based metadata management application** inspired by MediaElch,
 
 **"Intelligent Defaults with Manual Override Capability"**
 
-1. **User Control First**: Choose your automation level
-   - **Manual Mode**: Full MediaElch-style control (scan → review → edit → publish)
-   - **YOLO Mode**: Full automation (trust the algorithm, fix mistakes later)
-   - **Hybrid Mode**: Auto-process but review before publishing (recommended default)
+1. **Automation First**: Set it and forget it.
+   - Webhooks initiate enrichment process
+   - Missing data is replaced with an online provider.
+   - Cached files for quick restructure of target library item.
 
-2. **Manual Edits are Sacred**: Any user change locks that field/asset permanently
+2. **Manual Edits are Sacred**: Any user change locks that field/asset
    - Locked fields excluded from all future automation
    - Visual indicators: 🔒 User Selected vs 🤖 Auto Selected
    - Unlock capability when user wants automation back
 
 3. **Webhooks = Full Automation**: If enabled, new downloads auto-publish
    - User opted in because they want automation
-   - Seamless integration with existing *arr stack
+   - Seamless integration with existing \*arr stack
    - Upgrades restore from cache (disaster recovery built-in)
 
 ### Core Architecture
@@ -125,18 +142,21 @@ DISCOVERED → IDENTIFIED → ENRICHING → ENRICHED → SELECTED → PUBLISHED
 ## Technology Stack
 
 ### Backend
+
 - **Runtime**: Node.js with TypeScript
 - **Web Framework**: Express.js
 - **Database**: Multi-database support (SQLite3 for development, PostgreSQL for production)
 - **Communication**: REST API + WebSocket
 
 ### Frontend
+
 - **Framework**: React with Vite
 - **Language**: TypeScript
 - **Styling**: Tailwind CSS with purple theme (matching Sonarr/Radarr design patterns)
 - **State Management**: React hooks + WebSocket for real-time updates
 
 ### Integrations
+
 - **Media Players**: Kodi (WebSocket + HTTP), Jellyfin (REST), Plex (future)
 - **Metadata Providers**: TMDB (movies/TV), TVDB (TV shows), MusicBrainz (music - future)
 - **Downloaders**: Sonarr, Radarr, Lidarr (webhook receivers)
@@ -144,14 +164,13 @@ DISCOVERED → IDENTIFIED → ENRICHING → ENRICHED → SELECTED → PUBLISHED
 ## Development Commands
 
 ### Essential Commands
+
 ```bash
 # Backend Development
-npm run dev              # Start backend development server with hot reload
 npm run build           # Build TypeScript to JavaScript
 npm start              # Run production build
 
 # Frontend Development
-npm run dev:frontend     # Start frontend development server (Vite on port 3001)
 npm run build:frontend   # Build frontend for production
 npm run dev:all         # Run both backend and frontend concurrently
 
@@ -163,15 +182,16 @@ npm run typecheck      # Type check without building
 ```
 
 ### Development Workflow
-1. Run `npm run dev:all` to start both backend and frontend servers
+
+1. Run `npm run dev:all` to start both backend and frontend servers **human run only**
 2. Backend runs on `http://localhost:3000`
 3. Frontend runs on `http://localhost:3001` with proxy to backend
 4. Use `npm run lint` before committing changes
 5. Run `npm run typecheck` to ensure type safety
 6. Format code with `npm run format`
-7. **Always delete contents of logs when restarting development server**
 
 ## Project Structure
+
 ```
 src/
 ├── config/           # Configuration management
@@ -216,6 +236,7 @@ data/               # Runtime data (NOT in git)
 ## Two-Copy Architecture: Asset Management
 
 ### Core Principle
+
 **Metarr maintains TWO copies of every asset for resilience and disaster recovery:**
 
 1. **Cache Copy** (Source of Truth)
@@ -233,18 +254,21 @@ data/               # Runtime data (NOT in git)
 ### Asset Flow
 
 **Discovery in Library** (Most Common)
+
 ```
 User places file → Metarr scans directory → Copies to cache → Keeps library copy
                                           → Stores both paths in database
 ```
 
 **Download from Web** (TMDB/TVDB)
+
 ```
 Download to temp → Process (hash, dimensions) → Move to cache → Copy to library
                                                → Store both paths in database
 ```
 
 **User Assignment** (Unknown Files)
+
 ```
 Unknown file in library → User identifies type → Copy to cache → Rename/move library copy to Kodi naming
                                                 → Store both paths in database
@@ -253,15 +277,17 @@ Unknown file in library → User identifies type → Copy to cache → Rename/mo
 ### Disaster Recovery Scenarios
 
 **Scenario 1: Radarr Deletes Images During Upgrade**
+
 ```
 Before: Library has poster.jpg, fanart.jpg (both in cache too)
 Radarr: Deletes all images during movie quality upgrade
-Metarr: Detects missing files during next scan
+Metarr: Detects missing files during next scan or webhook
 Action: Copies from cache → library (uses cached files)
 Result: Images restored, no web API calls needed
 ```
 
 **Scenario 2: TMDB Removes Image from API**
+
 ```
 Before: Image URL stored in database, cached locally
 TMDB:   Removes image from their servers (happens occasionally)
@@ -271,6 +297,7 @@ Result: Image preserved despite web source removal
 ```
 
 **Scenario 3: User Accidentally Deletes Movie Directory**
+
 ```
 Before: Database has metadata, cache has all assets
 User:   rm -rf "/movies/The Matrix (1999)/"
@@ -303,19 +330,22 @@ CREATE TABLE subtitle_streams (
 ```
 
 ### What Metarr DOES NOT Backup
+
 - **Media files themselves** (movies, TV episodes, music files)
 - Reason: Too large, user has Radarr/Sonarr for this
 - Metarr only tracks the file path to generate proper asset naming
 
 ### Backup Strategy
+
 **Critical to backup:**
+
 1. Database (`data/metarr.sqlite` or PostgreSQL database)
 2. Cache directory (`data/cache/`)
 
-**Optional to backup:**
-3. Configuration files
+**Optional to backup:** 3. Configuration files
 
 **Do NOT need to backup:**
+
 - Media files (user's responsibility via Radarr/Sonarr backups)
 - Library directory assets (can be rebuilt from cache)
 - Logs
@@ -323,33 +353,9 @@ CREATE TABLE subtitle_streams (
 ## Configuration
 
 ### Environment Variables
+
 ```env
-# Server
-PORT=3000
-NODE_ENV=development
 
-# Database
-DB_TYPE=sqlite3                    # sqlite3 | postgres | mysql
-DB_HOST=localhost                  # For postgres/mysql
-DB_PORT=5432                       # For postgres/mysql
-DB_NAME=metarr                     # Database name
-DB_USER=metarr                     # For postgres/mysql
-DB_PASSWORD=password               # For postgres/mysql
-DB_FILE=./data/metarr.sqlite       # For SQLite3
-
-# API Keys (Optional - defaults provided)
-# TMDB_API_KEY=your_personal_tmdb_key  # Optional: Uses default project key if not set
-# FANART_TV_API_KEY=your_personal_key  # Optional: Uses default project key if not set
-
-# Media Players
-KODI_HOST=192.168.1.100
-KODI_PORT=8080
-KODI_USERNAME=kodi
-KODI_PASSWORD=password
-
-JELLYFIN_HOST=192.168.1.101
-JELLYFIN_PORT=8096
-JELLYFIN_API_KEY=your_jellyfin_key
 ```
 
 ### Zero-Configuration Philosophy
@@ -357,6 +363,7 @@ JELLYFIN_API_KEY=your_jellyfin_key
 **Metarr works completely out-of-the-box with ZERO required environment variables for local development.**
 
 The application includes embedded default API keys for services that offer free project-level keys. This means:
+
 - Clone the repo → `npm install` → `npm run dev` → **It just works!**
 - No API key signup required to start developing
 - No configuration files to create
@@ -380,12 +387,14 @@ The application includes embedded default API keys for services that offer free 
   - Get yours: https://fanart.tv/get-an-api-key/
 
 **Why Override with Your Own Key?**
+
 - Track your personal API usage and analytics
 - Support the provider services by registering as a user
 - Get higher rate limits (FanArt.tv: 20 req/sec vs 10 req/sec)
 - All keys are completely free for personal/open-source use
 
 **Implementation:**
+
 - Default keys: `src/config/providerDefaults.ts`
 - Fallback logic: `src/config/ConfigManager.ts`
 - User overrides via environment variables take precedence
@@ -394,32 +403,45 @@ The application includes embedded default API keys for services that offer free 
 ## Development Notes
 
 ### Adding New Providers
+
 1. Create provider class in `src/services/providers/`
 2. Implement `IMetadataProvider` interface
 3. Add provider configuration to `src/config/providers.ts`
 4. Register provider in `src/services/providerService.ts`
 
 ### Adding New Media Players
+
 1. Create player class in `src/services/players/`
 2. Implement `IMediaPlayer` interface
 3. Add player configuration to `src/config/players.ts`
 4. Register player in `src/services/playerService.ts`
 
 ### Database Migrations
-1. Create migration file in `src/database/migrations/`
-2. Follow naming convention: `YYYYMMDD_HHmmss_description.ts`
-3. Implement `up()` and `down()` methods
-4. Run with migration service
+
+**Two migration strategies** pre-release | post-release
+
+- Pre-release: during development of v1
+  1. Manipulate initial schema directly
+  2. file change initiates nodemon restart
+  3. database file deletion code removes old database
+  4. initial migration creates new database
+- Post-release: only after docker image creation and distribution
+  1. Create migration file in `src/database/migrations/`
+  2. Follow naming convention: `YYYYMMDD_HHmmss_description.ts`
+  3. Implement `up()` and `down()` methods
+  4. Run with migration service
 
 ## Troubleshooting
 
 ### Common Issues
+
 1. **Database Connection**: Check DB_TYPE and connection settings
 2. **API Keys**: Verify provider API key validity
 3. **Media Player Connection**: Test network connectivity and credentials
 4. **Webhook Delivery**: Check firewall and port accessibility
 
 ### Logging
+
 - Application logs: `logs/app.log`
 - Error logs: `logs/error.log`
 - Job processing: `logs/jobs.log`
@@ -427,6 +449,7 @@ The application includes embedded default API keys for services that offer free 
 - See `docs/NOTIFICATIONS_AND_LOGGING.md` for log rotation and retention
 
 **Monitoring Logs During Development (Windows):**
+
 ```bash
 # Tail logs in real-time using PowerShell
 powershell -Command "Get-Content logs/app.log -Tail 50 -Wait"
@@ -437,11 +460,30 @@ powershell -Command "Get-Content logs/error.log -Tail 50 -Wait"
 
 ## ⚠️ Critical Development Rules for Claude (AI Assistant)
 
+### Git Commit Policy - NO AI ATTRIBUTION!
+
+**NEVER add Claude attribution to commit messages.**
+
+This is the human developer's project. Commit messages should reflect their work, not Claude's assistance.
+
+**Example**:
+```bash
+# ❌ WRONG
+git commit -m "feat: add feature
+
+🤖 Generated with Claude Code
+Co-Authored-By: Claude <noreply@anthropic.com>"
+
+# ✅ CORRECT
+git commit -m "stage-4: backend: add webhook receiver endpoints"
+```
+
 ### Server Management - DO NOT TOUCH!
 
 **YOU (the human) control all Node.js servers. Claude NEVER runs server commands.**
 
 **Claude Must NEVER Run**:
+
 - `npm run dev`, `npm run dev:backend`, `npm run dev:frontend`, `npm start`
 - `pkill node`, `killall node`, or any process killing commands
 - Any command that starts/stops/restarts servers
@@ -449,14 +491,16 @@ powershell -Command "Get-Content logs/error.log -Tail 50 -Wait"
 **Why**: Killing Node processes terminates Claude's session, losing all context. This is catastrophic during troubleshooting.
 
 **What Claude Should Do**:
+
 - ✅ Ask you to restart servers when needed
-- ✅ Tell you when hot-reload should handle changes
+- ✅ Tell you when hot-reload or nodemon should handle changes
 - ✅ Read logs to diagnose issues
 - ✅ Make code changes and let you test
 
 **See [docs/GIT_WORKFLOW.md](docs/GIT_WORKFLOW.md) for complete Claude rules and development workflow.**
 
 ## Future Enhancements
+
 - Plex media player support
 - Advanced metadata matching algorithms
 - Custom metadata provider plugins

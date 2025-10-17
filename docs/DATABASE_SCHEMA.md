@@ -1056,7 +1056,26 @@ CREATE TABLE app_settings (
 
 ## Migration Tracking
 
-### Schema Migrations
+### Schema Migration Strategy
+
+**Two-Phase Approach**:
+
+1. **Pre-Release (Current - Development Phase v1.0)**
+   - All schema changes made directly in the initial migration file: `20251015_001_clean_schema.ts`
+   - Keeps table definitions centralized in one place
+   - Nodemon watches for file changes and auto-restarts
+   - Temporary cleanup code deletes old database on restart
+   - No risk of data loss (no users yet)
+   - **Purpose**: Rapid iteration and schema refinement
+
+2. **Post-Release (After Docker Distribution)**
+   - Switch to traditional migration flow
+   - Create new timestamped migration files for each schema change
+   - Implement `up()` and `down()` methods
+   - Migration service applies changes incrementally
+   - **Purpose**: Protect user data, support rollback
+
+### Schema Migrations Table
 
 ```sql
 CREATE TABLE schema_migrations (

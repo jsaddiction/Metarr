@@ -254,6 +254,25 @@ git show stage-3-complete
 
 ## ⚠️ Critical Rules for Claude (AI Assistant)
 
+### Commit Message Policy
+
+**NEVER add Claude attribution to commit messages**:
+```bash
+# ❌ WRONG - No AI attribution
+git commit -m "feat: add new feature
+
+Generated with Claude Code
+Co-Authored-By: Claude <noreply@anthropic.com>"
+
+# ✅ CORRECT - Clean commit message
+git commit -m "stage-X: feat: add new feature"
+```
+
+**Why**:
+- Commit messages should reflect the human developer's work
+- Attribution clutters git history
+- This is the human's project, not Claude's
+
 ### What Claude MUST NOT Do
 
 **NEVER run these commands**:
@@ -288,21 +307,21 @@ grep <pattern> <file>    # Search files
 
 ### Server Management Protocol
 
-**If code changes require server restart**:
+**Human controls ALL server start/stop/restart commands**:
 ```
-Claude: "These changes require restarting the backend server.
-         Please stop and restart: npm run dev:backend"
+Claude: "These changes will be picked up by nodemon automatically.
+         No restart needed - nodemon watches for file changes."
 
 Human: [Restarts server in terminal]
 
 Claude: [Continues with next task]
 ```
 
-**If troubleshooting server issues**:
+**If needing user intervention**:
 ```
 Claude: "Can you check the server logs?"
         "Is the backend server running?"
-        "What port is the frontend running on?"
+        "Please restart the server: npm run dev:all"
 
 Human: [Provides information]
 
