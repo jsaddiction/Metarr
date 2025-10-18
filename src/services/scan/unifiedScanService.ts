@@ -305,6 +305,10 @@ export async function scanMovieDirectory(
       } catch (error: any) {
         result.errors.push(`Unknown files detection failed: ${error.message}`);
       }
+
+      // ARCHITECTURAL CHANGE: Actors are NO LONGER discovered during initial scan
+      // They will be discovered during enrichment phase via TMDB API
+      // See: src/services/media/actorDiscovery.ts for detailed rationale
     } else {
       // === RESCAN WORKFLOW ===
       logger.info('Rescanning existing movie', {
@@ -379,6 +383,10 @@ export async function scanMovieDirectory(
       } catch (error: any) {
         result.errors.push(`Unknown files detection failed: ${error.message}`);
       }
+
+      // ARCHITECTURAL CHANGE: Actors are NO LONGER discovered during rescans
+      // They will be discovered during enrichment phase via TMDB API
+      // See: src/services/media/actorDiscovery.ts for detailed rationale
     }
 
     // Update last scanned timestamp
@@ -411,37 +419,77 @@ async function storeMovieMetadata(
   movieId: number,
   nfoData: any
 ): Promise<void> {
-  // Update movie record with metadata
-  await db.execute(
-    `UPDATE movies SET
-      title = ?,
-      original_title = ?,
-      sort_title = ?,
-      year = ?,
-      plot = ?,
-      tagline = ?,
-      content_rating = ?,
-      release_date = ?,
-      tmdb_id = ?,
-      imdb_id = ?,
-      identification_status = ?,
-      updated_at = CURRENT_TIMESTAMP
-    WHERE id = ?`,
-    [
-      nfoData.title,
-      nfoData.originalTitle,
-      nfoData.sortTitle,
-      nfoData.year,
-      nfoData.plot,
-      nfoData.tagline,
-      nfoData.mpaa, // mpaa maps to content_rating
-      nfoData.premiered,
-      nfoData.tmdbId,
-      nfoData.imdbId,
-      nfoData.tmdbId ? 'identified' : 'unidentified', // 'identified' if we have TMDB ID, 'enriched' only after provider API fetch
-      movieId,
-    ]
-  );
+  // Build UPDATE statement dynamically - only update fields provided by NFO
+  // This preserves existing values (like title from filename) when NFO doesn't provide them
+  const updates: string[] = [];
+  const values: any[] = [];
+
+  // Only update fields that have values in the NFO
+  if (nfoData.title !== undefined && nfoData.title !== null) {
+    updates.push('title = ?');
+    values.push(nfoData.title);
+  }
+
+  if (nfoData.originalTitle !== undefined) {
+    updates.push('original_title = ?');
+    values.push(nfoData.originalTitle);
+  }
+
+  if (nfoData.sortTitle !== undefined) {
+    updates.push('sort_title = ?');
+    values.push(nfoData.sortTitle);
+  }
+
+  if (nfoData.year !== undefined) {
+    updates.push('year = ?');
+    values.push(nfoData.year);
+  }
+
+  if (nfoData.plot !== undefined) {
+    updates.push('plot = ?');
+    values.push(nfoData.plot);
+  }
+
+  if (nfoData.tagline !== undefined) {
+    updates.push('tagline = ?');
+    values.push(nfoData.tagline);
+  }
+
+  if (nfoData.mpaa !== undefined) {
+    updates.push('content_rating = ?');
+    values.push(nfoData.mpaa);
+  }
+
+  if (nfoData.premiered !== undefined) {
+    updates.push('release_date = ?');
+    values.push(nfoData.premiered);
+  }
+
+  if (nfoData.tmdbId !== undefined) {
+    updates.push('tmdb_id = ?');
+    values.push(nfoData.tmdbId);
+  }
+
+  if (nfoData.imdbId !== undefined) {
+    updates.push('imdb_id = ?');
+    values.push(nfoData.imdbId);
+  }
+
+  // Always update identification status and timestamp
+  updates.push('identification_status = ?');
+  values.push(nfoData.tmdbId ? 'identified' : 'unidentified');
+
+  updates.push('updated_at = CURRENT_TIMESTAMP');
+
+  values.push(movieId);
+
+  // Only execute UPDATE if we have fields to update
+  if (updates.length > 2) { // More than just identification_status and updated_at
+    await db.execute(
+      `UPDATE movies SET ${updates.join(', ')} WHERE id = ?`,
+      values
+    );
+  }
 
   // Store genres (clean schema: genres table with media_type, movie_genres junction)
   if (nfoData.genres && nfoData.genres.length > 0) {
@@ -493,25 +541,6 @@ async function storeMovieMetadata(
         movieId,
         crew.id,
       ]);
-    }
-  }
-
-  // Store actors (clean schema: actors table with movie_actors junction)
-  if (nfoData.actors && nfoData.actors.length > 0) {
-    for (const actorData of nfoData.actors) {
-      const actorResults = await db.query(`SELECT id FROM actors WHERE name = ?`, [actorData.name]);
-      let actor = actorResults.length > 0 ? actorResults[0] : null;
-      if (!actor) {
-        // Clean schema: actors.thumb_id references cache_assets, not thumb_url
-        // For now, just create actor without thumb - full implementation would download and cache
-        const result = await db.execute(`INSERT INTO actors (name) VALUES (?)`, [actorData.name]);
-        actor = { id: result.insertId };
-      }
-
-      await db.execute(
-        `INSERT OR IGNORE INTO movie_actors (movie_id, actor_id, role, sort_order) VALUES (?, ?, ?, ?)`,
-        [movieId, actor.id, actorData.role, actorData.order]
-      );
     }
   }
 

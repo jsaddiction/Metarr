@@ -738,32 +738,48 @@ export class CleanSchemaMigration {
     // NORMALIZED METADATA TABLES
     // ============================================================
 
-    // Actors
+    // Actors (central registry - one record per unique actor)
     await db.execute(`
       CREATE TABLE actors (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
+        name_normalized TEXT NOT NULL UNIQUE,
         tmdb_id INTEGER UNIQUE,
         imdb_id TEXT,
-        thumb_id INTEGER,
+
+        -- Single best image (from local OR provider)
+        image_cache_path TEXT,
+        image_hash TEXT,
+        image_ctime INTEGER,
+
+        -- Enrichment tracking (two-phase: identified → enriched)
+        identification_status TEXT DEFAULT 'identified' CHECK(identification_status IN ('identified', 'enriched')),
+        enrichment_priority INTEGER DEFAULT 5,
+
+        -- Field locking for user overrides
+        name_locked BOOLEAN DEFAULT 0,
+        image_locked BOOLEAN DEFAULT 0,
+
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (thumb_id) REFERENCES image_files(id),
-        UNIQUE(name)
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
 
     await db.execute('CREATE INDEX idx_actors_tmdb ON actors(tmdb_id)');
+    await db.execute('CREATE INDEX idx_actors_name_normalized ON actors(name_normalized)');
+    await db.execute('CREATE INDEX idx_actors_identification ON actors(identification_status)');
 
-    // Movie Actors
+    // Movie Actors (link table)
     await db.execute(`
       CREATE TABLE movie_actors (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
         movie_id INTEGER NOT NULL,
         actor_id INTEGER NOT NULL,
         role TEXT,
-        sort_order INTEGER,
-        PRIMARY KEY (movie_id, actor_id),
+        actor_order INTEGER,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (movie_id) REFERENCES movies(id) ON DELETE CASCADE,
-        FOREIGN KEY (actor_id) REFERENCES actors(id) ON DELETE CASCADE
+        FOREIGN KEY (actor_id) REFERENCES actors(id)
       )
     `);
 
