@@ -19,6 +19,7 @@ import { JobQueueService } from '../services/jobQueue/JobQueueService.js';
 import { AutomationConfigService } from '../services/automationConfigService.js';
 import { AssetSelectionService } from '../services/assetSelectionService.js';
 import { AssetCandidateService } from '../services/assetCandidateService.js';
+import { ActorController } from '../controllers/actorController.js';
 // import { tmdbService } from '../services/providers/TMDBService.js'; // TODO: Re-enable if needed
 import { ProviderConfigService } from '../services/providerConfigService.js';
 import { ProviderConfigController } from '../controllers/providerConfigController.js';
@@ -107,6 +108,9 @@ export const createApiRouter = (
 
   // Initialize asset controller
   const assetController = new AssetController(db);
+
+  // Initialize actor controller
+  const actorController = new ActorController(dbManager);
 
   // Initialize job controller
   const jobController = new JobController(jobQueueService);
@@ -337,6 +341,18 @@ export const createApiRouter = (
     movieController.resetAssetSelection(req, res, next);
   });
 
+  // Soft delete (move to recycle bin)
+  router.delete('/movies/:id', (req, res, next) => {
+    logger.debug('[Route Hit] DELETE /movies/:id with id:', req.params.id);
+    movieController.deleteMovie(req, res, next);
+  });
+
+  // Restore from recycle bin
+  router.post('/movies/:id/restore', (req, res, next) => {
+    logger.debug('[Route Hit] /movies/:id/restore with id:', req.params.id);
+    movieController.restoreMovie(req, res, next);
+  });
+
   // Movie detail (MUST come last among movie routes)
   router.get('/movies/:id', (req, res, next) => {
     logger.debug('[Route Hit] /movies/:id with id:', req.params.id);
@@ -377,6 +393,44 @@ export const createApiRouter = (
   router.delete('/images/:id', (req, res, next) => {
     logger.debug('[Route Hit] /images/:id with id:', req.params.id);
     imageController.deleteImage(req, res, next);
+  });
+
+  // Actor Routes
+  logger.debug('[API Router] Registering actor routes');
+  router.get('/actors', (req, res, next) => {
+    logger.debug('[Route Hit] /actors');
+    actorController.getAll(req, res, next);
+  });
+
+  // Actor image serving (MUST come before /actors/:id)
+  router.get('/actors/:id/image', (req, res, next) => {
+    logger.debug('[Route Hit] /actors/:id/image with id:', req.params.id);
+    actorController.serveImage(req, res, next);
+  });
+
+  router.get('/actors/:id/movies', (req, res, next) => {
+    logger.debug('[Route Hit] /actors/:id/movies with id:', req.params.id);
+    actorController.getMovies(req, res, next);
+  });
+
+  router.get('/actors/:id', (req, res, next) => {
+    logger.debug('[Route Hit] /actors/:id with id:', req.params.id);
+    actorController.getById(req, res, next);
+  });
+
+  router.patch('/actors/:id', (req, res, next) => {
+    logger.debug('[Route Hit] PATCH /actors/:id with id:', req.params.id);
+    actorController.update(req, res, next);
+  });
+
+  router.delete('/actors/:id', (req, res, next) => {
+    logger.debug('[Route Hit] DELETE /actors/:id with id:', req.params.id);
+    actorController.delete(req, res, next);
+  });
+
+  router.post('/actors/:id/merge', (req, res, next) => {
+    logger.debug('[Route Hit] POST /actors/:id/merge with id:', req.params.id);
+    actorController.merge(req, res, next);
   });
 
   // Asset Routes

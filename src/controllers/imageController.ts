@@ -24,6 +24,16 @@ export class ImageController {
   constructor(private imageService: ImageService) {}
 
   /**
+   * Convert image hash to static cache URL
+   * Cache structure: /cache/images/{first2chars}/{next2chars}/{fullhash}.{ext}
+   */
+  private getCacheUrl(hash: string, format: string): string {
+    const first2 = hash.substring(0, 2);
+    const next2 = hash.substring(2, 4);
+    return `/cache/images/${first2}/${next2}/${hash}.${format}`;
+  }
+
+  /**
    * GET /api/movies/:id/images
    * Get all images for a movie
    */
@@ -43,8 +53,8 @@ export class ImageController {
         success: true,
         images: images.map(img => ({
           ...img,
-          // Add URL for frontend to access cached image
-          cache_url: `/api/images/${img.id}/file`,
+          // Use static cache URL instead of API endpoint
+          cache_url: img.file_hash ? this.getCacheUrl(img.file_hash, img.format || 'jpg') : null,
         })),
       });
     } catch (error) {
@@ -84,12 +94,15 @@ export class ImageController {
         req.file.originalname
       );
 
+      // Get the uploaded image details to construct cache_url
+      const uploadedImage = await this.imageService.getImageById(cacheFileId);
+
       res.json({
         success: true,
         message: 'Image uploaded successfully',
         image: {
           id: cacheFileId,
-          cache_url: `/api/images/${cacheFileId}/file`,
+          cache_url: uploadedImage?.file_hash ? this.getCacheUrl(uploadedImage.file_hash, uploadedImage.format || 'jpg') : null,
         },
       });
     } catch (error) {

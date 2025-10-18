@@ -11,6 +11,7 @@ import {
   faCalendar,
 } from '@fortawesome/free-solid-svg-icons';
 import { useMovie } from '../../hooks/useMovies';
+import { ActorsList } from './ActorsList';
 
 // CSS to hide default date input calendar icon
 const hideDatePickerStyle = `
@@ -587,6 +588,14 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
           </div>
         </div>
       </div>
+
+      {/* Actors Section */}
+      <ActorsList
+        actors={metadata.actors || []}
+        onUpdate={(updatedActors) => {
+          handleFieldChange('actors', updatedActors);
+        }}
+      />
       </div>
     </>
   );

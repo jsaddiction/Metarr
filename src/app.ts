@@ -94,11 +94,21 @@ export class App {
     this.express.use(requestLoggingMiddleware);
 
     // Rate limiting
-    this.express.use('/api', rateLimitByIp(60000, 100)); // 100 requests per minute
+    // Increased limit to accommodate static asset requests (images, etc.)
+    this.express.use('/api', rateLimitByIp(60000, 1000)); // 1000 requests per minute
     this.express.use('/webhooks', rateLimitByIp(60000, 30)); // 30 webhook requests per minute
 
     // Static files
     this.express.use(express.static(path.join(__dirname, '../public')));
+
+    // Cache directory as static files (for actor images, movie posters, etc.)
+    // No rate limiting, served directly by Express static middleware
+    const cacheDir = path.join(process.cwd(), 'data', 'cache');
+    this.express.use('/cache', express.static(cacheDir, {
+      maxAge: '1y', // Cache for 1 year (content-addressed, immutable)
+      immutable: true,
+      etag: true,
+    }));
   }
 
   private initializeRoutes(): void {

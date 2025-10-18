@@ -12,6 +12,7 @@ import {
   faPlay,
   faClosedCaptioning,
   faMusic,
+  faUserGroup,
 } from '@fortawesome/free-solid-svg-icons';
 import { Movie } from '../../types/movie';
 import { AssetIndicator } from './AssetIndicator';
@@ -78,6 +79,7 @@ export const MovieRow = React.memo<MovieRowProps>(({ movie, onClick, onRefresh }
           status={movie.assetStatuses.poster}
           count={movie.assetCounts.poster}
           tooltip="Poster"
+          showCount={true}
         />
         <AssetIndicator
           icon={faImages}
@@ -97,6 +99,7 @@ export const MovieRow = React.memo<MovieRowProps>(({ movie, onClick, onRefresh }
           status={movie.assetStatuses.keyart}
           count={movie.assetCounts.keyart}
           tooltip="Key Art"
+          showCount={true}
         />
         <AssetIndicator
           icon={faFlag}
@@ -143,6 +146,13 @@ export const MovieRow = React.memo<MovieRowProps>(({ movie, onClick, onRefresh }
           status={movie.assetStatuses.theme}
           count={movie.assetCounts.theme}
           tooltip="Theme Songs"
+        />
+        <AssetIndicator
+          icon={faUserGroup}
+          status={movie.assetCounts.actor > 0 ? 'complete' : 'none'}
+          count={movie.assetCounts.actor}
+          tooltip="Actors"
+          showCount={true}
         />
       </div>
 

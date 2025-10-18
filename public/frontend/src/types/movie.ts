@@ -12,6 +12,7 @@ export interface AssetCounts {
   trailer: number;
   subtitle: number;
   theme: number;
+  actor: number;
 }
 
 export interface AssetStatuses {

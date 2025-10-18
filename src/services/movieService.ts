@@ -26,6 +26,7 @@ export interface AssetCounts {
   trailer: number;
   subtitle: number;
   theme: number;
+  actor: number;
 }
 
 export interface AssetStatuses {
@@ -74,6 +75,9 @@ export class MovieService {
     const whereClauses: string[] = ['1=1'];
     const params: any[] = [];
 
+    // ALWAYS exclude soft-deleted movies (unless explicitly requested)
+    whereClauses.push('m.deleted_at IS NULL');
+
     if (filters?.status) {
       whereClauses.push('m.status = ?');
       params.push(filters.status);
@@ -115,17 +119,17 @@ export class MovieService {
          WHERE entity_type = 'movie' AND entity_id = m.id AND text_type = 'nfo') as nfo_parsed_at,
 
         -- Asset counts from unified file system (scalar subqueries - much faster!)
-        (SELECT COUNT(*) FROM image_files WHERE entity_type = 'movie' AND entity_id = m.id AND image_type = 'poster') as poster_count,
-        (SELECT COUNT(*) FROM image_files WHERE entity_type = 'movie' AND entity_id = m.id AND image_type = 'fanart') as fanart_count,
-        (SELECT COUNT(*) FROM image_files WHERE entity_type = 'movie' AND entity_id = m.id AND image_type = 'landscape') as landscape_count,
-        (SELECT COUNT(*) FROM image_files WHERE entity_type = 'movie' AND entity_id = m.id AND image_type = 'keyart') as keyart_count,
-        (SELECT COUNT(*) FROM image_files WHERE entity_type = 'movie' AND entity_id = m.id AND image_type = 'banner') as banner_count,
-        (SELECT COUNT(*) FROM image_files WHERE entity_type = 'movie' AND entity_id = m.id AND image_type = 'clearart') as clearart_count,
-        (SELECT COUNT(*) FROM image_files WHERE entity_type = 'movie' AND entity_id = m.id AND image_type = 'clearlogo') as clearlogo_count,
-        (SELECT COUNT(*) FROM image_files WHERE entity_type = 'movie' AND entity_id = m.id AND image_type = 'discart') as discart_count,
-        (SELECT COUNT(*) FROM video_files WHERE entity_type = 'movie' AND entity_id = m.id AND video_type = 'trailer') as trailer_count,
-        (SELECT COUNT(*) FROM text_files WHERE entity_type = 'movie' AND entity_id = m.id AND text_type = 'subtitle') as subtitle_count,
-        (SELECT COUNT(*) FROM audio_files WHERE entity_type = 'movie' AND entity_id = m.id AND audio_type = 'theme') as theme_count
+        (SELECT COUNT(*) FROM image_files WHERE entity_type = 'movie' AND entity_id = m.id AND image_type = 'poster' AND location = 'library') as poster_count,
+        (SELECT COUNT(*) FROM image_files WHERE entity_type = 'movie' AND entity_id = m.id AND image_type = 'fanart' AND location = 'library') as fanart_count,
+        (SELECT COUNT(*) FROM image_files WHERE entity_type = 'movie' AND entity_id = m.id AND image_type = 'landscape' AND location = 'library') as landscape_count,
+        (SELECT COUNT(*) FROM image_files WHERE entity_type = 'movie' AND entity_id = m.id AND image_type = 'keyart' AND location = 'library') as keyart_count,
+        (SELECT COUNT(*) FROM image_files WHERE entity_type = 'movie' AND entity_id = m.id AND image_type = 'banner' AND location = 'library') as banner_count,
+        (SELECT COUNT(*) FROM image_files WHERE entity_type = 'movie' AND entity_id = m.id AND image_type = 'clearart' AND location = 'library') as clearart_count,
+        (SELECT COUNT(*) FROM image_files WHERE entity_type = 'movie' AND entity_id = m.id AND image_type = 'clearlogo' AND location = 'library') as clearlogo_count,
+        (SELECT COUNT(*) FROM image_files WHERE entity_type = 'movie' AND entity_id = m.id AND image_type = 'discart' AND location = 'library') as discart_count,
+        (SELECT COUNT(*) FROM video_files WHERE entity_type = 'movie' AND entity_id = m.id AND video_type = 'trailer' AND location = 'library') as trailer_count,
+        (SELECT COUNT(*) FROM text_files WHERE entity_type = 'movie' AND entity_id = m.id AND text_type = 'subtitle' AND location = 'library') as subtitle_count,
+        (SELECT COUNT(*) FROM audio_files WHERE entity_type = 'movie' AND entity_id = m.id AND audio_type = 'theme' AND location = 'library') as theme_count
 
       FROM movies m
 
@@ -175,6 +179,7 @@ export class MovieService {
         trailer: row.trailer_count || 0,
         subtitle: row.subtitle_count || 0,
         theme: row.theme_count || 0,
+        actor: row.actor_count || 0,
       },
       assetStatuses: {
         nfo: this.calculateNFOStatus(row),
@@ -287,7 +292,7 @@ export class MovieService {
 
     // Get related entities (clean schema)
     const [actors, genres, directors, writers, studios] = await Promise.all([
-      this.db.query<any>('SELECT a.*, ma.role, ma.sort_order FROM actors a JOIN movie_actors ma ON a.id = ma.actor_id WHERE ma.movie_id = ? ORDER BY ma.sort_order', [movieId]),
+      this.db.query<any>('SELECT a.*, ma.role, ma.actor_order FROM actors a JOIN movie_actors ma ON a.id = ma.actor_id WHERE ma.movie_id = ? ORDER BY ma.actor_order', [movieId]),
       this.db.query<any>('SELECT g.* FROM genres g JOIN movie_genres mg ON g.id = mg.genre_id WHERE mg.movie_id = ?', [movieId]),
       this.db.query<any>('SELECT c.* FROM crew c JOIN movie_crew mc ON c.id = mc.crew_id WHERE mc.movie_id = ? AND mc.role = \'director\'', [movieId]),
       this.db.query<any>('SELECT c.* FROM crew c JOIN movie_crew mc ON c.id = mc.crew_id WHERE mc.movie_id = ? AND mc.role = \'writer\'', [movieId]),
@@ -296,7 +301,7 @@ export class MovieService {
 
     const result: any = {
       ...movie,
-      actors: actors.map(a => ({ name: a.name, role: a.role, order: a.sort_order })),
+      actors: actors.map(a => ({ name: a.name, role: a.role, order: a.actor_order })),
       genres: genres.map(g => g.name),
       directors: directors.map(d => d.name),
       writers: writers.map(w => w.name),
@@ -1661,6 +1666,137 @@ export class MovieService {
       };
     } catch (error: any) {
       logger.error('Failed to get all files for movie', {
+        movieId,
+        error: error.message
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Soft delete a movie (30-day recycle bin)
+   * Sets deleted_at to 30 days from now
+   * Movie remains in database but hidden from normal queries
+   */
+  async softDeleteMovie(movieId: number): Promise<{ success: boolean; deletedAt: string }> {
+    try {
+      const conn = this.db.getConnection();
+
+      // Calculate deletion date (30 days from now)
+      const deletedAt = new Date();
+      deletedAt.setDate(deletedAt.getDate() + 30);
+
+      await conn.execute(
+        `UPDATE movies SET deleted_at = ? WHERE id = ?`,
+        [deletedAt.toISOString(), movieId]
+      );
+
+      logger.info('Soft deleted movie (30-day recycle bin)', {
+        movieId,
+        deletedAt: deletedAt.toISOString()
+      });
+
+      // Log to activity
+      await conn.execute(
+        `INSERT INTO activity_log (
+          event_type,
+          source,
+          description,
+          metadata,
+          created_at
+        ) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+        [
+          'movie_deleted',
+          'user',
+          `Moved movie to recycle bin (${movieId})`,
+          JSON.stringify({
+            movieId,
+            deletedAt: deletedAt.toISOString(),
+            expiresAt: deletedAt.toISOString()
+          })
+        ]
+      );
+
+      return {
+        success: true,
+        deletedAt: deletedAt.toISOString()
+      };
+    } catch (error: any) {
+      logger.error('Failed to soft delete movie', {
+        movieId,
+        error: error.message
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Restore a soft-deleted movie from recycle bin
+   * Sets deleted_at to NULL, making movie visible again
+   * All data and locks remain unchanged
+   */
+  async restoreMovie(movieId: number): Promise<{ success: boolean; message: string }> {
+    try {
+      const conn = this.db.getConnection();
+
+      // Check if movie exists and is actually deleted
+      const movie = await conn.query(
+        'SELECT id, title, deleted_at FROM movies WHERE id = ?',
+        [movieId]
+      );
+
+      if (!movie || movie.length === 0) {
+        throw new Error('Movie not found');
+      }
+
+      const movieData = movie[0];
+
+      if (!movieData.deleted_at) {
+        return {
+          success: true,
+          message: 'Movie is not deleted, no action needed'
+        };
+      }
+
+      // Restore by setting deleted_at to NULL
+      await conn.execute(
+        `UPDATE movies SET deleted_at = NULL WHERE id = ?`,
+        [movieId]
+      );
+
+      logger.info('Restored movie from recycle bin', {
+        movieId,
+        title: movieData.title,
+        wasDeletedAt: movieData.deleted_at
+      });
+
+      // Log to activity
+      await conn.execute(
+        `INSERT INTO activity_log (
+          event_type,
+          source,
+          description,
+          metadata,
+          created_at
+        ) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+        [
+          'movie_restored',
+          'user',
+          `Restored movie from recycle bin: ${movieData.title}`,
+          JSON.stringify({
+            movieId,
+            title: movieData.title,
+            previousDeletedAt: movieData.deleted_at
+          })
+        ]
+      );
+
+      return {
+        success: true,
+        message: 'Movie restored successfully'
+      };
+    } catch (error: any) {
+      logger.error('Failed to restore movie', {
         movieId,
         error: error.message
       });

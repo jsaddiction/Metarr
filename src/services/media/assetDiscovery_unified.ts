@@ -25,7 +25,7 @@ import {
   cacheAudioFile
 } from '../files/videoTextAudioCacheFunctions.js';
 
-interface DiscoveredAssets {
+export interface DiscoveredAssets {
   images: number;
   trailers: number;
   subtitles: number;
@@ -53,7 +53,7 @@ export async function discoverAndStoreAssets(
   const result: DiscoveredAssets = {
     images: 0,
     trailers: 0,
-    subtitles: 0,
+    subtitles: 0
   };
 
   try {
@@ -130,6 +130,7 @@ export async function discoverAndStoreAssets(
         if (!validation.valid) {
           logger.debug('Asset candidate failed validation', {
             file: candidate.fileName,
+            assetType,
             reason: validation.reason,
             dimensions: `${candidate.width}x${candidate.height}`,
           });
@@ -144,65 +145,65 @@ export async function discoverAndStoreAssets(
         continue;
       }
 
-      // Choose the best candidate (prefer standard Kodi naming, then highest resolution)
-      const bestCandidate = chooseBestCandidate(validCandidates, assetType);
+      // Store ALL valid candidates (not just the best one)
+      logger.info('Storing all valid candidates for asset type', {
+        assetType,
+        count: validCandidates.length,
+        entityId
+      });
 
-      if (bestCandidate) {
+      for (const candidate of validCandidates) {
         try {
           // === UNIFIED FILE SYSTEM WORKFLOW ===
 
           // Step 1: Calculate file hash
-          const fileHash = await calculateFileHash(bestCandidate.filePath);
-          const stats = await fs.stat(bestCandidate.filePath);
+          const fileHash = await calculateFileHash(candidate.filePath);
+          const stats = await fs.stat(candidate.filePath);
 
           // Step 2: Insert library record
           const libraryFileId = await insertImageFile(db, {
             entityType,
             entityId,
-            filePath: bestCandidate.filePath,
-            fileName: bestCandidate.fileName,
+            filePath: candidate.filePath,
+            fileName: candidate.fileName,
             fileSize: stats.size,
             fileHash,
             location: 'library',
             imageType: assetType as any,
-            width: bestCandidate.width!,
-            height: bestCandidate.height!,
-            format: path.extname(bestCandidate.fileName).slice(1).toLowerCase(),
+            width: candidate.width!,
+            height: candidate.height!,
+            format: path.extname(candidate.fileName).slice(1).toLowerCase(),
             sourceType: 'local',
-            classificationScore: calculateScore(bestCandidate, assetType)
+            classificationScore: calculateScore(candidate, assetType)
           });
 
           // Step 3: Cache the image (with deduplication)
-          const cacheFileId = await cacheImageFile(
+          await cacheImageFile(
             db,
             libraryFileId,
-            bestCandidate.filePath,
+            candidate.filePath,
             entityType,
             entityId,
             assetType,
             'local'
           );
 
-          // Step 4: Update movie FK column
-          const columnName = `${assetType}_id`;
-          await db.execute(
-            `UPDATE movies SET ${columnName} = ? WHERE id = ?`,
-            [cacheFileId, entityId]
-          );
+          // NOTE: FK column updates (movies.poster_id, etc.) happen during selection phase, not discovery
+          // All discovered assets are candidates until selection algorithm chooses the best
 
           result.images++;
           logger.info('Discovered and stored asset', {
             entityId,
             assetType,
-            file: bestCandidate.fileName,
-            dimensions: `${bestCandidate.width}x${bestCandidate.height}`,
-            libraryFileId,
-            cacheFileId
+            file: candidate.fileName,
+            dimensions: `${candidate.width}x${candidate.height}`,
+            score: calculateScore(candidate, assetType),
+            libraryFileId
           });
         } catch (error: any) {
           logger.error('Failed to store asset', {
             assetType,
-            file: bestCandidate.fileName,
+            file: candidate.fileName,
             error: error.message
           });
         }
@@ -222,8 +223,9 @@ export async function discoverAndStoreAssets(
 
       // Check if it's a video file with trailer keyword
       if (videoExtensions.includes(ext) && trailerKeywords.some(k => lowerName.includes(k))) {
+        const filePath = path.join(dirPath, file);
+
         try {
-          const filePath = path.join(dirPath, file);
           const stats = await fs.stat(filePath);
           const fileHash = await calculateFileHash(filePath);
 
@@ -258,8 +260,9 @@ export async function discoverAndStoreAssets(
       const ext = path.extname(file).toLowerCase();
 
       if (subtitleExtensions.includes(ext)) {
+        const filePath = path.join(dirPath, file);
+
         try {
-          const filePath = path.join(dirPath, file);
           const stats = await fs.stat(filePath);
           const fileHash = await calculateFileHash(filePath);
 
@@ -267,8 +270,8 @@ export async function discoverAndStoreAssets(
           const languageMatch = file.match(/\.([a-z]{2,3})\.[^.]+$/i);
           const language = languageMatch ? languageMatch[1].toLowerCase() : undefined;
 
-          // Insert library record
-          const libraryFileId = await insertTextFile(db, {
+          // Insert library record (only include subtitleLanguage if detected)
+          const textFileRecord: any = {
             entityType,
             entityId,
             filePath,
@@ -277,10 +280,15 @@ export async function discoverAndStoreAssets(
             fileHash,
             location: 'library',
             textType: 'subtitle',
-            subtitleLanguage: language,
             subtitleFormat: ext.slice(1), // Remove the dot
             sourceType: 'local'
-          });
+          };
+
+          if (language) {
+            textFileRecord.subtitleLanguage = language;
+          }
+
+          const libraryFileId = await insertTextFile(db, textFileRecord);
 
           // Cache the subtitle
           await cacheTextFile(db, libraryFileId, filePath, entityType, entityId, 'subtitle', 'local');
@@ -302,8 +310,9 @@ export async function discoverAndStoreAssets(
       const lowerName = file.toLowerCase();
 
       if (audioExtensions.includes(ext) && themeKeywords.some(k => lowerName.includes(k))) {
+        const filePath = path.join(dirPath, file);
+
         try {
-          const filePath = path.join(dirPath, file);
           const stats = await fs.stat(filePath);
           const fileHash = await calculateFileHash(filePath);
 
@@ -345,44 +354,11 @@ export async function discoverAndStoreAssets(
 }
 
 /**
- * Choose the best candidate from multiple valid options
- * Priority: Standard Kodi naming > Higher resolution > Alphabetically first
- */
-function chooseBestCandidate(candidates: AssetCandidate[], assetType: string): AssetCandidate | null {
-  if (candidates.length === 0) return null;
-  if (candidates.length === 1) return candidates[0];
-
-  // Check for standard Kodi naming (e.g., "poster.jpg", "fanart.jpg")
-  const standardName = `${assetType}.jpg`;
-  const standardNamePng = `${assetType}.png`;
-
-  const standardCandidate = candidates.find(c =>
-    c.fileName.toLowerCase() === standardName ||
-    c.fileName.toLowerCase() === standardNamePng
-  );
-
-  if (standardCandidate) {
-    return standardCandidate;
-  }
-
-  // Sort by resolution (descending) then filename (ascending)
-  const sorted = [...candidates].sort((a, b) => {
-    const aPixels = (a.width || 0) * (a.height || 0);
-    const bPixels = (b.width || 0) * (b.height || 0);
-
-    if (aPixels !== bPixels) {
-      return bPixels - aPixels; // Higher resolution first
-    }
-
-    return a.fileName.localeCompare(b.fileName); // Alphabetical
-  });
-
-  return sorted[0];
-}
-
-/**
  * Calculate classification score for an asset
  * Based on Kodi naming conventions and image quality
+ *
+ * This score is used later during the selection phase to choose the best assets.
+ * During discovery, we store ALL valid candidates with their scores.
  */
 function calculateScore(candidate: AssetCandidate, assetType: string): number {
   let score = 0;

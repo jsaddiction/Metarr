@@ -86,6 +86,9 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({ children }
         // Force refetch by using refetchQueries (not just invalidate)
         queryClient.refetchQueries({ queryKey: ['movies'] });
 
+        // Also invalidate actors since they're discovered during movie scanning
+        queryClient.invalidateQueries({ queryKey: ['actors'] });
+
         if (message.movieIds.length > 0) {
           message.movieIds.forEach((id) => {
             queryClient.invalidateQueries({ queryKey: ['movie', id] });
@@ -111,10 +114,13 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({ children }
         // Using refetchQueries instead of invalidateQueries to trigger immediate update
         queryClient.refetchQueries({ queryKey: ['movies'] });
 
+        // Also invalidate actors since they're discovered during movie scanning
+        queryClient.invalidateQueries({ queryKey: ['actors'] });
+
         if (message.status === 'completed') {
-          console.log('[WebSocket] Scan completed - movies refetched');
+          console.log('[WebSocket] Scan completed - movies and actors refetched');
         } else if (message.status === 'running') {
-          console.log('[WebSocket] Scan progress - movies refetched');
+          console.log('[WebSocket] Scan progress - movies and actors refetched');
         }
         break;
 

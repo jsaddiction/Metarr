@@ -896,4 +896,65 @@ export class MovieController {
       next(error);
     }
   }
+
+  /**
+   * Soft delete a movie (move to recycle bin)
+   * Endpoint: DELETE /api/movies/:id
+   *
+   * Sets deleted_at to 30 days from now. Movie remains in database
+   * but hidden from normal queries. Automatically deleted after 30 days.
+   */
+  async deleteMovie(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const movieId = parseInt(req.params.id);
+
+      const result = await this.movieService.softDeleteMovie(movieId);
+
+      // Broadcast WebSocket update for cross-tab sync (movie list changed)
+      websocketBroadcaster.broadcastMoviesUpdated([movieId]);
+
+      logger.info('Soft deleted movie', {
+        movieId,
+        deletedAt: result.deletedAt
+      });
+
+      res.json(result);
+    } catch (error) {
+      logger.error('Soft delete movie failed', {
+        movieId: req.params.id,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+      next(error);
+    }
+  }
+
+  /**
+   * Restore a soft-deleted movie from recycle bin
+   * Endpoint: POST /api/movies/:id/restore
+   *
+   * Sets deleted_at to NULL, making movie visible again.
+   * All data and locks remain unchanged.
+   */
+  async restoreMovie(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const movieId = parseInt(req.params.id);
+
+      const result = await this.movieService.restoreMovie(movieId);
+
+      // Broadcast WebSocket update for cross-tab sync (movie list changed)
+      websocketBroadcaster.broadcastMoviesUpdated([movieId]);
+
+      logger.info('Restored movie from recycle bin', {
+        movieId
+      });
+
+      res.json(result);
+    } catch (error) {
+      logger.error('Restore movie failed', {
+        movieId: req.params.id,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+      next(error);
+    }
+  }
 }

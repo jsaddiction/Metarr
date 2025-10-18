@@ -107,21 +107,12 @@ export const MOVIE_ASSET_SPECS: AssetTypeSpec[] = [
   },
   {
     type: 'landscape',
-    keywords: ['landscape', 'thumb'],
-    aspectRatio: { target: 16/9, tolerance: 0.1 }, // 16:9 ratio
-    minDimensions: { width: 1280, height: 720 },
-    recommendedDimensions: { width: 1920, height: 1080 },
+    keywords: ['landscape', 'thumb'], // Accept both keywords, store as landscape
+    aspectRatio: { target: 16/9, tolerance: 0.1 }, // 16:9 ratio (1.778)
+    minDimensions: { width: 800, height: 450 }, // Allow smaller sizes
+    recommendedDimensions: { width: 1000, height: 562 }, // Kodi/FanArt.tv standard
     extensions: ['.jpg', '.jpeg', '.png'],
-    description: 'Fanart with text overlay (16:9 aspect ratio)',
-  },
-  {
-    type: 'thumb',
-    keywords: ['thumb'],
-    aspectRatio: { target: 16/9, tolerance: 0.1 }, // 16:9 ratio
-    minDimensions: { width: 1280, height: 720 },
-    recommendedDimensions: { width: 1920, height: 1080 },
-    extensions: ['.jpg', '.jpeg', '.png'],
-    description: 'Thumbnail/landscape image (16:9 aspect ratio)',
+    description: 'Fanart with text overlay (16:9, 1000x562, non-transparent). Aliases: thumb (movies only)',
   },
 ];
 
