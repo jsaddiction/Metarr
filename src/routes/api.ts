@@ -25,6 +25,8 @@ import { ProviderConfigService } from '../services/providerConfigService.js';
 import { ProviderConfigController } from '../controllers/providerConfigController.js';
 import { PriorityConfigService } from '../services/priorityConfigService.js';
 import { PriorityConfigController } from '../controllers/priorityConfigController.js';
+import { AssetConfigService } from '../services/assetConfigService.js';
+import { AssetConfigController } from '../controllers/assetConfigController.js';
 import { ProviderRegistry } from '../services/providers/ProviderRegistry.js';
 import { FetchOrchestrator } from '../services/providers/FetchOrchestrator.js';
 import { SchedulerController } from '../controllers/schedulerController.js';
@@ -105,6 +107,10 @@ export const createApiRouter = (
   // Initialize priority config service and controller
   const priorityConfigService = new PriorityConfigService(db);
   const priorityConfigController = new PriorityConfigController(priorityConfigService);
+
+  // Initialize asset config service and controller
+  const assetConfigService = new AssetConfigService(dbManager);
+  const assetConfigController = new AssetConfigController(assetConfigService);
 
   // Initialize asset controller
   const assetController = new AssetController(db);
@@ -251,6 +257,27 @@ export const createApiRouter = (
     movieController.saveAssets(req, res, next);
   });
 
+  // Multi-asset selection routes
+  router.get('/movies/:id/assets/:assetType', (req, res, next) => {
+    logger.debug('[Route Hit] /movies/:id/assets/:assetType with id:', req.params.id, 'assetType:', req.params.assetType);
+    movieController.getAssetsByType(req, res, next);
+  });
+
+  router.post('/movies/:id/assets/:assetType/add', (req, res, next) => {
+    logger.debug('[Route Hit] /movies/:id/assets/:assetType/add with id:', req.params.id, 'assetType:', req.params.assetType);
+    movieController.addAsset(req, res, next);
+  });
+
+  router.delete('/movies/:id/assets/:imageFileId', (req, res, next) => {
+    logger.debug('[Route Hit] DELETE /movies/:id/assets/:imageFileId with id:', req.params.id, 'imageFileId:', req.params.imageFileId);
+    movieController.removeAsset(req, res, next);
+  });
+
+  router.patch('/movies/:id/assets/:assetType/lock', (req, res, next) => {
+    logger.debug('[Route Hit] PATCH /movies/:id/assets/:assetType/lock with id:', req.params.id, 'assetType:', req.params.assetType);
+    movieController.toggleAssetLock(req, res, next);
+  });
+
   // REMOVED: /movies/:id/unknown-files
   // Unknown files are now available in GET /movies/:id as files.unknown
 
@@ -269,14 +296,8 @@ export const createApiRouter = (
     movieController.deleteUnknownFile(req, res, next);
   });
 
-  // Asset rebuild endpoints
-  router.post('/movies/:id/rebuild-assets', (req, res, next) => {
-    movieController.rebuildAssets(req, res, next);
-  });
-
-  router.get('/movies/:id/verify-assets', (req, res, next) => {
-    movieController.verifyAssets(req, res, next);
-  });
+  // REMOVED: /movies/:id/rebuild-assets, /movies/:id/verify-assets
+  // Redundant - use /movies/:id/refresh to trigger enrichment and publish
 
   // REMOVED: /movies/:id/files, /movies/:id/images, /movies/:id/extras
   // Files are now included in GET /movies/:id response
@@ -382,7 +403,7 @@ export const createApiRouter = (
   );
 
   // REMOVED: POST /movies/:id/images/recover
-  // Not part of the workflow - assets are rebuilt via /movies/:id/rebuild-assets
+  // Not part of the workflow - use /movies/:id/refresh instead
 
   // Generic image operations
   router.patch('/images/:id/lock', (req, res, next) => {
@@ -515,6 +536,27 @@ export const createApiRouter = (
   );
   router.post('/priorities/metadata-fields/:field', (req, res) =>
     priorityConfigController.updateMetadataFieldPriority(req, res)
+  );
+
+  // Asset limit configuration routes
+  logger.debug('[API Router] Registering asset limit configuration routes');
+  router.get('/settings/asset-limits', (req, res, next) =>
+    assetConfigController.getAllLimits(req, res, next)
+  );
+  router.get('/settings/asset-limits/metadata', (req, res, next) =>
+    assetConfigController.getAllLimitsWithMetadata(req, res, next)
+  );
+  router.get('/settings/asset-limits/:assetType', (req, res, next) =>
+    assetConfigController.getLimit(req, res, next)
+  );
+  router.put('/settings/asset-limits/:assetType', (req, res, next) =>
+    assetConfigController.setLimit(req, res, next)
+  );
+  router.delete('/settings/asset-limits/:assetType', (req, res, next) =>
+    assetConfigController.resetLimit(req, res, next)
+  );
+  router.post('/settings/asset-limits/reset-all', (req, res, next) =>
+    assetConfigController.resetAllLimits(req, res, next)
   );
 
   // Scheduler routes (only if scheduler controller is available)

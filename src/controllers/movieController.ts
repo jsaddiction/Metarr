@@ -98,29 +98,8 @@ export class MovieController {
     }
   }
 
-  async rebuildAssets(req: Request, res: Response, next: NextFunction): Promise<void> {
-    try {
-      const movieId = parseInt(req.params.id);
-      const result = await this.movieService.rebuildMovieAssets(movieId);
-
-      // Broadcast WebSocket update for cross-tab sync (movie assets rebuilt)
-      websocketBroadcaster.broadcastMoviesUpdated([movieId]);
-
-      res.json(result);
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  async verifyAssets(req: Request, res: Response, next: NextFunction): Promise<void> {
-    try {
-      const movieId = parseInt(req.params.id);
-      const result = await this.movieService.verifyMovieAssets(movieId);
-      res.json(result);
-    } catch (error) {
-      next(error);
-    }
-  }
+  // REMOVED: rebuildAssets, verifyAssets
+  // Redundant - use refreshMovie to trigger enrichment and publish
 
   // REMOVED: getAllFiles, getImages, getExtras
   // Files are now included in getById() response automatically
@@ -891,6 +870,177 @@ export class MovieController {
     } catch (error) {
       logger.error('Reset asset selection failed', {
         movieId: req.params.id,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+      next(error);
+    }
+  }
+
+  /**
+   * Add an asset to a movie
+   * Endpoint: POST /api/movies/:id/assets/:assetType/add
+   * Body: { url: string, provider: string, width?: number, height?: number, perceptualHash?: string }
+   *
+   * Part of multi-asset selection feature
+   */
+  async addAsset(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const movieId = parseInt(req.params.id);
+      const assetType = req.params.assetType;
+      const assetData = req.body;
+
+      // Validate required fields
+      if (!assetData.url || !assetData.provider) {
+        res.status(400).json({ error: 'url and provider are required' });
+        return;
+      }
+
+      // Validate movie exists
+      const movie = await this.movieService.getById(movieId);
+      if (!movie) {
+        res.status(404).json({ error: 'Movie not found' });
+        return;
+      }
+
+      // Add the asset
+      const result = await this.movieService.addAsset(movieId, assetType, assetData);
+
+      // Broadcast WebSocket update for cross-tab sync
+      websocketBroadcaster.broadcastMoviesUpdated([movieId]);
+
+      logger.info('Added asset to movie', {
+        movieId,
+        assetType,
+        provider: assetData.provider,
+        imageFileId: result.imageFileId
+      });
+
+      res.json(result);
+    } catch (error) {
+      logger.error('Add asset failed', {
+        movieId: req.params.id,
+        assetType: req.params.assetType,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+      next(error);
+    }
+  }
+
+  /**
+   * Remove an asset from a movie
+   * Endpoint: DELETE /api/movies/:id/assets/:imageFileId
+   *
+   * Part of multi-asset selection feature
+   */
+  async removeAsset(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const movieId = parseInt(req.params.id);
+      const imageFileId = parseInt(req.params.imageFileId);
+
+      // Validate movie exists
+      const movie = await this.movieService.getById(movieId);
+      if (!movie) {
+        res.status(404).json({ error: 'Movie not found' });
+        return;
+      }
+
+      // Remove the asset
+      const result = await this.movieService.removeAsset(movieId, imageFileId);
+
+      // Broadcast WebSocket update for cross-tab sync
+      websocketBroadcaster.broadcastMoviesUpdated([movieId]);
+
+      logger.info('Removed asset from movie', {
+        movieId,
+        imageFileId
+      });
+
+      res.json(result);
+    } catch (error) {
+      logger.error('Remove asset failed', {
+        movieId: req.params.id,
+        imageFileId: req.params.imageFileId,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+      next(error);
+    }
+  }
+
+  /**
+   * Toggle asset type lock for a movie
+   * Endpoint: PATCH /api/movies/:id/assets/:assetType/lock
+   * Body: { locked: boolean }
+   *
+   * Part of multi-asset selection feature
+   */
+  async toggleAssetLock(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const movieId = parseInt(req.params.id);
+      const assetType = req.params.assetType;
+      const { locked } = req.body;
+
+      // Validate parameters
+      if (typeof locked !== 'boolean') {
+        res.status(400).json({ error: 'locked must be a boolean' });
+        return;
+      }
+
+      // Validate movie exists
+      const movie = await this.movieService.getById(movieId);
+      if (!movie) {
+        res.status(404).json({ error: 'Movie not found' });
+        return;
+      }
+
+      // Toggle the lock
+      const result = await this.movieService.toggleAssetLock(movieId, assetType, locked);
+
+      // Broadcast WebSocket update for cross-tab sync
+      websocketBroadcaster.broadcastMoviesUpdated([movieId]);
+
+      logger.info('Toggled asset lock', {
+        movieId,
+        assetType,
+        locked
+      });
+
+      res.json(result);
+    } catch (error) {
+      logger.error('Toggle asset lock failed', {
+        movieId: req.params.id,
+        assetType: req.params.assetType,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+      next(error);
+    }
+  }
+
+  /**
+   * Get assets by type for a movie
+   * Endpoint: GET /api/movies/:id/assets/:assetType
+   *
+   * Part of multi-asset selection feature - returns all assets for slot-based UI
+   */
+  async getAssetsByType(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const movieId = parseInt(req.params.id);
+      const assetType = req.params.assetType;
+
+      // Validate movie exists
+      const movie = await this.movieService.getById(movieId);
+      if (!movie) {
+        res.status(404).json({ error: 'Movie not found' });
+        return;
+      }
+
+      // Get assets
+      const assets = await this.movieService.getAssetsByType(movieId, assetType);
+
+      res.json({ assets });
+    } catch (error) {
+      logger.error('Get assets by type failed', {
+        movieId: req.params.id,
+        assetType: req.params.assetType,
         error: error instanceof Error ? error.message : 'Unknown error'
       });
       next(error);
