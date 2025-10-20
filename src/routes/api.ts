@@ -258,9 +258,10 @@ export const createApiRouter = (
   });
 
   // Multi-asset selection routes
-  router.get('/movies/:id/assets/:assetType', (req, res, next) => {
-    logger.debug('[Route Hit] /movies/:id/assets/:assetType with id:', req.params.id, 'assetType:', req.params.assetType);
-    movieController.getAssetsByType(req, res, next);
+  // PUT replaces all assets of a specific type (atomic replace operation)
+  router.put('/movies/:id/assets/:assetType', (req, res, next) => {
+    logger.debug('[Route Hit] PUT /movies/:id/assets/:assetType with id:', req.params.id, 'assetType:', req.params.assetType);
+    movieController.replaceAssets(req, res, next);
   });
 
   router.post('/movies/:id/assets/:assetType/add', (req, res, next) => {

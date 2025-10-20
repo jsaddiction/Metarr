@@ -877,6 +877,64 @@ export class MovieController {
   }
 
   /**
+   * Replace all assets of a specific type for a movie (atomic operation)
+   * Endpoint: PUT /api/movies/:id/assets/:assetType
+   * Body: { assets: Array<{ url: string, provider: string, width?: number, height?: number, perceptualHash?: string }> }
+   *
+   * This is the smart endpoint that:
+   * 1. Validates aspect ratios and dimensions
+   * 2. Checks asset limits
+   * 3. Removes old assets not in the new selection
+   * 4. Adds new assets not in the current selection
+   * 5. Returns intelligent error messages
+   *
+   * Part of multi-asset selection feature
+   */
+  async replaceAssets(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const movieId = parseInt(req.params.id);
+      const assetType = req.params.assetType;
+      const { assets } = req.body;
+
+      // Validate required fields
+      if (!Array.isArray(assets)) {
+        res.status(400).json({ error: 'assets array is required' });
+        return;
+      }
+
+      // Validate movie exists
+      const movie = await this.movieService.getById(movieId);
+      if (!movie) {
+        res.status(404).json({ error: 'Movie not found' });
+        return;
+      }
+
+      // Replace the assets
+      const result = await this.movieService.replaceAssets(movieId, assetType, assets);
+
+      // Broadcast WebSocket update for cross-tab sync
+      websocketBroadcaster.broadcastMoviesUpdated([movieId]);
+
+      logger.info('Replaced assets for movie', {
+        movieId,
+        assetType,
+        newCount: result.added,
+        removedCount: result.removed,
+        keptCount: result.kept
+      });
+
+      res.json(result);
+    } catch (error) {
+      logger.error('Replace assets failed', {
+        movieId: req.params.id,
+        assetType: req.params.assetType,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+      next(error);
+    }
+  }
+
+  /**
    * Add an asset to a movie
    * Endpoint: POST /api/movies/:id/assets/:assetType/add
    * Body: { url: string, provider: string, width?: number, height?: number, perceptualHash?: string }
