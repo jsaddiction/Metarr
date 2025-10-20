@@ -18,14 +18,15 @@ import {
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import type { AssetType, AssetCandidate } from '../../types/asset';
+import { getProviderDisplayName } from '../../utils/providerNames';
 
 interface CurrentAsset {
   id: number;
-  url: string;
-  cache_url: string;
-  provider?: string;
-  width?: number;
-  height?: number;
+  source_url: string | null;  // Original provider URL
+  cache_url: string;          // Cache serving URL
+  provider_name?: string | null;
+  width?: number | null;
+  height?: number | null;
   perceptualHash?: string;
 }
 
@@ -46,7 +47,7 @@ interface ProviderResultsResponse {
 interface AssetSelectionModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (selectedAssets: Array<{ asset: AssetCandidate; provider: string }>) => void;
+  onSave: (selectedAssets: Array<{ asset: AssetCandidate; provider: string }>) => Promise<void>;
   onUpload?: (file: File) => Promise<void>;
   assetType: AssetType;
   assetTypeLabel: string;
@@ -54,19 +55,37 @@ interface AssetSelectionModalProps {
   maxLimit: number;
   providerResults?: ProviderResultsResponse;
   isLoading?: boolean;
+  isSaving?: boolean;
   error?: Error | null;
 }
 
-const ASSET_TYPE_ASPECT_RATIOS: Record<AssetType, string> = {
+// Aspect ratios for most asset types - clearlogo uses fixed height instead
+const ASSET_TYPE_ASPECT_RATIOS: Partial<Record<AssetType, string>> = {
   poster: 'aspect-[2/3]',
   fanart: 'aspect-[16/9]',
   banner: 'aspect-[1000/185]',
-  clearlogo: 'aspect-[800/310]',
+  // clearlogo: removed - uses fixed height with object-contain instead (variable aspect ratios)
   clearart: 'aspect-[1000/562]',
   landscape: 'aspect-[16/9]',
   keyart: 'aspect-[2/3]',
   discart: 'aspect-square',
 };
+
+// Grid columns based on asset type (responsive: mobile / tablet / desktop / xl)
+const ASSET_TYPE_GRID_COLS: Record<AssetType, string> = {
+  poster: 'grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8',       // Tall/portrait: more columns
+  keyart: 'grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8',       // Tall/portrait: more columns
+  fanart: 'grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5',       // 16:9: moderate columns
+  landscape: 'grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5',    // 16:9: moderate columns
+  clearart: 'grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5',     // Similar to 16:9
+  banner: 'grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3',       // Very wide (5.4:1): fewer columns
+  clearlogo: 'grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4',    // Wide (2.58:1): fewer columns than 16:9
+  discart: 'grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8',      // Square: more columns
+};
+
+// Standardized height for selected assets row - width adjusts to maintain aspect ratio
+// This ensures all asset types are clearly visible at the top
+const SELECTED_ROW_HEIGHT = 'h-24'; // 96px - consistent height for all asset types
 
 export const AssetSelectionModal: React.FC<AssetSelectionModalProps> = ({
   isOpen,
@@ -79,6 +98,7 @@ export const AssetSelectionModal: React.FC<AssetSelectionModalProps> = ({
   maxLimit,
   providerResults,
   isLoading = false,
+  isSaving = false,
   error = null,
 }) => {
   // Local state for selected assets
@@ -94,12 +114,12 @@ export const AssetSelectionModal: React.FC<AssetSelectionModalProps> = ({
           providerId: 'tmdb' as const,
           providerResultId: current.id.toString(),
           assetType,
-          url: current.url || current.cache_url,
+          url: current.source_url || current.cache_url,  // Use source_url (original provider URL)
           thumbnailUrl: current.cache_url,
-          width: current.width,
-          height: current.height,
+          width: current.width ?? undefined,
+          height: current.height ?? undefined,
         },
-        provider: current.provider || 'Custom',
+        provider: current.provider_name || 'Custom',
       }));
       setSelectedAssets(initial);
     }
@@ -154,9 +174,10 @@ export const AssetSelectionModal: React.FC<AssetSelectionModalProps> = ({
   };
 
   // Handle save
-  const handleSave = () => {
-    onSave(selectedAssets);
-    onClose();
+  const handleSave = async () => {
+    // Don't close the modal - let the parent close it after save completes
+    // The isSaving prop will show loading state while save is in progress
+    await onSave(selectedAssets);
   };
 
   // Handle upload
@@ -185,6 +206,7 @@ export const AssetSelectionModal: React.FC<AssetSelectionModalProps> = ({
   };
 
   const aspectRatio = ASSET_TYPE_ASPECT_RATIOS[assetType];
+  const gridCols = ASSET_TYPE_GRID_COLS[assetType];
   const emptySlotCount = Math.max(0, maxLimit - selectedAssets.length);
 
   return (
@@ -234,11 +256,12 @@ export const AssetSelectionModal: React.FC<AssetSelectionModalProps> = ({
                 className="relative flex-shrink-0 cursor-pointer group"
                 onClick={() => handleRemoveAsset(index)}
               >
-                <div className={`${aspectRatio} w-20 bg-neutral-800 rounded overflow-hidden border-2 border-primary-500 transition-all group-hover:border-error`}>
+                {/* Standardized height for all asset types - width auto-adjusts to aspect ratio */}
+                <div className={`relative ${SELECTED_ROW_HEIGHT} ${assetType === 'clearlogo' ? 'min-w-32 bg-neutral-800/50' : 'bg-neutral-800'} rounded flex items-center justify-center p-2 border-2 border-primary-500 transition-all group-hover:border-error overflow-hidden`}>
                   <img
                     src={item.asset.thumbnailUrl || item.asset.url}
                     alt={`Selected ${index + 1}`}
-                    className="w-full h-full object-cover group-hover:opacity-50 transition-opacity"
+                    className="h-full w-auto object-contain group-hover:opacity-50 transition-opacity"
                   />
                   {/* Remove overlay on hover */}
                   <div className="absolute inset-0 bg-error/80 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
@@ -247,7 +270,7 @@ export const AssetSelectionModal: React.FC<AssetSelectionModalProps> = ({
                 </div>
                 {/* Provider badge */}
                 <div className="absolute bottom-1 left-1 right-1 bg-black/70 text-[10px] text-center text-white rounded px-1 py-0.5 truncate">
-                  {item.provider}
+                  {getProviderDisplayName(item.provider)}
                 </div>
               </div>
             ))}
@@ -256,7 +279,7 @@ export const AssetSelectionModal: React.FC<AssetSelectionModalProps> = ({
             {Array.from({ length: emptySlotCount }).map((_, index) => (
               <div
                 key={`empty-${index}`}
-                className={`${aspectRatio} w-20 flex-shrink-0 border-2 border-dashed border-neutral-600 rounded bg-neutral-800/30 flex items-center justify-center`}
+                className={`${SELECTED_ROW_HEIGHT} ${assetType === 'clearlogo' ? 'min-w-32' : aspectRatio ? 'w-24' : 'w-32'} flex-shrink-0 border-2 border-dashed border-neutral-600 rounded bg-neutral-800/30 flex items-center justify-center`}
               >
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
@@ -305,7 +328,7 @@ export const AssetSelectionModal: React.FC<AssetSelectionModalProps> = ({
                   <p className="text-neutral-400">No assets found from providers</p>
                 </div>
               ) : (
-                <div className="grid grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-2">
+                <div className={`grid ${gridCols} gap-2`}>
                   {availableAssets.map((item, index) => {
                     const selected = isSelected(item.asset);
                     const canSelect = selectedAssets.length < maxLimit;
@@ -322,51 +345,71 @@ export const AssetSelectionModal: React.FC<AssetSelectionModalProps> = ({
                         }`}
                         onClick={() => !selected && canSelect && handleAddAsset(item.asset, item.provider)}
                       >
-                        <div
-                          className={`${aspectRatio} bg-neutral-800 rounded overflow-hidden border-2 transition-all ${
-                            selected
-                              ? 'border-neutral-600 opacity-40'
-                              : canSelect
-                              ? 'border-neutral-700 hover:border-primary-500 hover:shadow-lg hover:shadow-primary-500/20'
-                              : 'border-neutral-700'
-                          }`}
-                        >
-                          <img
-                            src={item.asset.thumbnailUrl || item.asset.url}
-                            alt={`Option ${index + 1}`}
-                            className="w-full h-full object-cover"
-                          />
+                        {/* Special handling for clearlogo: fixed height with object-contain */}
+                        {assetType === 'clearlogo' ? (
+                          <div
+                            className={`relative min-h-24 w-full bg-neutral-800/50 rounded flex items-center justify-center p-3 border-2 transition-all ${
+                              selected
+                                ? 'border-neutral-600 opacity-40'
+                                : canSelect
+                                ? 'border-neutral-700 hover:border-primary-500 hover:shadow-lg hover:shadow-primary-500/20'
+                                : 'border-neutral-700'
+                            }`}
+                          >
+                            <img
+                              src={item.asset.thumbnailUrl || item.asset.url}
+                              alt={`Option ${index + 1}`}
+                              className="w-full h-auto object-contain"
+                              loading="lazy"
+                            />
+                          </div>
+                        ) : (
+                          <div
+                            className={`${aspectRatio} bg-neutral-800 rounded overflow-hidden border-2 transition-all ${
+                              selected
+                                ? 'border-neutral-600 opacity-40'
+                                : canSelect
+                                ? 'border-neutral-700 hover:border-primary-500 hover:shadow-lg hover:shadow-primary-500/20'
+                                : 'border-neutral-700'
+                            }`}
+                          >
+                            <img
+                              src={item.asset.thumbnailUrl || item.asset.url}
+                              alt={`Option ${index + 1}`}
+                              className="w-full h-full object-cover"
+                            />
+                          </div>
+                        )}
 
-                          {/* Selected overlay */}
-                          {selected && (
-                            <div className="absolute inset-0 bg-primary-500/40 flex items-center justify-center">
-                              <div className="bg-primary-500 rounded-full p-2">
-                                <FontAwesomeIcon icon={faCheck} className="text-white text-lg" />
-                              </div>
+                        {/* Selected overlay */}
+                        {selected && (
+                          <div className="absolute inset-0 bg-primary-500/40 flex items-center justify-center">
+                            <div className="bg-primary-500 rounded-full p-2">
+                              <FontAwesomeIcon icon={faCheck} className="text-white text-lg" />
                             </div>
-                          )}
+                          </div>
+                        )}
 
-                          {/* Hover overlay for available assets */}
-                          {!selected && canSelect && (
-                            <div className="absolute inset-0 bg-primary-500/0 group-hover:bg-primary-500/20 transition-all flex items-center justify-center opacity-0 group-hover:opacity-100">
-                              <div className="bg-primary-500 rounded-full p-2 transform scale-0 group-hover:scale-100 transition-transform">
-                                <svg
-                                  xmlns="http://www.w3.org/2000/svg"
-                                  className="h-5 w-5 text-white"
-                                  fill="none"
-                                  viewBox="0 0 24 24"
-                                  stroke="currentColor"
-                                >
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                                </svg>
-                              </div>
+                        {/* Hover overlay for available assets */}
+                        {!selected && canSelect && (
+                          <div className="absolute inset-0 bg-primary-500/0 group-hover:bg-primary-500/20 transition-all flex items-center justify-center opacity-0 group-hover:opacity-100">
+                            <div className="bg-primary-500 rounded-full p-2 transform scale-0 group-hover:scale-100 transition-transform">
+                              <svg
+                                xmlns="http://www.w3.org/2000/svg"
+                                className="h-5 w-5 text-white"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                stroke="currentColor"
+                              >
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                              </svg>
                             </div>
-                          )}
-                        </div>
+                          </div>
+                        )}
 
                         {/* Info overlay at bottom */}
                         <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-transparent p-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <div className="text-[9px] text-white font-semibold truncate">{item.provider}</div>
+                          <div className="text-[9px] text-white font-semibold truncate">{getProviderDisplayName(item.provider)}</div>
                           {item.asset.width && item.asset.height && (
                             <div className="text-[9px] text-neutral-300">
                               {item.asset.width}×{item.asset.height}
@@ -411,11 +454,24 @@ export const AssetSelectionModal: React.FC<AssetSelectionModalProps> = ({
 
             {/* Right side - Cancel and Save */}
             <div className="flex gap-2">
-              <Button onClick={onClose} variant="outline" size="sm">
+              <Button onClick={onClose} variant="outline" size="sm" disabled={isSaving}>
                 Cancel
               </Button>
-              <Button onClick={handleSave} disabled={selectedAssets.length === 0} size="sm">
-                Save {selectedAssets.length > 0 && `(${selectedAssets.length})`}
+              <Button
+                onClick={handleSave}
+                disabled={selectedAssets.length === 0 || isSaving}
+                size="sm"
+              >
+                {isSaving ? (
+                  <>
+                    <FontAwesomeIcon icon={faSpinner} spin className="mr-2" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    Save {selectedAssets.length > 0 && `(${selectedAssets.length})`}
+                  </>
+                )}
               </Button>
             </div>
           </div>
