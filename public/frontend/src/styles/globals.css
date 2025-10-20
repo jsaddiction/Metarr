@@ -21,8 +21,8 @@
     --popover: 0 0% 100%;
     --popover-foreground: 0 0% 11.8%;
 
-    /* Primary colors (using our purple theme) */
-    --primary: 274 35% 45%;        /* #6a4c93 */
+    /* Primary colors (Tailwind violet-500) */
+    --primary: 258 90% 66%;        /* violet-500 */
     --primary-foreground: 0 0% 100%;
 
     /* Secondary colors */
@@ -44,7 +44,7 @@
     /* Border colors */
     --border: 0 0% 89.8%;
     --input: 0 0% 89.8%;
-    --ring: 274 35% 45%;           /* matches primary */
+    --ring: 258 90% 66%;           /* matches primary */
 
     /* Radius */
     --radius: 0.5rem;
@@ -63,8 +63,8 @@
     --popover: 0 0% 17.6%;
     --popover-foreground: 0 0% 98%;
 
-    /* Primary colors (using our purple theme) */
-    --primary: 274 35% 45%;        /* #6a4c93 */
+    /* Primary colors (Tailwind violet-500) */
+    --primary: 258 90% 66%;        /* violet-500 */
     --primary-foreground: 0 0% 100%;
 
     /* Secondary colors */
@@ -86,40 +86,45 @@
     /* Border colors */
     --border: 0 0% 22.7%;
     --input: 0 0% 22.7%;
-    --ring: 274 35% 45%;           /* matches primary */
+    --ring: 258 90% 66%;           /* matches primary */
   }
 }
 
 @theme {
-  --color-primary-50: #f3f0fa;
-  --color-primary-100: #e7e1f5;
-  --color-primary-200: #d0c3eb;
-  --color-primary-300: #b794c6;
-  --color-primary-400: #9f70b5;
-  --color-primary-500: #8b5fbf;
-  --color-primary-600: #7a4ca8;
-  --color-primary-700: #6a4c93;
-  --color-primary-800: #553c75;
-  --color-primary-900: #472b5d;
-  --color-primary-950: #2a1836;
+  /* Tailwind Violet Scale (primary) */
+  --color-primary-50: #f5f3ff;
+  --color-primary-100: #ede9fe;
+  --color-primary-200: #ddd6fe;
+  --color-primary-300: #c4b5fd;
+  --color-primary-400: #a78bfa;
+  --color-primary-500: #8b5cf6;   /* Main primary color */
+  --color-primary-600: #7c3aed;
+  --color-primary-700: #6d28d9;
+  --color-primary-800: #5b21b6;
+  --color-primary-900: #4c1d95;
+  --color-primary-950: #2e1065;
 
-  --color-neutral-50: #f5f5f5;
-  --color-neutral-100: #e5e5e5;
-  --color-neutral-200: #cccccc;
-  --color-neutral-300: #b0b0b0;
-  --color-neutral-400: #888888;
-  --color-neutral-500: #555555;
-  --color-neutral-600: #404040;
-  --color-neutral-700: #3a3a3a;
-  --color-neutral-800: #2d2d2d;
-  --color-neutral-900: #1e1e1e;
+  /* Tailwind Neutral Scale (grays) */
+  --color-neutral-50: #fafafa;
+  --color-neutral-100: #f5f5f5;
+  --color-neutral-200: #e5e5e5;
+  --color-neutral-300: #d4d4d4;
+  --color-neutral-400: #a3a3a3;
+  --color-neutral-500: #737373;
+  --color-neutral-600: #525252;
+  --color-neutral-700: #404040;
+  --color-neutral-800: #262626;
+  --color-neutral-900: #171717;
+  --color-neutral-950: #0a0a0a;
 
-  --color-success: #48bb78;
-  --color-warning: #ed8936;
-  --color-error: #f56565;
-  --color-info: #4299e1;
+  /* Semantic Status Colors */
+  --color-success: #22c55e;   /* Tailwind green-500 */
+  --color-warning: #f97316;   /* Tailwind orange-500 */
+  --color-error: #ef4444;     /* Tailwind red-500 */
+  --color-info: #3b82f6;      /* Tailwind blue-500 */
 
-  --shadow-purple: 0 0 0 3px rgba(139, 95, 191, 0.1);
+  /* Shadow with violet tint */
+  --shadow-purple: 0 0 0 3px rgba(139, 92, 246, 0.1);
 }
 
 @layer base {
@@ -235,7 +240,7 @@
 
   /* Card Components */
   .card {
-    @apply bg-neutral-800 border border-neutral-700 rounded-lg shadow-sm;
+    @apply bg-neutral-800 border border-neutral-700 rounded-xl shadow-sm;
   }
 
   .card-header {
@@ -300,7 +305,7 @@
   }
 
   .modal-container {
-    @apply bg-neutral-900 border border-neutral-700 rounded-lg shadow-2xl max-w-xl w-full mx-4 max-h-[90vh] overflow-y-auto;
+    @apply bg-neutral-900 border border-neutral-700 rounded-xl shadow-2xl max-w-xl w-full mx-4 max-h-[90vh] overflow-y-auto;
   }
 
   .modal-header {
@@ -450,7 +455,49 @@
 
   /* --- HEADER --- */
   .light header {
-    @apply bg-white border-b border-neutral-300;
+    @apply bg-white;
+  }
+
+  .light header .text-white {
+    @apply text-neutral-900;
+  }
+
+  /* --- SIDEBAR --- */
+  .light aside {
+    @apply bg-white;
+  }
+
+  .light aside .text-white {
+    @apply text-neutral-900;
+  }
+
+  .light aside .text-neutral-400 {
+    @apply text-neutral-600;
+  }
+
+  .light aside .bg-neutral-950 {
+    @apply bg-white;
+  }
+
+  .light aside .bg-primary-500\/10 {
+    @apply bg-neutral-100;
+  }
+
+  .light aside .hover\:bg-primary-500\/10:hover {
+    @apply bg-neutral-200;
+  }
+
+  .light aside .border-neutral-950 {
+    @apply border-white;
+  }
+
+  /* Sidebar links should NOT be purple - override the general link rule */
+  .light aside a {
+    color: inherit;
+  }
+
+  .light aside a:hover {
+    color: inherit;
   }
 
   /* --- LINKS --- */
@@ -495,47 +542,6 @@
 
   .light .shadow-2xl {
     box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15);
-  }
-
-  /* --- COMPONENT-SPECIFIC OVERRIDES --- */
-
-  /* Sidebar - white background for parent items */
-  .light aside {
-    @apply bg-white border-r border-neutral-300;
-  }
-
-  /* Parent menu buttons - active/expanded get light background */
-  .light aside > nav > ul > li > button.bg-neutral-800 {
-    @apply bg-neutral-100;
-  }
-
-  /* Child menu container - very light grey */
-  .light aside ul .bg-neutral-800 {
-    @apply bg-neutral-100;
-  }
-
-  /* Active child item - slightly darker grey */
-  .light aside .bg-neutral-700 {
-    @apply bg-neutral-200;
-  }
-
-  /* Sidebar text colors */
-  .light aside .text-neutral-300 {
-    @apply text-neutral-600;
-  }
-
-  .light aside .text-neutral-400 {
-    @apply text-neutral-600;
-  }
-
-  /* Child item hover - slightly darker than container */
-  .light aside a:hover:not(.bg-neutral-700) {
-    background-color: #d8d8d8; /* Between neutral-100 (#e5e5e5) and neutral-200 (#cccccc) */
-  }
-
-  /* Active child item hover - keep active background */
-  .light aside .bg-neutral-700:hover {
-    @apply bg-neutral-200;
   }
 
   /* ViewControls specific styling */
@@ -771,8 +777,9 @@
   }
 
   /* Standard content spacing below controls */
+  /* Accounts for fixed ViewControls header (height ~48px with py-2) + gap */
   .content-spacing {
-    @apply pt-4;
+    @apply pt-16;
   }
 
   /* Responsive sidebar */

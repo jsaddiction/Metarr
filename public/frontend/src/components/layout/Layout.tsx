@@ -3,6 +3,7 @@ import { Sidebar } from './Sidebar';
 import { Header } from './Header';
 import { ErrorBanner } from '../ui/ErrorBanner';
 import { useBackendConnection } from '../../hooks/useBackendConnection';
+import { useTheme } from '../../contexts/ThemeContext';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -13,6 +14,8 @@ export const Layout: React.FC<LayoutProps> = ({ children, title }) => {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const { error, dismissError } = useBackendConnection();
+  const { theme } = useTheme();
+  const isLight = theme === 'light';
 
   const handleToggleSidebar = () => {
     if (window.innerWidth <= 768) {
@@ -23,7 +26,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, title }) => {
   };
 
   return (
-    <div className="min-h-screen bg-neutral-900">
+    <div className={`min-h-screen ${isLight ? 'bg-white' : 'bg-neutral-950'}`}>
       <Header
         title={title}
         onToggleSidebar={handleToggleSidebar}
@@ -35,7 +38,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, title }) => {
         onCloseMobile={() => setMobileSidebarOpen(false)}
       />
 
-      <main className={`pt-16 p-6 min-h-screen transition-all duration-300 ${sidebarCollapsed ? 'ml-16' : 'ml-48'} md:ml-48`}>
+      <main className={`pt-14 p-6 min-h-screen transition-all duration-300 ${sidebarCollapsed ? 'ml-16' : 'ml-56'} md:ml-56`}>
         {children}
       </main>
 

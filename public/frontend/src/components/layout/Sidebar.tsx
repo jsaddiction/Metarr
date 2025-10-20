@@ -28,6 +28,8 @@ import {
   faBook,
   faHome
 } from '@fortawesome/free-solid-svg-icons';
+import { useTheme } from '../../contexts/ThemeContext';
+
 interface SidebarProps {
   isCollapsed?: boolean;
   isMobileOpen?: boolean;
@@ -45,6 +47,7 @@ interface NavigationItem {
 export const Sidebar: React.FC<SidebarProps> = ({ isCollapsed = false, isMobileOpen = false, onCloseMobile }) => {
   const location = useLocation();
   const navigate = useNavigate();
+  const { theme } = useTheme();
   const [expandedSections, setExpandedSections] = useState<string[]>([]);
   const [collapsingSections, setCollapsingSections] = useState<string[]>([]);
 
@@ -234,6 +237,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ isCollapsed = false, isMobileO
           label: 'Notifications',
           path: '/settings/notifications',
         },
+        {
+          icon: faSliders,
+          label: 'Asset Limits',
+          path: '/settings/asset-limits',
+        },
       ],
     },
     {
@@ -269,10 +277,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ isCollapsed = false, isMobileO
     },
   ];
 
+  const isLight = theme === 'light';
+
   return (
-    <aside className={`fixed top-16 left-0 h-[calc(100vh-4rem)] bg-neutral-900 border-r border-t border-neutral-700 transition-all duration-300 z-40 ${
-      isCollapsed ? 'w-16' : 'w-48'
-    } ${isMobileOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
+    <aside className={`fixed top-14 left-0 h-[calc(100vh-3.5rem)] transition-all duration-300 z-40 ${
+      isLight ? 'bg-white' : 'bg-neutral-950'
+    } ${isCollapsed ? 'w-16' : 'w-56'} ${isMobileOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
 
       <nav className="flex-1 overflow-y-auto">
         <ul>
@@ -282,8 +292,18 @@ export const Sidebar: React.FC<SidebarProps> = ({ isCollapsed = false, isMobileO
                 // Parent item with children
                 <>
                   <button
-                    className={`w-full flex items-center px-4 py-3 text-sm transition-all duration-500 ${
-                      isSectionActive(item) ? 'border-l-4 border-primary-500 bg-neutral-800 text-white hover:text-neutral-100' : 'border-l-4 border-transparent text-neutral-300 hover:text-white'
+                    className={`w-full flex items-center px-4 py-3 text-sm font-medium border-l-2 transition-all duration-200 ${
+                      expandedSections.includes(item.label.toLowerCase())
+                        ? isLight
+                          ? 'border-primary-500 text-neutral-900 bg-gradient-to-r from-neutral-200 to-white'
+                          : 'border-primary-500 text-white bg-gradient-to-r from-primary-500/30 to-neutral-950'
+                        : isSectionActive(item)
+                        ? isLight
+                          ? 'border-white text-neutral-900 bg-gradient-to-r from-neutral-200 to-white'
+                          : 'border-neutral-950 text-white bg-gradient-to-r from-primary-500/30 to-neutral-950'
+                        : isLight
+                        ? 'border-white text-neutral-900 hover:bg-gradient-to-r hover:from-neutral-200 hover:to-white bg-white'
+                        : 'border-neutral-950 text-neutral-400 hover:text-white hover:bg-gradient-to-r hover:from-primary-500/30 hover:to-neutral-950 bg-neutral-950'
                     }`}
                     onClick={() => toggleSection(item.label.toLowerCase(), item)}
                     title={isCollapsed ? item.label : undefined}
@@ -312,7 +332,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isCollapsed = false, isMobileO
                     aria-label={`${item.label} submenu`}
                   >
                     <div className="overflow-hidden">
-                      <ul className="bg-neutral-800">
+                      <ul className={isLight ? 'bg-white' : 'bg-neutral-950'}>
                         {item.children.map((child, index) => (
                           <li
                             key={child.path}
@@ -331,15 +351,18 @@ export const Sidebar: React.FC<SidebarProps> = ({ isCollapsed = false, isMobileO
                             <NavLink
                               to={child.path!}
                               className={({ isActive }) => {
-                                const baseClasses = 'flex items-center px-4 py-2 text-sm transition-all duration-500';
-                                const borderClasses = isSectionActive(item) ? 'border-l-4 border-primary-500' : 'border-l-4 border-transparent';
-                                const bgClasses = isActive ? 'bg-neutral-700' : '';
-                                const textClasses = isActive ? 'text-white hover:text-neutral-100' : 'text-neutral-400 hover:text-white';
+                                const baseClasses = 'flex items-center pl-8 pr-4 py-2.5 text-sm border-l-2 border-primary-500 transition-all duration-200';
+                                const bgClasses = isActive
+                                  ? (isLight ? 'bg-gradient-to-r from-neutral-200 to-white' : 'bg-gradient-to-r from-primary-500/30 to-neutral-950')
+                                  : (isLight ? 'bg-white hover:bg-gradient-to-r hover:from-neutral-200 hover:to-white' : 'bg-neutral-950 hover:bg-gradient-to-r hover:from-primary-500/30 hover:to-neutral-950');
+                                const textClasses = isActive
+                                  ? (isLight ? 'text-neutral-900 font-medium' : 'text-white font-medium')
+                                  : (isLight ? 'text-neutral-900' : 'text-neutral-400 hover:text-white');
 
-                                return `${baseClasses} ${borderClasses} ${bgClasses} ${textClasses}`;
+                                return `${baseClasses} ${bgClasses} ${textClasses}`;
                               }}
                             >
-                              <span className="ml-6">{child.label}</span>
+                              <span>{child.label}</span>
                             </NavLink>
                           </li>
                         ))}
@@ -352,8 +375,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ isCollapsed = false, isMobileO
                 <NavLink
                   to={item.path!}
                   className={({ isActive }) =>
-                    `flex items-center px-4 py-3 text-sm transition-all duration-500 ${
-                      isActive ? 'border-l-4 border-primary-500 bg-neutral-800 text-white hover:text-neutral-100' : 'border-l-4 border-transparent text-neutral-300 hover:text-white'
+                    `flex items-center px-4 py-3 text-sm font-medium border-l-2 transition-all duration-200 ${
+                      isActive
+                        ? (isLight ? 'bg-gradient-to-r from-neutral-200 to-white text-neutral-900 border-white' : 'bg-gradient-to-r from-primary-500/30 to-neutral-950 text-white border-neutral-950')
+                        : (isLight ? 'bg-white text-neutral-900 hover:bg-gradient-to-r hover:from-neutral-200 hover:to-white border-white' : 'bg-neutral-950 text-neutral-400 hover:text-white hover:bg-gradient-to-r hover:from-primary-500/30 hover:to-neutral-950 border-neutral-950')
                     }`
                   }
                   title={isCollapsed ? item.label : undefined}

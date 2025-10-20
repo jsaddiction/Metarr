@@ -1,12 +1,15 @@
 import React from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 export const RunningJobs: React.FC = () => {
   return (
     <div className="content-spacing">
-      <div className="card">
-        <div className="card-body">
-          <h3 className="text-lg text-primary mb-3">Running Jobs</h3>
-          <ul className="text-secondary">
+      <Card>
+        <CardHeader>
+          <CardTitle>Running Jobs</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ul className="text-secondary space-y-2">
             <li>• Active webhook processing tasks</li>
             <li>• In-progress metadata fetches</li>
             <li>• Current provider API requests</li>
@@ -16,8 +19,8 @@ export const RunningJobs: React.FC = () => {
             <li>• Estimated completion times</li>
             <li>• Retry attempts and status</li>
           </ul>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
     </div>
   );
 };

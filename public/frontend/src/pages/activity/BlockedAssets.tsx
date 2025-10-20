@@ -1,12 +1,15 @@
 import React from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 export const BlockedAssets: React.FC = () => {
   return (
     <div className="content-spacing">
-      <div className="card">
-        <div className="card-body">
-          <h3 className="text-lg text-primary mb-3">Blocked Assets</h3>
-          <ul className="text-secondary">
+      <Card>
+        <CardHeader>
+          <CardTitle>Blocked Assets</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ul className="text-secondary space-y-2">
             <li>• Failed metadata downloads</li>
             <li>• Unavailable provider resources</li>
             <li>• Missing or broken image URLs</li>
@@ -16,8 +19,8 @@ export const BlockedAssets: React.FC = () => {
             <li>• Manual override options</li>
             <li>• Error diagnostics and logs</li>
           </ul>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
     </div>
   );
 };

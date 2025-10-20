@@ -28,6 +28,8 @@ import { Files } from './pages/settings/Files';
 import { Libraries } from './pages/settings/Libraries';
 import { MediaPlayers } from './pages/settings/MediaPlayers';
 import { Notifications } from './pages/settings/Notifications';
+import { AssetLimits } from './pages/settings/AssetLimits';
+import { SaveBarDemo } from './pages/test/SaveBarDemo';
 
 // Configure QueryClient
 const queryClient = new QueryClient({
@@ -67,6 +69,7 @@ function usePageTitle() {
     '/settings/libraries': 'Libraries',
     '/settings/media-players': 'Media Players',
     '/settings/notifications': 'Notifications',
+    '/settings/asset-limits': 'Asset Limits',
     '/system/status': 'System Status',
     '/system/tasks': 'Tasks',
     '/system/backup': 'Backup',
@@ -118,6 +121,10 @@ function AppRoutes() {
         <Route path="/settings/libraries" element={<Libraries />} />
         <Route path="/settings/media-players" element={<MediaPlayers />} />
         <Route path="/settings/notifications" element={<Notifications />} />
+        <Route path="/settings/asset-limits" element={<AssetLimits />} />
+
+        {/* Test routes */}
+        <Route path="/test/save-bar-demo" element={<SaveBarDemo />} />
 
         {/* Fallback for unknown routes */}
         <Route path="*" element={<Navigate to="/" replace />} />

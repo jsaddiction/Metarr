@@ -3,7 +3,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faFolder, faChevronRight, faLevelUpAlt, faHardDrive } from '@fortawesome/free-solid-svg-icons';
 import { DirectoryEntry } from '../../types/library';
 import { libraryApi } from '../../utils/api';
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
@@ -166,6 +166,9 @@ export const DirectoryBrowserModal: React.FC<DirectoryBrowserModalProps> = ({
       <DialogContent className="max-w-4xl h-[80vh] flex flex-col p-0">
         <DialogHeader className="px-6 pt-6 pb-4 border-b border-neutral-700 flex-shrink-0">
           <DialogTitle>Browse Directory</DialogTitle>
+          <DialogDescription>
+            Navigate through your filesystem to select a directory for your library.
+          </DialogDescription>
         </DialogHeader>
 
         {/* Fixed Header with Breadcrumb Navigation */}

@@ -1,13 +1,16 @@
 import React from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 export const Status: React.FC = () => {
   return (
     <div className="content-spacing">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="card">
-            <div className="card-body">
-              <h3 className="text-lg text-primary mb-3">System Health</h3>
-              <ul className="text-secondary">
+          <Card>
+            <CardHeader>
+              <CardTitle>System Health</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ul className="text-secondary space-y-2">
                 <li>• Application uptime and availability</li>
                 <li>• Memory and CPU usage monitoring</li>
                 <li>• Database connection status</li>
@@ -15,13 +18,15 @@ export const Status: React.FC = () => {
                 <li>• Disk space utilization</li>
                 <li>• Network performance metrics</li>
               </ul>
-            </div>
-          </div>
+            </CardContent>
+          </Card>
 
-          <div className="card">
-            <div className="card-body">
-              <h3 className="text-lg text-primary mb-3">Service Status</h3>
-              <ul className="text-secondary">
+          <Card>
+            <CardHeader>
+              <CardTitle>Service Status</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ul className="text-secondary space-y-2">
                 <li>• Webhook processing service</li>
                 <li>• Metadata provider APIs</li>
                 <li>• Background job scheduler</li>
@@ -29,8 +34,8 @@ export const Status: React.FC = () => {
                 <li>• Database maintenance tasks</li>
                 <li>• File system operations</li>
               </ul>
-            </div>
-          </div>
+            </CardContent>
+          </Card>
       </div>
     </div>
   );

@@ -1,13 +1,16 @@
 import React from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 export const General: React.FC = () => {
   return (
     <div className="content-spacing">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="card">
-            <div className="card-body">
-              <h3 className="text-lg text-primary mb-3">Application Settings</h3>
-              <ul className="text-secondary">
+          <Card>
+            <CardHeader>
+              <CardTitle>Application Settings</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ul className="text-secondary space-y-2">
                 <li>• Default language and localization</li>
                 <li>• Theme and UI preferences</li>
                 <li>• Date and time formats</li>
@@ -15,13 +18,15 @@ export const General: React.FC = () => {
                 <li>• Auto-refresh intervals</li>
                 <li>• Performance optimization settings</li>
               </ul>
-            </div>
-          </div>
+            </CardContent>
+          </Card>
 
-          <div className="card">
-            <div className="card-body">
-              <h3 className="text-lg text-primary mb-3">Database & Storage</h3>
-              <ul className="text-secondary">
+          <Card>
+            <CardHeader>
+              <CardTitle>Database & Storage</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ul className="text-secondary space-y-2">
                 <li>• Database connection settings</li>
                 <li>• Storage paths and directories</li>
                 <li>• Backup and restore configuration</li>
@@ -29,13 +34,15 @@ export const General: React.FC = () => {
                 <li>• Cache management settings</li>
                 <li>• Import/export preferences</li>
               </ul>
-            </div>
-          </div>
+            </CardContent>
+          </Card>
 
-          <div className="card">
-            <div className="card-body">
-              <h3 className="text-lg text-primary mb-3">Logging & Monitoring</h3>
-              <ul className="text-secondary">
+          <Card>
+            <CardHeader>
+              <CardTitle>Logging & Monitoring</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ul className="text-secondary space-y-2">
                 <li>• Log levels and verbosity</li>
                 <li>• Log retention and rotation</li>
                 <li>• Error reporting settings</li>
@@ -43,13 +50,15 @@ export const General: React.FC = () => {
                 <li>• Debug mode configuration</li>
                 <li>• Audit trail settings</li>
               </ul>
-            </div>
-          </div>
+            </CardContent>
+          </Card>
 
-          <div className="card">
-            <div className="card-body">
-              <h3 className="text-lg text-primary mb-3">Security & Authentication</h3>
-              <ul className="text-secondary">
+          <Card>
+            <CardHeader>
+              <CardTitle>Security & Authentication</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ul className="text-secondary space-y-2">
                 <li>• User authentication methods</li>
                 <li>• API key management</li>
                 <li>• Session timeout settings</li>
@@ -57,8 +66,8 @@ export const General: React.FC = () => {
                 <li>• Access control and permissions</li>
                 <li>• Two-factor authentication</li>
               </ul>
-            </div>
-          </div>
+            </CardContent>
+          </Card>
       </div>
     </div>
   );
