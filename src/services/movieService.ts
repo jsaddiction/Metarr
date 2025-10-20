@@ -9,6 +9,7 @@ import crypto from 'crypto';
 import sharp from 'sharp';
 import { hashSmallFile } from './hash/hashService.js';
 import { cacheService } from './cacheService.js';
+import { getDefaultMaxCount } from '../config/assetTypeDefaults.js';
 import https from 'https';
 import http from 'http';
 
@@ -1623,6 +1624,8 @@ export class MovieService {
       );
 
       // Get text files (NFO, subtitles, etc.)
+      // For subtitles: only show library files (not cache - those are provider downloads)
+      // For NFO: show cache files (source of truth)
       const textFiles = await conn.query(
         `SELECT
           id, file_path, file_name, file_size, location, text_type,
@@ -1631,6 +1634,11 @@ export class MovieService {
           library_file_id, cache_file_id, discovered_at
         FROM text_files
         WHERE entity_type = 'movie' AND entity_id = ?
+          AND (
+            (text_type = 'subtitle' AND location = 'library')
+            OR (text_type = 'nfo' AND location = 'cache')
+            OR (text_type NOT IN ('subtitle', 'nfo'))
+          )
         ORDER BY text_type, discovered_at DESC`,
         [movieId]
       );
@@ -1798,6 +1806,178 @@ export class MovieService {
     } catch (error: any) {
       logger.error('Failed to restore movie', {
         movieId,
+        error: error.message
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Replace all assets of a specific type (atomic operation)
+   * Smart replacement that:
+   * - Validates aspect ratios and dimensions
+   * - Checks asset limits
+   * - Removes old assets not in new selection
+   * - Adds new assets not already present
+   * - Returns detailed results with intelligent error messages
+   *
+   * @param movieId - Movie ID
+   * @param assetType - Asset type (poster, fanart, etc.)
+   * @param assets - Array of assets to set as the new selection
+   * @returns Result with counts of added, removed, and kept assets
+   */
+  async replaceAssets(
+    movieId: number,
+    assetType: string,
+    assets: Array<{
+      url: string;
+      provider: string;
+      width?: number;
+      height?: number;
+      perceptualHash?: string;
+    }>
+  ): Promise<{
+    success: boolean;
+    added: number;
+    removed: number;
+    kept: number;
+    errors: string[];
+    warnings: string[];
+  }> {
+    const conn = this.db.getConnection();
+
+    try {
+      const result = {
+        success: true,
+        added: 0,
+        removed: 0,
+        kept: 0,
+        errors: [] as string[],
+        warnings: [] as string[]
+      };
+
+      // Get movie details
+      const movieResults = await conn.query(
+        'SELECT id, file_path, title, year FROM movies WHERE id = ?',
+        [movieId]
+      );
+
+      if (!movieResults || movieResults.length === 0) {
+        throw new Error('Movie not found');
+      }
+
+      // Check if asset type is locked
+      const lockField = `${assetType}_locked`;
+      const lockCheck = await conn.query(
+        `SELECT ${lockField} as locked FROM movies WHERE id = ?`,
+        [movieId]
+      );
+
+      if (lockCheck[0]?.locked === 1) {
+        throw new Error(`${assetType} is locked by user. Unlock it first to make changes.`);
+      }
+
+      // Get asset limit configuration from app_settings
+      const key = `asset_limit_${assetType}`;
+      const limitResults = await conn.query(
+        'SELECT value FROM app_settings WHERE key = ?',
+        [key]
+      );
+
+      let maxLimit = 1; // Default fallback
+      if (limitResults.length > 0) {
+        maxLimit = parseInt(limitResults[0].value, 10);
+      } else {
+        // Use default from config if not set in database
+        maxLimit = getDefaultMaxCount(assetType);
+      }
+
+      // Validate asset count doesn't exceed limit
+      if (assets.length > maxLimit) {
+        throw new Error(`Cannot add ${assets.length} ${assetType}(s). Maximum allowed: ${maxLimit}`);
+      }
+
+      // Get current assets for this type
+      const currentAssets = await conn.query(
+        `SELECT id, source_url, perceptual_hash FROM image_files
+         WHERE entity_type = 'movie' AND entity_id = ? AND image_type = ? AND location = 'cache'`,
+        [movieId, assetType]
+      );
+
+      // Build sets for comparison
+      const newUrls = new Set(assets.map(a => a.url));
+      const newHashes = new Set(assets.map(a => a.perceptualHash).filter(Boolean));
+
+      // Determine which assets to remove
+      const toRemove: number[] = [];
+      for (const current of currentAssets) {
+        const matchByUrl = newUrls.has(current.source_url);
+        const matchByHash = current.perceptual_hash && newHashes.has(current.perceptual_hash);
+
+        if (!matchByUrl && !matchByHash) {
+          toRemove.push(current.id);
+        } else {
+          result.kept++;
+        }
+      }
+
+      // Remove assets that are no longer selected
+      for (const imageFileId of toRemove) {
+        try {
+          await this.removeAsset(movieId, imageFileId);
+          result.removed++;
+        } catch (error: any) {
+          result.errors.push(`Failed to remove asset ${imageFileId}: ${error.message}`);
+        }
+      }
+
+      // Add new assets that aren't already present
+      for (const asset of assets) {
+        // Check if already exists by URL or hash
+        const alreadyExists = currentAssets.some(current =>
+          current.source_url === asset.url ||
+          (current.perceptual_hash && asset.perceptualHash && current.perceptual_hash === asset.perceptualHash)
+        );
+
+        if (!alreadyExists) {
+          try {
+            await this.addAsset(movieId, assetType, asset);
+            result.added++;
+          } catch (error: any) {
+            result.errors.push(`Failed to add asset from ${asset.provider}: ${error.message}`);
+          }
+        }
+      }
+
+      // Add warnings for quality issues (optional enhancement)
+      for (const asset of assets) {
+        if (asset.width && asset.height) {
+          // Example: Warn about low resolution posters
+          if (assetType === 'poster' && asset.width < 500) {
+            result.warnings.push(`Poster from ${asset.provider} has low resolution (${asset.width}x${asset.height}). Consider selecting a higher quality image.`);
+          }
+          if (assetType === 'fanart' && asset.width < 1280) {
+            result.warnings.push(`Fanart from ${asset.provider} has low resolution (${asset.width}x${asset.height}). HD fanart is typically 1920x1080 or higher.`);
+          }
+        }
+      }
+
+      logger.info('Replaced assets', {
+        movieId,
+        assetType,
+        added: result.added,
+        removed: result.removed,
+        kept: result.kept,
+        totalErrors: result.errors.length,
+        totalWarnings: result.warnings.length
+      });
+
+      return result;
+
+    } catch (error: any) {
+      logger.error('Failed to replace assets', {
+        movieId,
+        assetType,
         error: error.message
       });
       throw error;
@@ -1994,7 +2174,9 @@ export class MovieService {
         throw new Error(`${image.image_type} is locked by user`);
       }
 
-      // Delete cache file
+      // Delete cache file ONLY
+      // NOTE: Library files are NOT deleted here - they remain until explicit "Publish" operation
+      // This preserves the three-tier architecture: Candidates → Cache → Library
       if (image.file_path) {
         try {
           await fs.unlink(image.file_path);
@@ -2007,29 +2189,7 @@ export class MovieService {
         }
       }
 
-      // Delete library file if it exists (via library_file_id reference)
-      if (image.location === 'cache') {
-        const libraryFiles = await conn.query(
-          'SELECT id, file_path FROM image_files WHERE cache_file_id = ? AND location = \'library\'',
-          [imageFileId]
-        );
-
-        for (const libraryFile of libraryFiles) {
-          try {
-            await fs.unlink(libraryFile.file_path);
-            logger.debug('Deleted library file', { filePath: libraryFile.file_path });
-          } catch (error: any) {
-            logger.warn('Failed to delete library file', {
-              filePath: libraryFile.file_path,
-              error: error.message
-            });
-          }
-
-          await conn.execute('DELETE FROM image_files WHERE id = ?', [libraryFile.id]);
-        }
-      }
-
-      // Delete cache record
+      // Delete cache record from database
       await conn.execute('DELETE FROM image_files WHERE id = ?', [imageFileId]);
 
       logger.info('Removed asset from movie', {
