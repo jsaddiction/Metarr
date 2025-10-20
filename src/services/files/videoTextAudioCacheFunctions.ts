@@ -1,6 +1,8 @@
 /**
  * Cache functions for video, text, and audio files
- * Implements two-copy architecture: library copy + cache copy with deduplication
+ * UUID-based caching - NO content-based deduplication
+ * Every library file gets its own unique cache copy
+ * Deduplication happens at enrichment/selection phase, not discovery
  */
 
 import fs from 'fs/promises';
@@ -131,8 +133,8 @@ export async function insertAudioFile(
 }
 
 /**
- * Cache a video file (trailers) with deduplication
- * Implements two-copy architecture: library + cache
+ * Cache a video file (trailers) - UUID-based naming, NO deduplication
+ * Every library file gets its own cache copy
  */
 export async function cacheVideoFile(
   db: DatabaseConnection,
@@ -144,48 +146,20 @@ export async function cacheVideoFile(
   sourceType: 'provider' | 'local' | 'user' = 'local'
 ): Promise<number> {
   try {
-    // Calculate hash for deduplication
+    // Calculate hash (for rescan detection, NOT deduplication)
     const fileBuffer = await fs.readFile(sourceFilePath);
     const fileHash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
     const stats = await fs.stat(sourceFilePath);
 
-    // Check if already cached
-    const existing = await db.query<{ id: number; reference_count: number }>(
-      `SELECT id, reference_count FROM video_files
-       WHERE file_hash = ? AND location = 'cache'`,
-      [fileHash]
-    );
+    // Generate UUID for cache file naming
+    const uuid = crypto.randomUUID();
+    const ext = path.extname(sourceFilePath);
 
-    if (existing.length > 0) {
-      const existingId = existing[0].id;
-      logger.info('Video already cached, reusing', {
-        existingId,
-        fileHash: fileHash.substring(0, 8),
-        referenceCount: existing[0].reference_count,
-        videoType
-      });
-
-      // Increment reference count
-      await db.execute(
-        `UPDATE video_files SET reference_count = reference_count + 1 WHERE id = ?`,
-        [existingId]
-      );
-
-      // Link library file to cache
-      await db.execute(
-        `UPDATE video_files SET cache_file_id = ? WHERE id = ?`,
-        [existingId, libraryFileId]
-      );
-
-      return existingId;
-    }
-
-    // New video - create cache file
-    const cacheDir = path.join(process.cwd(), 'data', 'cache', 'videos', fileHash.slice(0, 2), fileHash.slice(2, 4));
+    // Create cache directory structure: /cache/videos/{entityType}/{entityId}/
+    const cacheDir = path.join(process.cwd(), 'data', 'cache', 'videos', entityType, String(entityId));
     await fs.mkdir(cacheDir, { recursive: true });
 
-    const ext = path.extname(sourceFilePath);
-    const cachePath = path.join(cacheDir, `${fileHash}${ext}`);
+    const cachePath = path.join(cacheDir, `${uuid}${ext}`);
 
     // Copy to cache
     await fs.copyFile(sourceFilePath, cachePath);
@@ -194,17 +168,18 @@ export async function cacheVideoFile(
     const cacheResult = await db.execute(
       `INSERT INTO video_files (
         entity_type, entity_id, file_path, file_name, file_size, file_hash,
-        location, video_type, source_type, reference_count, discovered_at
-      ) VALUES (?, ?, ?, ?, ?, ?, 'cache', ?, ?, 1, CURRENT_TIMESTAMP)`,
+        location, video_type, source_type, library_file_id, reference_count, discovered_at
+      ) VALUES (?, ?, ?, ?, ?, ?, 'cache', ?, ?, ?, 1, CURRENT_TIMESTAMP)`,
       [
         entityType,
         entityId,
         cachePath,
-        path.basename(cachePath),
+        `${uuid}${ext}`,
         stats.size,
         fileHash,
         videoType,
-        sourceType
+        sourceType,
+        libraryFileId
       ]
     );
 
@@ -219,6 +194,7 @@ export async function cacheVideoFile(
     logger.info('Video cached successfully', {
       libraryFileId,
       cacheFileId,
+      uuid,
       hash: fileHash.substring(0, 8),
       videoType,
       size: stats.size
@@ -237,8 +213,8 @@ export async function cacheVideoFile(
 }
 
 /**
- * Cache a text file (subtitles) with deduplication
- * Implements two-copy architecture: library + cache
+ * Cache a text file (subtitles) - UUID-based naming, NO deduplication
+ * Every library file gets its own cache copy
  */
 export async function cacheTextFile(
   db: DatabaseConnection,
@@ -250,48 +226,20 @@ export async function cacheTextFile(
   sourceType: 'provider' | 'local' | 'user' = 'local'
 ): Promise<number> {
   try {
-    // Calculate hash for deduplication
+    // Calculate hash (for rescan detection, NOT deduplication)
     const fileBuffer = await fs.readFile(sourceFilePath);
     const fileHash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
     const stats = await fs.stat(sourceFilePath);
 
-    // Check if already cached
-    const existing = await db.query<{ id: number; reference_count: number }>(
-      `SELECT id, reference_count FROM text_files
-       WHERE file_hash = ? AND location = 'cache'`,
-      [fileHash]
-    );
+    // Generate UUID for cache file naming
+    const uuid = crypto.randomUUID();
+    const ext = path.extname(sourceFilePath);
 
-    if (existing.length > 0) {
-      const existingId = existing[0].id;
-      logger.info('Text file already cached, reusing', {
-        existingId,
-        fileHash: fileHash.substring(0, 8),
-        referenceCount: existing[0].reference_count,
-        textType
-      });
-
-      // Increment reference count
-      await db.execute(
-        `UPDATE text_files SET reference_count = reference_count + 1 WHERE id = ?`,
-        [existingId]
-      );
-
-      // Link library file to cache
-      await db.execute(
-        `UPDATE text_files SET cache_file_id = ? WHERE id = ?`,
-        [existingId, libraryFileId]
-      );
-
-      return existingId;
-    }
-
-    // New text file - create cache file
-    const cacheDir = path.join(process.cwd(), 'data', 'cache', 'text', fileHash.slice(0, 2), fileHash.slice(2, 4));
+    // Create cache directory structure: /cache/text/{entityType}/{entityId}/
+    const cacheDir = path.join(process.cwd(), 'data', 'cache', 'text', entityType, String(entityId));
     await fs.mkdir(cacheDir, { recursive: true });
 
-    const ext = path.extname(sourceFilePath);
-    const cachePath = path.join(cacheDir, `${fileHash}${ext}`);
+    const cachePath = path.join(cacheDir, `${uuid}${ext}`);
 
     // Copy to cache
     await fs.copyFile(sourceFilePath, cachePath);
@@ -310,19 +258,20 @@ export async function cacheTextFile(
       `INSERT INTO text_files (
         entity_type, entity_id, file_path, file_name, file_size, file_hash,
         location, text_type, subtitle_language, subtitle_format,
-        source_type, reference_count, discovered_at
-      ) VALUES (?, ?, ?, ?, ?, ?, 'cache', ?, ?, ?, ?, 1, CURRENT_TIMESTAMP)`,
+        source_type, library_file_id, reference_count, discovered_at
+      ) VALUES (?, ?, ?, ?, ?, ?, 'cache', ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP)`,
       [
         entityType,
         entityId,
         cachePath,
-        path.basename(cachePath),
+        `${uuid}${ext}`,
         stats.size,
         fileHash,
         textType,
         subtitleLanguage,
         subtitleFormat,
-        sourceType
+        sourceType,
+        libraryFileId
       ]
     );
 
@@ -355,8 +304,8 @@ export async function cacheTextFile(
 }
 
 /**
- * Cache an audio file (theme songs) with deduplication
- * Implements two-copy architecture: library + cache
+ * Cache an audio file (theme songs) - UUID-based naming, NO deduplication
+ * Every library file gets its own cache copy
  */
 export async function cacheAudioFile(
   db: DatabaseConnection,
@@ -368,48 +317,20 @@ export async function cacheAudioFile(
   sourceType: 'provider' | 'local' | 'user' = 'local'
 ): Promise<number> {
   try {
-    // Calculate hash for deduplication
+    // Calculate hash (for rescan detection, NOT deduplication)
     const fileBuffer = await fs.readFile(sourceFilePath);
     const fileHash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
     const stats = await fs.stat(sourceFilePath);
 
-    // Check if already cached
-    const existing = await db.query<{ id: number; reference_count: number }>(
-      `SELECT id, reference_count FROM audio_files
-       WHERE file_hash = ? AND location = 'cache'`,
-      [fileHash]
-    );
+    // Generate UUID for cache file naming
+    const uuid = crypto.randomUUID();
+    const ext = path.extname(sourceFilePath);
 
-    if (existing.length > 0) {
-      const existingId = existing[0].id;
-      logger.info('Audio file already cached, reusing', {
-        existingId,
-        fileHash: fileHash.substring(0, 8),
-        referenceCount: existing[0].reference_count,
-        audioType
-      });
-
-      // Increment reference count
-      await db.execute(
-        `UPDATE audio_files SET reference_count = reference_count + 1 WHERE id = ?`,
-        [existingId]
-      );
-
-      // Link library file to cache
-      await db.execute(
-        `UPDATE audio_files SET cache_file_id = ? WHERE id = ?`,
-        [existingId, libraryFileId]
-      );
-
-      return existingId;
-    }
-
-    // New audio file - create cache file
-    const cacheDir = path.join(process.cwd(), 'data', 'cache', 'audio', fileHash.slice(0, 2), fileHash.slice(2, 4));
+    // Create cache directory structure: /cache/audio/{entityType}/{entityId}/
+    const cacheDir = path.join(process.cwd(), 'data', 'cache', 'audio', entityType, String(entityId));
     await fs.mkdir(cacheDir, { recursive: true });
 
-    const ext = path.extname(sourceFilePath);
-    const cachePath = path.join(cacheDir, `${fileHash}${ext}`);
+    const cachePath = path.join(cacheDir, `${uuid}${ext}`);
 
     // Copy to cache
     await fs.copyFile(sourceFilePath, cachePath);
@@ -418,17 +339,18 @@ export async function cacheAudioFile(
     const cacheResult = await db.execute(
       `INSERT INTO audio_files (
         entity_type, entity_id, file_path, file_name, file_size, file_hash,
-        location, audio_type, source_type, reference_count, discovered_at
-      ) VALUES (?, ?, ?, ?, ?, ?, 'cache', ?, ?, 1, CURRENT_TIMESTAMP)`,
+        location, audio_type, source_type, library_file_id, reference_count, discovered_at
+      ) VALUES (?, ?, ?, ?, ?, ?, 'cache', ?, ?, ?, 1, CURRENT_TIMESTAMP)`,
       [
         entityType,
         entityId,
         cachePath,
-        path.basename(cachePath),
+        `${uuid}${ext}`,
         stats.size,
         fileHash,
         audioType,
-        sourceType
+        sourceType,
+        libraryFileId
       ]
     );
 
@@ -443,6 +365,7 @@ export async function cacheAudioFile(
     logger.info('Audio file cached successfully', {
       libraryFileId,
       cacheFileId,
+      uuid,
       hash: fileHash.substring(0, 8),
       audioType,
       size: stats.size

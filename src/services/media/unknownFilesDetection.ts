@@ -270,6 +270,22 @@ export async function buildKnownFilesSet(
       }
     }
 
+    // Add audio files from unified file system (audio_files table)
+    if (entityType === 'movie') {
+      const audioFiles = await db.query<any[]>(
+        `SELECT file_path
+         FROM audio_files
+         WHERE entity_type = ? AND entity_id = ? AND file_path IS NOT NULL`,
+        [entityType, entityId]
+      );
+
+      for (const audioFile of audioFiles) {
+        if ((audioFile as any).file_path) {
+          knownFiles.add((audioFile as any).file_path);
+        }
+      }
+    }
+
     logger.info('Built known files set', {
       entityType,
       entityId,

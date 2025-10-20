@@ -20,9 +20,9 @@ import { logger } from '../../middleware/logging.js';
  * Clean up empty parent directories after file deletion
  * Recursively removes empty directories up to the cache root
  *
- * Example: /data/cache/images/ab/cd/file.jpg deleted
- * - Removes /data/cache/images/ab/cd if empty
- * - Removes /data/cache/images/ab if empty
+ * New structure: /data/cache/images/{entityType}/{entityId}/uuid.jpg
+ * - Removes /data/cache/images/{entityType}/{entityId} if empty
+ * - Removes /data/cache/images/{entityType} if empty
  * - Stops at /data/cache/images (cache root)
  */
 async function cleanupEmptyDirectories(filePath: string, cacheRoot: string): Promise<void> {
@@ -206,6 +206,7 @@ export async function insertImageFile(
 
 /**
  * Find existing cached image by hash
+ * NOTE: No longer used for deduplication, kept for potential rescan hash comparison
  */
 export async function findCachedImageByHash(
   db: DatabaseConnection,
@@ -245,7 +246,9 @@ export async function findCachedImageByHash(
 }
 
 /**
- * Cache an image file (copy library → cache or store provider download)
+ * Cache an image file (copy library → cache)
+ * UUID-based naming - NO content-based deduplication
+ * Every library file gets its own cache copy
  * Returns cache file ID
  */
 export async function cacheImageFile(
@@ -259,42 +262,19 @@ export async function cacheImageFile(
   sourceUrl?: string,
   providerName?: string
 ): Promise<number> {
-  // Calculate hash
+  // Calculate hash (for rescan detection, NOT for deduplication)
   const fileBuffer = await fs.readFile(sourceFilePath);
   const fileHash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
 
-  // Check if already cached
-  const existing = await findCachedImageByHash(db, fileHash);
-  if (existing) {
-    logger.info('Image already cached, reusing', {
-      existingId: existing.id,
-      fileHash,
-      referenceCount: existing.referenceCount
-    });
+  // Generate UUID for cache file naming
+  const uuid = crypto.randomUUID();
+  const ext = path.extname(sourceFilePath);
 
-    // Increment reference count
-    await db.execute(
-      `UPDATE image_files SET reference_count = reference_count + 1, last_accessed_at = CURRENT_TIMESTAMP WHERE id = ?`,
-      [existing.id]
-    );
-
-    // Link library file to cache (if library file exists)
-    if (libraryFileId) {
-      await db.execute(
-        `UPDATE image_files SET cache_file_id = ? WHERE id = ?`,
-        [existing.id, libraryFileId]
-      );
-    }
-
-    return existing.id!;
-  }
-
-  // New image - create cache file
-  const cacheDir = path.join(process.cwd(), 'data', 'cache', 'images', fileHash.slice(0, 2), fileHash.slice(2, 4));
+  // Create cache directory structure: /cache/images/{entityType}/{entityId}/
+  const cacheDir = path.join(process.cwd(), 'data', 'cache', 'images', entityType, String(entityId));
   await fs.mkdir(cacheDir, { recursive: true });
 
-  const ext = path.extname(sourceFilePath);
-  const cachePath = path.join(cacheDir, `${fileHash}${ext}`);
+  const cachePath = path.join(cacheDir, `${uuid}${ext}`);
 
   // Copy to cache
   await fs.copyFile(sourceFilePath, cachePath);
@@ -307,7 +287,7 @@ export async function cacheImageFile(
     entityType,
     entityId,
     filePath: cachePath,
-    fileName: `${fileHash}${ext}`,
+    fileName: `${uuid}${ext}`,
     fileSize: fileBuffer.length,
     fileHash,
     location: 'cache',
@@ -318,7 +298,7 @@ export async function cacheImageFile(
     sourceType,
     ...(sourceUrl && { sourceUrl }),
     ...(providerName && { providerName }),
-    isPublished: true,
+    isPublished: false, // Not published until selection phase
     ...(libraryFileId && { libraryFileId }),
     referenceCount: 1
   });
@@ -333,6 +313,7 @@ export async function cacheImageFile(
 
   logger.info('Cached new image file', {
     cacheFileId,
+    uuid,
     fileHash,
     cachePath,
     sourceType,
