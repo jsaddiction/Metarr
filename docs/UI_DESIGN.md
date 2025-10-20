@@ -327,6 +327,101 @@ export const General: React.FC = () => {
    - Maintain smooth animations for expand/collapse
    - Show active states clearly with purple accent
 
+## Reusable Components
+
+### ZoomableImage Component
+
+**Location:** `public/frontend/src/components/ui/ZoomableImage.tsx`
+
+**Purpose:** Provides a consistent, polished image zoom-on-hover effect throughout the application.
+
+**Features:**
+- **2x Scale Zoom**: Smooth animation on hover (300ms ease-in-out)
+- **Clip-Path Transition**: Rounded corners (8px radius) smoothly transition to none on zoom
+- **Purple Border**: 1px transparent border transitions to primary-500 on hover
+- **Z-Index Management**: Smart layering prevents overlap issues during animation
+- **Optional Badge**: Bottom-left overlay for metadata (e.g., provider source)
+- **Accessibility**: Proper alt text, aria-labels, draggable disabled
+- **Background**: neutral-800 for transparent images (logos, disc art)
+
+**Technical Implementation:**
+
+```tsx
+// Z-index timing (prevents sidebar clipping on exit)
+z-0                                    // Default state
+group-hover:z-50                       // Immediately raise on hover
+[transition:z-index_0s_300ms]          // Delay 300ms before dropping on exit
+group-hover:[transition:z-index_0s_0s] // No delay on hover
+
+// Border transition (smooth appearance)
+border border-transparent              // Always has border (prevents layout shift)
+group-hover:border-primary-500         // Violet border on zoom
+
+// Clip-path transition (rounded corners)
+style={{ clipPath: 'inset(0 0 0 0 round 8px)' }}  // Default: rounded
+group-hover:[clip-path:none]                        // Zoom: no clipping
+```
+
+**Usage Example:**
+
+```tsx
+import { ZoomableImage } from '../ui/ZoomableImage';
+
+// Simple usage
+<ZoomableImage
+  src="/path/to/image.jpg"
+  alt="Movie poster"
+  aspectRatio="aspect-[2/3]"
+/>
+
+// With badge
+<ZoomableImage
+  src="/path/to/fanart.jpg"
+  alt="Movie fanart"
+  aspectRatio="aspect-[16/9]"
+  badge="TMDB"
+  badgeAriaLabel="Source: The Movie Database"
+/>
+```
+
+**Props:**
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `src` | `string` | Required | Image URL |
+| `alt` | `string` | Required | Accessibility description |
+| `aspectRatio` | `string` | `'aspect-[2/3]'` | Tailwind aspect ratio class |
+| `badge` | `string` | `undefined` | Optional badge text (bottom-left) |
+| `badgeAriaLabel` | `string` | `badge` | Accessibility label for badge |
+| `className` | `string` | `''` | Additional classes for card wrapper |
+
+**Common Aspect Ratios:**
+- **Posters/Key Art**: `aspect-[2/3]` (portrait)
+- **Fanart/Landscape**: `aspect-[16/9]` (widescreen)
+- **Banners**: `aspect-[1000/185]` (ultra-wide)
+- **Disc Art**: `aspect-square`
+- **Clear Logos**: `aspect-[800/310]`
+- **Clear Art**: `aspect-[1000/562]`
+
+**Known Limitations:**
+- May cause temporary horizontal scrollbar on right viewport edge (acceptable trade-off)
+- Z-index conflicts possible when rapidly moving mouse between images (minor visual glitch)
+- Uses CSS clip-path (not supported in IE11, acceptable for modern browsers)
+
+**Where Used:**
+- Movie/Series/Music asset selection (posters, fanart, logos, etc.)
+- Actor thumbnails
+- Artist images
+- Any image gallery that benefits from zoom preview
+
+**Design Decision (2025-10-19):**
+After extensive refinement, we settled on:
+- 2x scale (tested 1.8x, reverted for better UX)
+- 8px border radius (tested 10px, 12px - 8px matches app consistency)
+- Z-index delay of 300ms (matches animation duration)
+- Clip-path over overflow manipulation (smoother transition)
+- Accept scrollbar edge case over complex JavaScript position detection
+
 ## Styling & Design System
 
 ### Color Palette (globals.css)

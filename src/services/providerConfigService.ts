@@ -1,6 +1,7 @@
 import { DatabaseConnection } from '../types/database.js';
 import { ProviderConfig, UpdateProviderRequest } from '../types/provider.js';
 import { logger } from '../middleware/logging.js';
+import { getDefaultApiKey, hasDefaultApiKey } from '../config/providerDefaults.js';
 
 /**
  * Provider Configuration Service
@@ -12,6 +13,7 @@ export class ProviderConfigService {
 
   /**
    * Get all provider configurations
+   * Includes both database records and default configs for providers with default API keys
    */
   async getAll(): Promise<ProviderConfig[]> {
     const rows = await this.db.query<{
@@ -30,14 +32,43 @@ export class ProviderConfigService {
       created_at: string;
       updated_at: string;
     }>(
-      `SELECT * FROM provider_configs ORDER BY provider_name ASC`
+      `SELECT * FROM provider_config ORDER BY provider_name ASC`
     );
 
-    return rows.map(this.mapRowToConfig);
+    const dbConfigs = rows.map(this.mapRowToConfig);
+    const configMap = new Map<string, ProviderConfig>();
+
+    // Add database configs first (they override defaults)
+    for (const config of dbConfigs) {
+      configMap.set(config.providerName, config);
+    }
+
+    // Add default configs for providers not in database
+    const supportedProviders = ['tmdb', 'fanart_tv', 'tvdb'];
+    for (const providerName of supportedProviders) {
+      if (!configMap.has(providerName) && hasDefaultApiKey(providerName)) {
+        const defaultApiKey = getDefaultApiKey(providerName);
+        if (defaultApiKey) {
+          configMap.set(providerName, {
+            id: 0, // Temporary ID for default configs
+            providerName,
+            enabled: true,
+            apiKey: defaultApiKey,
+            createdAt: new Date(),
+            updatedAt: new Date()
+          });
+        }
+      }
+    }
+
+    return Array.from(configMap.values()).sort((a, b) =>
+      a.providerName.localeCompare(b.providerName)
+    );
   }
 
   /**
    * Get a single provider configuration by name
+   * If no database record exists but a default API key is available, return a default config
    */
   async getByName(providerName: string): Promise<ProviderConfig | null> {
     const rows = await this.db.query<{
@@ -56,11 +87,33 @@ export class ProviderConfigService {
       created_at: string;
       updated_at: string;
     }>(
-      `SELECT * FROM provider_configs WHERE provider_name = ?`,
+      `SELECT * FROM provider_config WHERE provider_name = ?`,
       [providerName]
     );
 
     if (rows.length === 0) {
+      // No database record - check if we have a default API key
+      if (hasDefaultApiKey(providerName)) {
+        const defaultApiKey = getDefaultApiKey(providerName);
+        if (!defaultApiKey) {
+          logger.warn(`Default API key is undefined for provider: ${providerName}`);
+          return null;
+        }
+
+        logger.debug(`Using default API key for provider: ${providerName}`);
+
+        // Return a default config with the default API key
+        return {
+          id: 0, // Temporary ID for default configs
+          providerName,
+          enabled: true, // Default to enabled if we have an API key
+          apiKey: defaultApiKey,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        };
+      }
+
+      // No default available - provider not supported or not configured
       return null;
     }
 
@@ -76,7 +129,7 @@ export class ProviderConfigService {
     if (existing) {
       // Update existing
       await this.db.execute(
-        `UPDATE provider_configs
+        `UPDATE provider_config
          SET enabled = ?,
              api_key = ?,
              personal_api_key = ?,
@@ -100,7 +153,7 @@ export class ProviderConfigService {
     } else {
       // Insert new
       await this.db.execute(
-        `INSERT INTO provider_configs (
+        `INSERT INTO provider_config (
           provider_name,
           enabled,
           api_key,
@@ -142,7 +195,7 @@ export class ProviderConfigService {
     error?: string
   ): Promise<void> {
     await this.db.execute(
-      `UPDATE provider_configs
+      `UPDATE provider_config
        SET last_test_at = CURRENT_TIMESTAMP,
            last_test_status = ?,
            last_test_error = ?,
@@ -159,7 +212,7 @@ export class ProviderConfigService {
    */
   async disable(providerName: string): Promise<void> {
     await this.db.execute(
-      `UPDATE provider_configs
+      `UPDATE provider_config
        SET enabled = 0,
            api_key = NULL,
            updated_at = CURRENT_TIMESTAMP

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ViewControls, ViewMode } from '../components/ui/ViewControls';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 export const Series: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -33,10 +34,12 @@ export const Series: React.FC = () => {
       </div>
 
       <div className="content-spacing">
-        <div className="card">
-          <div className="card-body">
-            <h3 className="text-lg text-primary mb-3">Series Metadata Features</h3>
-            <ul className="text-secondary">
+        <Card>
+          <CardHeader>
+            <CardTitle>Series Metadata Features</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ul className="text-secondary space-y-2">
               <li>• Series metadata completeness tracking</li>
               <li>• Season and episode information</li>
               <li>• Poster, backdrop, and episode stills</li>
@@ -53,8 +56,8 @@ export const Series: React.FC = () => {
                 complete artwork collection for all seasons and episodes.
               </p>
             </div>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       </div>
     </>
   );

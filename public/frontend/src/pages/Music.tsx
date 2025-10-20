@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ViewControls, ViewMode } from '../components/ui/ViewControls';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 export const Music: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -33,10 +34,12 @@ export const Music: React.FC = () => {
       </div>
 
       <div className="content-spacing">
-        <div className="card">
-          <div className="card-body">
-            <h3 className="text-lg text-primary mb-3">Music Metadata Features</h3>
-            <ul className="text-secondary">
+        <Card>
+          <CardHeader>
+            <CardTitle>Music Metadata Features</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ul className="text-secondary space-y-2">
               <li>• Album and track metadata completeness</li>
               <li>• Album artwork and artist images</li>
               <li>• Integration with Lidarr webhooks</li>
@@ -51,8 +54,8 @@ export const Music: React.FC = () => {
                 music library metadata management and artwork collection.
               </p>
             </div>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       </div>
     </>
   );

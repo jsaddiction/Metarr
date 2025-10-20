@@ -16,29 +16,39 @@ export const VirtualizedMovieTable: React.FC<VirtualizedMovieTableProps> = ({
   onRefreshClick
 }) => {
   return (
-    <div className="bg-neutral-800 rounded-lg border border-neutral-700 overflow-hidden">
-      {/* Fixed Table Header */}
-      <div className="bg-neutral-700 grid grid-cols-[40px_25%_auto_80px] py-3 px-4 border-b border-neutral-600">
-        <div className="font-medium text-neutral-200 text-center" title="Monitored Status">
-          {/* Bookmark icon header */}
-        </div>
-        <div className="font-medium text-neutral-200">Movie Title</div>
-        <div className="font-medium text-neutral-200">Metadata</div>
-        <div className="font-medium text-neutral-200 text-center">
-          <FontAwesomeIcon icon={faBolt} title="Actions" />
-        </div>
-      </div>
+    <div className="rounded-lg border border-neutral-700 overflow-hidden">
+      <div className="relative w-full overflow-auto">
+        <table className="w-full caption-bottom text-sm">
+          {/* Fixed Table Header */}
+          <thead className="[&_tr]:border-b sticky top-0 bg-neutral-950 z-10">
+            <tr className="border-b border-neutral-700 transition-colors">
+              <th className="h-10 px-2 text-center align-middle font-medium text-muted-foreground w-[40px]" title="Monitored Status">
+                {/* Bookmark icon header */}
+              </th>
+              <th className="h-10 px-2 text-left align-middle font-medium text-muted-foreground w-[25%]">
+                Movie Title
+              </th>
+              <th className="h-10 px-2 text-left align-middle font-medium text-muted-foreground">
+                Metadata
+              </th>
+              <th className="h-10 px-2 text-center align-middle font-medium text-muted-foreground w-[80px]">
+                <FontAwesomeIcon icon={faBolt} title="Actions" />
+              </th>
+            </tr>
+          </thead>
 
-      {/* Movie Rows */}
-      <div className="max-h-[600px] overflow-y-auto">
-        {movies.map((movie) => (
-          <MovieRow
-            key={movie.id}
-            movie={movie}
-            onClick={onMovieClick}
-            onRefresh={onRefreshClick}
-          />
-        ))}
+          {/* Movie Rows */}
+          <tbody className="[&_tr:last-child]:border-0">
+            {movies.map((movie) => (
+              <MovieRow
+                key={movie.id}
+                movie={movie}
+                onClick={onMovieClick}
+                onRefresh={onRefreshClick}
+              />
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );

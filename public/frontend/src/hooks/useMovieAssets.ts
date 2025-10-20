@@ -92,6 +92,7 @@ export const useMovieImages = (movieId: number | null) => {
       const data = await response.json();
 
       // Extract and group images by type from files.images
+      // Backend already filters for cache-only images
       const grouped: ImagesByType = {};
       if (data.files && data.files.images) {
         data.files.images.forEach((img: any) => {
@@ -99,7 +100,26 @@ export const useMovieImages = (movieId: number | null) => {
           if (!grouped[type]) {
             grouped[type] = [];
           }
-          grouped[type].push(img);
+
+          // Extract relative path from cache directory
+          // file_path example: C:\Users\...\data\cache\images\29\75\hash.jpg
+          // We want: /cache/images/29/75/hash.jpg
+          let cacheUrl = null;
+          if (img.file_path) {
+            // Extract the path after 'cache\' or 'cache/'
+            const pathParts = img.file_path.split(/[\/\\]cache[\/\\]/i);
+            if (pathParts.length > 1) {
+              // Convert backslashes to forward slashes and prepend /cache
+              cacheUrl = `/cache/${pathParts[1].replace(/\\/g, '/')}`;
+            }
+          }
+
+          const imageWithUrl = {
+            ...img,
+            cache_url: cacheUrl,
+            cache_path: img.file_path, // For compatibility
+          };
+          grouped[type].push(imageWithUrl);
         });
       }
 

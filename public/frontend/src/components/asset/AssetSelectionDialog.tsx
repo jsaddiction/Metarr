@@ -15,7 +15,7 @@ import {
   AssetType,
 } from '../../types/asset';
 import { AssetCard } from './AssetCard';
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
@@ -86,6 +86,7 @@ export const AssetSelectionDialog: React.FC<AssetSelectionDialogProps> = ({
   onSelect,
   assetType,
   currentAsset,
+  selectedAssets = [],
   providerResults,
   isLoading = false,
   error = null,
@@ -106,6 +107,12 @@ export const AssetSelectionDialog: React.FC<AssetSelectionDialogProps> = ({
 
     const assets: Array<{ asset: AssetCandidate; provider: string; score?: number }> = [];
 
+    // Build a set of already-selected URLs and perceptual hashes for fast lookup
+    const selectedUrls = new Set(selectedAssets.map((a) => a.url).filter(Boolean));
+    const selectedHashes = new Set(
+      selectedAssets.map((a) => a.cache_path).filter(Boolean) // Use cache_path as proxy for hash
+    );
+
     for (const [providerName, result] of Object.entries(providerResults.providers)) {
       // Skip if provider failed or returned no data
       if (!result || !result.images || !result.images[assetType]) continue;
@@ -113,10 +120,22 @@ export const AssetSelectionDialog: React.FC<AssetSelectionDialogProps> = ({
       const providerAssets = result.images[assetType] || [];
 
       for (const asset of providerAssets) {
+        // Filter out already-selected assets by URL
+        if (selectedUrls.has(asset.url)) {
+          continue;
+        }
+
+        // Filter out already-selected assets by perceptual hash (if available)
+        if (asset.perceptualHash && selectedHashes.has(asset.perceptualHash)) {
+          continue;
+        }
+
         // Check if this asset is recommended
         const recommendation = providerResults.recommendations?.[assetType];
         const score =
-          recommendation && recommendation.asset.url === asset.url ? recommendation.score : undefined;
+          recommendation && recommendation.asset && recommendation.asset.url === asset.url
+            ? recommendation.score
+            : undefined;
 
         assets.push({
           asset,
@@ -127,7 +146,7 @@ export const AssetSelectionDialog: React.FC<AssetSelectionDialogProps> = ({
     }
 
     return assets;
-  }, [providerResults, assetType]);
+  }, [providerResults, assetType, selectedAssets]);
 
   // Get recommendation (only present for automated workflows)
   const recommendation = providerResults?.recommendations?.[assetType];
@@ -221,7 +240,7 @@ export const AssetSelectionDialog: React.FC<AssetSelectionDialogProps> = ({
 
   // Handle quick select (use recommended) - only for automated workflows
   const handleQuickSelect = () => {
-    if (recommendation) {
+    if (recommendation && recommendation.asset) {
       onSelect(recommendation.asset, recommendation.provider);
       onClose();
     }
@@ -233,7 +252,13 @@ export const AssetSelectionDialog: React.FC<AssetSelectionDialogProps> = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-6xl max-h-[90vh] flex flex-col p-0">
+      <DialogContent className="max-w-6xl max-h-[90vh] flex flex-col p-0" aria-describedby="asset-selection-description">
+        {/* Visually hidden title for accessibility */}
+        <DialogTitle className="sr-only">Select {assetInfo.displayName}</DialogTitle>
+        <DialogDescription className="sr-only" id="asset-selection-description">
+          Choose a {assetInfo.displayName} image from available providers. {assetInfo.description}
+        </DialogDescription>
+
         {/* Header with Current Asset and Filters - Fixed Height */}
         <div className="px-6 py-3 border-b border-neutral-700 bg-neutral-900/50 flex-shrink-0" style={{ height: '140px' }}>
           <div className="flex gap-4 h-full">
@@ -279,7 +304,7 @@ export const AssetSelectionDialog: React.FC<AssetSelectionDialogProps> = ({
               {/* Title Row */}
               <div className="flex items-center justify-between mb-2">
                 <div>
-                  <h2 id="asset-selection-title" className="text-xl font-semibold">Select {assetInfo.displayName}</h2>
+                  <h2 className="text-xl font-semibold">Select {assetInfo.displayName}</h2>
                   <p className="text-xs text-neutral-400 mt-0.5">{assetInfo.description}</p>
                 </div>
               </div>
@@ -375,7 +400,7 @@ export const AssetSelectionDialog: React.FC<AssetSelectionDialogProps> = ({
           {!isLoading && !error && (
             <>
               {/* Recommended (only for automated workflows) */}
-              {recommendation && (
+              {recommendation && recommendation.asset && (
                 <div className="mb-6">
                   <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
                     Recommended (Best Match)
@@ -437,7 +462,7 @@ export const AssetSelectionDialog: React.FC<AssetSelectionDialogProps> = ({
                           selectedAsset?.provider === item.provider
                         }
                         isRecommended={
-                          recommendation?.asset.url === item.asset.url &&
+                          recommendation?.asset?.url === item.asset.url &&
                           recommendation?.provider === item.provider
                         }
                         score={item.score}

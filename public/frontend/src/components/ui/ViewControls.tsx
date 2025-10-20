@@ -11,6 +11,7 @@ import {
   faEye,
   faChevronDown
 } from '@fortawesome/free-solid-svg-icons';
+import { useTheme } from '../../contexts/ThemeContext';
 
 export type ViewMode = 'table' | 'poster' | 'overview';
 
@@ -47,6 +48,8 @@ export const ViewControls: React.FC<ViewControlsProps> = ({
 }) => {
   const [showViewDropdown, setShowViewDropdown] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const { theme } = useTheme();
+  const isLight = theme === 'light';
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -90,7 +93,9 @@ export const ViewControls: React.FC<ViewControlsProps> = ({
     setShowViewDropdown(false);
   };
   return (
-    <div className="sticky top-16 z-30 bg-neutral-800 border-b border-neutral-700 px-6 py-4">
+    <div className={`fixed top-14 left-0 right-0 md:left-56 z-20 px-6 py-2 ${
+      isLight ? 'bg-white' : 'bg-neutral-950'
+    }`}>
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-4">
           <div className="relative">
@@ -100,7 +105,11 @@ export const ViewControls: React.FC<ViewControlsProps> = ({
             <input
               type="text"
               placeholder={searchPlaceholder}
-              className="form-input pl-10 pr-4 py-2 w-64 bg-neutral-700 border-neutral-600 text-white placeholder-neutral-400"
+              className={`form-input pl-10 pr-4 py-2 w-64 ${
+                isLight
+                  ? 'bg-neutral-100 border-neutral-300 text-neutral-900 placeholder-neutral-500'
+                  : 'bg-neutral-900 border-neutral-700 text-white placeholder-neutral-400'
+              }`}
               value={searchValue}
               onChange={(e) => onSearchChange?.(e.target.value)}
             />
@@ -136,13 +145,15 @@ export const ViewControls: React.FC<ViewControlsProps> = ({
                 </button>
 
                 {showViewDropdown && (
-                  <div className="absolute right-0 mt-2 w-48 bg-neutral-800 border border-neutral-700 rounded-md shadow-lg z-50" role="menu">
+                  <div className={`absolute right-0 mt-2 w-48 rounded-md shadow-lg z-50 ${
+                    isLight ? 'bg-white border border-neutral-300' : 'bg-neutral-800 border border-neutral-700'
+                  }`} role="menu">
                     <div className="py-1">
                       <button
-                        className={`w-full text-left px-4 py-2 text-sm flex items-center space-x-2 hover:bg-neutral-700 ${
-                          viewMode === 'table'
-                            ? 'bg-primary-500 text-white'
-                            : 'text-neutral-300'
+                        className={`w-full text-left px-4 py-2 text-sm flex items-center space-x-2 ${
+                          isLight
+                            ? `hover:bg-neutral-100 ${viewMode === 'table' ? 'bg-primary-500 text-white' : 'text-neutral-900'}`
+                            : `hover:bg-neutral-700 ${viewMode === 'table' ? 'bg-primary-500 text-white' : 'text-neutral-300'}`
                         }`}
                         onClick={() => handleViewModeSelect('table')}
                         role="menuitem"
@@ -151,10 +162,10 @@ export const ViewControls: React.FC<ViewControlsProps> = ({
                         <span>Table</span>
                       </button>
                       <button
-                        className={`w-full text-left px-4 py-2 text-sm flex items-center space-x-2 hover:bg-neutral-700 ${
-                          viewMode === 'poster'
-                            ? 'bg-primary-500 text-white'
-                            : 'text-neutral-300'
+                        className={`w-full text-left px-4 py-2 text-sm flex items-center space-x-2 ${
+                          isLight
+                            ? `hover:bg-neutral-100 ${viewMode === 'poster' ? 'bg-primary-500 text-white' : 'text-neutral-900'}`
+                            : `hover:bg-neutral-700 ${viewMode === 'poster' ? 'bg-primary-500 text-white' : 'text-neutral-300'}`
                         }`}
                         onClick={() => handleViewModeSelect('poster')}
                         role="menuitem"
@@ -163,10 +174,10 @@ export const ViewControls: React.FC<ViewControlsProps> = ({
                         <span>Posters</span>
                       </button>
                       <button
-                        className={`w-full text-left px-4 py-2 text-sm flex items-center space-x-2 hover:bg-neutral-700 ${
-                          viewMode === 'overview'
-                            ? 'bg-primary-500 text-white'
-                            : 'text-neutral-300'
+                        className={`w-full text-left px-4 py-2 text-sm flex items-center space-x-2 ${
+                          isLight
+                            ? `hover:bg-neutral-100 ${viewMode === 'overview' ? 'bg-primary-500 text-white' : 'text-neutral-900'}`
+                            : `hover:bg-neutral-700 ${viewMode === 'overview' ? 'bg-primary-500 text-white' : 'text-neutral-300'}`
                         }`}
                         onClick={() => handleViewModeSelect('overview')}
                         role="menuitem"

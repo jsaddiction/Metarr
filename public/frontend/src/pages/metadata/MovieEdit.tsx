@@ -22,6 +22,7 @@ import { AnimatedTabs, AnimatedTabsContent } from '../../components/ui/AnimatedT
 import { MetadataTab } from '../../components/movie/MetadataTab';
 import { ImagesTab } from '../../components/movie/ImagesTab';
 import { ExtrasTab } from '../../components/movie/ExtrasTab';
+import { CastTab } from '../../components/movie/CastTab';
 import { useMovie } from '../../hooks/useMovies';
 import {
   useAssignUnknownFile,
@@ -30,7 +31,7 @@ import {
   useDeleteUnknownFile,
 } from '../../hooks/useMovieAssets';
 
-type TabType = 'metadata' | 'images' | 'extras' | 'unknown-files';
+type TabType = 'metadata' | 'images' | 'cast' | 'extras' | 'unknown-files';
 
 interface AssignModalData {
   fileId: number;
@@ -288,7 +289,7 @@ export const MovieEdit: React.FC = () => {
   return (
     <div className="content-spacing">
       {/* Header */}
-      <div className="flex items-center mb-6">
+      <div className="flex items-center mb-4">
         <button
           onClick={handleBack}
           className="btn btn-ghost"
@@ -308,6 +309,7 @@ export const MovieEdit: React.FC = () => {
         tabs={[
           { value: 'metadata', label: 'Metadata' },
           { value: 'images', label: 'Images' },
+          { value: 'cast', label: 'Cast' },
           { value: 'extras', label: 'Extras' },
           {
             value: 'unknown-files',
@@ -319,7 +321,6 @@ export const MovieEdit: React.FC = () => {
             ) : undefined,
           },
         ]}
-        className="mb-6"
       >
         <AnimatedTabsContent value="metadata">
           {id && <MetadataTab movieId={parseInt(id)} />}
@@ -327,6 +328,10 @@ export const MovieEdit: React.FC = () => {
 
         <AnimatedTabsContent value="images">
           {id && <ImagesTab movieId={parseInt(id)} />}
+        </AnimatedTabsContent>
+
+        <AnimatedTabsContent value="cast">
+          {id && <CastTab movieId={parseInt(id)} />}
         </AnimatedTabsContent>
 
         <AnimatedTabsContent value="extras">

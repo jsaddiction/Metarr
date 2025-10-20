@@ -1,12 +1,15 @@
 import React from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 export const History: React.FC = () => {
   return (
     <div className="content-spacing">
-      <div className="card">
-        <div className="card-body">
-          <h3 className="text-lg text-primary mb-3">Activity History</h3>
-          <ul className="text-secondary">
+      <Card>
+        <CardHeader>
+          <CardTitle>Activity History</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ul className="text-secondary space-y-2">
             <li>• Completed webhook processing logs</li>
             <li>• Historical metadata updates</li>
             <li>• Past provider API calls</li>
@@ -15,8 +18,8 @@ export const History: React.FC = () => {
             <li>• User action timeline</li>
             <li>• Job completion history with timestamps</li>
           </ul>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
     </div>
   );
 };

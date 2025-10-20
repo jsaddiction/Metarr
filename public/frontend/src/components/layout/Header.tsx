@@ -10,9 +10,12 @@ interface HeaderProps {
 
 export const Header: React.FC<HeaderProps> = ({ title, onToggleSidebar }) => {
   const { theme, toggleTheme } = useTheme();
+  const isLight = theme === 'light';
 
   return (
-    <header className="fixed top-0 right-0 left-0 z-40 h-16 bg-neutral-800 flex items-center justify-between px-6">
+    <header className={`fixed top-0 right-0 left-0 z-40 h-14 flex items-center justify-between px-6 ${
+      isLight ? 'bg-white' : 'bg-neutral-950'
+    }`}>
       <div className="flex items-center">
         <button
           className="btn btn-ghost p-2 mr-4 md:hidden"
@@ -25,7 +28,7 @@ export const Header: React.FC<HeaderProps> = ({ title, onToggleSidebar }) => {
           <div className="w-8 h-8 bg-primary-500 rounded-lg flex items-center justify-center text-white font-bold text-lg">
             M
           </div>
-          <span className="ml-3 text-xl font-bold text-white">METARR</span>
+          <span className={`ml-3 text-xl font-bold ${isLight ? 'text-neutral-900' : 'text-white'}`}>METARR</span>
         </div>
       </div>
 

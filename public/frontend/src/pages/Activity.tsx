@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ViewControls } from '../components/ui/ViewControls';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 export const Activity: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -10,10 +11,12 @@ export const Activity: React.FC = () => {
 
   return (
     <div className="content-spacing">
-      <div className="card">
-        <div className="card-body">
-          <h3 className="text-lg text-primary mb-3">Activity Features</h3>
-          <ul className="text-secondary">
+      <Card>
+        <CardHeader>
+          <CardTitle>Activity Features</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ul className="text-secondary space-y-2">
             <li>• Real-time webhook processing logs</li>
             <li>• Metadata update notifications</li>
             <li>• Provider API call tracking</li>
@@ -28,8 +31,8 @@ export const Activity: React.FC = () => {
               webhooks, along with metadata processing status and system health information.
             </p>
           </div>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
     </div>
   );
 };

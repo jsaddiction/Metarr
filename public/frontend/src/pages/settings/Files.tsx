@@ -1,13 +1,16 @@
 import React from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 export const Files: React.FC = () => {
   return (
     <div className="content-spacing">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="card">
-            <div className="card-body">
-              <h3 className="text-lg text-primary mb-3">Naming Conventions</h3>
-              <ul className="text-secondary">
+          <Card>
+            <CardHeader>
+              <CardTitle>Naming Conventions</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ul className="text-secondary space-y-2">
                 <li>• Movie file naming patterns</li>
                 <li>• TV series and episode formats</li>
                 <li>• Music album and track naming</li>
@@ -15,13 +18,15 @@ export const Files: React.FC = () => {
                 <li>• Multi-part media naming</li>
                 <li>• Custom naming templates</li>
               </ul>
-            </div>
-          </div>
+            </CardContent>
+          </Card>
 
-          <div className="card">
-            <div className="card-body">
-              <h3 className="text-lg text-primary mb-3">File Organization</h3>
-              <ul className="text-secondary">
+          <Card>
+            <CardHeader>
+              <CardTitle>File Organization</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ul className="text-secondary space-y-2">
                 <li>• Directory structure preferences</li>
                 <li>• Folder creation rules</li>
                 <li>• File sorting and categorization</li>
@@ -29,13 +34,15 @@ export const Files: React.FC = () => {
                 <li>• Archive extraction settings</li>
                 <li>• Cleanup and maintenance rules</li>
               </ul>
-            </div>
-          </div>
+            </CardContent>
+          </Card>
 
-          <div className="card">
-            <div className="card-body">
-              <h3 className="text-lg text-primary mb-3">Metadata Files</h3>
-              <ul className="text-secondary">
+          <Card>
+            <CardHeader>
+              <CardTitle>Metadata Files</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ul className="text-secondary space-y-2">
                 <li>• NFO file generation settings</li>
                 <li>• Sidecar file preferences</li>
                 <li>• Subtitle file handling</li>
@@ -43,13 +50,15 @@ export const Files: React.FC = () => {
                 <li>• Artwork file organization</li>
                 <li>• Metadata embedding options</li>
               </ul>
-            </div>
-          </div>
+            </CardContent>
+          </Card>
 
-          <div className="card">
-            <div className="card-body">
-              <h3 className="text-lg text-primary mb-3">Watch Folders & Monitoring</h3>
-              <ul className="text-secondary">
+          <Card>
+            <CardHeader>
+              <CardTitle>Watch Folders & Monitoring</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ul className="text-secondary space-y-2">
                 <li>• File system monitoring settings</li>
                 <li>• Watch folder configuration</li>
                 <li>• Auto-import preferences</li>
@@ -57,8 +66,8 @@ export const Files: React.FC = () => {
                 <li>• Processing queue management</li>
                 <li>• Error handling and retry logic</li>
               </ul>
-            </div>
-          </div>
+            </CardContent>
+          </Card>
       </div>
     </div>
   );
