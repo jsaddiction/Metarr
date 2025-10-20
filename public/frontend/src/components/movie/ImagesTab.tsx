@@ -17,11 +17,12 @@ import {
   useUploadImage,
   useToggleImageLock,
   useDeleteImage,
-  useRebuildAssets,
 } from '../../hooks/useMovieAssets';
-import { AssetSelectionDialog } from '../asset/AssetSelectionDialog';
 import { AssetCard } from '../asset/AssetCard';
 import { AssetBrowserModal } from '../ui/AssetBrowserModal';
+import { CurrentAssetCard } from './CurrentAssetCard';
+import { EmptySlotCard } from './EmptySlotCard';
+import { AssetSelectionModal } from './AssetSelectionModal';
 import { assetApi } from '../../utils/api';
 import type { AssetType } from '../../types/providers/capabilities';
 import type { AssetCandidate } from '../../types/asset';
@@ -36,6 +37,7 @@ interface Image {
   entity_id: number;
   image_type: string;
   url: string | null;
+  provider_name: string | null;
   cache_path: string | null;
   library_path: string | null;
   file_path: string | null;
@@ -50,16 +52,16 @@ interface ImagesByType {
   [key: string]: Image[];
 }
 
-const IMAGE_TYPES = [
-  { key: 'poster', label: 'Posters', max: 20, aspectRatio: 'aspect-[2/3]' }, // 2:3 portrait (1000x1500)
-  { key: 'fanart', label: 'Fanart', max: 20, aspectRatio: 'aspect-[16/9]' }, // 16:9 widescreen (1920x1080)
-  { key: 'banner', label: 'Banners', max: 1, aspectRatio: 'aspect-[1000/185]' }, // Wide banner (1000x185)
-  { key: 'clearlogo', label: 'Clear Logos', max: 1, aspectRatio: 'aspect-[800/310]' }, // Logo (800x310)
-  { key: 'clearart', label: 'Clear Art', max: 1, aspectRatio: 'aspect-[1000/562]' }, // 16:9-ish (1000x562)
-  { key: 'landscape', label: 'Landscapes', max: 1, aspectRatio: 'aspect-[16/9]' }, // 16:9 widescreen (1920x1080)
-  { key: 'keyart', label: 'Key Art', max: 1, aspectRatio: 'aspect-[2/3]' }, // 2:3 portrait (1000x1500)
-  { key: 'discart', label: 'Disc Art', max: 1, aspectRatio: 'aspect-square' }, // 1:1 square (1000x1000)
-];
+const ASSET_TYPE_INFO: Record<string, { label: string; aspectRatio: string; gridCols: string }> = {
+  poster: { label: 'Posters', aspectRatio: 'aspect-[2/3]', gridCols: 'grid grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-4' },
+  fanart: { label: 'Fanart', aspectRatio: 'aspect-[16/9]', gridCols: 'grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4' },
+  banner: { label: 'Banners', aspectRatio: 'aspect-[1000/185]', gridCols: 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4' },
+  clearlogo: { label: 'Clear Logos', aspectRatio: 'aspect-[800/310]', gridCols: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4' },
+  clearart: { label: 'Clear Art', aspectRatio: 'aspect-[1000/562]', gridCols: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4' },
+  landscape: { label: 'Landscapes', aspectRatio: 'aspect-[16/9]', gridCols: 'grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4' },
+  keyart: { label: 'Key Art', aspectRatio: 'aspect-[2/3]', gridCols: 'grid grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-4' },
+  discart: { label: 'Disc Art', aspectRatio: 'aspect-square', gridCols: 'grid grid-cols-3 md:grid-cols-5 lg:grid-cols-7 xl:grid-cols-9 gap-4' },
+};
 
 export const ImagesTab: React.FC<ImagesTabProps> = ({ movieId }) => {
   // Use TanStack Query hooks
@@ -67,14 +69,22 @@ export const ImagesTab: React.FC<ImagesTabProps> = ({ movieId }) => {
   const uploadImageMutation = useUploadImage(movieId);
   const toggleLockMutation = useToggleImageLock(movieId);
   const deleteImageMutation = useDeleteImage(movieId);
-  const rebuildAssetsMutation = useRebuildAssets(movieId);
 
-  const [uploadType, setUploadType] = useState<string | null>(null);
+  // Fetch asset limits configuration
+  const { data: assetLimits = {} } = useQuery<Record<string, number>>({
+    queryKey: ['asset-limits'],
+    queryFn: async () => {
+      const response = await fetch('/api/settings/asset-limits');
+      if (!response.ok) throw new Error('Failed to fetch asset limits');
+      return response.json();
+    },
+    staleTime: 1000 * 60 * 60, // 1 hour - limits rarely change
+  });
+
   const [fullscreenImage, setFullscreenImage] = useState<Image | null>(null);
   const [assetDialogOpen, setAssetDialogOpen] = useState(false);
   const [assetBrowserOpen, setAssetBrowserOpen] = useState(false);
   const [selectedAssetType, setSelectedAssetType] = useState<AssetType | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Convert Image to AssetCandidate for use with AssetCard
   const imageToAssetCandidate = (image: Image, assetType: string): AssetCandidate => ({
@@ -101,30 +111,6 @@ export const ImagesTab: React.FC<ImagesTabProps> = ({ movieId }) => {
     staleTime: 1000 * 60 * 60, // 1 hour cache
   });
 
-  const handleUploadClick = (imageType: string) => {
-    setUploadType(imageType);
-    fileInputRef.current?.click();
-  };
-
-  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files || !e.target.files[0] || !uploadType) return;
-
-    const file = e.target.files[0];
-
-    try {
-      await uploadImageMutation.mutateAsync({ file, type: uploadType });
-      // Success - TanStack Query will automatically refetch
-    } catch (error) {
-      console.error('Failed to upload image:', error);
-      alert('Failed to upload image');
-    } finally {
-      setUploadType(null);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-    }
-  };
-
   const handleToggleLock = async (imageId: number, currentLocked: boolean) => {
     try {
       await toggleLockMutation.mutateAsync({ imageId, locked: !currentLocked });
@@ -147,17 +133,6 @@ export const ImagesTab: React.FC<ImagesTabProps> = ({ movieId }) => {
     }
   };
 
-  const handleRebuildAssets = async () => {
-    try {
-      const result = await rebuildAssetsMutation.mutateAsync();
-      alert(result.message || 'Successfully rebuilt all assets from cache');
-      // Success - TanStack Query will automatically refetch
-    } catch (error) {
-      console.error('Failed to rebuild assets:', error);
-      alert('Failed to rebuild assets');
-    }
-  };
-
   const handleSearchProviders = (assetType: string) => {
     setSelectedAssetType(assetType as AssetType);
     setAssetDialogOpen(true);
@@ -168,15 +143,35 @@ export const ImagesTab: React.FC<ImagesTabProps> = ({ movieId }) => {
     setAssetBrowserOpen(true);
   };
 
-  const handleAssetSelect = async (asset: AssetCandidate, provider: string) => {
-    // TODO: Call backend to save the selected asset
-    console.log('Selected asset from provider:', provider, asset);
-    setAssetDialogOpen(false);
+  const handleAssetSelect = async (selectedAssets: Array<{ asset: AssetCandidate; provider: string }>) => {
+    if (!selectedAssetType) return;
 
-    // For now, just show a message
-    alert(`Asset selection from ${provider} - Backend integration coming soon!`);
+    try {
+      // Add each selected asset via the API
+      for (const { asset, provider } of selectedAssets) {
+        const response = await fetch(`/api/movies/${movieId}/assets/${selectedAssetType}/add`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            url: asset.url,
+            provider,
+            width: asset.width,
+            height: asset.height,
+            perceptualHash: asset.perceptualHash,
+          }),
+        });
 
-    // After backend integration, TanStack Query will automatically refetch
+        if (!response.ok) {
+          throw new Error(`Failed to add asset from ${provider}`);
+        }
+      }
+
+      // Success - TanStack Query will automatically refetch
+      setAssetDialogOpen(false);
+    } catch (error) {
+      console.error('Failed to save asset selection:', error);
+      alert('Failed to save asset selection');
+    }
   };
 
   if (loading) {
@@ -192,172 +187,100 @@ export const ImagesTab: React.FC<ImagesTabProps> = ({ movieId }) => {
 
   return (
     <div className="space-y-6">
-      {/* Hidden file input */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/jpeg,image/jpg,image/png"
-        onChange={handleFileSelect}
-        className="hidden"
-        aria-label="Upload image file"
-      />
-
-      {/* Rebuild Assets button */}
-      <div className="card bg-neutral-800/50">
-        <div className="card-body py-3 flex flex-row items-center justify-between">
-          <div className="text-sm text-neutral-300">
-            Missing assets from library? Rebuild all assets (images, trailers, subtitles) from cache.
-          </div>
-          <button onClick={handleRebuildAssets} className="btn btn-secondary btn-sm">
-            Rebuild Assets
-          </button>
-        </div>
-      </div>
-
       {/* Image type sections */}
-      {IMAGE_TYPES.map((type) => {
-        const typeImages = images[type.key] || [];
-        const canUpload = typeImages.length < type.max;
+      {Object.entries(ASSET_TYPE_INFO).map(([assetType, info]) => {
+        const typeImages = images[assetType] || [];
+        const maxLimit = assetLimits[assetType] ?? 1; // Default to 1 if not configured
+        const canUpload = typeImages.length < maxLimit;
+        const isGroupLocked = typeImages.some(img => img.locked);
+
+        // Skip disabled asset types (limit = 0)
+        if (maxLimit === 0) return null;
+
+        // Calculate empty slots
+        const emptySlotCount = Math.max(0, maxLimit - typeImages.length);
 
         return (
-          <div key={type.key} className="card">
+          <div key={assetType} className="card">
             <div className="card-body">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-white">
-                  {type.label}{' '}
-                  <span className="text-sm text-neutral-400 font-normal">
-                    ({typeImages.length}/{type.max})
-                  </span>
-                </h3>
-                <div className="flex gap-2">
+                <div className="flex items-center gap-2">
+                  {/* Lock button - left of title */}
                   <button
-                    onClick={() => handleSearchProviders(type.key)}
-                    className="btn btn-secondary btn-sm"
+                    onClick={async () => {
+                      // Toggle group lock via API
+                      const newLockedState = !isGroupLocked;
+                      try {
+                        const response = await fetch(`/api/movies/${movieId}/assets/${assetType}/lock`, {
+                          method: 'PATCH',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ locked: newLockedState }),
+                        });
+                        if (!response.ok) throw new Error('Failed to toggle lock');
+                        // TanStack Query will auto-refetch
+                      } catch (error) {
+                        console.error('Failed to toggle group lock:', error);
+                        alert('Failed to toggle lock');
+                      }
+                    }}
+                    className={`btn btn-sm btn-ghost ${isGroupLocked ? 'text-warning' : 'text-neutral-500'}`}
+                    title={isGroupLocked ? 'Locked - click to unlock' : 'Unlocked - click to lock'}
+                    aria-label={isGroupLocked ? 'Unlock all images' : 'Lock all images'}
                   >
-                    <FontAwesomeIcon icon={faSearch} className="mr-2" aria-hidden="true" />
-                    Search Providers
+                    <FontAwesomeIcon icon={isGroupLocked ? faLock : faLockOpen} aria-hidden="true" />
                   </button>
-                  {canUpload && (
-                    <button
-                      onClick={() => handleUploadClick(type.key)}
-                      className="btn btn-primary btn-sm"
-                      disabled={uploadImageMutation.isPending}
-                    >
-                      <FontAwesomeIcon icon={faUpload} className="mr-2" aria-hidden="true" />
-                      Upload
-                    </button>
-                  )}
-                  {typeImages.length > 0 && (
-                    <>
-                      <button
-                        onClick={() => {
-                          // Toggle lock for all images of this type
-                          const anyLocked = typeImages.some(img => img.locked);
-                          typeImages.forEach(img => {
-                            handleToggleLock(img.id, anyLocked);
-                          });
-                        }}
-                        className={`btn btn-sm ${typeImages.some(img => img.locked) ? 'btn-warning' : 'btn-ghost'}`}
-                        title={typeImages.some(img => img.locked) ? 'Unlock all' : 'Lock all'}
-                        aria-label={typeImages.some(img => img.locked) ? 'Unlock all images' : 'Lock all images'}
-                      >
-                        <FontAwesomeIcon icon={typeImages.some(img => img.locked) ? faLock : faLockOpen} aria-hidden="true" />
-                      </button>
-                      <button
-                        onClick={() => {
-                          if (confirm(`Delete all ${type.label.toLowerCase()}?`)) {
-                            typeImages.forEach(img => handleDeleteImage(img.id));
-                          }
-                        }}
-                        className="btn btn-sm btn-ghost text-error hover:bg-error/20"
-                        title="Delete all"
-                        aria-label="Delete all images"
-                      >
-                        <FontAwesomeIcon icon={faTrash} aria-hidden="true" />
-                      </button>
-                    </>
-                  )}
+
+                  {/* Title */}
+                  <h3 className="text-lg font-semibold text-white">
+                    {info.label}
+                    <span className="text-sm text-neutral-400 font-normal ml-2">
+                      ({typeImages.length}/{maxLimit})
+                    </span>
+                  </h3>
                 </div>
+
+                {/* Edit button - opens modal */}
+                <button
+                  onClick={() => handleSearchProviders(assetType)}
+                  className="btn btn-secondary btn-sm"
+                >
+                  <FontAwesomeIcon icon={faSearch} className="mr-2" aria-hidden="true" />
+                  Edit
+                </button>
               </div>
 
               {typeImages.length === 0 ? (
                 <div className="text-center py-8 bg-neutral-800/30 rounded border border-dashed border-neutral-700">
                   <FontAwesomeIcon icon={faImage} className="text-4xl text-neutral-600 mb-3" />
-                  <p className="text-neutral-400">No {type.label.toLowerCase()} available</p>
-                  <div className="flex gap-2 justify-center mt-3">
-                    <button
-                      onClick={() => handleSearchProviders(type.key)}
-                      className="btn btn-secondary btn-sm"
-                    >
-                      <FontAwesomeIcon icon={faSearch} className="mr-2" aria-hidden="true" />
-                      Search Providers
-                    </button>
-                    <button
-                      onClick={() => handleUploadClick(type.key)}
-                      className="btn btn-primary btn-sm"
-                      disabled={uploadImageMutation.isPending}
-                    >
-                      <FontAwesomeIcon icon={faUpload} className="mr-2" aria-hidden="true" />
-                      Upload {type.label}
-                    </button>
-                  </div>
+                  <p className="text-neutral-400">No {info.label.toLowerCase()} selected</p>
+                  <button
+                    onClick={() => handleSearchProviders(assetType)}
+                    className="btn btn-secondary btn-sm mt-3"
+                  >
+                    <FontAwesomeIcon icon={faSearch} className="mr-2" aria-hidden="true" />
+                    Add {info.label}
+                  </button>
                 </div>
               ) : (
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                  {typeImages.map((image) => {
-                    const assetCandidate = imageToAssetCandidate(image, type.key);
-                    const providerName = image.url ? 'Provider' : 'Custom';
-
-                    return (
-                      <div key={image.id} className="relative group">
-                        {/* AssetCard in display mode */}
-                        <AssetCard
-                          asset={assetCandidate}
-                          provider={providerName}
-                          onClick={() => setFullscreenImage(image)}
-                          mode="display"
-                        />
-
-                        {/* Lock indicator badge - Top Right (if any images are locked) */}
-                        {image.locked && (
-                          <div className="absolute top-2 right-2 bg-warning/90 text-white text-[9px] font-semibold px-1.5 py-0.5 rounded flex items-center gap-1 pointer-events-none">
-                            <FontAwesomeIcon icon={faLock} className="text-[9px]" />
-                            <span>LOCKED</span>
-                          </div>
-                        )}
-
-                        {/* Replace button - appears on hover */}
-                        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleBrowseAssets(type.key);
-                            }}
-                            className="w-full btn btn-primary btn-sm text-xs"
-                          >
-                            <FontAwesomeIcon icon={faSearch} className="mr-1" aria-hidden="true" />
-                            Replace
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
+                <div className={info.gridCols}>
+                  {/* Current assets only - no skeletons */}
+                  {typeImages.map((image) => (
+                    <CurrentAssetCard
+                      key={image.id}
+                      imageFileId={image.id}
+                      imageUrl={image.cache_url}
+                      assetType={assetType}
+                      aspectRatio={info.aspectRatio}
+                      source={image.provider_name || 'Manual'}
+                      onRemove={handleDeleteImage}
+                    />
+                  ))}
                 </div>
               )}
             </div>
           </div>
         );
       })}
-
-      {/* Upload indicator */}
-      {uploadImageMutation.isPending && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-neutral-800 rounded-lg p-6 border border-neutral-700">
-            <FontAwesomeIcon icon={faSpinner} spin className="text-3xl text-primary mb-3" />
-            <div className="text-white">Uploading image...</div>
-          </div>
-        </div>
-      )}
 
       {/* Fullscreen Image Viewer */}
       {fullscreenImage && (
@@ -445,14 +368,19 @@ export const ImagesTab: React.FC<ImagesTabProps> = ({ movieId }) => {
         </div>
       )}
 
-      {/* Asset Selection Dialog */}
+      {/* Asset Selection Modal */}
       {assetDialogOpen && selectedAssetType && (
-        <AssetSelectionDialog
+        <AssetSelectionModal
           isOpen={assetDialogOpen}
           onClose={() => setAssetDialogOpen(false)}
-          onSelect={handleAssetSelect}
+          onSave={handleAssetSelect}
+          onUpload={async (file: File) => {
+            await uploadImageMutation.mutateAsync({ file, type: selectedAssetType });
+          }}
           assetType={selectedAssetType}
-          currentAsset={images[selectedAssetType]?.[0]}
+          assetTypeLabel={ASSET_TYPE_INFO[selectedAssetType]?.label || selectedAssetType}
+          currentAssets={images[selectedAssetType] || []}
+          maxLimit={assetLimits[selectedAssetType] ?? 1}
           providerResults={providerResults}
           isLoading={isLoadingProviders}
           error={providerError as Error | null}
@@ -466,7 +394,7 @@ export const ImagesTab: React.FC<ImagesTabProps> = ({ movieId }) => {
           onClose={() => setAssetBrowserOpen(false)}
           entityId={movieId}
           assetType={selectedAssetType}
-          assetTypeLabel={IMAGE_TYPES.find(t => t.key === selectedAssetType)?.label}
+          assetTypeLabel={ASSET_TYPE_INFO[selectedAssetType]?.label}
         />
       )}
     </div>
