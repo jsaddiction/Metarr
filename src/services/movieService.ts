@@ -1596,7 +1596,7 @@ export class MovieService {
         [movieId]
       );
 
-      // Get image files
+      // Get image files (cache only - library images are replicas)
       const imageFiles = await conn.query(
         `SELECT
           id, file_path, file_name, file_size, location, image_type,
@@ -1604,7 +1604,7 @@ export class MovieService {
           source_type, source_url, provider_name, classification_score,
           library_file_id, cache_file_id, reference_count, discovered_at
         FROM image_files
-        WHERE entity_type = 'movie' AND entity_id = ?
+        WHERE entity_type = 'movie' AND entity_id = ? AND location = 'cache'
         ORDER BY image_type, classification_score DESC, discovered_at DESC`,
         [movieId]
       );
@@ -1798,6 +1798,375 @@ export class MovieService {
     } catch (error: any) {
       logger.error('Failed to restore movie', {
         movieId,
+        error: error.message
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Add an asset to a movie from a provider URL
+   * Downloads asset, stores in cache, validates against limits
+   *
+   * Part of multi-asset selection feature
+   */
+  async addAsset(
+    movieId: number,
+    assetType: string,
+    assetData: {
+      url: string;
+      provider: string;
+      width?: number;
+      height?: number;
+      perceptualHash?: string;
+    }
+  ): Promise<{ success: boolean; imageFileId: number; cachePath: string }> {
+    const conn = this.db.getConnection();
+
+    try {
+      // Get movie details
+      const movieResults = await conn.query(
+        'SELECT id, file_path, title, year FROM movies WHERE id = ?',
+        [movieId]
+      );
+
+      if (!movieResults || movieResults.length === 0) {
+        throw new Error('Movie not found');
+      }
+
+      // Check if asset type is locked
+      const lockField = `${assetType}_locked`;
+      const lockCheck = await conn.query(
+        `SELECT ${lockField} as locked FROM movies WHERE id = ?`,
+        [movieId]
+      );
+
+      if (lockCheck[0]?.locked === 1) {
+        throw new Error(`${assetType} is locked by user`);
+      }
+
+      // Check if we already have this asset (by source_url or perceptual_hash)
+      const existing = await conn.query(
+        `SELECT id FROM image_files
+         WHERE entity_type = 'movie' AND entity_id = ? AND image_type = ? AND location = 'cache'
+           AND (source_url = ? OR (perceptual_hash IS NOT NULL AND perceptual_hash = ?))`,
+        [movieId, assetType, assetData.url, assetData.perceptualHash || null]
+      );
+
+      if (existing.length > 0) {
+        throw new Error('Asset already exists for this movie');
+      }
+
+      // Download asset to temporary location
+      const tempFilePath = path.join(
+        process.cwd(),
+        'data',
+        'temp',
+        `${crypto.randomBytes(16).toString('hex')}${path.extname(assetData.url)}`
+      );
+      await fs.mkdir(path.dirname(tempFilePath), { recursive: true });
+
+      await this.downloadFile(assetData.url, tempFilePath);
+
+      // Get image metadata
+      const stats = await fs.stat(tempFilePath);
+      let width = assetData.width;
+      let height = assetData.height;
+      let format: string | undefined;
+
+      try {
+        const imageMetadata = await sharp(tempFilePath).metadata();
+        width = imageMetadata.width;
+        height = imageMetadata.height;
+        format = imageMetadata.format;
+      } catch (error) {
+        logger.warn('Could not get image dimensions', { assetType, url: assetData.url });
+      }
+
+      // Calculate file hash
+      let fileHash: string | undefined;
+      try {
+        const hashResult = await hashSmallFile(tempFilePath);
+        fileHash = hashResult.hash;
+      } catch (error: any) {
+        logger.warn('Failed to hash image file', { error: error.message });
+      }
+
+      // Store in cache
+      const cacheDir = path.join(process.cwd(), 'data', 'cache', 'images', movieId.toString());
+      await fs.mkdir(cacheDir, { recursive: true });
+
+      const hash = crypto.randomBytes(8).toString('hex');
+      const ext = path.extname(tempFilePath);
+      const cacheFileName = `${assetType}_${hash}${ext}`;
+      const cachePath = path.join(cacheDir, cacheFileName);
+
+      await fs.copyFile(tempFilePath, cachePath);
+
+      // Clean up temp file
+      try {
+        await fs.unlink(tempFilePath);
+      } catch (error) {
+        // Ignore cleanup errors
+      }
+
+      // Insert into image_files table
+      const result = await conn.execute(
+        `INSERT INTO image_files (
+          entity_type, entity_id, image_type, file_path, file_name,
+          file_size, file_hash, perceptual_hash, location,
+          width, height, format, source_type, source_url, provider_name,
+          classification_score, reference_count, discovered_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'cache', ?, ?, ?, 'provider', ?, ?, 0, 1, CURRENT_TIMESTAMP)`,
+        [
+          'movie',
+          movieId,
+          assetType,
+          cachePath,
+          cacheFileName,
+          stats.size,
+          fileHash,
+          assetData.perceptualHash || null,
+          width,
+          height,
+          format,
+          assetData.url,
+          assetData.provider
+        ]
+      );
+
+      const imageFileId = result.insertId!;
+
+      logger.info('Added asset to movie', {
+        movieId,
+        assetType,
+        provider: assetData.provider,
+        imageFileId,
+        cachePath
+      });
+
+      return {
+        success: true,
+        imageFileId,
+        cachePath
+      };
+
+    } catch (error: any) {
+      logger.error('Failed to add asset', {
+        movieId,
+        assetType,
+        error: error.message
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Remove an asset from a movie
+   * Deletes cache file and database record
+   *
+   * Part of multi-asset selection feature
+   */
+  async removeAsset(movieId: number, imageFileId: number): Promise<{ success: boolean }> {
+    const conn = this.db.getConnection();
+
+    try {
+      // Get image record
+      const images = await conn.query(
+        'SELECT id, image_type, file_path, location FROM image_files WHERE id = ? AND entity_id = ? AND entity_type = ?',
+        [imageFileId, movieId, 'movie']
+      );
+
+      if (images.length === 0) {
+        throw new Error('Image not found');
+      }
+
+      const image = images[0];
+
+      // Check if asset type is locked
+      const lockField = `${image.image_type}_locked`;
+      const lockCheck = await conn.query(
+        `SELECT ${lockField} as locked FROM movies WHERE id = ?`,
+        [movieId]
+      );
+
+      if (lockCheck[0]?.locked === 1) {
+        throw new Error(`${image.image_type} is locked by user`);
+      }
+
+      // Delete cache file
+      if (image.file_path) {
+        try {
+          await fs.unlink(image.file_path);
+          logger.debug('Deleted cache file', { filePath: image.file_path });
+        } catch (error: any) {
+          logger.warn('Failed to delete cache file (may already be deleted)', {
+            filePath: image.file_path,
+            error: error.message
+          });
+        }
+      }
+
+      // Delete library file if it exists (via library_file_id reference)
+      if (image.location === 'cache') {
+        const libraryFiles = await conn.query(
+          'SELECT id, file_path FROM image_files WHERE cache_file_id = ? AND location = \'library\'',
+          [imageFileId]
+        );
+
+        for (const libraryFile of libraryFiles) {
+          try {
+            await fs.unlink(libraryFile.file_path);
+            logger.debug('Deleted library file', { filePath: libraryFile.file_path });
+          } catch (error: any) {
+            logger.warn('Failed to delete library file', {
+              filePath: libraryFile.file_path,
+              error: error.message
+            });
+          }
+
+          await conn.execute('DELETE FROM image_files WHERE id = ?', [libraryFile.id]);
+        }
+      }
+
+      // Delete cache record
+      await conn.execute('DELETE FROM image_files WHERE id = ?', [imageFileId]);
+
+      logger.info('Removed asset from movie', {
+        movieId,
+        imageFileId,
+        assetType: image.image_type
+      });
+
+      return { success: true };
+
+    } catch (error: any) {
+      logger.error('Failed to remove asset', {
+        movieId,
+        imageFileId,
+        error: error.message
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Toggle asset type lock (group lock for all assets of this type)
+   * When locked, enrichment will not add/remove/replace assets of this type
+   *
+   * Part of multi-asset selection feature
+   */
+  async toggleAssetLock(
+    movieId: number,
+    assetType: string,
+    locked: boolean
+  ): Promise<{ success: boolean; assetType: string; locked: boolean }> {
+    const conn = this.db.getConnection();
+
+    try {
+      const lockField = `${assetType}_locked`;
+
+      // Verify the lock field exists
+      const validLockFields = [
+        'poster_locked',
+        'fanart_locked',
+        'banner_locked',
+        'clearlogo_locked',
+        'clearart_locked',
+        'landscape_locked',
+        'keyart_locked',
+        'thumb_locked',
+        'discart_locked'
+      ];
+
+      if (!validLockFields.includes(lockField)) {
+        throw new Error(`Invalid asset type: ${assetType}`);
+      }
+
+      await conn.execute(
+        `UPDATE movies SET ${lockField} = ? WHERE id = ?`,
+        [locked ? 1 : 0, movieId]
+      );
+
+      logger.info('Toggled asset lock', {
+        movieId,
+        assetType,
+        locked
+      });
+
+      return {
+        success: true,
+        assetType,
+        locked
+      };
+
+    } catch (error: any) {
+      logger.error('Failed to toggle asset lock', {
+        movieId,
+        assetType,
+        locked,
+        error: error.message
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Get count of assets for a specific type
+   * Used to enforce asset limits
+   *
+   * Part of multi-asset selection feature
+   */
+  async countAssetsByType(movieId: number, assetType: string): Promise<number> {
+    const conn = this.db.getConnection();
+
+    try {
+      const result = await conn.query(
+        `SELECT COUNT(*) as count FROM image_files
+         WHERE entity_type = 'movie' AND entity_id = ? AND image_type = ? AND location = 'cache'`,
+        [movieId, assetType]
+      );
+
+      return result[0]?.count || 0;
+
+    } catch (error: any) {
+      logger.error('Failed to count assets by type', {
+        movieId,
+        assetType,
+        error: error.message
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Get assets by type (for slot-based UI)
+   * Returns array of all assets for a specific type
+   *
+   * Part of multi-asset selection feature
+   */
+  async getAssetsByType(movieId: number, assetType: string): Promise<any[]> {
+    const conn = this.db.getConnection();
+
+    try {
+      const images = await conn.query(
+        `SELECT
+          id, file_path, file_name, file_size, image_type,
+          width, height, format, perceptual_hash,
+          source_type, source_url, provider_name, classification_score,
+          reference_count, discovered_at
+        FROM image_files
+        WHERE entity_type = 'movie' AND entity_id = ? AND image_type = ? AND location = 'cache'
+        ORDER BY classification_score DESC, discovered_at DESC`,
+        [movieId, assetType]
+      );
+
+      return images;
+
+    } catch (error: any) {
+      logger.error('Failed to get assets by type', {
+        movieId,
+        assetType,
         error: error.message
       });
       throw error;

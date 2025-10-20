@@ -62,12 +62,15 @@ export class ProviderRegistry {
    * Returns cached instance if available
    */
   async createProvider(config: ProviderConfig, options?: any): Promise<BaseProvider> {
-    const cacheKey = `${config.providerName}_${config.id}`;
+    // For default configs (id=0), use a special cache key to avoid confusion
+    const cacheKey = config.id === 0
+      ? `${config.providerName}_default`
+      : `${config.providerName}_${config.id}`;
 
-    // Return cached instance if exists and config hasn't changed
+    // Return cached instance if exists
     if (this.instances.has(cacheKey)) {
       const cachedInstance = this.instances.get(cacheKey)!;
-      // Update config if it changed
+      // Update config if it changed (updateConfig checks internally)
       cachedInstance.updateConfig(config);
       if (options) {
         cachedInstance.updateOptions(options);

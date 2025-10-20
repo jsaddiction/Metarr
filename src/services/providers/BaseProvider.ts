@@ -194,8 +194,16 @@ export abstract class BaseProvider {
    * Used when user changes settings
    */
   updateConfig(config: Partial<ProviderConfig>): void {
-    this.config = { ...this.config, ...config };
-    logger.info(`Updated configuration for provider: ${this.capabilities.id}`, config);
+    // Only update and log if config actually changed
+    const hasChanged = Object.keys(config).some(key => {
+      const configKey = key as keyof ProviderConfig;
+      return this.config[configKey] !== config[configKey];
+    });
+
+    if (hasChanged) {
+      this.config = { ...this.config, ...config };
+      logger.debug(`Updated configuration for provider: ${this.capabilities.id}`, config);
+    }
   }
 
   /**

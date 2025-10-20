@@ -144,6 +144,7 @@ export interface AssetSelectionDialogProps {
   onSelect: (asset: AssetCandidate, provider: string) => void;
   assetType: AssetType;
   currentAsset?: CurrentAsset;
+  selectedAssets?: CurrentAsset[]; // Already selected assets to filter out
   providerResults?: ProviderResultsResponse;
   isLoading?: boolean;
   error?: Error | null;
