@@ -260,15 +260,16 @@ export const useMovieExtras = (movieId: number | null) => {
       };
 
       if (data.files) {
-        // Find trailer from videos
-        if (data.files.videos && data.files.videos.length > 0) {
-          const trailer = data.files.videos.find((v: any) => v.file_type === 'trailer');
+        // Find trailer from video files (note: API returns 'video' not 'videos')
+        if (data.files.video && data.files.video.length > 0) {
+          const trailer = data.files.video.find((v: any) => v.video_type === 'trailer');
           if (trailer) {
             extras.trailer = {
               id: trailer.id,
-              localPath: trailer.file_path,
-              quality: trailer.resolution,
-              size: trailer.file_size,
+              file_path: trailer.file_path,
+              file_size: trailer.file_size,
+              duration: trailer.duration_seconds,
+              resolution: trailer.resolution,
             };
           }
         }
@@ -276,25 +277,26 @@ export const useMovieExtras = (movieId: number | null) => {
         // Map subtitles from text files
         if (data.files.text && data.files.text.length > 0) {
           extras.subtitles = data.files.text
-            .filter((t: any) => t.file_type === 'subtitle')
+            .filter((t: any) => t.text_type === 'subtitle')
             .map((t: any) => ({
               id: t.id,
-              language: t.language || 'unknown',
-              filePath: t.file_path,
+              language: t.subtitle_language || 'unknown',
+              file_path: t.file_path,
+              file_size: t.file_size,
+              format: t.format,
               forced: false,
-              size: t.file_size,
             }));
         }
 
         // Find theme song from audio files
         if (data.files.audio && data.files.audio.length > 0) {
-          const theme = data.files.audio.find((a: any) => a.file_type === 'theme');
+          const theme = data.files.audio.find((a: any) => a.audio_type === 'theme');
           if (theme) {
             extras.themeSong = {
               id: theme.id,
-              filePath: theme.file_path,
-              duration: theme.duration,
-              size: theme.file_size,
+              file_path: theme.file_path,
+              file_size: theme.file_size,
+              duration: theme.duration_seconds,
             };
           }
         }
