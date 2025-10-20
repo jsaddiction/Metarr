@@ -80,9 +80,9 @@ export class FanArtProvider extends BaseProvider {
       },
 
       supportedAssetTypes: {
-        movie: ['clearlogo', 'clearart', 'poster', 'fanart', 'banner', 'thumb', 'discart'],
-        series: ['clearlogo', 'clearart', 'poster', 'fanart', 'banner', 'thumb', 'characterart'],
-        season: ['poster', 'thumb', 'banner'],
+        movie: ['clearlogo', 'clearart', 'poster', 'fanart', 'banner', 'landscape', 'discart'],
+        series: ['clearlogo', 'clearart', 'poster', 'fanart', 'banner', 'landscape', 'characterart'],
+        season: ['poster', 'landscape', 'banner'],
       },
 
       authentication: {
@@ -154,6 +154,13 @@ export class FanArtProvider extends BaseProvider {
   async getAssets(request: AssetRequest): Promise<AssetCandidate[]> {
     const { providerResultId, entityType, assetTypes } = request;
 
+    logger.debug('[FanArt.tv] getAssets called', {
+      providerResultId,
+      entityType,
+      assetTypes,
+      requestedCount: assetTypes.length
+    });
+
     const candidates: AssetCandidate[] = [];
 
     try {
@@ -164,6 +171,23 @@ export class FanArtProvider extends BaseProvider {
           logger.debug('No FanArt.tv images found for movie', { providerResultId });
           return [];
         }
+
+        // Debug: log what image types are available
+        const availableTypes = Object.keys(images).filter(key => {
+          const value = images[key as keyof typeof images];
+          return Array.isArray(value) && value.length > 0;
+        });
+        logger.debug('FanArt.tv available image types', {
+          providerResultId,
+          availableTypes,
+          counts: availableTypes.reduce((acc, type) => {
+            const value = images[type as keyof typeof images];
+            return {
+              ...acc,
+              [type]: Array.isArray(value) ? value.length : 0
+            };
+          }, {})
+        });
 
         // HD Movie Logo (clearlogo)
         if (
@@ -208,11 +232,21 @@ export class FanArtProvider extends BaseProvider {
           }
         }
 
-        // Movie Thumb
-        if (assetTypes.includes('thumb') && images.moviethumb) {
+        // Movie Thumb (Landscape)
+        // FanArt.tv "moviethumb" is 1000×562 (16:9) - horizontal background without text
+        // Community standard: this is called "landscape" not "thumb"
+        logger.debug('[FanArt.tv] Checking landscape', {
+          hasLandscapeInRequest: assetTypes.includes('landscape'),
+          hasMoviethumbData: !!images.moviethumb,
+          moviethumbCount: images.moviethumb?.length || 0
+        });
+        if (assetTypes.includes('landscape') && images.moviethumb) {
           for (const thumb of images.moviethumb) {
-            candidates.push(this.transformImage(thumb, providerResultId, 'thumb'));
+            candidates.push(this.transformImage(thumb, providerResultId, 'landscape'));
           }
+          logger.debug('[FanArt.tv] Added landscape candidates', {
+            count: images.moviethumb.length
+          });
         }
 
         // Movie Disc

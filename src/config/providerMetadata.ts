@@ -71,8 +71,10 @@ export const PROVIDER_METADATA: Record<string, ProviderMetadata> = {
     supportedAssetTypes: [
       { type: 'movie_poster', displayName: 'Movie Posters', available: true },
       { type: 'movie_fanart', displayName: 'Movie Fanart', available: true },
+      { type: 'movie_banner', displayName: 'Movie Banners', available: true },
       { type: 'movie_clearlogo', displayName: 'Movie ClearLogo', available: true },
       { type: 'movie_clearart', displayName: 'Movie ClearArt', available: true },
+      { type: 'movie_landscape', displayName: 'Movie Landscape', available: true },
       { type: 'movie_discart', displayName: 'Movie Disc Art', available: true },
       { type: 'tv_poster', displayName: 'TV Posters', available: true },
       { type: 'tv_fanart', displayName: 'TV Fanart', available: true },
@@ -80,8 +82,7 @@ export const PROVIDER_METADATA: Record<string, ProviderMetadata> = {
       { type: 'tv_clearlogo', displayName: 'TV ClearLogo', available: true },
       { type: 'tv_clearart', displayName: 'TV ClearArt', available: true },
       { type: 'tv_characterart', displayName: 'TV Character Art', available: true },
-      { type: 'tv_landscape', displayName: 'TV Landscape', available: true },
-      { type: 'tv_thumb', displayName: 'TV Thumbnail', available: true }
+      { type: 'tv_landscape', displayName: 'TV Landscape', available: true }
     ]
   },
 

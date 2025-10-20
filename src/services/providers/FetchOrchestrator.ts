@@ -428,6 +428,14 @@ export class FetchOrchestrator {
         supportedAssetTypes.includes(type)
       );
 
+      logger.info(`[${caps.id}] Asset type filtering`, {
+        providerId: caps.id,
+        entityType,
+        requestedByUser: config.assetTypes,
+        supportedByProvider: supportedAssetTypes,
+        afterFiltering: requestedAssetTypes
+      });
+
       if (requestedAssetTypes.length > 0) {
         try {
           const assetRequest: AssetRequest = {
@@ -437,7 +445,9 @@ export class FetchOrchestrator {
             assetTypes: requestedAssetTypes,
           };
 
+          logger.info(`[${caps.id}] Calling getAssets with request`, { assetRequest });
           const assetCandidates = await provider.getAssets(assetRequest);
+          logger.info(`[${caps.id}] getAssets returned ${assetCandidates.length} candidates`);
 
           // Group assets by type
           if (!assets.images) {
@@ -447,6 +457,7 @@ export class FetchOrchestrator {
             assets.videos = {};
           }
 
+          logger.info(`[${caps.id}] Processing ${assetCandidates.length} candidates`);
           for (const candidate of assetCandidates) {
             const assetType = candidate.assetType;
 
@@ -457,6 +468,7 @@ export class FetchOrchestrator {
                 assets.images[category] = [];
               }
               assets.images[category].push(candidate);
+              logger.info(`[${caps.id}] Added ${assetType} to images.${category}, total: ${assets.images[category].length}`);
             } else if (this.isVideoAsset(assetType)) {
               const category = this.getVideoCategory(assetType);
               if (!assets.videos[category]) {
@@ -640,7 +652,11 @@ export class FetchOrchestrator {
       'clearlogo',
       'banner',
       'thumb',
+      'landscape',
       'clearart',
+      'discart',
+      'keyart',
+      'characterart',
     ].includes(assetType);
   }
 
