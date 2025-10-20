@@ -11,7 +11,7 @@ import {
   faTimes,
   faSearch,
 } from '@fortawesome/free-solid-svg-icons';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   useMovieImages,
   useUploadImage,
@@ -24,8 +24,7 @@ import { CurrentAssetCard } from './CurrentAssetCard';
 import { EmptySlotCard } from './EmptySlotCard';
 import { AssetSelectionModal } from './AssetSelectionModal';
 import { assetApi } from '../../utils/api';
-import type { AssetType } from '../../types/providers/capabilities';
-import type { AssetCandidate } from '../../types/asset';
+import type { AssetType, AssetCandidate } from '../../types/asset';
 
 interface ImagesTabProps {
   movieId: number;
@@ -36,7 +35,7 @@ interface Image {
   entity_type: string;
   entity_id: number;
   image_type: string;
-  url: string | null;
+  source_url: string | null;  // Original provider URL
   provider_name: string | null;
   cache_path: string | null;
   library_path: string | null;
@@ -45,7 +44,7 @@ interface Image {
   height: number | null;
   vote_average: number | null;
   locked: boolean;
-  cache_url: string;
+  cache_url: string;  // Computed URL for serving from cache
 }
 
 interface ImagesByType {
@@ -65,10 +64,51 @@ const ASSET_TYPE_INFO: Record<string, { label: string; aspectRatio: string; grid
 
 export const ImagesTab: React.FC<ImagesTabProps> = ({ movieId }) => {
   // Use TanStack Query hooks
+  const queryClient = useQueryClient();
   const { data: images = {}, isLoading: loading } = useMovieImages(movieId);
   const uploadImageMutation = useUploadImage(movieId);
   const toggleLockMutation = useToggleImageLock(movieId);
   const deleteImageMutation = useDeleteImage(movieId);
+
+  // Replace assets mutation with loading state
+  const replaceAssetsMutation = useMutation({
+    mutationFn: async ({
+      assetType,
+      assets
+    }: {
+      assetType: string;
+      assets: Array<{ url: string; provider: string; width?: number; height?: number; perceptualHash?: string }>
+    }) => {
+      const response = await fetch(`/api/movies/${movieId}/assets/${assetType}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ assets }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        const errorMessage = errorData.error || errorData.message || 'Failed to save asset selection';
+        throw new Error(errorMessage);
+      }
+
+      return response.json();
+    },
+    onSuccess: (result) => {
+      // Show warnings if any
+      if (result.warnings && result.warnings.length > 0) {
+        console.warn('Asset quality warnings:', result.warnings);
+      }
+
+      // Show errors if any (but still succeeded overall)
+      if (result.errors && result.errors.length > 0) {
+        console.error('Some assets failed:', result.errors);
+      }
+
+      // Invalidate queries to refetch updated data
+      queryClient.invalidateQueries({ queryKey: ['movieImages', movieId] });
+      queryClient.invalidateQueries({ queryKey: ['movie', movieId] });
+    },
+  });
 
   // Fetch asset limits configuration
   const { data: assetLimits = {} } = useQuery<Record<string, number>>({
@@ -88,7 +128,7 @@ export const ImagesTab: React.FC<ImagesTabProps> = ({ movieId }) => {
 
   // Convert Image to AssetCandidate for use with AssetCard
   const imageToAssetCandidate = (image: Image, assetType: string): AssetCandidate => ({
-    providerId: image.url ? 'tmdb' : ('custom' as any), // If from provider, assume tmdb, otherwise custom
+    providerId: image.source_url ? 'tmdb' : ('custom' as any), // If from provider, assume tmdb, otherwise custom
     providerResultId: image.id.toString(),
     assetType: assetType as AssetType,
     url: image.cache_url,
@@ -147,30 +187,34 @@ export const ImagesTab: React.FC<ImagesTabProps> = ({ movieId }) => {
     if (!selectedAssetType) return;
 
     try {
-      // Add each selected asset via the API
-      for (const { asset, provider } of selectedAssets) {
-        const response = await fetch(`/api/movies/${movieId}/assets/${selectedAssetType}/add`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            url: asset.url,
-            provider,
-            width: asset.width,
-            height: asset.height,
-            perceptualHash: asset.perceptualHash,
-          }),
+      // Map selected assets to the format expected by the backend
+      // For cached assets (those with /cache/ URLs), we send the original source_url
+      // For new provider assets, we send the provider URL
+      const assetsToSend = selectedAssets
+        .map(({ asset, provider }) => ({
+          url: asset.url,
+          provider,
+          width: asset.width,
+          height: asset.height,
+          perceptualHash: asset.perceptualHash,
+        }))
+        .filter(({ url }) => {
+          // Only include assets with valid HTTP/HTTPS URLs
+          // This filters out any assets without proper source URLs
+          return url && (url.startsWith('http://') || url.startsWith('https://'));
         });
 
-        if (!response.ok) {
-          throw new Error(`Failed to add asset from ${provider}`);
-        }
-      }
+      // Use the mutation which handles loading state
+      await replaceAssetsMutation.mutateAsync({
+        assetType: selectedAssetType,
+        assets: assetsToSend,
+      });
 
-      // Success - TanStack Query will automatically refetch
+      // Success - close dialog (refetch handled by mutation onSuccess)
       setAssetDialogOpen(false);
     } catch (error) {
       console.error('Failed to save asset selection:', error);
-      alert('Failed to save asset selection');
+      alert(error instanceof Error ? error.message : 'Failed to save asset selection');
     }
   };
 
@@ -383,6 +427,7 @@ export const ImagesTab: React.FC<ImagesTabProps> = ({ movieId }) => {
           maxLimit={assetLimits[selectedAssetType] ?? 1}
           providerResults={providerResults}
           isLoading={isLoadingProviders}
+          isSaving={replaceAssetsMutation.isPending}
           error={providerError as Error | null}
         />
       )}

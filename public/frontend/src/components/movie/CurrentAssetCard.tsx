@@ -7,6 +7,7 @@
 
 import React from 'react';
 import { ZoomableImage } from '../ui/ZoomableImage';
+import { getProviderDisplayName } from '../../utils/providerNames';
 
 interface CurrentAssetCardProps {
   imageFileId: number;
@@ -25,13 +26,15 @@ export const CurrentAssetCard: React.FC<CurrentAssetCardProps> = ({
   source,
   onRemove,
 }) => {
+  const displayName = getProviderDisplayName(source);
+
   return (
     <ZoomableImage
       src={imageUrl}
-      alt={`${assetType} from ${source}`}
+      alt={`${assetType} from ${displayName}`}
       aspectRatio={aspectRatio}
-      badge={source}
-      badgeAriaLabel={`Source: ${source}`}
+      badge={displayName}
+      badgeAriaLabel={`Source: ${displayName}`}
     />
   );
 };
