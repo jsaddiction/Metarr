@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ViewControls, ViewMode } from '../components/ui/ViewControls';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 export const Artists: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -33,10 +34,12 @@ export const Artists: React.FC = () => {
       </div>
 
       <div className="content-spacing">
-        <div className="card">
-          <div className="card-body">
-            <h3 className="text-lg text-primary mb-3">Artist Management Features</h3>
-            <ul className="text-secondary">
+        <Card>
+          <CardHeader>
+            <CardTitle>Artist Management Features</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ul className="text-secondary space-y-2">
               <li>• Artist profiles with biographical information</li>
               <li>• Artist photos and promotional images</li>
               <li>• Discography and album artwork</li>
@@ -51,8 +54,8 @@ export const Artists: React.FC = () => {
                 ensuring consistent artist information across your music library.
               </p>
             </div>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       </div>
     </>
   );
