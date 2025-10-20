@@ -152,8 +152,29 @@ DISCOVERED → IDENTIFIED → ENRICHING → ENRICHED → SELECTED → PUBLISHED
 
 - **Framework**: React with Vite
 - **Language**: TypeScript
-- **Styling**: Tailwind CSS with purple theme (matching Sonarr/Radarr design patterns)
+- **Styling**: Tailwind CSS v4 with violet theme (Tailwind violet-500: #8b5cf6)
+- **UI Components**: shadcn/ui (Radix UI primitives) with custom AnimatedTabs
 - **State Management**: React hooks + WebSocket for real-time updates
+
+### UI Component Standards
+
+**Theme:**
+- **PRIMARY COLOR**: Tailwind violet-500 (#8b5cf6, HSL 258 90% 66%)
+- **IMPLEMENTATION**: CSS variables in [globals.css](public/frontend/src/styles/globals.css) using `@theme` block
+- **USAGE**: All primary colors reference `primary-*` scale (e.g., `text-primary-500`, `bg-primary-600`)
+- **DECISION DATE**: 2025-10-18 - Migrated from custom purple (#6a4c93) to standardized Tailwind violet for consistency with shadcn/ui ecosystem
+
+**Tabs Component:**
+- **USE**: Custom `AnimatedTabs` component ([src/components/ui/AnimatedTabs.tsx](public/frontend/src/components/ui/AnimatedTabs.tsx))
+- **WHY**: Provides unique sliding violet indicator animation that aligns with Metarr's brand identity
+- **DO NOT**: Use standard shadcn/ui Tabs (lacks animation, generic appearance)
+- **DECISION DATE**: 2025-10-18 - After evaluating shadcn/ui and hybrid approaches, determined that custom AnimatedTabs provides best ROI (simple maintenance, unique branding, 100 lines vs 180+ for hybrid)
+
+**Cards Component:**
+- **USE**: shadcn/ui Card components ([src/components/ui/card.tsx](public/frontend/src/components/ui/card.tsx))
+- **STRUCTURE**: `<Card>` → `<CardHeader>` → `<CardTitle>` + `<CardContent>`
+- **CUSTOMIZATION**: CardTitle uses `text-primary-500` for violet-colored headers
+- **DECISION DATE**: 2025-10-18 - Migrated 13 placeholder pages from custom CSS `.card` classes to shadcn Cards for consistency
 
 ### Integrations
 
