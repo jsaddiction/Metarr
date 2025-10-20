@@ -141,7 +141,7 @@ export const ExtrasTab: React.FC<ExtrasTabProps> = ({ movieId }) => {
                   <div className="flex items-center space-x-2 mb-2">
                     <FontAwesomeIcon icon={faFile} className="text-neutral-400" />
                     <span className="text-neutral-200 font-mono text-sm">
-                      {trailer.local_path?.split('/').pop() || 'No path available'}
+                      {trailer.file_path?.split('/').pop() || 'No path available'}
                     </span>
                   </div>
                   <div className="flex items-center space-x-4 text-sm text-neutral-400">
@@ -197,7 +197,7 @@ export const ExtrasTab: React.FC<ExtrasTabProps> = ({ movieId }) => {
                       <div className="flex items-center space-x-2 mb-2">
                         <FontAwesomeIcon icon={faFile} className="text-neutral-400" />
                         <span className="text-neutral-200 font-mono text-sm">
-                          {subtitle.file_path.split('/').pop()}
+                          {subtitle.file_path ? subtitle.file_path.split('/').pop() : 'Unknown filename'}
                         </span>
                         {subtitle.forced && (
                           <span className="badge badge-warning badge-sm">Forced</span>
@@ -254,7 +254,7 @@ export const ExtrasTab: React.FC<ExtrasTabProps> = ({ movieId }) => {
                   <div className="flex items-center space-x-2 mb-2">
                     <FontAwesomeIcon icon={faFile} className="text-neutral-400" />
                     <span className="text-neutral-200 font-mono text-sm">
-                      {themeSong.file_path.split('/').pop()}
+                      {themeSong.file_path ? themeSong.file_path.split('/').pop() : 'Unknown filename'}
                     </span>
                   </div>
                   <div className="flex items-center space-x-4 text-sm text-neutral-400">
