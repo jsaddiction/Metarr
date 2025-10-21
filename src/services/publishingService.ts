@@ -140,12 +140,25 @@ export class PublishingService {
 
     // Determine library path with Kodi naming
     const libraryAssetPath = this.getLibraryAssetPath(config, asset.asset_type, cachePath);
+    const tempPath = `${libraryAssetPath}.tmp.${Date.now()}`;
 
-    // Copy from cache to library
+    // Copy from cache to library with atomic write pattern
     try {
-      await fs.copyFile(cachePath, libraryAssetPath);
+      // Copy to temp file first
+      await fs.copyFile(cachePath, tempPath);
+
+      // Atomic rename (all-or-nothing operation)
+      await fs.rename(tempPath, libraryAssetPath);
+
       logger.debug(`Published asset: ${asset.asset_type} to ${libraryAssetPath}`);
     } catch (error) {
+      // Clean up temp file on failure
+      try {
+        await fs.unlink(tempPath);
+      } catch (cleanupError) {
+        // Ignore cleanup errors
+      }
+
       throw new Error(`Failed to copy ${cachePath} to ${libraryAssetPath}: ${error}`);
     }
 
@@ -173,7 +186,25 @@ export class PublishingService {
    */
   private getLibraryAssetPath(config: PublishConfig, assetType: string, cachePath: string): string {
     const ext = path.extname(cachePath);
-    const basename = config.mediaFilename || `entity_${config.entityId}`;
+
+    // SECURITY: Sanitize mediaFilename to prevent path traversal attacks
+    // Remove any path separators and parent directory references
+    let basename = config.mediaFilename || `entity_${config.entityId}`;
+
+    // Use only the filename portion (removes any directory path)
+    basename = path.basename(basename);
+
+    // Remove dangerous characters that could be used for traversal
+    // Allow only: alphanumeric, spaces, hyphens, underscores, parentheses, and periods
+    basename = basename.replace(/[^a-zA-Z0-9\s\-_().]/g, '_');
+
+    // Remove any remaining path traversal attempts
+    basename = basename.replace(/\.\./g, '_');
+
+    // Ensure basename is not empty after sanitization
+    if (!basename || basename.trim() === '') {
+      basename = `entity_${config.entityId}`;
+    }
 
     // Kodi naming conventions
     const kodiSuffix: Record<string, string> = {
@@ -196,14 +227,25 @@ export class PublishingService {
    * Get NFO filename for entity
    */
   private getNFOFilename(config: PublishConfig): string {
+    // SECURITY: Sanitize mediaFilename to prevent path traversal
+    let safeFilename = '';
+    if (config.mediaFilename) {
+      // Use only the filename portion (removes any directory path)
+      safeFilename = path.basename(config.mediaFilename);
+      // Remove dangerous characters
+      safeFilename = safeFilename.replace(/[^a-zA-Z0-9\s\-_().]/g, '_');
+      // Remove path traversal attempts
+      safeFilename = safeFilename.replace(/\.\./g, '_');
+    }
+
     if (config.entityType === 'movie') {
       // movie.nfo or {filename}.nfo
-      return config.mediaFilename ? `${config.mediaFilename}.nfo` : 'movie.nfo';
+      return safeFilename ? `${safeFilename}.nfo` : 'movie.nfo';
     } else if (config.entityType === 'series') {
       return 'tvshow.nfo';
     } else {
       // Episode: {filename}.nfo
-      return config.mediaFilename ? `${config.mediaFilename}.nfo` : 'episode.nfo';
+      return safeFilename ? `${safeFilename}.nfo` : 'episode.nfo';
     }
   }
 

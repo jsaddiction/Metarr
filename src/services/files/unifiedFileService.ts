@@ -162,37 +162,37 @@ export async function insertImageFile(
   db: DatabaseConnection,
   record: ImageFileRecord
 ): Promise<number> {
-  const result = await db.execute(
-    `INSERT INTO image_files (
-      entity_type, entity_id, file_path, file_name, file_size, file_hash,
-      perceptual_hash, location, image_type, width, height, format,
-      source_type, source_url, provider_name, classification_score,
-      is_published, library_file_id, cache_file_id, reference_count,
-      discovered_at, last_accessed_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-    [
-      record.entityType,
-      record.entityId,
-      record.filePath,
-      record.fileName,
-      record.fileSize,
-      record.fileHash,
-      record.perceptualHash || null,
-      record.location,
-      record.imageType,
-      record.width,
-      record.height,
-      record.format,
-      record.sourceType || null,
-      record.sourceUrl || null,
-      record.providerName || null,
-      record.classificationScore || null,
-      record.isPublished ? 1 : 0,
-      record.libraryFileId || null,
-      record.cacheFileId || null,
-      record.referenceCount || 0
-    ]
-  );
+  // Insert into cache or library table based on location
+  const result = record.location === 'cache'
+    ? await db.execute(
+        `INSERT INTO cache_image_files (
+          entity_type, entity_id, file_path, file_name, file_size, file_hash,
+          perceptual_hash, image_type, width, height, format,
+          source_type, source_url, provider_name, classification_score,
+          is_locked, discovered_at, last_accessed_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+        [
+          record.entityType,
+          record.entityId,
+          record.filePath,
+          record.fileName,
+          record.fileSize,
+          record.fileHash,
+          record.perceptualHash || null,
+          record.imageType,
+          record.width,
+          record.height,
+          record.format,
+          record.sourceType || null,
+          record.sourceUrl || null,
+          record.providerName || null,
+          record.classificationScore || null
+        ]
+      )
+    : await db.execute(
+        `INSERT INTO library_image_files (cache_file_id, file_path, published_at) VALUES (?, ?, CURRENT_TIMESTAMP)`,
+        [record.cacheFileId, record.filePath]
+      );
 
   logger.debug('Inserted image file', {
     id: result.insertId,
@@ -213,7 +213,7 @@ export async function findCachedImageByHash(
   fileHash: string
 ): Promise<ImageFileRecord | null> {
   const rows = await db.query<any>(
-    `SELECT * FROM image_files WHERE file_hash = ? AND location = 'cache' LIMIT 1`,
+    `SELECT * FROM cache_image_files WHERE file_hash = ? LIMIT 1`,
     [fileHash]
   );
 
@@ -275,100 +275,123 @@ export async function cacheImageFile(
   await fs.mkdir(cacheDir, { recursive: true });
 
   const cachePath = path.join(cacheDir, `${uuid}${ext}`);
+  const tempPath = `${cachePath}.tmp.${Date.now()}`;
 
-  // Copy to cache
-  await fs.copyFile(sourceFilePath, cachePath);
+  try {
+    // Copy to temp file first (atomic write pattern)
+    await fs.copyFile(sourceFilePath, tempPath);
 
-  // Get image metadata
-  const metadata = await sharp(cachePath).metadata();
+    // Get image metadata from temp file
+    const metadata = await sharp(tempPath).metadata();
 
-  // Insert cache record
-  const cacheFileId = await insertImageFile(db, {
-    entityType,
-    entityId,
-    filePath: cachePath,
-    fileName: `${uuid}${ext}`,
-    fileSize: fileBuffer.length,
-    fileHash,
-    location: 'cache',
-    imageType: imageType as any,
-    width: metadata.width!,
-    height: metadata.height!,
-    format: metadata.format!,
-    sourceType,
-    ...(sourceUrl && { sourceUrl }),
-    ...(providerName && { providerName }),
-    isPublished: false, // Not published until selection phase
-    ...(libraryFileId && { libraryFileId }),
-    referenceCount: 1
-  });
+    // Verify hash matches (data integrity check)
+    const tempBuffer = await fs.readFile(tempPath);
+    const tempHash = crypto.createHash('sha256').update(tempBuffer).digest('hex');
 
-  // Link library file to cache (if library file exists)
-  if (libraryFileId) {
-    await db.execute(
-      `UPDATE image_files SET cache_file_id = ? WHERE id = ?`,
-      [cacheFileId, libraryFileId]
-    );
+    if (tempHash !== fileHash) {
+      throw new Error(`Hash mismatch: expected ${fileHash}, got ${tempHash}`);
+    }
+
+    // Atomic rename (all-or-nothing operation)
+    await fs.rename(tempPath, cachePath);
+
+    // Insert cache record
+    const cacheFileId = await insertImageFile(db, {
+      entityType,
+      entityId,
+      filePath: cachePath,
+      fileName: `${uuid}${ext}`,
+      fileSize: fileBuffer.length,
+      fileHash,
+      location: 'cache',
+      imageType: imageType as any,
+      width: metadata.width!,
+      height: metadata.height!,
+      format: metadata.format!,
+      sourceType,
+      ...(sourceUrl && { sourceUrl }),
+      ...(providerName && { providerName }),
+      isPublished: false, // Not published until selection phase
+      ...(libraryFileId && { libraryFileId }),
+      referenceCount: 1
+    });
+
+    // Link library file to cache (if library file exists)
+    if (libraryFileId) {
+      await db.execute(
+        `UPDATE library_image_files SET cache_file_id = ? WHERE id = ?`,
+        [cacheFileId, libraryFileId]
+      );
+    }
+
+    logger.info('Cached new image file', {
+      cacheFileId,
+      uuid,
+      fileHash,
+      cachePath,
+      sourceType,
+      providerName
+    });
+
+    return cacheFileId;
+  } catch (error) {
+    // Clean up temp file on ANY failure
+    try {
+      await fs.unlink(tempPath);
+      logger.debug('Cleaned up temp file after error', { tempPath });
+    } catch (cleanupError) {
+      // Ignore cleanup errors
+    }
+
+    logger.error('Failed to cache image file', {
+      sourceFilePath,
+      entityType,
+      entityId,
+      error: error instanceof Error ? error.message : String(error)
+    });
+
+    throw error;
   }
-
-  logger.info('Cached new image file', {
-    cacheFileId,
-    uuid,
-    fileHash,
-    cachePath,
-    sourceType,
-    providerName
-  });
-
-  return cacheFileId;
 }
 
 /**
- * Increment reference count for cached file
+ * Update last accessed timestamp for cached file
  */
-export async function incrementImageReferenceCount(
+export async function updateImageLastAccessed(
   db: DatabaseConnection,
   cacheFileId: number
 ): Promise<void> {
   await db.execute(
-    `UPDATE image_files SET reference_count = reference_count + 1, last_accessed_at = CURRENT_TIMESTAMP WHERE id = ?`,
+    `UPDATE cache_image_files SET last_accessed_at = CURRENT_TIMESTAMP WHERE id = ?`,
     [cacheFileId]
   );
 }
 
 /**
- * Decrement reference count for cached file
- * Optionally delete if reference count reaches 0
+ * Delete cached image file and its library references
+ * CASCADE DELETE will automatically remove library entries
  */
-export async function decrementImageReferenceCount(
+export async function deleteCachedImage(
   db: DatabaseConnection,
-  cacheFileId: number,
-  deleteIfZero: boolean = false
+  cacheFileId: number
 ): Promise<void> {
-  await db.execute(
-    `UPDATE image_files SET reference_count = GREATEST(0, reference_count - 1) WHERE id = ?`,
+  const rows = await db.query<any>(
+    `SELECT id, file_path FROM cache_image_files WHERE id = ?`,
     [cacheFileId]
   );
 
-  if (deleteIfZero) {
-    const rows = await db.query<any>(
-      `SELECT id, file_path, reference_count FROM image_files WHERE id = ? AND reference_count = 0`,
-      [cacheFileId]
-    );
+  if (rows && rows.length > 0) {
+    const filePath = (rows[0] as any).file_path;
+    try {
+      await fs.unlink(filePath);
+      await db.execute(`DELETE FROM cache_image_files WHERE id = ?`, [cacheFileId]);
+      logger.info('Deleted cache file', { cacheFileId, filePath });
 
-    if (rows && rows.length > 0) {
-      const filePath = (rows[0] as any).file_path;
-      try {
-        await fs.unlink(filePath);
-        await db.execute(`DELETE FROM image_files WHERE id = ?`, [cacheFileId]);
-        logger.info('Deleted unreferenced cache file', { cacheFileId, filePath });
-
-        // Clean up empty parent directories
-        const cacheRoot = path.join(process.cwd(), 'data', 'cache', 'images');
-        await cleanupEmptyDirectories(filePath, cacheRoot);
-      } catch (error: any) {
-        logger.error('Failed to delete cache file', { cacheFileId, error: error.message });
-      }
+      // Clean up empty parent directories
+      const cacheRoot = path.join(process.cwd(), 'data', 'cache', 'images');
+      await cleanupEmptyDirectories(filePath, cacheRoot);
+    } catch (error: any) {
+      logger.error('Failed to delete cache file', { cacheFileId, error: error.message });
     }
   }
 }
@@ -384,43 +407,44 @@ export async function insertVideoFile(
   db: DatabaseConnection,
   record: VideoFileRecord
 ): Promise<number> {
-  const result = await db.execute(
-    `INSERT INTO video_files (
-      entity_type, entity_id, file_path, file_name, file_size, file_hash,
-      location, video_type, codec, width, height, duration_seconds,
-      bitrate, framerate, hdr_type, audio_codec, audio_channels, audio_language,
-      source_type, source_url, provider_name, classification_score,
-      library_file_id, cache_file_id, reference_count,
-      discovered_at, last_accessed_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-    [
-      record.entityType,
-      record.entityId,
-      record.filePath,
-      record.fileName,
-      record.fileSize,
-      record.fileHash || null,
-      record.location,
-      record.videoType,
-      record.codec || null,
-      record.width || null,
-      record.height || null,
-      record.durationSeconds || null,
-      record.bitrate || null,
-      record.framerate || null,
-      record.hdrType || null,
-      record.audioCodec || null,
-      record.audioChannels || null,
-      record.audioLanguage || null,
-      record.sourceType || null,
-      record.sourceUrl || null,
-      record.providerName || null,
-      record.classificationScore || null,
-      record.libraryFileId || null,
-      record.cacheFileId || null,
-      record.referenceCount || 0
-    ]
-  );
+  // Insert into cache or library table based on location
+  const result = record.location === 'cache'
+    ? await db.execute(
+        `INSERT INTO cache_video_files (
+          entity_type, entity_id, file_path, file_name, file_size, file_hash,
+          video_type, codec, width, height, duration_seconds,
+          bitrate, framerate, hdr_type, audio_codec, audio_channels, audio_language,
+          source_type, source_url, provider_name, classification_score,
+          discovered_at, last_accessed_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+        [
+          record.entityType,
+          record.entityId,
+          record.filePath,
+          record.fileName,
+          record.fileSize,
+          record.fileHash || null,
+          record.videoType,
+          record.codec || null,
+          record.width || null,
+          record.height || null,
+          record.durationSeconds || null,
+          record.bitrate || null,
+          record.framerate || null,
+          record.hdrType || null,
+          record.audioCodec || null,
+          record.audioChannels || null,
+          record.audioLanguage || null,
+          record.sourceType || null,
+          record.sourceUrl || null,
+          record.providerName || null,
+          record.classificationScore || null
+        ]
+      )
+    : await db.execute(
+        `INSERT INTO library_video_files (cache_file_id, file_path, published_at) VALUES (?, ?, CURRENT_TIMESTAMP)`,
+        [record.cacheFileId, record.filePath]
+      );
 
   logger.debug('Inserted video file', {
     id: result.insertId,
@@ -443,36 +467,39 @@ export async function insertTextFile(
   db: DatabaseConnection,
   record: TextFileRecord
 ): Promise<number> {
-  const result = await db.execute(
-    `INSERT INTO text_files (
-      entity_type, entity_id, file_path, file_name, file_size, file_hash,
-      location, text_type, subtitle_language, subtitle_format,
-      nfo_is_valid, nfo_has_tmdb_id, nfo_needs_regen,
-      source_type, source_url,
-      library_file_id, cache_file_id, reference_count,
-      discovered_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-    [
-      record.entityType,
-      record.entityId,
-      record.filePath,
-      record.fileName,
-      record.fileSize,
-      record.fileHash || null,
-      record.location,
-      record.textType,
-      record.subtitleLanguage || null,
-      record.subtitleFormat || null,
-      record.nfoIsValid !== undefined ? (record.nfoIsValid ? 1 : 0) : null,
-      record.nfoHasTmdbId !== undefined ? (record.nfoHasTmdbId ? 1 : 0) : null,
-      record.nfoNeedsRegen !== undefined ? (record.nfoNeedsRegen ? 1 : 0) : null,
-      record.sourceType || null,
-      record.sourceUrl || null,
-      record.libraryFileId || null,
-      record.cacheFileId || null,
-      record.referenceCount || 0
-    ]
-  );
+  // Insert into cache or library table based on location
+  const result = record.location === 'cache'
+    ? await db.execute(
+        `INSERT INTO cache_text_files (
+          entity_type, entity_id, file_path, file_name, file_size, file_hash,
+          text_type, subtitle_language, subtitle_format,
+          nfo_is_valid, nfo_has_tmdb_id, nfo_needs_regen,
+          source_type, source_url, provider_name, classification_score,
+          discovered_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+        [
+          record.entityType,
+          record.entityId,
+          record.filePath,
+          record.fileName,
+          record.fileSize,
+          record.fileHash || null,
+          record.textType,
+          record.subtitleLanguage || null,
+          record.subtitleFormat || null,
+          record.nfoIsValid !== undefined ? (record.nfoIsValid ? 1 : 0) : null,
+          record.nfoHasTmdbId !== undefined ? (record.nfoHasTmdbId ? 1 : 0) : null,
+          record.nfoNeedsRegen !== undefined ? (record.nfoNeedsRegen ? 1 : 0) : null,
+          record.sourceType || null,
+          record.sourceUrl || null,
+          null, // provider_name (not in TextFileRecord)
+          null  // classification_score (not in TextFileRecord)
+        ]
+      )
+    : await db.execute(
+        `INSERT INTO library_text_files (cache_file_id, file_path, published_at) VALUES (?, ?, CURRENT_TIMESTAMP)`,
+        [record.cacheFileId, record.filePath]
+      );
 
   logger.debug('Inserted text file', {
     id: result.insertId,
@@ -510,15 +537,15 @@ export async function getEntityFiles(
 }> {
   const [videoFiles, imageFiles, textFiles] = await Promise.all([
     db.query<any[]>(
-      `SELECT * FROM video_files WHERE entity_type = ? AND entity_id = ? ORDER BY video_type, file_name`,
+      `SELECT * FROM cache_video_files WHERE entity_type = ? AND entity_id = ? ORDER BY video_type, file_name`,
       [entityType, entityId]
     ),
     db.query<any[]>(
-      `SELECT * FROM image_files WHERE entity_type = ? AND entity_id = ? ORDER BY image_type, file_name`,
+      `SELECT * FROM cache_image_files WHERE entity_type = ? AND entity_id = ? ORDER BY image_type, file_name`,
       [entityType, entityId]
     ),
     db.query<any[]>(
-      `SELECT * FROM text_files WHERE entity_type = ? AND entity_id = ? ORDER BY text_type, file_name`,
+      `SELECT * FROM cache_text_files WHERE entity_type = ? AND entity_id = ? ORDER BY text_type, file_name`,
       [entityType, entityId]
     )
   ]);
