@@ -260,9 +260,8 @@ export class LibraryService {
       // ========================================
       const images = (await db.query(
         `SELECT DISTINCT file_path
-         FROM image_files
-         WHERE location = 'cache'
-           AND (
+         FROM cache_image_files
+         WHERE (
              (entity_type = 'movie' AND entity_id IN (SELECT id FROM movies WHERE library_id = ?))
              OR (entity_type = 'episode' AND entity_id IN (
                SELECT e.id FROM episodes e
@@ -279,9 +278,8 @@ export class LibraryService {
       // ========================================
       const videos = (await db.query(
         `SELECT DISTINCT file_path
-         FROM video_files
-         WHERE location = 'cache'
-           AND (
+         FROM cache_video_files
+         WHERE (
              (entity_type = 'movie' AND entity_id IN (SELECT id FROM movies WHERE library_id = ?))
              OR (entity_type = 'episode' AND entity_id IN (
                SELECT e.id FROM episodes e
@@ -298,9 +296,8 @@ export class LibraryService {
       // ========================================
       const textFiles = (await db.query(
         `SELECT DISTINCT file_path
-         FROM text_files
-         WHERE location = 'cache'
-           AND (
+         FROM cache_text_files
+         WHERE (
              (entity_type = 'movie' AND entity_id IN (SELECT id FROM movies WHERE library_id = ?))
              OR (entity_type = 'episode' AND entity_id IN (
                SELECT e.id FROM episodes e
@@ -317,9 +314,8 @@ export class LibraryService {
       // ========================================
       const audioFiles = (await db.query(
         `SELECT DISTINCT file_path
-         FROM audio_files
-         WHERE location = 'cache'
-           AND (
+         FROM cache_audio_files
+         WHERE (
              (entity_type = 'movie' AND entity_id IN (SELECT id FROM movies WHERE library_id = ?))
              OR (entity_type = 'episode' AND entity_id IN (
                SELECT e.id FROM episodes e
@@ -443,8 +439,8 @@ export class LibraryService {
         if (actor.thumb_id) {
           try {
             const thumbs = (await db.query(
-              `SELECT file_path FROM image_files
-               WHERE id = ? AND location = 'cache'`,
+              `SELECT file_path FROM cache_image_files
+               WHERE id = ?`,
               [actor.thumb_id]
             )) as Array<{ file_path: string }>;
 
@@ -490,8 +486,8 @@ export class LibraryService {
         if (crewMember.thumb_id) {
           try {
             const thumbs = (await db.query(
-              `SELECT file_path FROM image_files
-               WHERE id = ? AND location = 'cache'`,
+              `SELECT file_path FROM cache_image_files
+               WHERE id = ?`,
               [crewMember.thumb_id]
             )) as Array<{ file_path: string }>;
 

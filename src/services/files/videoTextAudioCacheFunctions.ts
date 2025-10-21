@@ -88,39 +88,40 @@ export async function insertAudioFile(
   db: DatabaseConnection,
   record: AudioFileRecord
 ): Promise<number> {
-  const result = await db.execute(
-    `INSERT INTO audio_files (
-      entity_type, entity_id, file_path, file_name, file_size, file_hash,
-      location, audio_type, codec, duration_seconds, bitrate,
-      sample_rate, channels, language,
-      source_type, source_url, provider_name, classification_score,
-      library_file_id, cache_file_id, reference_count,
-      discovered_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-    [
-      record.entityType,
-      record.entityId,
-      record.filePath,
-      record.fileName,
-      record.fileSize,
-      record.fileHash || null,
-      record.location,
-      record.audioType,
-      record.codec || null,
-      record.durationSeconds || null,
-      record.bitrate || null,
-      record.sampleRate || null,
-      record.channels || null,
-      record.language || null,
-      record.sourceType || null,
-      record.sourceUrl || null,
-      record.providerName || null,
-      record.classificationScore || null,
-      record.libraryFileId || null,
-      record.cacheFileId || null,
-      record.referenceCount || 0
-    ]
-  );
+  // Insert into cache or library table based on location
+  const result = record.location === 'cache'
+    ? await db.execute(
+        `INSERT INTO cache_audio_files (
+          entity_type, entity_id, file_path, file_name, file_size, file_hash,
+          audio_type, codec, duration_seconds, bitrate,
+          sample_rate, channels, language,
+          source_type, source_url, provider_name, classification_score,
+          discovered_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+        [
+          record.entityType,
+          record.entityId,
+          record.filePath,
+          record.fileName,
+          record.fileSize,
+          record.fileHash || null,
+          record.audioType,
+          record.codec || null,
+          record.durationSeconds || null,
+          record.bitrate || null,
+          record.sampleRate || null,
+          record.channels || null,
+          record.language || null,
+          record.sourceType || null,
+          record.sourceUrl || null,
+          record.providerName || null,
+          record.classificationScore || null
+        ]
+      )
+    : await db.execute(
+        `INSERT INTO library_audio_files (cache_file_id, file_path, published_at) VALUES (?, ?, CURRENT_TIMESTAMP)`,
+        [record.cacheFileId, record.filePath]
+      );
 
   logger.debug('Inserted audio file', {
     id: result.insertId,
@@ -166,10 +167,10 @@ export async function cacheVideoFile(
 
     // Insert cache record
     const cacheResult = await db.execute(
-      `INSERT INTO video_files (
+      `INSERT INTO cache_video_files (
         entity_type, entity_id, file_path, file_name, file_size, file_hash,
-        location, video_type, source_type, library_file_id, reference_count, discovered_at
-      ) VALUES (?, ?, ?, ?, ?, ?, 'cache', ?, ?, ?, 1, CURRENT_TIMESTAMP)`,
+        video_type, source_type, discovered_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
       [
         entityType,
         entityId,
@@ -178,8 +179,7 @@ export async function cacheVideoFile(
         stats.size,
         fileHash,
         videoType,
-        sourceType,
-        libraryFileId
+        sourceType
       ]
     );
 
@@ -187,7 +187,7 @@ export async function cacheVideoFile(
 
     // Link library file to cache
     await db.execute(
-      `UPDATE video_files SET cache_file_id = ? WHERE id = ?`,
+      `UPDATE library_video_files SET cache_file_id = ? WHERE id = ?`,
       [cacheFileId, libraryFileId]
     );
 
@@ -244,9 +244,12 @@ export async function cacheTextFile(
     // Copy to cache
     await fs.copyFile(sourceFilePath, cachePath);
 
-    // Get subtitle language and format from library file
+    // Get subtitle language and format from library file (via JOIN to cache)
     const libraryFile = await db.query<{ subtitle_language: string; subtitle_format: string }>(
-      `SELECT subtitle_language, subtitle_format FROM text_files WHERE id = ?`,
+      `SELECT c.subtitle_language, c.subtitle_format
+       FROM library_text_files l
+       JOIN cache_text_files c ON l.cache_file_id = c.id
+       WHERE l.id = ?`,
       [libraryFileId]
     );
 
@@ -255,11 +258,11 @@ export async function cacheTextFile(
 
     // Insert cache record
     const cacheResult = await db.execute(
-      `INSERT INTO text_files (
+      `INSERT INTO cache_text_files (
         entity_type, entity_id, file_path, file_name, file_size, file_hash,
-        location, text_type, subtitle_language, subtitle_format,
-        source_type, library_file_id, reference_count, discovered_at
-      ) VALUES (?, ?, ?, ?, ?, ?, 'cache', ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP)`,
+        text_type, subtitle_language, subtitle_format,
+        source_type, discovered_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
       [
         entityType,
         entityId,
@@ -270,8 +273,7 @@ export async function cacheTextFile(
         textType,
         subtitleLanguage,
         subtitleFormat,
-        sourceType,
-        libraryFileId
+        sourceType
       ]
     );
 
@@ -279,7 +281,7 @@ export async function cacheTextFile(
 
     // Link library file to cache
     await db.execute(
-      `UPDATE text_files SET cache_file_id = ? WHERE id = ?`,
+      `UPDATE library_text_files SET cache_file_id = ? WHERE id = ?`,
       [cacheFileId, libraryFileId]
     );
 
@@ -337,10 +339,10 @@ export async function cacheAudioFile(
 
     // Insert cache record
     const cacheResult = await db.execute(
-      `INSERT INTO audio_files (
+      `INSERT INTO cache_audio_files (
         entity_type, entity_id, file_path, file_name, file_size, file_hash,
-        location, audio_type, source_type, library_file_id, reference_count, discovered_at
-      ) VALUES (?, ?, ?, ?, ?, ?, 'cache', ?, ?, ?, 1, CURRENT_TIMESTAMP)`,
+        audio_type, source_type, discovered_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
       [
         entityType,
         entityId,
@@ -349,8 +351,7 @@ export async function cacheAudioFile(
         stats.size,
         fileHash,
         audioType,
-        sourceType,
-        libraryFileId
+        sourceType
       ]
     );
 
@@ -358,7 +359,7 @@ export async function cacheAudioFile(
 
     // Link library file to cache
     await db.execute(
-      `UPDATE audio_files SET cache_file_id = ? WHERE id = ?`,
+      `UPDATE library_audio_files SET cache_file_id = ? WHERE id = ?`,
       [cacheFileId, libraryFileId]
     );
 
@@ -385,112 +386,88 @@ export async function cacheAudioFile(
 
 
 /**
- * Decrement reference count for cached video file
- * Optionally delete if reference count reaches 0
+ * Delete cached video file and its library references
+ * CASCADE DELETE will automatically remove library entries
  */
-export async function decrementVideoReferenceCount(
+export async function deleteCachedVideo(
   db: DatabaseConnection,
-  cacheFileId: number,
-  deleteIfZero: boolean = false
+  cacheFileId: number
 ): Promise<void> {
-  await db.execute(
-    `UPDATE video_files SET reference_count = GREATEST(0, reference_count - 1) WHERE id = ?`,
+  const rows = await db.query<{ id: number; file_path: string }>(
+    `SELECT id, file_path FROM cache_video_files WHERE id = ?`,
     [cacheFileId]
   );
 
-  if (deleteIfZero) {
-    const rows = await db.query<{ id: number; file_path: string; reference_count: number }>(
-      `SELECT id, file_path, reference_count FROM video_files WHERE id = ? AND reference_count = 0`,
-      [cacheFileId]
-    );
+  if (rows && rows.length > 0) {
+    const filePath = rows[0].file_path;
+    try {
+      await fs.unlink(filePath);
+      await db.execute(`DELETE FROM cache_video_files WHERE id = ?`, [cacheFileId]);
+      logger.info("Deleted cache video file", { cacheFileId, filePath });
 
-    if (rows && rows.length > 0) {
-      const filePath = rows[0].file_path;
-      try {
-        await fs.unlink(filePath);
-        await db.execute(`DELETE FROM video_files WHERE id = ?`, [cacheFileId]);
-        logger.info("Deleted unreferenced cache video file", { cacheFileId, filePath });
-
-        // Clean up empty parent directories
-        const cacheRoot = path.join(process.cwd(), "data", "cache", "videos");
-        await cleanupEmptyDirectories(filePath, cacheRoot);
-      } catch (error: any) {
-        logger.error("Failed to delete cache video file", { cacheFileId, error: error.message });
-      }
+      // Clean up empty parent directories
+      const cacheRoot = path.join(process.cwd(), "data", "cache", "videos");
+      await cleanupEmptyDirectories(filePath, cacheRoot);
+    } catch (error: any) {
+      logger.error("Failed to delete cache video file", { cacheFileId, error: error.message });
     }
   }
 }
 
 /**
- * Decrement reference count for cached text file
- * Optionally delete if reference count reaches 0
+ * Delete cached text file and its library references
+ * CASCADE DELETE will automatically remove library entries
  */
-export async function decrementTextReferenceCount(
+export async function deleteCachedText(
   db: DatabaseConnection,
-  cacheFileId: number,
-  deleteIfZero: boolean = false
+  cacheFileId: number
 ): Promise<void> {
-  await db.execute(
-    `UPDATE text_files SET reference_count = GREATEST(0, reference_count - 1) WHERE id = ?`,
+  const rows = await db.query<{ id: number; file_path: string }>(
+    `SELECT id, file_path FROM cache_text_files WHERE id = ?`,
     [cacheFileId]
   );
 
-  if (deleteIfZero) {
-    const rows = await db.query<{ id: number; file_path: string; reference_count: number }>(
-      `SELECT id, file_path, reference_count FROM text_files WHERE id = ? AND reference_count = 0`,
-      [cacheFileId]
-    );
+  if (rows && rows.length > 0) {
+    const filePath = rows[0].file_path;
+    try {
+      await fs.unlink(filePath);
+      await db.execute(`DELETE FROM cache_text_files WHERE id = ?`, [cacheFileId]);
+      logger.info("Deleted cache text file", { cacheFileId, filePath });
 
-    if (rows && rows.length > 0) {
-      const filePath = rows[0].file_path;
-      try {
-        await fs.unlink(filePath);
-        await db.execute(`DELETE FROM text_files WHERE id = ?`, [cacheFileId]);
-        logger.info("Deleted unreferenced cache text file", { cacheFileId, filePath });
-
-        // Clean up empty parent directories
-        const cacheRoot = path.join(process.cwd(), "data", "cache", "text");
-        await cleanupEmptyDirectories(filePath, cacheRoot);
-      } catch (error: any) {
-        logger.error("Failed to delete cache text file", { cacheFileId, error: error.message });
-      }
+      // Clean up empty parent directories
+      const cacheRoot = path.join(process.cwd(), "data", "cache", "text");
+      await cleanupEmptyDirectories(filePath, cacheRoot);
+    } catch (error: any) {
+      logger.error("Failed to delete cache text file", { cacheFileId, error: error.message });
     }
   }
 }
 
 /**
- * Decrement reference count for cached audio file
- * Optionally delete if reference count reaches 0
+ * Delete cached audio file and its library references
+ * CASCADE DELETE will automatically remove library entries
  */
-export async function decrementAudioReferenceCount(
+export async function deleteCachedAudio(
   db: DatabaseConnection,
-  cacheFileId: number,
-  deleteIfZero: boolean = false
+  cacheFileId: number
 ): Promise<void> {
-  await db.execute(
-    `UPDATE audio_files SET reference_count = GREATEST(0, reference_count - 1) WHERE id = ?`,
+  const rows = await db.query<{ id: number; file_path: string }>(
+    `SELECT id, file_path FROM cache_audio_files WHERE id = ?`,
     [cacheFileId]
   );
 
-  if (deleteIfZero) {
-    const rows = await db.query<{ id: number; file_path: string; reference_count: number }>(
-      `SELECT id, file_path, reference_count FROM audio_files WHERE id = ? AND reference_count = 0`,
-      [cacheFileId]
-    );
+  if (rows && rows.length > 0) {
+    const filePath = rows[0].file_path;
+    try {
+      await fs.unlink(filePath);
+      await db.execute(`DELETE FROM cache_audio_files WHERE id = ?`, [cacheFileId]);
+      logger.info("Deleted cache audio file", { cacheFileId, filePath });
 
-    if (rows && rows.length > 0) {
-      const filePath = rows[0].file_path;
-      try {
-        await fs.unlink(filePath);
-        await db.execute(`DELETE FROM audio_files WHERE id = ?`, [cacheFileId]);
-        logger.info("Deleted unreferenced cache audio file", { cacheFileId, filePath });
-
-        // Clean up empty parent directories
-        const cacheRoot = path.join(process.cwd(), "data", "cache", "audio");
-        await cleanupEmptyDirectories(filePath, cacheRoot);
-      } catch (error: any) {
-        logger.error("Failed to delete cache audio file", { cacheFileId, error: error.message });
-      }
+      // Clean up empty parent directories
+      const cacheRoot = path.join(process.cwd(), "data", "cache", "audio");
+      await cleanupEmptyDirectories(filePath, cacheRoot);
+    } catch (error: any) {
+      logger.error("Failed to delete cache audio file", { cacheFileId, error: error.message });
     }
   }
 }

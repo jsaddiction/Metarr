@@ -137,18 +137,17 @@ export class CleanSchemaMigration {
     // UNIFIED FILE SYSTEM TABLES
     // ============================================================
 
-    // Video Files (main movies, trailers, samples, extras)
+    // Cache Video Files (Trailers, samples from providers)
     await db.execute(`
-      CREATE TABLE video_files (
+      CREATE TABLE cache_video_files (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         entity_type TEXT NOT NULL CHECK(entity_type IN ('movie', 'episode')),
         entity_id INTEGER NOT NULL,
-        file_path TEXT NOT NULL,
+        file_path TEXT UNIQUE NOT NULL,
         file_name TEXT NOT NULL,
         file_size INTEGER NOT NULL,
         file_hash TEXT,
-        location TEXT NOT NULL CHECK(location IN ('library', 'cache')),
-        video_type TEXT NOT NULL CHECK(video_type IN ('main', 'trailer', 'sample', 'extra')),
+        video_type TEXT NOT NULL CHECK(video_type IN ('trailer', 'sample', 'extra')),
         codec TEXT,
         width INTEGER,
         height INTEGER,
@@ -163,35 +162,50 @@ export class CleanSchemaMigration {
         source_url TEXT,
         provider_name TEXT,
         classification_score INTEGER,
-        library_file_id INTEGER,
-        cache_file_id INTEGER,
-        reference_count INTEGER DEFAULT 0,
+        is_locked BOOLEAN DEFAULT 0,
         discovered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        last_accessed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (library_file_id) REFERENCES video_files(id) ON DELETE SET NULL,
-        FOREIGN KEY (cache_file_id) REFERENCES video_files(id) ON DELETE SET NULL
+        last_verified_at TIMESTAMP
       )
     `);
 
-    await db.execute('CREATE INDEX idx_video_files_entity ON video_files(entity_type, entity_id)');
-    await db.execute('CREATE INDEX idx_video_files_type ON video_files(video_type)');
-    await db.execute('CREATE INDEX idx_video_files_location ON video_files(location)');
-    await db.execute('CREATE INDEX idx_video_files_hash ON video_files(file_hash)');
+    await db.execute('CREATE INDEX idx_cache_videos_entity ON cache_video_files(entity_type, entity_id)');
+    await db.execute('CREATE INDEX idx_cache_videos_type ON cache_video_files(video_type)');
+    await db.execute('CREATE INDEX idx_cache_videos_hash ON cache_video_files(file_hash)');
+    await db.execute('CREATE INDEX idx_cache_videos_locked ON cache_video_files(is_locked)');
 
-    console.log('✅ video_files table created');
+    console.log('✅ cache_video_files table created');
 
-    // Image Files (posters, fanart, banners, logos, actor thumbs, etc.)
+    // Library Video Files (Published trailers for media players, ephemeral - can be rebuilt from cache)
     await db.execute(`
-      CREATE TABLE image_files (
+      CREATE TABLE library_video_files (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        cache_file_id INTEGER NOT NULL,
+        file_path TEXT UNIQUE NOT NULL,
+        published_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (cache_file_id) REFERENCES cache_video_files(id) ON DELETE CASCADE
+      )
+    `);
+
+    await db.execute('CREATE INDEX idx_library_videos_cache ON library_video_files(cache_file_id)');
+    await db.execute('CREATE INDEX idx_library_videos_path ON library_video_files(file_path)');
+
+    console.log('✅ cache_video_files and library_video_files tables created');
+
+    // ============================================================
+    // SPLIT ARCHITECTURE: Cache (permanent) vs Library (ephemeral)
+    // ============================================================
+
+    // Cache Image Files (Protected, survives library deletion)
+    await db.execute(`
+      CREATE TABLE cache_image_files (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         entity_type TEXT NOT NULL CHECK(entity_type IN ('movie', 'episode', 'series', 'season', 'actor')),
         entity_id INTEGER NOT NULL,
-        file_path TEXT NOT NULL,
+        file_path TEXT UNIQUE NOT NULL,
         file_name TEXT NOT NULL,
         file_size INTEGER NOT NULL,
-        file_hash TEXT NOT NULL,
+        file_hash TEXT,
         perceptual_hash TEXT,
-        location TEXT NOT NULL CHECK(location IN ('library', 'cache')),
         image_type TEXT NOT NULL CHECK(image_type IN (
           'poster', 'fanart', 'banner', 'clearlogo', 'clearart', 'discart',
           'landscape', 'keyart', 'thumb', 'actor_thumb', 'unknown'
@@ -203,36 +217,45 @@ export class CleanSchemaMigration {
         source_url TEXT,
         provider_name TEXT,
         classification_score INTEGER,
-        is_published BOOLEAN DEFAULT 0,
-        library_file_id INTEGER,
-        cache_file_id INTEGER,
-        reference_count INTEGER DEFAULT 0,
+        is_locked BOOLEAN DEFAULT 0,
         discovered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        last_accessed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (library_file_id) REFERENCES image_files(id) ON DELETE SET NULL,
-        FOREIGN KEY (cache_file_id) REFERENCES image_files(id) ON DELETE SET NULL
+        last_verified_at TIMESTAMP
       )
     `);
 
-    await db.execute('CREATE INDEX idx_image_files_entity ON image_files(entity_type, entity_id)');
-    await db.execute('CREATE INDEX idx_image_files_type ON image_files(image_type)');
-    await db.execute('CREATE INDEX idx_image_files_location ON image_files(location)');
-    await db.execute('CREATE INDEX idx_image_files_hash ON image_files(file_hash)');
-    await db.execute('CREATE INDEX idx_image_files_published ON image_files(is_published)');
+    await db.execute('CREATE INDEX idx_cache_images_entity ON cache_image_files(entity_type, entity_id)');
+    await db.execute('CREATE INDEX idx_cache_images_type ON cache_image_files(image_type)');
+    await db.execute('CREATE INDEX idx_cache_images_hash ON cache_image_files(file_hash)');
+    await db.execute('CREATE INDEX idx_cache_images_locked ON cache_image_files(is_locked)');
 
-    console.log('✅ image_files table created');
+    console.log('✅ cache_image_files table created');
 
-    // Audio Files (theme songs)
+    // Library Image Files (Published to media players, ephemeral - can be rebuilt from cache)
     await db.execute(`
-      CREATE TABLE audio_files (
+      CREATE TABLE library_image_files (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        cache_file_id INTEGER NOT NULL,
+        file_path TEXT UNIQUE NOT NULL,
+        published_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (cache_file_id) REFERENCES cache_image_files(id) ON DELETE CASCADE
+      )
+    `);
+
+    await db.execute('CREATE INDEX idx_library_images_cache ON library_image_files(cache_file_id)');
+    await db.execute('CREATE INDEX idx_library_images_path ON library_image_files(file_path)');
+
+    console.log('✅ library_image_files table created');
+
+    // Cache Audio Files (Theme songs from providers)
+    await db.execute(`
+      CREATE TABLE cache_audio_files (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         entity_type TEXT NOT NULL CHECK(entity_type IN ('movie', 'series')),
         entity_id INTEGER NOT NULL,
-        file_path TEXT NOT NULL,
+        file_path TEXT UNIQUE NOT NULL,
         file_name TEXT NOT NULL,
         file_size INTEGER NOT NULL,
         file_hash TEXT,
-        location TEXT NOT NULL CHECK(location IN ('library', 'cache')),
         audio_type TEXT NOT NULL CHECK(audio_type IN ('theme', 'unknown')),
         codec TEXT,
         duration_seconds INTEGER,
@@ -244,56 +267,80 @@ export class CleanSchemaMigration {
         source_url TEXT,
         provider_name TEXT,
         classification_score INTEGER,
-        library_file_id INTEGER,
-        cache_file_id INTEGER,
-        reference_count INTEGER DEFAULT 0,
+        is_locked BOOLEAN DEFAULT 0,
         discovered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (library_file_id) REFERENCES audio_files(id) ON DELETE SET NULL,
-        FOREIGN KEY (cache_file_id) REFERENCES audio_files(id) ON DELETE SET NULL
+        last_verified_at TIMESTAMP
       )
     `);
 
-    await db.execute('CREATE INDEX idx_audio_files_entity ON audio_files(entity_type, entity_id)');
-    await db.execute('CREATE INDEX idx_audio_files_location ON audio_files(location)');
+    await db.execute('CREATE INDEX idx_cache_audio_entity ON cache_audio_files(entity_type, entity_id)');
+    await db.execute('CREATE INDEX idx_cache_audio_type ON cache_audio_files(audio_type)');
+    await db.execute('CREATE INDEX idx_cache_audio_locked ON cache_audio_files(is_locked)');
 
-    console.log('✅ audio_files table created');
+    console.log('✅ cache_audio_files table created');
 
-    // Text Files (NFO, subtitles)
+    // Library Audio Files (Published theme songs, ephemeral - can be rebuilt from cache)
     await db.execute(`
-      CREATE TABLE text_files (
+      CREATE TABLE library_audio_files (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        cache_file_id INTEGER NOT NULL,
+        file_path TEXT UNIQUE NOT NULL,
+        published_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (cache_file_id) REFERENCES cache_audio_files(id) ON DELETE CASCADE
+      )
+    `);
+
+    await db.execute('CREATE INDEX idx_library_audio_cache ON library_audio_files(cache_file_id)');
+    await db.execute('CREATE INDEX idx_library_audio_path ON library_audio_files(file_path)');
+
+    console.log('✅ library_audio_files table created');
+
+    // Cache Text Files (NFO templates, subtitle options from providers)
+    await db.execute(`
+      CREATE TABLE cache_text_files (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         entity_type TEXT NOT NULL CHECK(entity_type IN ('movie', 'episode')),
         entity_id INTEGER NOT NULL,
-        file_path TEXT NOT NULL,
+        file_path TEXT UNIQUE NOT NULL,
         file_name TEXT NOT NULL,
         file_size INTEGER NOT NULL,
         file_hash TEXT,
-        location TEXT NOT NULL CHECK(location IN ('library', 'cache')),
         text_type TEXT NOT NULL CHECK(text_type IN ('nfo', 'subtitle')),
         subtitle_language TEXT,
         subtitle_format TEXT,
         nfo_is_valid BOOLEAN,
         nfo_has_tmdb_id BOOLEAN,
-        nfo_needs_regen BOOLEAN DEFAULT 0,
         source_type TEXT CHECK(source_type IN ('provider', 'local', 'user')),
         source_url TEXT,
         provider_name TEXT,
         classification_score INTEGER,
-        library_file_id INTEGER,
-        cache_file_id INTEGER,
-        reference_count INTEGER DEFAULT 0,
+        is_locked BOOLEAN DEFAULT 0,
         discovered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (library_file_id) REFERENCES text_files(id) ON DELETE SET NULL,
-        FOREIGN KEY (cache_file_id) REFERENCES text_files(id) ON DELETE SET NULL
+        last_verified_at TIMESTAMP
       )
     `);
 
-    await db.execute('CREATE INDEX idx_text_files_entity ON text_files(entity_type, entity_id)');
-    await db.execute('CREATE INDEX idx_text_files_type ON text_files(text_type)');
-    await db.execute('CREATE INDEX idx_text_files_location ON text_files(location)');
-    await db.execute('CREATE INDEX idx_text_files_nfo_regen ON text_files(nfo_needs_regen)');
+    await db.execute('CREATE INDEX idx_cache_text_entity ON cache_text_files(entity_type, entity_id)');
+    await db.execute('CREATE INDEX idx_cache_text_type ON cache_text_files(text_type)');
+    await db.execute('CREATE INDEX idx_cache_text_locked ON cache_text_files(is_locked)');
 
-    console.log('✅ text_files table created');
+    console.log('✅ cache_text_files table created');
+
+    // Library Text Files (Published NFOs and subtitles, ephemeral - can be rebuilt from cache)
+    await db.execute(`
+      CREATE TABLE library_text_files (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        cache_file_id INTEGER NOT NULL,
+        file_path TEXT UNIQUE NOT NULL,
+        published_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (cache_file_id) REFERENCES cache_text_files(id) ON DELETE CASCADE
+      )
+    `);
+
+    await db.execute('CREATE INDEX idx_library_text_cache ON library_text_files(cache_file_id)');
+    await db.execute('CREATE INDEX idx_library_text_path ON library_text_files(file_path)');
+
+    console.log('✅ library_text_files table created');
 
     // Unknown Files (minimal tracking for deletion UI)
     await db.execute(`
@@ -1103,6 +1150,24 @@ export class CleanSchemaMigration {
     await db.execute('CREATE INDEX idx_webhook_events_processed ON webhook_events(processed)');
     await db.execute('CREATE INDEX idx_webhook_events_created ON webhook_events(created_at)');
 
+    // Activity Log (for tracking user actions and system events)
+    await db.execute(`
+      CREATE TABLE activity_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_type TEXT NOT NULL,
+        source TEXT NOT NULL CHECK(source IN ('user', 'webhook', 'automation', 'system')),
+        description TEXT NOT NULL,
+        metadata TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await db.execute('CREATE INDEX idx_activity_log_type ON activity_log(event_type)');
+    await db.execute('CREATE INDEX idx_activity_log_source ON activity_log(source)');
+    await db.execute('CREATE INDEX idx_activity_log_created ON activity_log(created_at DESC)');
+
+    console.log('✅ Activity log table created');
+
     // ============================================================
     // CONFIGURATION TABLES
     // ============================================================
@@ -1123,6 +1188,34 @@ export class CleanSchemaMigration {
 
     await db.execute('CREATE INDEX idx_provider_config_enabled ON provider_config(enabled)');
     await db.execute('CREATE INDEX idx_provider_config_priority ON provider_config(priority)');
+
+    // Webhook Configuration
+    await db.execute(`
+      CREATE TABLE webhook_config (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        service TEXT NOT NULL UNIQUE CHECK(service IN ('radarr', 'sonarr', 'lidarr')),
+        enabled BOOLEAN NOT NULL DEFAULT 1,
+        auth_enabled BOOLEAN NOT NULL DEFAULT 0,
+        auth_username TEXT,
+        auth_password TEXT,
+        auto_publish BOOLEAN NOT NULL DEFAULT 1,
+        priority INTEGER DEFAULT 8 CHECK(priority BETWEEN 1 AND 10),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await db.execute('CREATE INDEX idx_webhook_config_enabled ON webhook_config(enabled)');
+
+    // Insert default webhook configurations
+    await db.execute(`
+      INSERT INTO webhook_config (service, enabled, auth_enabled, auto_publish, priority) VALUES
+        ('radarr', 1, 0, 1, 8),
+        ('sonarr', 1, 0, 1, 8),
+        ('lidarr', 0, 0, 1, 8)
+    `);
+
+    console.log('✅ Webhook configuration table created');
 
     // Application Settings
     await db.execute(`
@@ -1242,73 +1335,120 @@ export class CleanSchemaMigration {
 
     console.log('🔗 Creating CASCADE delete triggers for file tables...');
 
-    // Trigger: Delete movie files when movie is deleted
+    // Trigger: Delete LIBRARY files when movie is deleted (CACHE files survive for disaster recovery)
     await db.execute(`
-      CREATE TRIGGER delete_movie_files
+      CREATE TRIGGER delete_movie_library_files
       AFTER DELETE ON movies
       FOR EACH ROW
       BEGIN
-        DELETE FROM image_files WHERE entity_type = 'movie' AND entity_id = OLD.id;
-        DELETE FROM video_files WHERE entity_type = 'movie' AND entity_id = OLD.id;
-        DELETE FROM audio_files WHERE entity_type = 'movie' AND entity_id = OLD.id;
-        DELETE FROM text_files WHERE entity_type = 'movie' AND entity_id = OLD.id;
+        DELETE FROM library_image_files
+        WHERE cache_file_id IN (
+          SELECT id FROM cache_image_files WHERE entity_type = 'movie' AND entity_id = OLD.id
+        );
+
+        DELETE FROM library_video_files
+        WHERE cache_file_id IN (
+          SELECT id FROM cache_video_files WHERE entity_type = 'movie' AND entity_id = OLD.id
+        );
+
+        DELETE FROM library_audio_files
+        WHERE cache_file_id IN (
+          SELECT id FROM cache_audio_files WHERE entity_type = 'movie' AND entity_id = OLD.id
+        );
+
+        DELETE FROM library_text_files
+        WHERE cache_file_id IN (
+          SELECT id FROM cache_text_files WHERE entity_type = 'movie' AND entity_id = OLD.id
+        );
+
         DELETE FROM unknown_files WHERE entity_type = 'movie' AND entity_id = OLD.id;
       END;
     `);
 
-    // Trigger: Delete episode files when episode is deleted
+    // Trigger: Delete LIBRARY files when episode is deleted
     await db.execute(`
-      CREATE TRIGGER delete_episode_files
+      CREATE TRIGGER delete_episode_library_files
       AFTER DELETE ON episodes
       FOR EACH ROW
       BEGIN
-        DELETE FROM image_files WHERE entity_type = 'episode' AND entity_id = OLD.id;
-        DELETE FROM video_files WHERE entity_type = 'episode' AND entity_id = OLD.id;
-        DELETE FROM audio_files WHERE entity_type = 'episode' AND entity_id = OLD.id;
-        DELETE FROM text_files WHERE entity_type = 'episode' AND entity_id = OLD.id;
+        DELETE FROM library_image_files
+        WHERE cache_file_id IN (
+          SELECT id FROM cache_image_files WHERE entity_type = 'episode' AND entity_id = OLD.id
+        );
+
+        DELETE FROM library_video_files
+        WHERE cache_file_id IN (
+          SELECT id FROM cache_video_files WHERE entity_type = 'episode' AND entity_id = OLD.id
+        );
+
+        DELETE FROM library_text_files
+        WHERE cache_file_id IN (
+          SELECT id FROM cache_text_files WHERE entity_type = 'episode' AND entity_id = OLD.id
+        );
+
         DELETE FROM unknown_files WHERE entity_type = 'episode' AND entity_id = OLD.id;
       END;
     `);
 
-    // Trigger: Delete series files when series is deleted
+    // Trigger: Delete LIBRARY files when series is deleted
     await db.execute(`
-      CREATE TRIGGER delete_series_files
+      CREATE TRIGGER delete_series_library_files
       AFTER DELETE ON series
       FOR EACH ROW
       BEGIN
-        DELETE FROM image_files WHERE entity_type = 'series' AND entity_id = OLD.id;
-        DELETE FROM audio_files WHERE entity_type = 'series' AND entity_id = OLD.id;
+        DELETE FROM library_image_files
+        WHERE cache_file_id IN (
+          SELECT id FROM cache_image_files WHERE entity_type = 'series' AND entity_id = OLD.id
+        );
+
+        DELETE FROM library_audio_files
+        WHERE cache_file_id IN (
+          SELECT id FROM cache_audio_files WHERE entity_type = 'series' AND entity_id = OLD.id
+        );
       END;
     `);
 
-    // Trigger: Delete season files when season is deleted
+    // Trigger: Delete LIBRARY files when season is deleted
     await db.execute(`
-      CREATE TRIGGER delete_season_files
+      CREATE TRIGGER delete_season_library_files
       AFTER DELETE ON seasons
       FOR EACH ROW
       BEGIN
-        DELETE FROM image_files WHERE entity_type = 'season' AND entity_id = OLD.id;
+        DELETE FROM library_image_files
+        WHERE cache_file_id IN (
+          SELECT id FROM cache_image_files WHERE entity_type = 'season' AND entity_id = OLD.id
+        );
       END;
     `);
 
-    // Trigger: Delete actor files when actor is deleted
+    // Trigger: Delete LIBRARY files when actor is deleted
     await db.execute(`
-      CREATE TRIGGER delete_actor_files
+      CREATE TRIGGER delete_actor_library_files
       AFTER DELETE ON actors
       FOR EACH ROW
       BEGIN
-        DELETE FROM image_files WHERE entity_type = 'actor' AND entity_id = OLD.id;
+        DELETE FROM library_image_files
+        WHERE cache_file_id IN (
+          SELECT id FROM cache_image_files WHERE entity_type = 'actor' AND entity_id = OLD.id
+        );
       END;
     `);
 
-    // Trigger: Delete artist files when artist is deleted
+    // Trigger: Delete LIBRARY files when artist is deleted
     await db.execute(`
-      CREATE TRIGGER delete_artist_files
+      CREATE TRIGGER delete_artist_library_files
       AFTER DELETE ON artists
       FOR EACH ROW
       BEGIN
-        DELETE FROM image_files WHERE entity_type = 'artist' AND entity_id = OLD.id;
-        DELETE FROM audio_files WHERE entity_type = 'artist' AND entity_id = OLD.id;
+        DELETE FROM library_image_files
+        WHERE cache_file_id IN (
+          SELECT id FROM cache_image_files WHERE entity_type = 'artist' AND entity_id = OLD.id
+        );
+
+        DELETE FROM library_audio_files
+        WHERE cache_file_id IN (
+          SELECT id FROM cache_audio_files WHERE entity_type = 'artist' AND entity_id = OLD.id
+        );
       END;
     `);
 

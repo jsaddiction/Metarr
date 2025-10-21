@@ -116,21 +116,22 @@ export class MovieService {
         (SELECT COUNT(DISTINCT studio_id) FROM movie_studios WHERE movie_id = m.id) as studio_count,
 
         -- NFO parsed timestamp (scalar subquery)
-        (SELECT MAX(discovered_at) FROM text_files
-         WHERE entity_type = 'movie' AND entity_id = m.id AND text_type = 'nfo') as nfo_parsed_at,
+        (SELECT MAX(c.discovered_at) FROM library_text_files l
+         JOIN cache_text_files c ON l.cache_file_id = c.id
+         WHERE c.entity_type = 'movie' AND c.entity_id = m.id AND c.text_type = 'nfo') as nfo_parsed_at,
 
-        -- Asset counts from unified file system (scalar subqueries - much faster!)
-        (SELECT COUNT(*) FROM image_files WHERE entity_type = 'movie' AND entity_id = m.id AND image_type = 'poster' AND location = 'library') as poster_count,
-        (SELECT COUNT(*) FROM image_files WHERE entity_type = 'movie' AND entity_id = m.id AND image_type = 'fanart' AND location = 'library') as fanart_count,
-        (SELECT COUNT(*) FROM image_files WHERE entity_type = 'movie' AND entity_id = m.id AND image_type = 'landscape' AND location = 'library') as landscape_count,
-        (SELECT COUNT(*) FROM image_files WHERE entity_type = 'movie' AND entity_id = m.id AND image_type = 'keyart' AND location = 'library') as keyart_count,
-        (SELECT COUNT(*) FROM image_files WHERE entity_type = 'movie' AND entity_id = m.id AND image_type = 'banner' AND location = 'library') as banner_count,
-        (SELECT COUNT(*) FROM image_files WHERE entity_type = 'movie' AND entity_id = m.id AND image_type = 'clearart' AND location = 'library') as clearart_count,
-        (SELECT COUNT(*) FROM image_files WHERE entity_type = 'movie' AND entity_id = m.id AND image_type = 'clearlogo' AND location = 'library') as clearlogo_count,
-        (SELECT COUNT(*) FROM image_files WHERE entity_type = 'movie' AND entity_id = m.id AND image_type = 'discart' AND location = 'library') as discart_count,
-        (SELECT COUNT(*) FROM video_files WHERE entity_type = 'movie' AND entity_id = m.id AND video_type = 'trailer' AND location = 'library') as trailer_count,
-        (SELECT COUNT(*) FROM text_files WHERE entity_type = 'movie' AND entity_id = m.id AND text_type = 'subtitle' AND location = 'library') as subtitle_count,
-        (SELECT COUNT(*) FROM audio_files WHERE entity_type = 'movie' AND entity_id = m.id AND audio_type = 'theme' AND location = 'library') as theme_count
+        -- Asset counts from split cache/library tables (scalar subqueries)
+        (SELECT COUNT(*) FROM library_image_files l JOIN cache_image_files c ON l.cache_file_id = c.id WHERE c.entity_type = 'movie' AND c.entity_id = m.id AND c.image_type = 'poster') as poster_count,
+        (SELECT COUNT(*) FROM library_image_files l JOIN cache_image_files c ON l.cache_file_id = c.id WHERE c.entity_type = 'movie' AND c.entity_id = m.id AND c.image_type = 'fanart') as fanart_count,
+        (SELECT COUNT(*) FROM library_image_files l JOIN cache_image_files c ON l.cache_file_id = c.id WHERE c.entity_type = 'movie' AND c.entity_id = m.id AND c.image_type = 'landscape') as landscape_count,
+        (SELECT COUNT(*) FROM library_image_files l JOIN cache_image_files c ON l.cache_file_id = c.id WHERE c.entity_type = 'movie' AND c.entity_id = m.id AND c.image_type = 'keyart') as keyart_count,
+        (SELECT COUNT(*) FROM library_image_files l JOIN cache_image_files c ON l.cache_file_id = c.id WHERE c.entity_type = 'movie' AND c.entity_id = m.id AND c.image_type = 'banner') as banner_count,
+        (SELECT COUNT(*) FROM library_image_files l JOIN cache_image_files c ON l.cache_file_id = c.id WHERE c.entity_type = 'movie' AND c.entity_id = m.id AND c.image_type = 'clearart') as clearart_count,
+        (SELECT COUNT(*) FROM library_image_files l JOIN cache_image_files c ON l.cache_file_id = c.id WHERE c.entity_type = 'movie' AND c.entity_id = m.id AND c.image_type = 'clearlogo') as clearlogo_count,
+        (SELECT COUNT(*) FROM library_image_files l JOIN cache_image_files c ON l.cache_file_id = c.id WHERE c.entity_type = 'movie' AND c.entity_id = m.id AND c.image_type = 'discart') as discart_count,
+        (SELECT COUNT(*) FROM library_video_files l JOIN cache_video_files c ON l.cache_file_id = c.id WHERE c.entity_type = 'movie' AND c.entity_id = m.id AND c.video_type = 'trailer') as trailer_count,
+        (SELECT COUNT(*) FROM library_text_files l JOIN cache_text_files c ON l.cache_file_id = c.id WHERE c.entity_type = 'movie' AND c.entity_id = m.id AND c.text_type = 'subtitle') as subtitle_count,
+        (SELECT COUNT(*) FROM library_audio_files l JOIN cache_audio_files c ON l.cache_file_id = c.id WHERE c.entity_type = 'movie' AND c.entity_id = m.id AND c.audio_type = 'theme') as theme_count
 
       FROM movies m
 
@@ -347,14 +348,14 @@ export class MovieService {
   async getImages(movieId: number): Promise<any[]> {
     const conn = this.db.getConnection();
 
-    // Query image_files for cache images
+    // Query cache_image_files for cache images
     const images = await conn.query(
       `SELECT
         id, entity_type, entity_id, file_path, file_name, file_size,
         image_type, width, height, format, source_type, source_url, provider_name,
-        classification_score, reference_count, discovered_at
-      FROM image_files
-      WHERE entity_type = 'movie' AND entity_id = ? AND location = 'cache'
+        classification_score, discovered_at
+      FROM cache_image_files
+      WHERE entity_type = 'movie' AND entity_id = ?
       ORDER BY image_type, classification_score DESC`,
       [movieId]
     );
@@ -369,24 +370,24 @@ export class MovieService {
   }> {
     const conn = this.db.getConnection();
 
-    // Get trailer (video_file with video_type='trailer')
+    // Get trailer (cache_video_files with video_type='trailer')
     const trailers = await conn.query(
-      `SELECT * FROM video_files
+      `SELECT * FROM cache_video_files
        WHERE entity_type = 'movie' AND entity_id = ? AND video_type = 'trailer'
        LIMIT 1`,
       [movieId]
     );
 
-    // Get subtitles (text_files with text_type='subtitle')
+    // Get subtitles (cache_text_files with text_type='subtitle')
     const subtitles = await conn.query(
-      `SELECT * FROM text_files
+      `SELECT * FROM cache_text_files
        WHERE entity_type = 'movie' AND entity_id = ? AND text_type = 'subtitle'`,
       [movieId]
     );
 
-    // Get theme song (audio_file with audio_type='theme')
+    // Get theme song (cache_audio_files with audio_type='theme')
     const themes = await conn.query(
-      `SELECT * FROM audio_files
+      `SELECT * FROM cache_audio_files
        WHERE entity_type = 'movie' AND entity_id = ? AND audio_type = 'theme'
        LIMIT 1`,
       [movieId]
@@ -526,12 +527,32 @@ export class MovieService {
           }
         }
 
-        // Insert into images table with BOTH cache_path and library_path
+        // Insert cache copy into cache_image_files table
+        const cacheResult = await conn.execute(
+          `INSERT INTO cache_image_files (
+            entity_type, entity_id, image_type, file_path, file_name,
+            file_size, file_hash, width, height, format, source_type
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            'movie',
+            movieId,
+            fileType,
+            cachePath,
+            path.basename(cachePath),
+            stats.size,
+            fileHash,
+            width,
+            height,
+            ext.substring(1), // Remove leading dot
+            'local'
+          ]
+        );
+
+        // Insert library copy into library_image_files table
         await conn.execute(
-          `INSERT INTO images (
-            entity_type, entity_id, type, cache_path, library_path, file_size, file_hash, width, height
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          ['movie', movieId, fileType, cachePath, finalLibraryPath, stats.size, fileHash, width, height]
+          `INSERT INTO library_image_files (cache_file_id, file_path)
+           VALUES (?, ?)`,
+          [cacheResult.insertId, finalLibraryPath]
         );
 
         logger.info('Assigned unknown file as image (two-copy architecture)', {
@@ -570,11 +591,18 @@ export class MovieService {
           logger.warn('Failed to hash trailer file', { filePath: finalFilePath, error: error.message });
         }
 
+        // Insert trailer into cache_video_files table (discovered in library)
+        const cacheResult = await conn.execute(
+          `INSERT INTO cache_video_files (
+            entity_type, entity_id, video_type, file_path, file_size, file_hash, source_type
+          ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          ['movie', movieId, 'trailer', finalFilePath, stats.size, fileHash, 'local']
+        );
+
+        // Also insert into library_video_files
         await conn.execute(
-          `INSERT INTO trailers (
-            entity_type, entity_id, source_type, local_path, file_size, file_hash
-          ) VALUES (?, ?, ?, ?, ?, ?)`,
-          ['movie', movieId, 'local', finalFilePath, stats.size, fileHash]
+          `INSERT INTO library_video_files (cache_file_id, file_path) VALUES (?, ?)`,
+          [cacheResult.insertId, finalFilePath]
         );
 
         logger.info('Assigned unknown file as trailer', { movieId, fileId, originalPath: originalFilePath, finalPath: finalFilePath });
@@ -930,55 +958,90 @@ export class MovieService {
 
           await fs.copyFile(cacheResult.cachePath, libraryPath);
 
-          // Insert or update image record in database
-          const existing = await conn.get(
-            'SELECT id FROM images WHERE entity_type = ? AND entity_id = ? AND type = ?',
+          // Insert or update image record in database using split cache/library tables
+          // Check for existing cache copy
+          const existingCache = await conn.get(
+            'SELECT id FROM cache_image_files WHERE entity_type = ? AND entity_id = ? AND image_type = ?',
             ['movie', movieId, assetType]
           );
 
-          if (existing) {
-            // Update existing
+          let cacheFileId: number;
+
+          if (existingCache) {
+            // Update existing cache copy
             await conn.execute(
-              `UPDATE images SET
-                cache_path = ?,
-                library_path = ?,
-                provider_url = ?,
-                url = ?,
+              `UPDATE cache_image_files SET
+                file_path = ?,
+                file_name = ?,
+                file_size = ?,
+                file_hash = ?,
                 width = ?,
                 height = ?,
-                file_size = ?
+                format = ?,
+                source_type = ?,
+                source_url = ?,
+                provider_name = ?
               WHERE id = ?`,
               [
                 cacheResult.cachePath,
-                libraryPath,
-                asset.provider,
-                asset.url,
+                path.basename(cacheResult.cachePath),
+                cacheResult.fileSize,
+                cacheResult.contentHash,
                 width,
                 height,
-                cacheResult.fileSize,
-                existing.id
+                path.extname(tempFilePath).substring(1), // Remove leading dot
+                'provider',
+                asset.url,
+                asset.provider,
+                existingCache.id
               ]
             );
+            cacheFileId = existingCache.id;
           } else {
-            // Insert new
-            await conn.execute(
-              `INSERT INTO images (
-                entity_type, entity_id, type,
-                cache_path, library_path, provider_url, url,
-                width, height, file_size
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            // Insert new cache copy
+            const result = await conn.execute(
+              `INSERT INTO cache_image_files (
+                entity_type, entity_id, image_type, file_path, file_name,
+                file_size, file_hash, width, height, format,
+                source_type, source_url, provider_name
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
               [
                 'movie',
                 movieId,
                 assetType,
                 cacheResult.cachePath,
-                libraryPath,
-                asset.provider,
-                asset.url,
+                path.basename(cacheResult.cachePath),
+                cacheResult.fileSize,
+                cacheResult.contentHash,
                 width,
                 height,
-                cacheResult.fileSize
+                path.extname(tempFilePath).substring(1),
+                'provider',
+                asset.url,
+                asset.provider
               ]
+            );
+            cacheFileId = result.insertId!;
+          }
+
+          // Check for existing library copy
+          const existingLibrary = await conn.get(
+            'SELECT id FROM library_image_files WHERE cache_file_id = ?',
+            [cacheFileId]
+          );
+
+          if (existingLibrary) {
+            // Update existing library copy
+            await conn.execute(
+              `UPDATE library_image_files SET file_path = ? WHERE id = ?`,
+              [libraryPath, existingLibrary.id]
+            );
+          } else {
+            // Insert new library copy
+            await conn.execute(
+              `INSERT INTO library_image_files (cache_file_id, file_path)
+               VALUES (?, ?)`,
+              [cacheFileId, libraryPath]
             );
           }
 
@@ -1072,315 +1135,6 @@ export class MovieService {
         reject(err);
       });
     });
-  }
-
-  /**
-   * Rebuild movie assets from cache to library directory
-   * Part of TWO-COPY ARCHITECTURE - cache is source of truth
-   */
-  async rebuildMovieAssets(movieId: number): Promise<any> {
-    const conn = this.db.getConnection();
-
-    try {
-      // Get movie details
-      const movieResults = await conn.query(
-        'SELECT id, file_path, title, year FROM movies WHERE id = ?',
-        [movieId]
-      );
-
-      if (!movieResults || movieResults.length === 0) {
-        throw new Error('Movie not found');
-      }
-
-      const movie = movieResults[0];
-      const movieDir = path.dirname(movie.file_path);
-      const movieFileName = path.parse(movie.file_path).name;
-
-      const results = {
-        success: true,
-        rebuilt: {
-          images: 0,
-          trailers: 0,
-          subtitles: 0,
-        },
-        errors: [] as string[],
-      };
-
-      // Rebuild images from cache
-      const images = await conn.query(
-        'SELECT id, type, cache_path FROM images WHERE entity_type = ? AND entity_id = ?',
-        ['movie', movieId]
-      );
-
-      for (const image of images) {
-        try {
-          if (!image.cache_path) {
-            results.errors.push(`Image ${image.id} has no cache_path`);
-            continue;
-          }
-
-          const ext = path.extname(image.cache_path);
-          const libraryFileName = `${movieFileName}-${image.type}${ext}`;
-          const libraryPath = path.join(movieDir, libraryFileName);
-
-          // Copy from cache to library
-          await fs.copyFile(image.cache_path, libraryPath);
-
-          // Update library_path in database
-          await conn.execute(
-            'UPDATE images SET library_path = ? WHERE id = ?',
-            [libraryPath, image.id]
-          );
-
-          results.rebuilt.images++;
-          logger.debug('Rebuilt image from cache', {
-            imageId: image.id,
-            type: image.type,
-            cachePath: image.cache_path,
-            libraryPath,
-          });
-        } catch (error: any) {
-          results.errors.push(`Failed to rebuild image ${image.id}: ${error.message}`);
-          logger.error('Failed to rebuild image from cache', {
-            imageId: image.id,
-            error: error.message,
-          });
-        }
-      }
-
-      // Rebuild trailers from cache
-      const trailers = await conn.query(
-        'SELECT id, cache_path FROM trailers WHERE entity_type = ? AND entity_id = ?',
-        ['movie', movieId]
-      );
-
-      for (const trailer of trailers) {
-        try {
-          if (!trailer.cache_path) {
-            results.errors.push(`Trailer ${trailer.id} has no cache_path`);
-            continue;
-          }
-
-          const ext = path.extname(trailer.cache_path);
-          const libraryFileName = `${movieFileName}-trailer${ext}`;
-          const libraryPath = path.join(movieDir, libraryFileName);
-
-          await fs.copyFile(trailer.cache_path, libraryPath);
-
-          await conn.execute(
-            'UPDATE trailers SET local_path = ? WHERE id = ?',
-            [libraryPath, trailer.id]
-          );
-
-          results.rebuilt.trailers++;
-          logger.debug('Rebuilt trailer from cache', {
-            trailerId: trailer.id,
-            cachePath: trailer.cache_path,
-            libraryPath,
-          });
-        } catch (error: any) {
-          results.errors.push(`Failed to rebuild trailer ${trailer.id}: ${error.message}`);
-          logger.error('Failed to rebuild trailer from cache', {
-            trailerId: trailer.id,
-            error: error.message,
-          });
-        }
-      }
-
-      // Rebuild subtitles from cache
-      const subtitles = await conn.query(
-        'SELECT id, cache_path, language FROM subtitle_streams WHERE entity_type = ? AND entity_id = ?',
-        ['movie', movieId]
-      );
-
-      for (const subtitle of subtitles) {
-        try {
-          if (!subtitle.cache_path) {
-            results.errors.push(`Subtitle ${subtitle.id} has no cache_path`);
-            continue;
-          }
-
-          const ext = path.extname(subtitle.cache_path);
-          const lang = subtitle.language || 'unknown';
-          const libraryFileName = `${movieFileName}.${lang}${ext}`;
-          const libraryPath = path.join(movieDir, libraryFileName);
-
-          await fs.copyFile(subtitle.cache_path, libraryPath);
-
-          await conn.execute(
-            'UPDATE subtitle_streams SET file_path = ? WHERE id = ?',
-            [libraryPath, subtitle.id]
-          );
-
-          results.rebuilt.subtitles++;
-          logger.debug('Rebuilt subtitle from cache', {
-            subtitleId: subtitle.id,
-            cachePath: subtitle.cache_path,
-            libraryPath,
-          });
-        } catch (error: any) {
-          results.errors.push(`Failed to rebuild subtitle ${subtitle.id}: ${error.message}`);
-          logger.error('Failed to rebuild subtitle from cache', {
-            subtitleId: subtitle.id,
-            error: error.message,
-          });
-        }
-      }
-
-      logger.info('Asset rebuild complete', {
-        movieId,
-        rebuilt: results.rebuilt,
-        errorCount: results.errors.length,
-      });
-
-      return results;
-    } catch (error: any) {
-      logger.error('Failed to rebuild movie assets', {
-        movieId,
-        error: error.message,
-      });
-      throw error;
-    }
-  }
-
-  /**
-   * Verify movie assets - check cache vs library paths
-   */
-  async verifyMovieAssets(movieId: number): Promise<any> {
-    const conn = this.db.getConnection();
-
-    try {
-      const results = {
-        success: true,
-        verified: {
-          images: { total: 0, missing_cache: 0, missing_library: 0, ok: 0 },
-          trailers: { total: 0, missing_cache: 0, missing_library: 0, ok: 0 },
-          subtitles: { total: 0, missing_cache: 0, missing_library: 0, ok: 0 },
-        },
-        details: [] as string[],
-      };
-
-      // Verify images
-      const images = await conn.query(
-        'SELECT id, type, cache_path, library_path FROM images WHERE entity_type = ? AND entity_id = ?',
-        ['movie', movieId]
-      );
-
-      for (const image of images) {
-        results.verified.images.total++;
-        let cacheExists = false;
-        let libraryExists = false;
-
-        try {
-          if (image.cache_path) {
-            await fs.access(image.cache_path);
-            cacheExists = true;
-          }
-        } catch (error) {
-          results.verified.images.missing_cache++;
-          results.details.push(`Image ${image.type} (${image.id}): cache missing`);
-        }
-
-        try {
-          if (image.library_path) {
-            await fs.access(image.library_path);
-            libraryExists = true;
-          }
-        } catch (error) {
-          results.verified.images.missing_library++;
-          results.details.push(`Image ${image.type} (${image.id}): library copy missing`);
-        }
-
-        if (cacheExists && libraryExists) {
-          results.verified.images.ok++;
-        }
-      }
-
-      // Verify trailers
-      const trailers = await conn.query(
-        'SELECT id, cache_path, local_path FROM trailers WHERE entity_type = ? AND entity_id = ?',
-        ['movie', movieId]
-      );
-
-      for (const trailer of trailers) {
-        results.verified.trailers.total++;
-        let cacheExists = false;
-        let libraryExists = false;
-
-        try {
-          if (trailer.cache_path) {
-            await fs.access(trailer.cache_path);
-            cacheExists = true;
-          }
-        } catch (error) {
-          results.verified.trailers.missing_cache++;
-          results.details.push(`Trailer ${trailer.id}: cache missing`);
-        }
-
-        try {
-          if (trailer.local_path) {
-            await fs.access(trailer.local_path);
-            libraryExists = true;
-          }
-        } catch (error) {
-          results.verified.trailers.missing_library++;
-          results.details.push(`Trailer ${trailer.id}: library copy missing`);
-        }
-
-        if (cacheExists && libraryExists) {
-          results.verified.trailers.ok++;
-        }
-      }
-
-      // Verify subtitles
-      const subtitles = await conn.query(
-        'SELECT id, cache_path, file_path FROM subtitle_streams WHERE entity_type = ? AND entity_id = ?',
-        ['movie', movieId]
-      );
-
-      for (const subtitle of subtitles) {
-        results.verified.subtitles.total++;
-        let cacheExists = false;
-        let libraryExists = false;
-
-        try {
-          if (subtitle.cache_path) {
-            await fs.access(subtitle.cache_path);
-            cacheExists = true;
-          }
-        } catch (error) {
-          results.verified.subtitles.missing_cache++;
-          results.details.push(`Subtitle ${subtitle.id}: cache missing`);
-        }
-
-        try {
-          if (subtitle.file_path) {
-            await fs.access(subtitle.file_path);
-            libraryExists = true;
-          }
-        } catch (error) {
-          results.verified.subtitles.missing_library++;
-          results.details.push(`Subtitle ${subtitle.id}: library copy missing`);
-        }
-
-        if (cacheExists && libraryExists) {
-          results.verified.subtitles.ok++;
-        }
-      }
-
-      logger.info('Asset verification complete', {
-        movieId,
-        verified: results.verified,
-      });
-
-      return results;
-    } catch (error: any) {
-      logger.error('Failed to verify movie assets', {
-        movieId,
-        error: error.message,
-      });
-      throw error;
-    }
   }
 
   /**
@@ -1583,62 +1337,55 @@ export class MovieService {
     try {
       const conn = this.db.getConnection();
 
-      // Get video files
+      // Get video files (cache only - source of truth)
       const videoFiles = await conn.query(
         `SELECT
-          id, file_path, file_name, file_size, location, video_type,
+          id, file_path, file_name, file_size, video_type,
           codec, width, height, duration_seconds, bitrate, framerate, hdr_type,
           audio_codec, audio_channels, audio_language,
           source_type, source_url, provider_name, classification_score,
-          library_file_id, cache_file_id, discovered_at
-        FROM video_files
+          discovered_at
+        FROM cache_video_files
         WHERE entity_type = 'movie' AND entity_id = ?
         ORDER BY video_type, discovered_at DESC`,
         [movieId]
       );
 
-      // Get image files (cache only - library images are replicas)
+      // Get image files (cache only - source of truth)
       const imageFiles = await conn.query(
         `SELECT
-          id, file_path, file_name, file_size, location, image_type,
+          id, file_path, file_name, file_size, image_type,
           width, height, format, perceptual_hash,
           source_type, source_url, provider_name, classification_score,
-          library_file_id, cache_file_id, reference_count, discovered_at
-        FROM image_files
-        WHERE entity_type = 'movie' AND entity_id = ? AND location = 'cache'
+          is_locked, discovered_at
+        FROM cache_image_files
+        WHERE entity_type = 'movie' AND entity_id = ?
         ORDER BY image_type, classification_score DESC, discovered_at DESC`,
         [movieId]
       );
 
-      // Get audio files
+      // Get audio files (cache only - source of truth)
       const audioFiles = await conn.query(
         `SELECT
-          id, file_path, file_name, file_size, location, audio_type,
+          id, file_path, file_name, file_size, audio_type,
           codec, duration_seconds, bitrate, sample_rate, channels, language,
           source_type, source_url, provider_name, classification_score,
-          library_file_id, cache_file_id, discovered_at
-        FROM audio_files
+          discovered_at
+        FROM cache_audio_files
         WHERE entity_type = 'movie' AND entity_id = ?
         ORDER BY audio_type, discovered_at DESC`,
         [movieId]
       );
 
-      // Get text files (NFO, subtitles, etc.)
-      // For subtitles: only show library files (not cache - those are provider downloads)
-      // For NFO: show cache files (source of truth)
+      // Get text files (cache only - source of truth)
       const textFiles = await conn.query(
         `SELECT
-          id, file_path, file_name, file_size, location, text_type,
+          id, file_path, file_name, file_size, text_type,
           subtitle_language, subtitle_format, nfo_is_valid, nfo_has_tmdb_id, nfo_needs_regen,
           source_type, source_url, provider_name, classification_score,
-          library_file_id, cache_file_id, discovered_at
-        FROM text_files
+          discovered_at
+        FROM cache_text_files
         WHERE entity_type = 'movie' AND entity_id = ?
-          AND (
-            (text_type = 'subtitle' AND location = 'library')
-            OR (text_type = 'nfo' AND location = 'cache')
-            OR (text_type NOT IN ('subtitle', 'nfo'))
-          )
         ORDER BY text_type, discovered_at DESC`,
         [movieId]
       );
@@ -1899,8 +1646,8 @@ export class MovieService {
 
       // Get current assets for this type
       const currentAssets = await conn.query(
-        `SELECT id, source_url, perceptual_hash FROM image_files
-         WHERE entity_type = 'movie' AND entity_id = ? AND image_type = ? AND location = 'cache'`,
+        `SELECT id, source_url, perceptual_hash FROM cache_image_files
+         WHERE entity_type = 'movie' AND entity_id = ? AND image_type = ?`,
         [movieId, assetType]
       );
 
@@ -2027,8 +1774,8 @@ export class MovieService {
 
       // Check if we already have this asset (by source_url or perceptual_hash)
       const existing = await conn.query(
-        `SELECT id FROM image_files
-         WHERE entity_type = 'movie' AND entity_id = ? AND image_type = ? AND location = 'cache'
+        `SELECT id FROM cache_image_files
+         WHERE entity_type = 'movie' AND entity_id = ? AND image_type = ?
            AND (source_url = ? OR (perceptual_hash IS NOT NULL AND perceptual_hash = ?))`,
         [movieId, assetType, assetData.url, assetData.perceptualHash || null]
       );
@@ -2090,14 +1837,14 @@ export class MovieService {
         // Ignore cleanup errors
       }
 
-      // Insert into image_files table
+      // Insert into cache_image_files table
       const result = await conn.execute(
-        `INSERT INTO image_files (
+        `INSERT INTO cache_image_files (
           entity_type, entity_id, image_type, file_path, file_name,
-          file_size, file_hash, perceptual_hash, location,
+          file_size, file_hash, perceptual_hash,
           width, height, format, source_type, source_url, provider_name,
-          classification_score, reference_count, discovered_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'cache', ?, ?, ?, 'provider', ?, ?, 0, 1, CURRENT_TIMESTAMP)`,
+          classification_score, discovered_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'provider', ?, ?, 0, CURRENT_TIMESTAMP)`,
         [
           'movie',
           movieId,
@@ -2153,7 +1900,7 @@ export class MovieService {
     try {
       // Get image record
       const images = await conn.query(
-        'SELECT id, image_type, file_path, location FROM image_files WHERE id = ? AND entity_id = ? AND entity_type = ?',
+        'SELECT id, image_type, file_path FROM cache_image_files WHERE id = ? AND entity_id = ? AND entity_type = ?',
         [imageFileId, movieId, 'movie']
       );
 
@@ -2189,8 +1936,8 @@ export class MovieService {
         }
       }
 
-      // Delete cache record from database
-      await conn.execute('DELETE FROM image_files WHERE id = ?', [imageFileId]);
+      // Delete cache record from database (CASCADE will delete library entries)
+      await conn.execute('DELETE FROM cache_image_files WHERE id = ?', [imageFileId]);
 
       logger.info('Removed asset from movie', {
         movieId,
@@ -2282,8 +2029,8 @@ export class MovieService {
 
     try {
       const result = await conn.query(
-        `SELECT COUNT(*) as count FROM image_files
-         WHERE entity_type = 'movie' AND entity_id = ? AND image_type = ? AND location = 'cache'`,
+        `SELECT COUNT(*) as count FROM cache_image_files
+         WHERE entity_type = 'movie' AND entity_id = ? AND image_type = ?`,
         [movieId, assetType]
       );
 
@@ -2314,9 +2061,9 @@ export class MovieService {
           id, file_path, file_name, file_size, image_type,
           width, height, format, perceptual_hash,
           source_type, source_url, provider_name, classification_score,
-          reference_count, discovered_at
-        FROM image_files
-        WHERE entity_type = 'movie' AND entity_id = ? AND image_type = ? AND location = 'cache'
+          is_locked, discovered_at
+        FROM cache_image_files
+        WHERE entity_type = 'movie' AND entity_id = ? AND image_type = ?
         ORDER BY classification_score DESC, discovered_at DESC`,
         [movieId, assetType]
       );
