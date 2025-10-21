@@ -164,7 +164,7 @@ export class CleanSchemaMigration {
         classification_score INTEGER,
         is_locked BOOLEAN DEFAULT 0,
         discovered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        last_verified_at TIMESTAMP
+        last_accessed_at TIMESTAMP
       )
     `);
 
@@ -219,7 +219,7 @@ export class CleanSchemaMigration {
         classification_score INTEGER,
         is_locked BOOLEAN DEFAULT 0,
         discovered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        last_verified_at TIMESTAMP
+        last_accessed_at TIMESTAMP
       )
     `);
 
@@ -269,7 +269,7 @@ export class CleanSchemaMigration {
         classification_score INTEGER,
         is_locked BOOLEAN DEFAULT 0,
         discovered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        last_verified_at TIMESTAMP
+        last_accessed_at TIMESTAMP
       )
     `);
 
@@ -310,6 +310,7 @@ export class CleanSchemaMigration {
         subtitle_format TEXT,
         nfo_is_valid BOOLEAN,
         nfo_has_tmdb_id BOOLEAN,
+        nfo_needs_regen BOOLEAN DEFAULT 0,
         source_type TEXT CHECK(source_type IN ('provider', 'local', 'user')),
         source_url TEXT,
         provider_name TEXT,
@@ -393,6 +394,7 @@ export class CleanSchemaMigration {
         tmdb_votes INTEGER,
         imdb_rating REAL,
         imdb_votes INTEGER,
+        user_rating REAL CHECK(user_rating >= 0 AND user_rating <= 10),
         poster_id INTEGER,
         fanart_id INTEGER,
         logo_id INTEGER,
@@ -422,16 +424,16 @@ export class CleanSchemaMigration {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (library_id) REFERENCES libraries(id) ON DELETE CASCADE,
-        FOREIGN KEY (poster_id) REFERENCES image_files(id),
-        FOREIGN KEY (fanart_id) REFERENCES image_files(id),
-        FOREIGN KEY (logo_id) REFERENCES image_files(id),
-        FOREIGN KEY (clearlogo_id) REFERENCES image_files(id),
-        FOREIGN KEY (clearart_id) REFERENCES image_files(id),
-        FOREIGN KEY (banner_id) REFERENCES image_files(id),
-        FOREIGN KEY (thumb_id) REFERENCES image_files(id),
-        FOREIGN KEY (discart_id) REFERENCES image_files(id),
-        FOREIGN KEY (keyart_id) REFERENCES image_files(id),
-        FOREIGN KEY (landscape_id) REFERENCES image_files(id)
+        FOREIGN KEY (poster_id) REFERENCES cache_image_files(id),
+        FOREIGN KEY (fanart_id) REFERENCES cache_image_files(id),
+        FOREIGN KEY (logo_id) REFERENCES cache_image_files(id),
+        FOREIGN KEY (clearlogo_id) REFERENCES cache_image_files(id),
+        FOREIGN KEY (clearart_id) REFERENCES cache_image_files(id),
+        FOREIGN KEY (banner_id) REFERENCES cache_image_files(id),
+        FOREIGN KEY (thumb_id) REFERENCES cache_image_files(id),
+        FOREIGN KEY (discart_id) REFERENCES cache_image_files(id),
+        FOREIGN KEY (keyart_id) REFERENCES cache_image_files(id),
+        FOREIGN KEY (landscape_id) REFERENCES cache_image_files(id)
       )
     `);
 
@@ -453,8 +455,8 @@ export class CleanSchemaMigration {
         poster_id INTEGER,
         fanart_id INTEGER,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (poster_id) REFERENCES image_files(id),
-        FOREIGN KEY (fanart_id) REFERENCES image_files(id)
+        FOREIGN KEY (poster_id) REFERENCES cache_image_files(id),
+        FOREIGN KEY (fanart_id) REFERENCES cache_image_files(id)
       )
     `);
 
@@ -501,6 +503,7 @@ export class CleanSchemaMigration {
         tvdb_votes INTEGER,
         tmdb_rating REAL,
         tmdb_votes INTEGER,
+        user_rating REAL CHECK(user_rating >= 0 AND user_rating <= 10),
         poster_id INTEGER,
         fanart_id INTEGER,
         banner_id INTEGER,
@@ -521,12 +524,12 @@ export class CleanSchemaMigration {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (library_id) REFERENCES libraries(id) ON DELETE CASCADE,
-        FOREIGN KEY (poster_id) REFERENCES image_files(id),
-        FOREIGN KEY (fanart_id) REFERENCES image_files(id),
-        FOREIGN KEY (banner_id) REFERENCES image_files(id),
-        FOREIGN KEY (logo_id) REFERENCES image_files(id),
-        FOREIGN KEY (clearart_id) REFERENCES image_files(id),
-        FOREIGN KEY (thumb_id) REFERENCES image_files(id)
+        FOREIGN KEY (poster_id) REFERENCES cache_image_files(id),
+        FOREIGN KEY (fanart_id) REFERENCES cache_image_files(id),
+        FOREIGN KEY (banner_id) REFERENCES cache_image_files(id),
+        FOREIGN KEY (logo_id) REFERENCES cache_image_files(id),
+        FOREIGN KEY (clearart_id) REFERENCES cache_image_files(id),
+        FOREIGN KEY (thumb_id) REFERENCES cache_image_files(id)
       )
     `);
 
@@ -557,10 +560,10 @@ export class CleanSchemaMigration {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (series_id) REFERENCES series(id) ON DELETE CASCADE,
-        FOREIGN KEY (poster_id) REFERENCES image_files(id),
-        FOREIGN KEY (fanart_id) REFERENCES image_files(id),
-        FOREIGN KEY (banner_id) REFERENCES image_files(id),
-        FOREIGN KEY (thumb_id) REFERENCES image_files(id),
+        FOREIGN KEY (poster_id) REFERENCES cache_image_files(id),
+        FOREIGN KEY (fanart_id) REFERENCES cache_image_files(id),
+        FOREIGN KEY (banner_id) REFERENCES cache_image_files(id),
+        FOREIGN KEY (thumb_id) REFERENCES cache_image_files(id),
         UNIQUE(series_id, season_number)
       )
     `);
@@ -589,6 +592,7 @@ export class CleanSchemaMigration {
         runtime INTEGER,
         tvdb_rating REAL,
         tvdb_votes INTEGER,
+        user_rating REAL CHECK(user_rating >= 0 AND user_rating <= 10),
         thumb_id INTEGER,
         title_locked BOOLEAN DEFAULT 0,
         plot_locked BOOLEAN DEFAULT 0,
@@ -598,7 +602,7 @@ export class CleanSchemaMigration {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (series_id) REFERENCES series(id) ON DELETE CASCADE,
         FOREIGN KEY (season_id) REFERENCES seasons(id) ON DELETE CASCADE,
-        FOREIGN KEY (thumb_id) REFERENCES image_files(id),
+        FOREIGN KEY (thumb_id) REFERENCES cache_image_files(id),
         UNIQUE(season_id, episode_number)
       )
     `);
@@ -643,10 +647,10 @@ export class CleanSchemaMigration {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (library_id) REFERENCES libraries(id) ON DELETE CASCADE,
-        FOREIGN KEY (thumb_id) REFERENCES image_files(id),
-        FOREIGN KEY (fanart_id) REFERENCES image_files(id),
-        FOREIGN KEY (banner_id) REFERENCES image_files(id),
-        FOREIGN KEY (logo_id) REFERENCES image_files(id)
+        FOREIGN KEY (thumb_id) REFERENCES cache_image_files(id),
+        FOREIGN KEY (fanart_id) REFERENCES cache_image_files(id),
+        FOREIGN KEY (banner_id) REFERENCES cache_image_files(id),
+        FOREIGN KEY (logo_id) REFERENCES cache_image_files(id)
       )
     `);
 
@@ -679,7 +683,7 @@ export class CleanSchemaMigration {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (artist_id) REFERENCES artists(id) ON DELETE CASCADE,
-        FOREIGN KEY (thumb_id) REFERENCES image_files(id)
+        FOREIGN KEY (thumb_id) REFERENCES cache_image_files(id)
       )
     `);
 
@@ -772,7 +776,7 @@ export class CleanSchemaMigration {
         forced BOOLEAN DEFAULT 0,
         default_stream BOOLEAN DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (cache_asset_id) REFERENCES text_files(id)
+        FOREIGN KEY (cache_asset_id) REFERENCES cache_text_files(id)
       )
     `);
 
@@ -858,7 +862,7 @@ export class CleanSchemaMigration {
         imdb_id TEXT,
         thumb_id INTEGER,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (thumb_id) REFERENCES image_files(id),
+        FOREIGN KEY (thumb_id) REFERENCES cache_image_files(id),
         UNIQUE(name)
       )
     `);
@@ -950,6 +954,78 @@ export class CleanSchemaMigration {
 
     await db.execute('CREATE INDEX idx_music_genres_artist ON music_genres(artist_id)');
     await db.execute('CREATE INDEX idx_music_genres_genre ON music_genres(genre_id)');
+
+    // Countries
+    await db.execute(`
+      CREATE TABLE countries (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT UNIQUE NOT NULL
+      )
+    `);
+
+    // Movie Countries
+    await db.execute(`
+      CREATE TABLE movie_countries (
+        movie_id INTEGER NOT NULL,
+        country_id INTEGER NOT NULL,
+        PRIMARY KEY (movie_id, country_id),
+        FOREIGN KEY (movie_id) REFERENCES movies(id) ON DELETE CASCADE,
+        FOREIGN KEY (country_id) REFERENCES countries(id) ON DELETE CASCADE
+      )
+    `);
+
+    await db.execute('CREATE INDEX idx_movie_countries_movie ON movie_countries(movie_id)');
+    await db.execute('CREATE INDEX idx_movie_countries_country ON movie_countries(country_id)');
+
+    // Series Countries
+    await db.execute(`
+      CREATE TABLE series_countries (
+        series_id INTEGER NOT NULL,
+        country_id INTEGER NOT NULL,
+        PRIMARY KEY (series_id, country_id),
+        FOREIGN KEY (series_id) REFERENCES series(id) ON DELETE CASCADE,
+        FOREIGN KEY (country_id) REFERENCES countries(id) ON DELETE CASCADE
+      )
+    `);
+
+    await db.execute('CREATE INDEX idx_series_countries_series ON series_countries(series_id)');
+    await db.execute('CREATE INDEX idx_series_countries_country ON series_countries(country_id)');
+
+    // Tags
+    await db.execute(`
+      CREATE TABLE tags (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT UNIQUE NOT NULL
+      )
+    `);
+
+    // Movie Tags
+    await db.execute(`
+      CREATE TABLE movie_tags (
+        movie_id INTEGER NOT NULL,
+        tag_id INTEGER NOT NULL,
+        PRIMARY KEY (movie_id, tag_id),
+        FOREIGN KEY (movie_id) REFERENCES movies(id) ON DELETE CASCADE,
+        FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
+      )
+    `);
+
+    await db.execute('CREATE INDEX idx_movie_tags_movie ON movie_tags(movie_id)');
+    await db.execute('CREATE INDEX idx_movie_tags_tag ON movie_tags(tag_id)');
+
+    // Series Tags
+    await db.execute(`
+      CREATE TABLE series_tags (
+        series_id INTEGER NOT NULL,
+        tag_id INTEGER NOT NULL,
+        PRIMARY KEY (series_id, tag_id),
+        FOREIGN KEY (series_id) REFERENCES series(id) ON DELETE CASCADE,
+        FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
+      )
+    `);
+
+    await db.execute('CREATE INDEX idx_series_tags_series ON series_tags(series_id)');
+    await db.execute('CREATE INDEX idx_series_tags_tag ON series_tags(tag_id)');
 
     // Studios
     await db.execute(`

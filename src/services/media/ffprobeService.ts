@@ -1,10 +1,7 @@
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import path from 'path';
-import fs from 'fs/promises';
 import { logger } from '../../middleware/logging.js';
 import { DatabaseConnection } from '../../types/database.js';
-import { insertVideoFile } from '../files/unifiedFileService.js';
 
 const execPromise = promisify(exec);
 
@@ -431,38 +428,6 @@ export async function storeSubtitleStreams(
 }
 
 /**
- * Detect HDR type from video stream metadata
- */
-function detectHDRType(videoStream?: VideoStream): string | undefined {
-  if (!videoStream) return undefined;
-
-  const { colorTransfer, colorSpace, colorPrimaries } = videoStream;
-
-  // HDR10
-  if (colorTransfer === 'smpte2084' || colorTransfer === 'smpte-st-2084') {
-    return 'HDR10';
-  }
-
-  // HDR10+
-  if (colorSpace === 'bt2020nc' && colorTransfer === 'smpte2084') {
-    return 'HDR10+';
-  }
-
-  // Dolby Vision
-  if (colorPrimaries === 'bt2020' && colorTransfer === 'smpte2084') {
-    // Note: True Dolby Vision detection requires more sophisticated parsing
-    return 'Dolby Vision';
-  }
-
-  // HLG (Hybrid Log-Gamma)
-  if (colorTransfer === 'arib-std-b67') {
-    return 'HLG';
-  }
-
-  return undefined; // SDR or unknown
-}
-
-/**
  * Extract and store all stream information for a video file
  */
 export async function extractAndStoreMediaInfo(
@@ -475,36 +440,12 @@ export async function extractAndStoreMediaInfo(
     const mediaInfo = await extractMediaInfo(filePath);
 
     // Store streams in database
+    // NOTE: Main movie/episode file is NOT stored in cache_video_files
+    // That table is only for trailers, samples, and extras
+    // The main file path is already stored in movies.file_path or episodes.file_path
     await storeVideoStreams(db, entityType, entityId, mediaInfo.videoStreams);
     await storeAudioStreams(db, entityType, entityId, mediaInfo.audioStreams);
     await storeSubtitleStreams(db, entityType, entityId, mediaInfo.subtitleStreams);
-
-    // Track video file in video_files table (unified file system)
-    const stats = await fs.stat(filePath);
-    const primaryVideo = mediaInfo.videoStreams[0]; // Primary video stream
-    const primaryAudio = mediaInfo.audioStreams[0]; // Primary audio stream
-    const hdrType = detectHDRType(primaryVideo);
-
-    await insertVideoFile(db, {
-      entityType,
-      entityId,
-      filePath,
-      fileName: path.basename(filePath),
-      fileSize: stats.size,
-      location: 'library',
-      videoType: 'main',
-      ...(primaryVideo?.codecName && { codec: primaryVideo.codecName }),
-      ...(primaryVideo?.width && { width: primaryVideo.width }),
-      ...(primaryVideo?.height && { height: primaryVideo.height }),
-      durationSeconds: Math.floor(mediaInfo.duration || 0),
-      ...(primaryVideo?.bitRate && { bitrate: primaryVideo.bitRate }),
-      ...(primaryVideo?.fps && { framerate: primaryVideo.fps }),
-      ...(hdrType && { hdrType }),
-      ...(primaryAudio?.codecName && { audioCodec: primaryAudio.codecName }),
-      ...(primaryAudio?.channels && { audioChannels: primaryAudio.channels }),
-      ...(primaryAudio?.language && { audioLanguage: primaryAudio.language }),
-      sourceType: 'local'
-    });
 
     logger.info('Extracted and stored media info', {
       entityType,
