@@ -4,6 +4,54 @@
 
 ---
 
+## Development Model Evolution
+
+### Stage-Based Development (Historical - Through Stage 5)
+
+**Period**: Early development (2025-10-15 through Stage 5 completion)
+
+**Pattern**: `feature/stage-X-name`, `stage-X: type: description` commits
+
+**Stages Completed**:
+- Stage 0: Planning & Git Workflow
+- Stage 1: Monitored/Unmonitored System
+- Stage 2: Field & Asset Locking
+- Stage 3: Asset Candidate Caching (completed without tag)
+- Stage 4: Webhooks
+- Stage 5: Kodi Integration
+
+**Tags**: `stage-0-complete` through `stage-5-complete` (except Stage 3)
+
+---
+
+### Feature-Based Development (Current - Post Stage 5)
+
+**Period**: After Stage 5 completion (2025-10-15+)
+
+**Focus**: Building distributable codebase with production-ready features
+
+**Branch Naming**:
+- `feature/<descriptive-name>` - New features (e.g., `feature/shadcn-integration`)
+- `fix/<descriptive-name>` - Bug fixes
+- `refactor/<descriptive-name>` - Code refactoring
+- `audit/<scope>` - Code audits and cleanup (e.g., `audit/backend-comprehensive`)
+- `docs/<topic>` - Documentation updates
+
+**Commit Convention**:
+- `feat: description` (new features)
+- `fix: description` (bug fixes)
+- `refactor: description` (code refactoring)
+- `docs: description` (documentation)
+- `test: description` (testing)
+- `chore: description` (maintenance)
+
+**Tagging**:
+- Feature completion tags as needed (e.g., `frontend-phase-1-complete`)
+- Pre-release tags when approaching v1.0
+- v1.0 tag when: reliability + functionality + feature completeness verified via Docker testing
+
+---
+
 ## 🌳 Branch Strategy
 
 ### Branch Naming

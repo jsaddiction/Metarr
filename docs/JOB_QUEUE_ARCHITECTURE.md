@@ -1,17 +1,29 @@
 # Job Queue Architecture
 
 **Date**: 2025-10-15
-**Status**: Design Complete, Implementation In Progress
+**Status**: SQLite Implementation Complete
+
+---
+
+## Implementation Status
+
+- ✅ **[Implemented]** - SQLite storage backend
+- ✅ **[Implemented]** - Job state machine (pending → processing → completed/failed)
+- ✅ **[Implemented]** - Crash recovery (reset stalled jobs on startup)
+- ✅ **[Implemented]** - Job history archival
+- ✅ **[Implemented]** - Modular storage interface (IJobQueueStorage)
+- 📋 **[Planned]** - Redis storage backend (performance optimization)
+- 📋 **[Planned]** - PostgreSQL storage backend (production scalability)
 
 ---
 
 ## 🎯 Design Goals
 
-1. **Persistence**: Jobs survive crashes and restarts
-2. **Modularity**: Swap storage backends (SQLite → Redis → PostgreSQL)
-3. **State Machine**: Clear job lifecycle with automatic cleanup
-4. **Crash Recovery**: Resume interrupted jobs on startup
-5. **Separation of Concerns**: Producers create, consumers process
+1. **Persistence**: Jobs survive crashes and restarts ✅
+2. **Modularity**: Swap storage backends (SQLite → Redis → PostgreSQL) ✅ Interface ready
+3. **State Machine**: Clear job lifecycle with automatic cleanup ✅
+4. **Crash Recovery**: Resume interrupted jobs on startup ✅
+5. **Separation of Concerns**: Producers create, consumers process ✅
 
 ---
 
@@ -593,82 +605,49 @@ export class SQLiteJobQueueStorage implements IJobQueueStorage {
 
 ---
 
-## 🔧 Implementation: Redis Storage Adapter (Future)
+## 📋 [Planned] Redis Storage Adapter
 
-**File**: `src/services/jobQueue/storage/RedisJobQueueStorage.ts`
+**Status**: Future enhancement for high-throughput production environments
 
+**File**: `src/services/jobQueue/storage/RedisJobQueueStorage.ts` (not yet implemented)
+
+**Why Redis?**
+- Atomic operations (ZPOPMIN for picking next job)
+- Lower latency than SQLite for high-frequency polling
+- Better multi-worker support (distributed job processing)
+- TTL support for automatic job expiry
+
+**Planned Data Structures**:
+```
+queue:pending        → Sorted Set (score = priority, member = jobId)
+queue:processing     → Set (jobIds currently being processed)
+job:{id}             → Hash (job data: type, payload, status, etc.)
+history:{id}         → Hash (completed/failed job data)
+```
+
+**Implementation Notes** (for future reference):
 ```typescript
-import {
-  IJobQueueStorage,
-  Job,
-  JobHistoryRecord,
-  QueueStats
-} from '../types.js';
-import { logger } from '../../../middleware/logging.js';
-
 /**
- * Redis-based job queue storage
+ * Redis-based job queue storage (PLANNED)
  *
- * Data structures:
- * - queue:pending -> Sorted Set (score = priority, member = jobId)
- * - queue:processing -> Set (jobIds currently being processed)
- * - job:{id} -> Hash (job data)
- * - history:{id} -> Hash (completed/failed job data)
+ * Key operations:
+ * - addJob(): ZADD queue:pending {priority} {jobId}, HSET job:{id} {...data}
+ * - pickNextJob(): ZPOPMIN queue:pending → SADD queue:processing {jobId}
+ * - completeJob(): SREM queue:processing {jobId}, HSET history:{id} {...data}
+ * - failJob(): Increment retry_count, ZADD back to pending OR archive to history
  */
 export class RedisJobQueueStorage implements IJobQueueStorage {
-  constructor(private redis: any) {} // Redis client
+  constructor(private redis: RedisClient) {}
 
-  async addJob(job: Omit<Job, 'id' | 'created_at'>): Promise<number> {
-    // TODO: Implement with Redis ZADD, HINCRBY for auto-increment ID
-    throw new Error('Redis storage not yet implemented');
-  }
-
-  async pickNextJob(): Promise<Job | null> {
-    // TODO: Implement with Redis ZPOPMIN (atomic pop from sorted set)
-    throw new Error('Redis storage not yet implemented');
-  }
-
-  async completeJob(jobId: number, result?: any): Promise<void> {
-    // TODO: Archive to history hash, remove from processing set
-    throw new Error('Redis storage not yet implemented');
-  }
-
-  async failJob(jobId: number, error: string): Promise<void> {
-    // TODO: Increment retry_count, re-add to pending or archive
-    throw new Error('Redis storage not yet implemented');
-  }
-
-  async getJob(jobId: number): Promise<Job | null> {
-    // TODO: HGETALL job:{id}
-    throw new Error('Redis storage not yet implemented');
-  }
-
-  async listJobs(): Promise<Job[]> {
-    // TODO: ZRANGE + HGETALL for each
-    throw new Error('Redis storage not yet implemented');
-  }
-
-  async getJobHistory(): Promise<JobHistoryRecord[]> {
-    // TODO: Scan history:* keys
-    throw new Error('Redis storage not yet implemented');
-  }
-
-  async resetStalledJobs(): Promise<number> {
-    // TODO: SMEMBERS processing set, move back to pending
-    throw new Error('Redis storage not yet implemented');
-  }
-
-  async cleanupHistory(): Promise<number> {
-    // TODO: Scan history:* keys by timestamp, delete old ones
-    throw new Error('Redis storage not yet implemented');
-  }
-
-  async getStats(): Promise<QueueStats> {
-    // TODO: ZCARD pending, SCARD processing
-    throw new Error('Redis storage not yet implemented');
-  }
+  // Implementation deferred - use SQLiteJobQueueStorage for now
 }
 ```
+
+**Migration Path**:
+1. Implement RedisJobQueueStorage class (implements IJobQueueStorage)
+2. Add config option: `JOB_QUEUE_STORAGE=redis|sqlite`
+3. Swap storage backend in JobQueueService constructor
+4. No application code changes required (interface abstraction)
 
 ---
 
@@ -936,7 +915,9 @@ export type JobType =
   | 'publish'
   | 'library-scan'
   | 'scheduled-file-scan'
-  | 'scheduled-provider-update';
+  | 'scheduled-provider-update'
+  | 'cache-orphan-cleanup'         // [Planned - Post-v1.0]
+  | 'cache-soft-delete-expiration'; // [Planned - Post-v1.0]
 
 export interface Job {
   id: number;
@@ -999,6 +980,28 @@ export interface IJobQueueStorage {
   getStats(): Promise<QueueStats>;
 }
 ```
+
+---
+
+## 📋 Garbage Collection Jobs (Planned - Post-v1.0)
+
+### Job Types
+
+**`cache-orphan-cleanup`**:
+- **Priority**: Low (10)
+- **Schedule**: Daily at 3 AM
+- **Purpose**: Remove unreferenced cache assets (no database references)
+- **Payload**: `{ assetType: 'image' | 'video' | 'audio' | 'text' }`
+
+**`cache-soft-delete-expiration`**:
+- **Priority**: Low (10)
+- **Schedule**: Daily at 3 AM
+- **Purpose**: Hard delete expired soft-deleted assets
+- **Payload**: `{ retentionDays: number }` (default: 30)
+
+### Implementation Notes
+
+See [ASSET_STORAGE_ARCHITECTURE.md](ASSET_STORAGE_ARCHITECTURE.md#garbage-collection) for complete GC strategy documentation.
 
 ---
 

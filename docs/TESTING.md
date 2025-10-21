@@ -1,8 +1,76 @@
 # Testing Strategy & Infrastructure
 
-**Last Updated:** 2025-10-14
+**Last Updated:** 2025-10-21
 **Test Framework:** Jest with TypeScript
-**Current Status:** ✅ **189/193 tests passing (100% pass rate, 4 skipped)**
+**Current Status:** 🟡 **166 tests passing (13/15 suites passing, 2 failing due to TypeScript errors)**
+
+---
+
+## Quick Reference
+
+**Run Tests**: `npm test`
+**Run Specific Suite**: `npm test -- AssetSelector`
+**Watch Mode**: `npm test -- --watch`
+**Coverage Report**: `npm test -- --coverage`
+
+**Current Status**: 166 tests passing, 13/15 suites passing
+**v1.0 Target**: 100% test coverage
+**Next Phase**: Resume testing after frontend rework completion
+
+---
+
+## Testing Roadmap
+
+**Current Phase**: Testing paused during frontend rework
+**Current Coverage**: 166 tests passing (13/15 suites), 2 suites failing (TypeScript errors)
+**v1.0 Target**: 100% test coverage
+**Timeline**: Resume after frontend rework completion
+
+### Coverage Status
+
+**Well Tested** (✅):
+- Provider services (12 test suites, 100% passing)
+- Rate limiting & circuit breaker (100% coverage)
+- Asset selector service
+- Provider metadata validation
+
+**Has TypeScript Errors** (⚠️):
+- JobQueueService (needs interface alignment)
+- WebhookService (depends on JobQueueService)
+
+**Needs Tests** (⏳):
+- CacheService
+- LibraryScanService
+- NFO generation
+- Path mapping service
+- Player integration services
+- API controllers
+
+### Post-Frontend Priorities
+
+1. Fix TypeScript errors in existing tests
+2. Service layer tests (achieve 100% coverage)
+3. Controller tests (API endpoint validation)
+4. Integration tests (end-to-end workflows)
+5. Frontend component tests (React Testing Library)
+6. E2E tests (Playwright - Docker environment)
+
+---
+
+## Coverage Metrics
+
+**Current** (2025-10-21):
+- Provider Tests: 12 suites (100% passing)
+- Unit Tests: 3 suites (1 passing, 2 failing)
+- Integration Tests: 0 suites (planned)
+- E2E Tests: 0 suites (planned)
+- **Total**: 166 passing, 13/15 suites passing
+
+**v1.0 Target**:
+- Service Coverage: 100%
+- Controller Coverage: 100%
+- Integration Coverage: Core workflows only
+- E2E Coverage: Critical paths (scan → enrich → publish)
 
 ---
 
@@ -12,15 +80,7 @@ Metarr uses a comprehensive testing strategy focused on provider integration and
 
 1. **Unit Tests** - Service-level testing with isolated databases
 2. **Provider Tests** - Comprehensive provider system validation
-3. **Integration Tests** - Removed (replaced with more targeted unit tests)
-
-### Current Test Coverage
-
-| Category | Tests | Pass Rate | Status |
-|----------|-------|-----------|--------|
-| **Provider Tests** | 12 suites | 100% | ✅ Excellent |
-| **Unit Tests** | 3 suites | 100% (4 skipped) | ✅ Production Ready |
-| **Overall** | 15 suites | **100% (189/189 non-skipped)** | ✅ **Production Ready** |
+3. **Integration Tests** - Planned (end-to-end workflows)
 
 ---
 
@@ -227,19 +287,20 @@ Different entity types have different columns:
 
 ---
 
-## Current Test Status (2025-10-14)
+## Current Test Status (2025-10-21)
 
-### ✅ All Test Suites Passing (15/15 - 100%)
+### Test Suites Summary
 
-#### Provider System Tests (12 suites)
-Comprehensive testing of metadata provider infrastructure:
+**Status**: 13/15 suites passing (2 failing due to TypeScript errors)
 
-**Core Provider Infrastructure:**
-- **AssetSelector** (9 tests) - Asset selection algorithms, quality filtering, deduplication
-- **CircuitBreaker** (8 tests) - Failure detection, half-open recovery, state transitions
-- **RateLimiter** (7 tests) - Request throttling, burst capacity, window management
-- **ProviderOrchestrator** (7 tests) - Multi-provider coordination, fallback logic
-- **ProviderRegistry** (7 tests) - Provider registration, capability queries
+#### Provider System Tests (12 suites) ✅
+
+**Core Infrastructure:**
+- **AssetSelector** - Asset selection algorithms, quality filtering, deduplication
+- **CircuitBreaker** - Failure detection, half-open recovery, state transitions
+- **RateLimiter** - Request throttling, burst capacity, window management
+- **ProviderOrchestrator** - Multi-provider coordination, fallback logic
+- **ProviderRegistry** - Provider registration, capability queries
 
 **Provider Implementations:**
 - **TMDBProvider** - Movie/TV metadata, rate limiting, authentication
@@ -250,185 +311,119 @@ Comprehensive testing of metadata provider infrastructure:
 - **TheAudioDBProvider** - Music artwork
 - **LocalProvider** - NFO parsing, local asset discovery
 
-#### Core Service Tests (3 suites)
+#### Unit Tests (3 suites)
 
-**JobQueueService** (11 tests, 4 skipped)
-- Job creation with priority levels
-- Job retrieval and filtering by type
-- Priority-based processing order
-- Status transitions (pending → processing → completed/failed)
-- Statistics tracking and queue management
-- ⚠️ 4 timing-sensitive tests skipped (acceptable - core functionality validated)
+**ProviderMetadata** ✅ (58 tests)
+- Coverage: TMDB/TVDB/FanArt.tv metadata validation, embedded API keys, rate limits
 
-**WebhookService** (14 tests)
-- Radarr webhook processing (Download, Grab, Rename, Test events)
-- Sonarr webhook processing (Download, EpisodeFileDelete events)
-- Job creation with correct priorities
-- Payload validation and structure
-- Test webhook handling (no job creation)
+**JobQueueService** ⚠️ (TypeScript errors)
+- Error: Interface mismatch with IJobQueueStorage
+- Needs: Interface alignment, JobType enum updates
 
-**ProviderMetadata** (58 tests)
-- TMDB metadata validation (embedded default API key)
-- TVDB metadata validation (embedded default API key)
-- FanArt.tv metadata validation (optional API key)
-- Rate limit configuration
-- Supported asset types per provider
-- Authentication type verification
+**WebhookService** ⚠️ (TypeScript errors)
+- Error: Depends on JobQueueService interface
+- Needs: Fix after JobQueueService resolution
 
 ---
 
-## Phase T1 Completion Summary
+## Known Limitations
 
-**Date:** 2025-10-14
-**Result:** ✅ **100% Pass Rate Achieved**
+### 1. TypeScript Interface Errors (2 test suites)
+**Affected**: JobQueueService, WebhookService
+**Reason**: Interface changes not synchronized with test implementations
+**Impact**: Tests cannot run until interfaces are aligned
+**Status**: Blocked - requires refactoring after frontend rework
 
-### Changes Made
-
-**Backend Schema Fixes:**
-1. Fixed `job_queue` table schema mismatch
-   - Changed `job_type` → `type`
-   - Changed `error_message` → `error`
-   - Updated status values: `'running', 'cancelled'` → `'processing', 'retrying'`
-
-2. Updated test infrastructure
-   - `testDatabase.ts` now uses Phase 6 migrations (20251015_001, 20251015_002)
-   - Added `get()` method to DatabaseConnection interface
-   - Fixed movie seed data to include required `file_name` column
-
-**Tests Removed (Obsolete/Old Architecture):**
-- `scheduledEnrichmentService.test.ts` - Service removed in Phase 6
-- `providerConfigService.test.ts` - Old schema (enabledAssetTypes field)
-- `providerConfigEndpoints.test.ts` - Old API structure
-- `priorityConfigService.test.ts` - Missing tables (asset_type_priorities)
-- `assetSelectionService.test.ts` - Uses removed `asset_candidates` table
-- `publishingService.test.ts` - Uses removed `publish_log` table
-- `publishWorkflow.test.ts` - Uses removed features
-- `webhookWorkflow.test.ts` - Uses removed features
-- `jobEndpoints.test.ts` - Needs complete rewrite (Phase T4)
-- `assetEndpoints.test.ts` - Needs complete rewrite (Phase T4)
-
-**Tests Fixed:**
-- `webhookService.test.ts` - Updated payload assertions (`event` → `eventType`)
-- `jobQueueService.test.ts` - Fixed all `state` → `status` references
-- `providerMetadata.test.ts` - Updated API key assertions (embedded defaults)
-- `providers/helpers.ts` - Removed `enabledAssetTypes` field
-
-### Known Limitations
-
-#### 1. Timing-Sensitive Tests (4 skipped)
-**Location:** `tests/unit/jobQueueService.test.ts`
-**Reason:** Race conditions with `setImmediate()` in job processing
-**Impact:** Low - core functionality validated in other tests
-**Status:** Acceptable - tests marked with `.skip()`
-
-#### 2. Missing Test Coverage
-**Areas Not Yet Tested:**
+### 2. Missing Test Coverage
+**Services Not Tested:**
 - CacheService (content-addressed storage)
 - WebSocketBroadcaster (real-time events)
 - LibraryScanService (scan coordination)
 - LibraryService (CRUD operations)
 - MovieService (CRUD operations)
 - MediaPlayerService (player management)
-- API Controllers (planned for Phase T4)
+- API Controllers (all 13 controllers)
 
-**Status:** Planned for Phase T2 (Core Service Tests)
+**Status**: Planned for post-frontend testing phase
 
-#### 3. External API Mocking
-**Location:** All tests
-**Status:** Tests don't make real API calls currently
-**Future Enhancement:** Add comprehensive mock responses for provider APIs
+### 3. External API Mocking
+**Current**: Tests don't make real API calls
+**Future**: Add comprehensive mock responses for provider APIs
+**Benefit**: Test error scenarios, rate limiting, timeouts
 
 ---
 
-## Future Improvements
+## Future Testing Work (Post-Frontend Rework)
 
-### Phase T2: Core Service Tests (6-8 hours)
+### Priority 1: Fix Existing Tests
+- Align JobQueueService interface with implementation
+- Fix WebhookService test dependencies
+- Restore 100% test pass rate
 
-1. **CacheService Tests** (2 hours)
-   - Content-addressed path generation (SHA256)
-   - Duplicate detection and deduplication
-   - Sharded directory structure
-   - Cache integrity validation
+### Priority 2: Service Layer Coverage
+**CacheService**
+- Content-addressed path generation (SHA256)
+- Duplicate detection and deduplication
+- Cache integrity validation
 
-2. **WebSocketBroadcaster Tests** (2 hours)
-   - Message broadcasting to all clients
-   - Channel-specific subscriptions
-   - Event types (scan, job, player status)
-   - Client connection management
+**LibraryScanService**
+- Directory scanning, NFO discovery, progress events
 
-3. **LibraryScanService Tests** (2 hours)
-   - Directory scanning
-   - NFO file discovery
-   - Asset discovery
-   - Progress event emission
+**WebSocketBroadcaster**
+- Message broadcasting, channel subscriptions, connection management
 
-4. **LibraryService & MovieService Tests** (2 hours)
-   - CRUD operations
-   - Validation
-   - Field locking respect
-   - Soft delete handling
+**LibraryService & MovieService**
+- CRUD operations, validation, field locking
 
-### Phase T3: Phase 6 Services Tests (4-6 hours)
+**MediaPlayerService**
+- Connection lifecycle, status monitoring, player notification
 
-5. **Scheduler Tests** (3 hours)
-   - FileScannerScheduler (cron scheduling)
-   - ProviderUpdaterScheduler (metadata updates)
-   - LibrarySchedulerConfigService (configuration)
+### Priority 3: Controller & Integration Tests
+**API Controllers**
+- All 13 controllers (Library, Scheduler, MediaPlayer, etc.)
+- Route validation, middleware testing, error handling
 
-6. **Job Handler Tests** (1 hour)
-   - ScheduledFileScanHandler
-   - ScheduledProviderUpdateHandler
+**Integration Tests**
+- End-to-end workflows (scan → enrich → publish)
+- Multi-service coordination
+- Webhook-to-publish workflow
 
-7. **MediaPlayerService Tests** (2 hours)
-   - Connection lifecycle
-   - Status monitoring
-   - Player notification
+### Priority 4: Frontend Testing
+**Component Tests** (React Testing Library)
+- UI component behavior
+- User interactions
+- State management
 
-### Phase T4: Controller Integration Tests (8-10 hours)
+**E2E Tests** (Playwright)
+- Critical user paths
+- Docker environment testing
+- Cross-browser compatibility
 
-8. **API Controller Tests** (8-10 hours)
-   - Import actual route definitions
-   - Test with validation middleware
-   - All 13 controllers tested
-   - LibraryController, SchedulerController, MediaPlayerController, etc.
+### Priority 5: Advanced Testing
+**Error Scenarios**
+- Database failures, provider API errors, invalid payloads
 
-### Long-Term Enhancements
+**Performance Tests**
+- Large library handling (10k+ movies)
+- Batch processing performance
 
-9. **Error Scenario Coverage** (2-3 hours)
-   - Database connection failures
-   - Provider API errors
-   - Invalid payloads
-   - File system errors
-
-10. **Performance/Scale Tests** (4 hours)
-    - Large library handling (10k+ movies)
-    - Batch processing performance
-    - Query optimization validation
-
-11. **E2E Tests with Real Server** (4-6 hours)
-    - Full HTTP server bootstrap
-    - Real API request/response
-    - Authentication flow
-
-12. **Mock External APIs** (3 hours)
-    - TMDB/TVDB/MusicBrainz response mocks
-    - Network error simulation
-    - Rate limit testing
+**Mock External APIs**
+- TMDB/TVDB/MusicBrainz response mocks
+- Network error simulation
 
 ---
 
 ## Test Quality Metrics
 
-### Current Metrics (2025-10-14)
+### Current Metrics (2025-10-21)
 
 | Metric | Value | Target | Status |
 |--------|-------|--------|--------|
-| **Overall Pass Rate** | **100% (189/189)** | 100% | ✅ **Perfect** |
-| **Test Suites Passing** | **15/15 (100%)** | 100% | ✅ **Perfect** |
+| **Test Suites Passing** | **13/15 (87%)** | 100% | 🟡 |
+| **Tests Passing** | **166** | TBD | 🟡 |
 | **Provider Tests** | 12/12 (100%) | 100% | ✅ |
-| **Unit Tests** | 3/3 (100%, 4 skipped) | 100% | ✅ |
-| **Test Execution Time** | ~10s | <15s | ✅ |
-| **Schema Alignment** | 100% | 100% | ✅ |
+| **Unit Tests** | 1/3 (33%) | 100% | ⚠️ |
+| **Test Execution Time** | ~12s | <15s | ✅ |
 | **Test Isolation** | 100% | 100% | ✅ |
 | **Critical Path Coverage** | Provider System: 100% | 100% | ✅ |
 
@@ -439,10 +434,10 @@ Comprehensive testing of metadata provider infrastructure:
 - ✅ Tests follow AAA pattern (Arrange-Act-Assert)
 - ✅ Each test verifies single responsibility
 - ✅ Tests clean up resources properly
-- ✅ Tests execute quickly (<10 seconds for full suite)
-- ✅ Schema aligned with migrations
+- ✅ Tests execute quickly (<15 seconds for full suite)
+- ⚠️ Schema aligned with migrations (2 tests need updates)
 - ⚠️ External services mocked (partial)
-- ✅ Integration tests validate end-to-end workflows
+- ⏳ Integration tests (not yet implemented)
 - ⚠️ Error scenarios covered (partial)
 
 ---
@@ -550,16 +545,20 @@ npm test -- --bail --findRelatedTests
 
 ## Conclusion
 
-The Metarr test suite provides **comprehensive validation** of the provider system and core services. The test infrastructure is **professional-grade** with excellent isolation, fast execution, and clear organization.
+**Current Status** (2025-10-21): 🟡 **13/15 test suites passing (166 tests), 2 suites blocked by TypeScript errors**
 
-**Current Status:** ✅ **Production-ready with 100% pass rate (189/189 tests passing)**
+The Metarr test infrastructure is **production-grade** with excellent isolation, fast execution, and clear organization. The provider system has **comprehensive test coverage** and is fully validated.
 
-The provider system is fully tested with comprehensive coverage of:
-- All metadata providers (TMDB, TVDB, FanArt, IMDb, MusicBrainz, TheAudioDB, Local)
-- Provider infrastructure (circuit breakers, rate limiting, orchestration, registry)
+**What's Working:**
+- Provider system (12/12 suites, 100% passing)
+- Provider infrastructure (circuit breakers, rate limiting, orchestration)
 - Asset selection algorithms and quality filtering
-- Core services (job queue, webhooks, provider metadata)
+- Provider metadata validation
 
-**Phase 6 Schema Aligned:** All tests now use the clean Phase 6 database schema (20251015_001, 20251015_002).
+**What Needs Work:**
+- Fix TypeScript interface alignment (JobQueueService, WebhookService)
+- Add service layer tests (CacheService, LibraryScanService, etc.)
+- Add controller tests (13 API controllers)
+- Add integration and E2E tests
 
-**Next Steps:** Phase T2 - Add tests for core services (CacheService, WebSocketBroadcaster, LibraryScanService, etc.).
+**Timeline:** Testing paused during frontend rework. Resume after frontend completion with goal of **100% test coverage for v1.0 release**.

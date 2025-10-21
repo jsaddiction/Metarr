@@ -265,47 +265,14 @@ Detailed documentation is available in the [`docs/`](docs/) directory:
 
 ---
 
-## 🗺️ Roadmap
+## Project Status
 
-### Current Status: Alpha
+**Development Phase**: Pre-Release
+**Current Focus**: Building distributable codebase with production-ready features
 
-Core functionality implemented:
-- ✅ Database schema and migrations
-- ✅ NFO file parsing and generation
-- ✅ TMDB API integration
-- ✅ Kodi JSON-RPC client
-- ✅ Webhook processing (Sonarr/Radarr)
-- ✅ Field-level locking system
-- ✅ Two-copy asset management
-- ✅ React frontend (basic views)
+For detailed development status and roadmap, see [docs/PROJECT_ROADMAP.md](docs/PROJECT_ROADMAP.md).
 
-### Upcoming Features
-
-**Phase 1: Core Completion**
-- [ ] Complete frontend UI for all entity types
-- [ ] Library scanning and monitoring
-- [ ] Scheduled metadata updates
-- [ ] Asset discovery and assignment
-
-**Phase 2: Enhanced Integration**
-- [ ] Jellyfin media player support
-- [ ] TVDB API integration
-- [ ] Enhanced path mapping UI
-- [ ] Notification system (email, Discord, etc.)
-
-**Phase 3: Advanced Features**
-- [ ] Plex media player support
-- [ ] MusicBrainz integration (music metadata)
-- [ ] Bulk operations and batch editing
-- [ ] Advanced metadata matching algorithms
-- [ ] Custom metadata provider plugins
-
-**Phase 4: Polish & Optimization**
-- [ ] Mobile-responsive UI improvements
-- [ ] Performance optimization for large libraries
-- [ ] Automated backup and restore
-- [ ] Docker containerization
-- [ ] Comprehensive testing suite
+For contribution guidelines and git workflow, see [docs/GIT_WORKFLOW.md](docs/GIT_WORKFLOW.md).
 
 ---
 

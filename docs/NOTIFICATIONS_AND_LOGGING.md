@@ -1,5 +1,23 @@
 # Notifications, Activity Logging, and System Authentication
 
+**⚠️ Implementation Status**: **Partially Implemented / [Planned Features]**
+
+**Implemented**:
+- ✅ Notification configuration service (`notificationConfigService.ts`)
+- ✅ Activity log API endpoints (`activityLogController.ts`)
+- ✅ Activity log database schema
+- ✅ Notification config database schema
+
+**[Planned]**:
+- ⏳ Notification channel implementations (Kodi, Discord, Pushover, Telegram, Slack)
+- ⏳ Authentication system (login, session management, password change)
+- ⏳ Log file rotation and management
+- ⏳ Frontend UI for notification configuration
+- ⏳ Frontend UI for activity log viewing
+- ⏳ Frontend UI for authentication
+
+---
+
 This document covers Metarr's notification channels, activity logging system, log file management, and authentication.
 
 ## Notification System

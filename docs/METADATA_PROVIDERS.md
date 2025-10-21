@@ -11,6 +11,25 @@ Metarr uses multiple metadata providers to enrich media metadata:
 - **Field Locking**: Locked fields are **never** overwritten by provider updates
 - **Backup Cache**: Original local assets backed up before replacement during enrichment
 
+### Provider Capabilities Matrix
+
+Quick reference for what each provider supports:
+
+| Provider | Media Types | Auth Method | Metadata | Assets | Adaptive Rate Limit | Status |
+|----------|-------------|-------------|----------|--------|---------------------|--------|
+| **TMDB** | Movie, Collection, TV Series | API Key (Bearer) | Title, plot, cast, crew, release date, ratings | Poster, backdrop, trailer (YouTube) | Yes (429-based) | ✅ Implemented |
+| **TVDB** | TV Series, Season, Episode | JWT Token | Title, plot, air date, network, ratings | Poster, fanart, banner, series banner, episode still | Yes (429-based) | ✅ Implemented |
+| **FanArt.tv** | Movie, TV Series | API Key (Header) | None (assets only) | Poster, clearlogo, clearart, discart, characterart, banner, landscape | Yes (429-based) | ✅ Implemented |
+| **Local** | Movie, TV Series, Episode | None | NFO-based metadata | All types via filesystem discovery | N/A (filesystem) | ✅ Implemented |
+| **IMDb** | Movie, TV Series | None (web scraping) | Ratings only | None | Conservative (1/sec) | ⚠️ Unstable (ToS violation risk) |
+| **MusicBrainz** | Album, Artist, Release | None (open API) | Artist bio, album tracks, release dates | None | Yes (strict 1/sec) | 📋 Planned |
+| **TheAudioDB** | Album, Artist | API Key | Artist bio, album info | Artist thumb, logo, fanart, banner, album cover, CD art | Yes (429-based) | 📋 Planned |
+
+**Key:**
+- ✅ **Implemented**: Production-ready, active in codebase
+- ⚠️ **Unstable**: Implemented but unreliable (web scraping, external dependency issues)
+- 📋 **Planned**: Designed but not yet implemented
+
 ### Provider Types
 
 **Implemented Providers:**
@@ -295,9 +314,10 @@ Authorization: Bearer {API_KEY}
 Content-Type: application/json;charset=utf-8
 ```
 
-**Rate Limits:**
-- 40 requests per 10 seconds
-- Recommend implementing request queue with rate limiting
+**Rate Limiting:**
+- Metarr uses adaptive rate limiting with 429-based exponential backoff
+- Provider can change rate limits at any time - Metarr responds dynamically
+- See "Rate Limiting Strategy" section above for implementation details
 
 ### Base URL
 
@@ -620,18 +640,59 @@ Authorization: Bearer {API_KEY}
 }
 ```
 
-### Rate Limiting Pattern
+### Rate Limiting Strategy
+
+**Metarr uses adaptive rate limiting with exponential backoff rather than fixed rate limits.**
+
+#### Core Principles
+
+1. **Provider-Controlled**: TMDB, TVDB, and FanArt.tv can change their rate limits at any time
+2. **429-Driven Backoff**: Metarr responds to HTTP 429 (Too Many Requests) with exponential backoff
+3. **Conservative Defaults**: Start with conservative request rates, adapting based on provider responses
+4. **Personal API Keys**: Using personal API keys does NOT bypass backoff logic - all requests respect 429 responses
+
+#### Adaptive Backoff Algorithm
+
+When a provider returns HTTP 429 (Rate Limit Exceeded):
+
+1. **Retry-After Header**: If provider specifies `Retry-After` header, use that value
+2. **Exponential Backoff**: Otherwise, calculate backoff as: `min(1000ms * 2^(consecutiveRateLimits - 1), 30000ms)`
+   - First 429: Wait 1 second
+   - Second consecutive 429: Wait 2 seconds
+   - Third consecutive 429: Wait 4 seconds
+   - Fourth consecutive 429: Wait 8 seconds
+   - Fifth+ consecutive 429: Wait 30 seconds (capped)
+3. **Reset on Success**: Consecutive rate limit counter resets after any successful request
+
+**Implementation Reference**: See `BaseProvider.ts` lines 251-309 for complete backoff implementation.
+
+#### Current Conservative Defaults
+
+These are **starting points** that adapt based on provider responses:
+
+- **TMDB**: ~4 requests/second (may adjust based on 429 responses)
+- **TVDB**: ~3 requests/second (may adjust based on 429 responses)
+- **FanArt.tv**: ~10 requests/second (project key) or ~20 req/sec (personal key)
+
+**Important**: These values are NOT hard limits. Actual throughput dynamically adapts to provider behavior.
+
+#### Rate Limiter Pattern Example
 
 ```typescript
-class TMDBRateLimiter {
-  private queue: Array<() => Promise<any>> = [];
+// Conservative rate limiter with 429-driven backoff
+class AdaptiveRateLimiter {
   private requestsInWindow = 0;
   private windowStart = Date.now();
-  private readonly maxRequests = 40;
-  private readonly windowMs = 10000; // 10 seconds
+  private readonly maxRequests: number;
+  private readonly windowMs: number;
+
+  constructor(maxRequests: number, windowMs: number) {
+    this.maxRequests = maxRequests;
+    this.windowMs = windowMs;
+  }
 
   async execute<T>(fn: () => Promise<T>): Promise<T> {
-    // Wait if at rate limit
+    // Wait if at conservative rate limit
     while (this.requestsInWindow >= this.maxRequests) {
       const elapsed = Date.now() - this.windowStart;
       if (elapsed >= this.windowMs) {
@@ -643,7 +704,13 @@ class TMDBRateLimiter {
     }
 
     this.requestsInWindow++;
-    return fn();
+
+    try {
+      return await fn();
+    } catch (error: any) {
+      // BaseProvider handles 429 responses with exponential backoff
+      throw error;
+    }
   }
 
   private delay(ms: number): Promise<void> {
@@ -651,6 +718,8 @@ class TMDBRateLimiter {
   }
 }
 ```
+
+**Note**: This pattern provides the conservative baseline. The `BaseProvider` class adds exponential backoff on top when 429 errors occur.
 
 ## TVDB (TheTVDB)
 
@@ -779,6 +848,316 @@ Authorization: Bearer {JWT_TOKEN}
 GET https://api4.thetvdb.com/v4/search?query=Breaking%20Bad&type=series
 Authorization: Bearer {JWT_TOKEN}
 ```
+
+## FanArt.tv
+
+### Authentication
+
+**API Key Required:** No (project key embedded, personal key optional)
+
+**Request Headers:**
+```
+api-key: {API_KEY}
+```
+
+**Rate Limiting:**
+- **Project Key**: 10 requests/second
+- **Personal Key**: 20 requests/second (2x faster)
+- Metarr uses adaptive rate limiting with 429-based exponential backoff
+- See "Rate Limiting Strategy" section above for implementation details
+
+**Get Personal Key**: https://fanart.tv/get-an-api-key/ (free)
+
+### Base URL
+
+```
+https://webservice.fanart.tv/v3
+```
+
+### Movie Endpoints
+
+#### Get Movie Images
+
+**Endpoint:** `GET /movies/{tmdb_id}`
+
+**Parameters:**
+- `tmdb_id` (required): TMDB movie ID (NOT FanArt.tv's own ID)
+
+**Request:**
+```
+GET https://webservice.fanart.tv/v3/movies/603
+api-key: {API_KEY}
+```
+
+**Response:**
+```json
+{
+  "name": "The Matrix",
+  "tmdb_id": "603",
+  "imdb_id": "tt0133093",
+  "hdmovielogo": [
+    {
+      "id": "12345",
+      "url": "https://assets.fanart.tv/fanart/movies/603/hdmovielogo/the-matrix-5f7a8b1c2d3e4.png",
+      "lang": "en",
+      "likes": "15"
+    }
+  ],
+  "moviedisc": [
+    {
+      "id": "23456",
+      "url": "https://assets.fanart.tv/fanart/movies/603/moviedisc/the-matrix-5f7a8b1c2d3e4.png",
+      "lang": "en",
+      "likes": "8",
+      "disc": "1",
+      "disc_type": "bluray"
+    }
+  ],
+  "movieposter": [
+    {
+      "id": "34567",
+      "url": "https://assets.fanart.tv/fanart/movies/603/movieposter/the-matrix-5f7a8b1c2d3e4.jpg",
+      "lang": "en",
+      "likes": "25"
+    }
+  ],
+  "hdmovieclearart": [
+    {
+      "id": "45678",
+      "url": "https://assets.fanart.tv/fanart/movies/603/hdmovieclearart/the-matrix-5f7a8b1c2d3e4.png",
+      "lang": "en",
+      "likes": "12"
+    }
+  ],
+  "movieart": [
+    {
+      "id": "56789",
+      "url": "https://assets.fanart.tv/fanart/movies/603/movieart/the-matrix-5f7a8b1c2d3e4.png",
+      "lang": "en",
+      "likes": "6"
+    }
+  ],
+  "moviebackground": [
+    {
+      "id": "67890",
+      "url": "https://assets.fanart.tv/fanart/movies/603/moviebackground/the-matrix-5f7a8b1c2d3e4.jpg",
+      "lang": "en",
+      "likes": "18"
+    }
+  ],
+  "moviebanner": [
+    {
+      "id": "78901",
+      "url": "https://assets.fanart.tv/fanart/movies/603/moviebanner/the-matrix-5f7a8b1c2d3e4.jpg",
+      "lang": "en",
+      "likes": "10"
+    }
+  ],
+  "moviethumb": [
+    {
+      "id": "89012",
+      "url": "https://assets.fanart.tv/fanart/movies/603/moviethumb/the-matrix-5f7a8b1c2d3e4.jpg",
+      "lang": "en",
+      "likes": "7"
+    }
+  ]
+}
+```
+
+### TV Show Endpoints
+
+#### Get TV Show Images
+
+**Endpoint:** `GET /tv/{tvdb_id}`
+
+**Parameters:**
+- `tvdb_id` (required): TVDB series ID (NOT TMDB ID)
+
+**Request:**
+```
+GET https://webservice.fanart.tv/v3/tv/81189
+api-key: {API_KEY}
+```
+
+**Response:**
+```json
+{
+  "name": "Breaking Bad",
+  "thetvdb_id": "81189",
+  "clearlogo": [
+    {
+      "id": "11111",
+      "url": "https://assets.fanart.tv/fanart/tv/81189/clearlogo/breaking-bad-5f7a8b1c2d3e4.png",
+      "lang": "en",
+      "likes": "30"
+    }
+  ],
+  "hdtvlogo": [
+    {
+      "id": "22222",
+      "url": "https://assets.fanart.tv/fanart/tv/81189/hdtvlogo/breaking-bad-5f7a8b1c2d3e4.png",
+      "lang": "en",
+      "likes": "45"
+    }
+  ],
+  "clearart": [
+    {
+      "id": "33333",
+      "url": "https://assets.fanart.tv/fanart/tv/81189/clearart/breaking-bad-5f7a8b1c2d3e4.png",
+      "lang": "en",
+      "likes": "22"
+    }
+  ],
+  "showbackground": [
+    {
+      "id": "44444",
+      "url": "https://assets.fanart.tv/fanart/tv/81189/showbackground/breaking-bad-5f7a8b1c2d3e4.jpg",
+      "lang": "en",
+      "likes": "38"
+    }
+  ],
+  "tvposter": [
+    {
+      "id": "55555",
+      "url": "https://assets.fanart.tv/fanart/tv/81189/tvposter/breaking-bad-5f7a8b1c2d3e4.jpg",
+      "lang": "en",
+      "likes": "28"
+    }
+  ],
+  "tvbanner": [
+    {
+      "id": "66666",
+      "url": "https://assets.fanart.tv/fanart/tv/81189/tvbanner/breaking-bad-5f7a8b1c2d3e4.jpg",
+      "lang": "en",
+      "likes": "20"
+    }
+  ],
+  "characterart": [
+    {
+      "id": "77777",
+      "url": "https://assets.fanart.tv/fanart/tv/81189/characterart/breaking-bad-5f7a8b1c2d3e4.png",
+      "lang": "en",
+      "likes": "15"
+    }
+  ],
+  "tvthumb": [
+    {
+      "id": "88888",
+      "url": "https://assets.fanart.tv/fanart/tv/81189/tvthumb/breaking-bad-5f7a8b1c2d3e4.jpg",
+      "lang": "en",
+      "likes": "12"
+    }
+  ],
+  "seasonposter": [
+    {
+      "id": "99999",
+      "url": "https://assets.fanart.tv/fanart/tv/81189/seasonposter/breaking-bad-season-1-5f7a8b1c2d3e4.jpg",
+      "lang": "en",
+      "likes": "25",
+      "season": "1"
+    }
+  ],
+  "seasonthumb": [
+    {
+      "id": "10101",
+      "url": "https://assets.fanart.tv/fanart/tv/81189/seasonthumb/breaking-bad-season-1-5f7a8b1c2d3e4.jpg",
+      "lang": "en",
+      "likes": "18",
+      "season": "1"
+    }
+  ],
+  "seasonbanner": [
+    {
+      "id": "20202",
+      "url": "https://assets.fanart.tv/fanart/tv/81189/seasonbanner/breaking-bad-season-1-5f7a8b1c2d3e4.jpg",
+      "lang": "en",
+      "likes": "14",
+      "season": "1"
+    }
+  ]
+}
+```
+
+### Asset Type Mapping
+
+FanArt.tv provides curated, high-quality artwork in multiple formats:
+
+#### Movie Asset Types
+
+| FanArt.tv Type | Metarr Type | Description | Typical Size |
+|----------------|-------------|-------------|--------------|
+| `movieposter` | `poster` | Standard movie poster | 1000x1426 |
+| `moviebackground` | `fanart` | Background/fanart image | 1920x1080 |
+| `moviebanner` | `banner` | Wide banner format | 1000x185 |
+| `moviethumb` | `landscape` | Landscape/thumbnail | 1000x562 |
+| `hdmovielogo` | `clearlogo` | HD transparent logo | Variable |
+| `hdmovieclearart` | `clearart` | HD transparent character art | Variable |
+| `movieart` | `clearart` | SD transparent character art | Variable |
+| `moviedisc` | `discart` | Disc/CD art | 1000x1000 |
+
+#### TV Show Asset Types
+
+| FanArt.tv Type | Metarr Type | Description | Typical Size |
+|----------------|-------------|-------------|--------------|
+| `tvposter` | `poster` | Series poster | 1000x1426 |
+| `showbackground` | `fanart` | Background/fanart image | 1920x1080 |
+| `tvbanner` | `banner` | Series banner | 1000x185 |
+| `tvthumb` | `landscape` | Landscape/thumbnail | 1000x562 |
+| `hdtvlogo` | `clearlogo` | HD transparent logo | Variable |
+| `clearlogo` | `clearlogo` | SD transparent logo | Variable |
+| `clearart` | `clearart` | Transparent character art | Variable |
+| `characterart` | `characterart` | Character-specific art | Variable |
+| `seasonposter` | `season_poster` | Season-specific poster | 1000x1426 |
+| `seasonthumb` | `season_landscape` | Season landscape | 1000x562 |
+| `seasonbanner` | `season_banner` | Season banner | 1000x185 |
+
+### Asset Quality Scoring
+
+FanArt.tv provides community voting (`likes` field) to indicate image quality:
+
+```typescript
+function calculateFanArtScore(asset: FanArtAsset): number {
+  const baseScore = 50; // Baseline for FanArt.tv assets (curated)
+  const likeBonus = Math.min(parseInt(asset.likes || '0'), 50); // Max +50 points
+  const languageBonus = asset.lang === 'en' ? 10 : 0; // Prefer English
+
+  return baseScore + likeBonus + languageBonus; // Max 110
+}
+```
+
+**Scoring Strategy:**
+- FanArt.tv assets start at 50 points (higher than TMDB/TVDB due to curation)
+- Community likes add up to +50 points (capped)
+- Language preference adds +10 for English
+- Result: FanArt.tv assets typically score 50-110, giving them priority in asset selection
+
+### Error Handling
+
+**404 Not Found**: Movie/TV show not in FanArt.tv database (common for recent releases)
+
+```json
+{
+  "status": "error",
+  "error message": "Not found"
+}
+```
+
+**Strategy**: Fall back to TMDB/TVDB for assets
+
+**401 Unauthorized**: Invalid API key
+
+```json
+{
+  "status": "error",
+  "error message": "Invalid API key"
+}
+```
+
+**Strategy**: Log error, disable provider until configuration fixed
+
+**429 Too Many Requests**: Rate limit exceeded
+
+**Strategy**: Apply exponential backoff (see "Rate Limiting Strategy" section)
 
 ## MusicBrainz (Future - Music Library)
 

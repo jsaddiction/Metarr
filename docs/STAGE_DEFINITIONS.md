@@ -1,8 +1,19 @@
 # Stage Definitions
 
-**Purpose**: Detailed implementation plans for each development stage
+**⚠️ Note**: Stage-based development (Stages 0-5) is **historical**. Metarr has transitioned to **feature-based development** as of 2025-10-15.
 
-**Reference**: See [PROJECT_ROADMAP.md](PROJECT_ROADMAP.md) for current status
+This document is preserved for:
+- Understanding completed work during early development
+- Historical reference for architectural decisions
+- Context for git tags and commit history
+
+**For current development workflow**, see [GIT_WORKFLOW.md](GIT_WORKFLOW.md) and [PROJECT_ROADMAP.md](PROJECT_ROADMAP.md).
+
+---
+
+**Purpose**: Detailed implementation plans for each development stage (historical reference)
+
+**Reference**: See [PROJECT_ROADMAP.md](PROJECT_ROADMAP.md) for current development status
 
 ---
 
@@ -104,8 +115,9 @@ Each stage follows this structure:
 ### Stage 3: Asset Candidate Caching
 
 **Branch**: `feature/stage-3-asset-cache`
-**Tag**: `stage-3-complete`
+**Tag**: *(none - completed without tag)*
 **Completed**: 2025-10-15
+**Commits**: `98c5e15`, `b381279`, `67c51bd`
 
 **Goal**: Cache asset candidates from providers, score them, auto-select best
 

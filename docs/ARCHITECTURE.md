@@ -1,7 +1,43 @@
 # Metarr Architecture
 
 **Last Updated**: 2025-01-13
-**Status**: Design Phase - Ready for Implementation
+**Status**: Core Implementation In Progress
+
+---
+
+## Implementation Status
+
+### Core Features
+- ✅ **[Implemented]** - Split cache/library architecture with UUID naming
+- ✅ **[Implemented]** - Database schema (movies, series, job queue, media players)
+- ✅ **[Implemented]** - Job queue with SQLite backend
+- ✅ **[Implemented]** - Universal media player group architecture
+- 📋 **[Planned]** - Perceptual hash deduplication
+- 📋 **[Planned]** - SHA256 integrity verification and restore
+- 📋 **[Planned]** - Automatic garbage collection
+- 📋 **[Planned]** - Concurrent asset downloads with rate limiting
+
+### Provider Integration
+- ✅ **[Implemented]** - TMDB API client (basic)
+- 📋 **[Planned]** - TVDB API client
+- 📋 **[Planned]** - Fanart.tv API client
+- 📋 **[Planned]** - MusicBrainz API client
+- 📋 **[Planned]** - Exponential backoff on 429 responses
+
+### Webhook Processing
+- ✅ **[Implemented]** - Webhook receiver endpoints
+- ✅ **[Implemented]** - Job-based processing
+- 📋 **[Planned]** - Full enrichment pipeline
+- 📋 **[Planned]** - Playback state capture/restore
+- 📋 **[Planned]** - Disaster recovery (cache→library restore)
+
+### Frontend
+- ✅ **[Implemented]** - React + Vite + Tailwind CSS v4
+- ✅ **[Implemented]** - shadcn/ui components
+- ✅ **[Implemented]** - Custom AnimatedTabs component
+- ✅ **[Implemented]** - Movie table view (basic)
+- 📋 **[Planned]** - Asset selection UI
+- 📋 **[Planned]** - Real-time job progress (WebSocket)
 
 ---
 
@@ -611,76 +647,107 @@ metarr/
     └── integration/
 ```
 
-### Cache Directory Structure (Content-Addressed)
+### Cache Directory Structure (UUID-Based)
 
 ```
-data/cache/assets/
-  ab/                        ← First 2 chars of SHA256 hash
-    cd/                      ← Next 2 chars of SHA256 hash
-      abcdef123456789...xyz.jpg  ← Full hash filename
-      abcd9876543210...uvw.png
-  12/
-    34/
-      1234567890abcd...efg.jpg
-  ff/
-    fe/
-      fffedcba098765...432.mp4
+data/cache/
+├── images/
+│   ├── movie/
+│   │   ├── 123/                           ← Entity ID
+│   │   │   ├── a1b2c3d4-e5f6-...-890.jpg  ← UUID filename
+│   │   │   ├── f9e8d7c6-b5a4-...-cba.jpg
+│   │   │   └── ...
+│   │   └── 456/
+│   │       └── ...
+│   ├── series/
+│   │   └── 789/
+│   │       └── ...
+│   └── actor/
+│       └── ...
+├── videos/
+│   └── movie/
+│       └── 123/
+│           └── trailer-uuid.mp4
+├── audio/
+│   └── series/
+│       └── 789/
+│           └── theme-uuid.mp3
+└── text/
+    └── movie/
+        └── 123/
+            └── nfo-uuid.xml
 
 Benefits:
-- Even distribution across 65,536 leaf directories (256 × 256)
-- ~100-200 files per directory at scale
-- OS-agnostic, proven approach (Git uses similar structure)
-- No file system limits on single directory file count
+- Simple structure: type → entityType → entityId → files
+- UUID prevents collisions (no hash conflicts)
+- Easy cleanup: Delete entire entityId directory when entity removed
+- Predictable paths: No need to compute hash to locate file
 ```
 
 ---
 
 ## Key Concepts
 
-### 1. Content-Addressed Cache
+### 1. UUID-Based Asset Storage
 
-**Purpose**: Ensure integrity, enable deduplication within same media, detect corruption
+**Purpose**: Prevent file collisions, enable per-entity asset management, support integrity verification
+
+**Architecture**: Split cache/library with UUID naming (NOT content-addressed)
 
 **How It Works**:
 ```typescript
 // Download asset
 const buffer = await downloadFromURL(url);
 
-// Calculate hash
-const contentHash = crypto
+// Generate UUID for filename
+const uuid = crypto.randomUUID(); // "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+
+// Generate cache path (UUID-based, not hash-based)
+const cachePath = `/data/cache/images/${entityType}/${entityId}/${uuid}.jpg`;
+// Result: /data/cache/images/movie/123/a1b2c3d4-e5f6-7890-abcd-ef1234567890.jpg
+
+// Calculate SHA256 for integrity verification (stored in database, not used for naming)
+const sha256Hash = crypto
   .createHash('sha256')
   .update(buffer)
   .digest('hex');
-// Result: "abcdef1234567890..."
 
-// Generate cache path
-const dir1 = contentHash.substring(0, 2);  // "ab"
-const dir2 = contentHash.substring(2, 4);  // "cd"
-const extension = getExtension(url);        // ".jpg"
-const cachePath = `/data/cache/assets/${dir1}/${dir2}/${contentHash}${extension}`;
-// Result: /data/cache/assets/ab/cd/abcdef1234567890....jpg
+// Calculate perceptual hash for visual similarity (deduplication)
+const perceptualHash = await calculatePHash(buffer);
 
-// Check if already cached
-if (await fs.exists(cachePath)) {
-  console.log('Already cached, skipping download');
-  return cachePath;
-}
-
-// Create directories and save
+// Save file
 await fs.mkdir(path.dirname(cachePath), { recursive: true });
 await fs.writeFile(cachePath, buffer);
+
+// Store metadata in database
+await db.execute(`
+  INSERT INTO cache_image_files (
+    entity_type, entity_id, file_path, file_name, file_size,
+    file_hash, perceptual_hash, image_type, source_url
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+`, [entityType, entityId, cachePath, `${uuid}.jpg`, buffer.length,
+    sha256Hash, perceptualHash, 'poster', url]);
 ```
 
-**Deduplication Rules**:
-- Within same media: If user replaces fanart1 with fanart3's image, both cache files remain
-- Cache size grows based on unique selections per media item, not total selections
-- Example: Movie has 1 poster + 3 fanarts = 4 cache files (even if fanarts visually similar)
+**Key Differences from Content-Addressed Storage**:
+- **Filenames**: UUIDs (random), NOT SHA256 hashes
+- **Deduplication**: Perceptual hash comparison during enrichment, NOT SHA256
+- **SHA256 usage**: Integrity verification only (detect library file changes)
+- **Per-entity caching**: Each movie/series has independent cache (no global sharing)
+
+**Deduplication Strategy**:
+- **When**: At enrichment time (before download)
+- **How**: Compare perceptual hashes of candidate images
+- **Threshold**: 90% visual similarity
+- **Result**: Skip downloading visually identical images from different URLs
 
 **Benefits**:
-- Integrity verification: Re-hash file, compare to filename
-- Corruption detection: Hash mismatch = file corrupted
-- Immutable storage: Filename never changes
-- No accidental overwrites: Same hash = same file
+- UUID prevents file collisions (no hash → collision → retry logic)
+- SHA256 detects library file corruption (triggers cache→library restore)
+- pHash avoids duplicate downloads (90% similarity threshold)
+- Split tables clarify intent (cache = source of truth, library = published copies)
+
+**See**: [ASSET_STORAGE_ARCHITECTURE.md](ASSET_STORAGE_ARCHITECTURE.md) for complete details
 
 ### 2. Field Locking (Manual Override Protection)
 

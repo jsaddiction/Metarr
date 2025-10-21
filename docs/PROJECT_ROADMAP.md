@@ -1,9 +1,78 @@
 # Metarr Project Roadmap
 
-**Last Updated**: 2025-10-15
-**Current Stage**: Stage 5 - Kodi Integration (Complete)
+**Last Updated**: 2025-10-21
+**Development Phase**: Pre-Release
 **Current Branch**: `master`
-**Next Branch**: `feature/stage-6-polish`
+
+---
+
+## Development Model
+
+Metarr development has transitioned from **stage-based** (Stages 0-5) to **feature-based** workflow.
+
+**Current Phase**: Pre-Release Development
+**Goal**: Build distributable codebase with production-ready features
+**Success Metric**: Reliability + Functionality + Feature Completeness (verified via Docker testing)
+
+---
+
+## Stage Completion History
+
+| Stage | Name | Tag | Completion Date | Notes |
+|-------|------|-----|-----------------|-------|
+| 0 | Planning & Git Workflow | `stage-0-complete` | 2025-10-15 | Documentation foundation |
+| 1 | Monitored/Unmonitored System | `stage-1-complete` | 2025-10-15 | BookmarkToggle component |
+| 2 | Field & Asset Locking | `stage-2-complete` | 2025-10-15 | LockIcon component, field-level locking |
+| 3 | Asset Candidate Caching | *(no tag)* | 2025-10-15 | **Completed without tag** - Three-tier asset system |
+| 4 | Webhooks | `stage-4-complete` | 2025-10-15 | Radarr/Sonarr integration, automatic enrichment |
+| 5 | Kodi Integration | `stage-5-complete` | 2025-10-15 | Universal group architecture, player management |
+
+**Post-Stage Development**: Feature-based development began after Stage 5. See [GIT_WORKFLOW.md](GIT_WORKFLOW.md) for current conventions.
+
+---
+
+## Current Development Focus
+
+**Active Work** (as of 2025-10-21):
+- Frontend: shadcn/ui component integration
+- Backend: Comprehensive code audit and cleanup
+- Documentation: Parity fixes and organization
+
+**Pre-Release Priorities**:
+1. Fully developed end-to-end workflows (scan → enrich → publish)
+2. Basic feature completeness (metadata management, asset handling, player integration)
+3. Docker deployment testing in live environment
+4. Reliability and stability verification
+
+**v1.0 Release Criteria**: See "Release Philosophy" section below.
+
+---
+
+## Release Philosophy
+
+**Metarr follows a "Pre-Release vs. Post-Release" development model**, not version-number-driven releases.
+
+### Pre-Release Development (Current)
+- Rapid iteration and feature development
+- Breaking changes allowed
+- Focus on functionality and reliability
+- No publication timeline pressure
+
+### v1.0 Readiness Criteria
+1. ✅ Fully developed workflows exist
+2. ✅ Basic features implemented
+3. ⏳ End-to-end testing in live Docker environment
+4. ⏳ Reliability verified (stability testing)
+5. ⏳ Functionality verified (feature completeness)
+6. ⏳ Feature-complete for core use cases
+
+**Note**: Many iterations expected before v1.0 publication. Version number is not an indicator of current feature set during pre-release development.
+
+### Post-Release (Future)
+- Semantic versioning (major.minor.patch)
+- Stable API contracts
+- Backwards compatibility commitments
+- Published Docker images
 
 ---
 
@@ -13,7 +82,7 @@
 
 **Machine**: Check with `git branch` and `cat docs/PROJECT_ROADMAP.md`
 
-**Current Progress**: Stage 5 Complete (Kodi Integration - Universal Group Architecture)
+**Current Progress**: Post-Stage 5 (Feature-Based Development)
 
 **What's Working**:
 - ✅ Backend: Production-ready (Phase 6 complete + security hardening)
@@ -24,31 +93,7 @@
 - ✅ Webhooks: Radarr/Sonarr/Lidarr integration (Stage 4)
 - ✅ Media Players: Universal group architecture with group-level path mapping (Stage 5)
 
-**What's Next**: Stage 6 - Polish & Docker Deployment (v1.0 Release)
-
----
-
-## 📊 Stage Overview
-
-### Completed Stages
-
-- ✅ **Stage 0**: Planning & Git Workflow (`stage-0-complete`)
-- ✅ **Stage 1**: Monitored/Unmonitored System (`stage-1-complete`)
-- ✅ **Stage 2**: Field & Asset Locking (`stage-2-complete`)
-- ✅ **Stage 3**: Asset Candidate Caching (`stage-3-complete`)
-- ✅ **Stage 4**: Webhooks (Radarr/Sonarr/Lidarr) (`stage-4-complete`)
-- ✅ **Stage 5**: Universal Group Architecture (Kodi/Jellyfin/Plex) (`stage-5-complete`)
-
-### v1.0 Critical Path (Required for Automation Flow)
-
-- ⏳ **Stage 6**: Polish & Docker Deployment (Community Release) ← **NEXT**
-
-### Post-v1.0 Features (Not Required for Initial Release)
-
-- 📋 **Stage 7**: Status Pages & Activity Monitoring
-- 📋 **Stage 8**: Unknown Files & Blacklist Management
-- 📋 **Stage 9**: TV Show Support (Series/Seasons/Episodes)
-- 📋 **Stage 10**: Music Support (Artists/Albums/Tracks)
+**What's Next**: Pre-release polish, Docker deployment testing, feature completion
 
 ---
 
@@ -258,26 +303,44 @@ git checkout -b feature/stage-Y-name
 
 ## 🎯 What Should I Work On Next?
 
-### If on Stage 4 (Webhooks):
-1. Read [docs/STAGE_DEFINITIONS.md](STAGE_DEFINITIONS.md) → Stage 4 section
-2. Create branch: `git checkout -b feature/stage-4-webhooks`
-3. Start with backend: webhook receiver endpoints
-4. Reference: [docs/WEBHOOKS.md](WEBHOOKS.md) for Radarr/Sonarr payload formats
-5. Test with Radarr's "Test" webhook button
+**Current Development Model**: Feature-based (post-Stage 5)
 
-### If Stage 4 Complete (Kodi Integration):
-1. Read [docs/STAGE_DEFINITIONS.md](STAGE_DEFINITIONS.md) → Stage 5 section
-2. Create branch: `git checkout -b feature/stage-5-kodi`
-3. Start with Kodi client: JSON-RPC connection
-4. Reference: [docs/KODI_API.md](KODI_API.md) for API specs
-5. Test with "VideoLibrary.Scan" notification
+### Determining Next Tasks
 
-### If Both Complete (Docker & Polish):
-1. Read [docs/STAGE_DEFINITIONS.md](STAGE_DEFINITIONS.md) → Stage 6 section
-2. Create Dockerfile and docker-compose.yml
-3. Test deployment on fresh machine
-4. Polish: Error handling, logging, UI refinements
-5. Write deployment guide
+1. **Check PROJECT_ROADMAP.md** - Review "Current Development Focus" section
+2. **Review Git History** - `git log --oneline -20` to see recent work
+3. **Check Open Issues** - Any bugs or feature requests to address?
+4. **Consult Documentation** - Are technical docs out of sync with code?
+
+### Common Next Steps
+
+**Frontend Work**:
+- Complete shadcn/ui component migration for remaining pages
+- Build out placeholder pages with actual functionality
+- Implement asset selection and management UI
+- Add real-time progress indicators for jobs
+
+**Backend Work**:
+- Complete API endpoints for all entity types
+- Implement missing service layer functionality
+- Add comprehensive error handling
+- Write tests for critical services
+
+**DevOps Work**:
+- Create Dockerfile and docker-compose.yml
+- Test deployment in Docker environment
+- Write deployment documentation
+- Set up CI/CD pipeline (future)
+
+### Creating Feature Branches
+
+```bash
+# Create descriptive feature branch
+git checkout -b feature/asset-selection-ui
+git checkout -b fix/metadata-enrichment-bug
+git checkout -b refactor/service-layer-cleanup
+git checkout -b docs/api-documentation-update
+```
 
 ---
 

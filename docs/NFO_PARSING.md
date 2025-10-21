@@ -363,12 +363,30 @@ https://www.thetvdb.com/series/81189
 
 | XML Tag | Database Column | Value Type | Notes |
 |---------|----------------|------------|-------|
-| `<runtime>` | **IGNORED** | Integer (minutes) | Use FFprobe `duration_seconds` instead |
+| `<runtime>` | `runtime` | Integer (minutes) | **PARSED but not authoritative** - see below |
 | `<premiered>` | `premiered` | String (`YYYY-MM-DD`) | Release date |
 | `<releasedate>` | `premiered` | String (`YYYY-MM-DD`) | Alternative to `<premiered>` |
 | `<aired>` | `aired` | String (`YYYY-MM-DD`) | Episode air date |
 
-**Note:** NFO `<runtime>` is **not stored** in the database. Authoritative runtime comes from `video_streams.duration_seconds` (extracted via FFprobe).
+**Runtime Field Policy:**
+
+The `<runtime>` field has a complex policy due to dual data sources:
+
+1. **NFO Runtime IS Parsed**: When reading NFO files, Metarr extracts `<runtime>` and stores it in `movies.runtime` (integer, minutes)
+2. **FFprobe Runtime is Authoritative**: During media file scanning, FFprobe extracts actual file duration and stores it in `video_streams.duration_seconds` (real, seconds)
+3. **Source of Truth Priority**:
+   - **For display/metadata**: Use `movies.runtime` (from NFO or provider metadata)
+   - **For playback/technical specs**: Use `video_streams.duration_seconds` (from FFprobe)
+4. **Why Both?**:
+   - NFO/provider runtime = theatrical/advertised runtime (may differ from actual file)
+   - FFprobe runtime = actual file duration (includes credits, post-credit scenes)
+   - Example: Movie advertised as "120 minutes" may have file duration of 125 minutes
+
+**When Writing NFO Files**:
+- Metarr writes `movies.runtime` to `<runtime>` tag
+- Does NOT write video stream duration (that goes in `<fileinfo><streamdetails>` section)
+
+**Implementation Reference**: See `nfoParser.ts` lines 860-864 (movies) and lines 1036-1045 (episodes).
 
 ### User Data Tags
 

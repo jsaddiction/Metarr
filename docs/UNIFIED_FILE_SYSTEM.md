@@ -1,7 +1,22 @@
-# Unified File System Architecture
+# ⚠️ [SUPERSEDED - NEVER IMPLEMENTED]
+
+This document describes a unified asset storage architecture that was **never implemented**.
+
+**Current Implementation**: See [ASSET_STORAGE_ARCHITECTURE.md](ASSET_STORAGE_ARCHITECTURE.md) for the actual split cache/library architecture.
+
+**Status**: Kept for historical reference only.
+
+**Why it was rejected**:
+- Location-based architecture (library vs cache in same table) proved less clear than split tables
+- Decided to use UUID-based naming instead of content-addressing for file collision prevention
+- Split tables provide clearer separation of concerns (cache = source of truth, library = ephemeral published copies)
+
+---
+
+# Unified File System Architecture (Historical Design)
 
 **Last Updated**: 2025-10-16
-**Status**: Design Complete - Implementation Pending
+**Status**: ~~Design Complete - Implementation Pending~~ **REJECTED**
 
 ---
 

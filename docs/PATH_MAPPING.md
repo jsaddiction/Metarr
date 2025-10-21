@@ -235,6 +235,8 @@ await kodiClient.scanLibrary(kodiPath);
 
 ## Kodi Shared Library Groups
 
+**Status**: **[Planned Feature]** - Designed but not yet implemented
+
 ### Problem
 
 Multiple Kodi instances can share a single MySQL/MariaDB database. When one Kodi scans the library, all instances see the updated metadata (shared database), but each needs to rebuild its own image cache.
@@ -245,7 +247,7 @@ Multiple Kodi instances can share a single MySQL/MariaDB database. When one Kodi
 3. **Playback State Tracking**: Need to detect which players are actively playing media
 4. **Sequential vs. Concurrent**: Some operations (database scan) must be sequential, others (notifications) can be concurrent
 
-### Database Schema
+### Database Schema (Planned)
 
 ```sql
 CREATE TABLE media_player_groups (

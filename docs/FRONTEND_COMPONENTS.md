@@ -191,7 +191,9 @@ When developing or modifying components, always test in both themes:
 
 ## Reusable UI Components
 
-### AnimatedTabs Component (`components/ui/AnimatedTabs.tsx`)
+### AnimatedTabs Component
+
+**Location**: `public/frontend/src/components/ui/AnimatedTabs.tsx`
 
 A reusable tabbed interface component built on Radix UI with smooth sliding indicator animation.
 
@@ -301,7 +303,9 @@ The AnimatedTabs component replaces shadcn/ui Tabs throughout the application. K
 - Simpler API with single `tabs` array prop
 - Compatible with FontAwesome icons and custom label components
 
-### TestButton Component (`components/ui/TestButton.tsx`)
+### TestButton Component
+
+**Location**: `public/frontend/src/components/ui/TestButton.tsx`
 
 A reusable button component for testing connections and configurations with smooth animated state transitions.
 
@@ -369,10 +373,10 @@ interface TestButtonProps {
 
 ## Sidebar Navigation (Sidebar)
 - **Hierarchical Menu Structure**:
-  - Metadata: Movies, Series, Music, Actors, Artists
-  - Activity: History, Running Jobs, Blocked Assets
-  - Settings: General, Providers (database icon), Data Selection (sliders icon), Files, Libraries (book icon), Media Players, Notifications
-  - System: Status, Tasks, Backup, Events, Log Files
+  - **Metadata** (expandable): Movies, Series, Music, Actors, Artists
+  - **Activity** (expandable): History, Running Jobs, Blocked Assets
+  - **Settings** (expandable): General, Providers (database icon), Data Selection (sliders icon), Files, Libraries (book icon), Media Players, Notifications, Asset Limits
+  - **System** (expandable): Status, Tasks, Backup, Events, Log Files
 - **Auto-Expand Logic**: Sections automatically expand based on current route
 - **Click Navigation**: Clicking parent menu expands and navigates to first child
 - **Smooth Concurrent Animations**:
@@ -410,6 +414,9 @@ interface TestButtonProps {
 
 ## Frontend Routes
 
+### Dashboard
+- `/` - Dashboard (default landing page)
+
 ### Metadata Management
 - `/metadata/movies` - Movie library with comprehensive metadata tracking and fuzzy search filtering
 - `/metadata/movies/:id/edit` - Movie edit page with tabbed interface (metadata, images, extras)
@@ -418,7 +425,14 @@ interface TestButtonProps {
 - `/metadata/actors` - Actor profile management
 - `/metadata/artists` - Artist profile management
 
+### Activity (Expandable Menu)
+- `/activity` - Redirects to `/activity/history` (default activity page)
+- `/activity/history` - Activity history and recent events
+- `/activity/running-jobs` - Running jobs and active tasks
+- `/activity/blocked-assets` - Blocked assets requiring attention
+
 ### Settings (Expandable Menu)
+- `/settings` - Redirects to `/settings/general` (default settings page)
 - `/settings/general` - Application-wide configurations and preferences
 - `/settings/providers` - API keys and provider-specific settings (TMDB, TVDB, MusicBrainz, etc.)
   - **Tabbed Interface**: AnimatedTabs with 3 tabs (Providers, Asset Selection, Metadata Selection)
@@ -436,14 +450,12 @@ interface TestButtonProps {
   - **Scanner Settings Tab**: Configure scanner behavior and options
 - `/settings/media-players` - Kodi, Jellyfin, Plex configurations
 - `/settings/notifications` - Email, Discord, Slack, push notification settings
+- `/settings/asset-limits` - Asset download limits and restrictions
 
 ### System (Expandable Menu)
+- `/system` - System overview page (may redirect to Status)
 - `/system/status` - System health and performance metrics
 - `/system/tasks` - Background job management and processing queue
 - `/system/backup` - Backup and restore operations
 - `/system/events` - Event logging and monitoring
 - `/system/logs` - System log files and debugging
-
-### Other Routes
-- `/activity` - Job processing status and recent activity
-- `/` - Redirects to `/metadata/movies` (default landing page)

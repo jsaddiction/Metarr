@@ -1,10 +1,15 @@
 # Database Schema
 
+> **Architecture Note**: This schema uses a **split cache/library architecture** with UUID-based file naming. See [ASSET_STORAGE_ARCHITECTURE.md](ASSET_STORAGE_ARCHITECTURE.md) for complete rationale and implementation details.
+
 ## Overview
 
 Metarr uses a relational database to manage metadata, assets, jobs, and configuration. The schema supports:
 - **Multi-media types**: Movies, TV shows, music
-- **UUID-based cache**: Split cache/library architecture with SHA256 verification hashes
+- **Split cache/library tables**: Separate `cache_*_files` and `library_*_files` tables for each asset type
+- **UUID-based naming**: Files stored with UUIDs (not content-addressed hashing)
+- **SHA256 integrity verification**: Hashes detect library file corruption/replacement
+- **Perceptual hash deduplication**: Images compared at enrichment time to avoid duplicates
 - **Job queue**: Priority-based background processing
 - **Field locking**: Preserve manual user edits
 - **Soft deletes**: 30-day recovery window
@@ -12,14 +17,23 @@ Metarr uses a relational database to manage metadata, assets, jobs, and configur
 
 ## Asset Storage Architecture
 
-**IMPORTANT**: As of 2025-10-20, Metarr uses a **split cache/library architecture**:
+**Current Implementation** (as of 2025-10-20):
 
-- **Cache files** (`cache_*_files` tables): Permanent UUID-based storage in `/data/cache/{type}/{entityType}/{entityId}/{uuid}.ext`
+- **Cache files** (`cache_*_files` tables): Permanent storage in `/data/cache/{type}/{entityType}/{entityId}/{uuid}.ext`
+  - UUID-based naming prevents file collisions
+  - SHA256 hashes stored for integrity verification
+  - Perceptual hashes (phash) stored for visual similarity comparison
+
 - **Library files** (`library_*_files` tables): Published copies in library directories with Kodi naming
-- **Hash verification**: SHA256 hashes stored in database for integrity checks (NOT for deduplication)
-- **Reference counting**: Tracks library references to cache files for garbage collection
+  - Reference `cache_file_id` to link back to source
+  - Can be deleted and rebuilt from cache
+  - SHA256 mismatch triggers cache→library restore
 
-The documentation below contains legacy references to `cache_assets`, `asset_references`, and content-addressed storage. These sections are marked as **[LEGACY - TO BE UPDATED]** and should be ignored. Refer to the actual migration file `src/database/migrations/20251015_001_clean_schema.ts` for the current schema.
+- **Deduplication strategy**: Perceptual hash comparison during enrichment (not SHA256-based)
+  - Prevents downloading visually identical images from different URLs
+  - SHA256 is for change detection, not deduplication
+
+**Legacy sections removed**: Lines 587-663 previously documented `cache_assets` and `asset_references` tables that were never implemented. Current schema uses split cache/library architecture exclusively.
 
 ## Core Tables
 
@@ -584,83 +598,31 @@ CREATE INDEX idx_tracks_file_path ON tracks(file_path);
 
 ## Cache & Asset Tables
 
-### Cache Assets (Content-Addressed Storage) **[LEGACY - TO BE UPDATED]**
+> **Current Architecture**: Split cache/library tables for images, videos, audio, and text files. See [ASSET_STORAGE_ARCHITECTURE.md](ASSET_STORAGE_ARCHITECTURE.md) for detailed documentation.
 
-> **⚠️ WARNING**: This section is OUTDATED. The current schema uses split `cache_*_files` and `library_*_files` tables with UUID-based naming. See `src/database/migrations/20251015_001_clean_schema.ts` for accurate schema.
+The schema currently uses type-specific tables:
+- `cache_image_files` / `library_image_files` - Posters, fanart, logos, etc.
+- `cache_video_files` / `library_video_files` - Trailers, extras
+- `cache_audio_files` / `library_audio_files` - Theme songs
+- `cache_text_files` / `library_text_files` - NFO files, subtitles
 
-```sql
-CREATE TABLE cache_assets (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  content_hash TEXT UNIQUE NOT NULL,
-  file_path TEXT NOT NULL, -- /cache/assets/{ab}/{cd}/{hash}.ext
-  file_size INTEGER NOT NULL,
-  mime_type TEXT NOT NULL,
+Each cache table stores:
+- **UUID-based filenames** (e.g., `/data/cache/images/movie/123/a1b2c3d4.jpg`)
+- **SHA256 hashes** for integrity verification
+- **Perceptual hashes** (images only) for visual similarity detection
+- **Source tracking** (provider URL, provider name)
+- **Classification metadata** (dimensions, codec, etc.)
 
-  -- Image-specific metadata
-  width INTEGER,
-  height INTEGER,
-  perceptual_hash TEXT, -- For visual duplicate detection
+Each library table stores:
+- **Foreign key to cache table** (`cache_file_id`)
+- **Published path** (library directory with Kodi naming)
+- **Timestamp** when published
 
-  -- Source tracking
-  source_type TEXT NOT NULL CHECK(source_type IN ('provider', 'local', 'user')),
-  source_url TEXT,
-  provider_name TEXT,
+**Planned Additions** (Post-v1.0):
+- `deleted` (BOOLEAN) - Soft delete flag for garbage collection
+- `deleted_at` (TIMESTAMP) - Deletion timestamp for retention tracking
 
-  -- Reference counting
-  reference_count INTEGER DEFAULT 0,
-
-  -- Timestamps
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  last_accessed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE UNIQUE INDEX idx_cache_assets_hash ON cache_assets(content_hash);
-CREATE INDEX idx_cache_assets_phash ON cache_assets(perceptual_hash);
-CREATE INDEX idx_cache_assets_type ON cache_assets(source_type);
-CREATE INDEX idx_cache_assets_refs ON cache_assets(reference_count);
-```
-
-### Asset References (Track where assets are used) **[LEGACY - TO BE UPDATED]**
-
-> **⚠️ WARNING**: This table no longer exists. Asset tracking is now handled by `library_*_files.cache_file_id` foreign keys.
-
-```sql
-CREATE TABLE asset_references (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  cache_asset_id INTEGER NOT NULL,
-  entity_type TEXT NOT NULL CHECK(entity_type IN ('movie', 'series', 'season', 'episode', 'artist', 'album')),
-  entity_id INTEGER NOT NULL,
-  asset_type TEXT NOT NULL CHECK(asset_type IN ('poster', 'fanart', 'banner', 'logo', 'clearart', 'thumb', 'discart')),
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (cache_asset_id) REFERENCES cache_assets(id) ON DELETE CASCADE
-);
-
-CREATE INDEX idx_asset_refs_cache ON asset_references(cache_asset_id);
-CREATE INDEX idx_asset_refs_entity ON asset_references(entity_type, entity_id);
-CREATE UNIQUE INDEX idx_asset_refs_unique ON asset_references(entity_type, entity_id, asset_type);
-```
-
-### Trailers **[LEGACY - TO BE UPDATED]**
-
-> **⚠️ WARNING**: This table no longer exists. Trailers are now stored in `cache_video_files` and `library_video_files` tables.
-
-```sql
-CREATE TABLE trailers (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  cache_asset_id INTEGER NOT NULL,
-  entity_type TEXT NOT NULL CHECK(entity_type IN ('movie', 'series')),
-  entity_id INTEGER NOT NULL,
-  title TEXT,
-  duration INTEGER,
-  quality TEXT,
-  locked BOOLEAN DEFAULT 0,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (cache_asset_id) REFERENCES cache_assets(id) ON DELETE CASCADE
-);
-
-CREATE INDEX idx_trailers_cache ON trailers(cache_asset_id);
-CREATE INDEX idx_trailers_entity ON trailers(entity_type, entity_id);
-```
+For complete table schemas, see `src/database/migrations/20251015_001_clean_schema.ts`.
 
 ## Stream Details Tables
 
@@ -1119,13 +1081,20 @@ CREATE UNIQUE INDEX idx_migrations_version ON schema_migrations(version);
 - `deleted_at IS NOT NULL` = soft deleted (30-day recovery)
 - Scheduled job purges records where `deleted_at < NOW() - 30 days`
 
-### UUID-Based Cache Architecture **[UPDATED 2025-10-20]**
-- **Cache files**: UUID-based naming in `/data/cache/{type}/{entityType}/{entityId}/{uuid}.ext`
-- **Library files**: Published copies in library directories with Kodi naming conventions
-- **Hash verification**: SHA256 hashes stored in database for integrity checks (NOT for deduplication)
-- **Reference counting**: `cache_*_files.reference_count` tracks library references for garbage collection
+### UUID-Based Cache Architecture **[Current Implementation]**
+- **UUID-based naming**: Files stored with random UUIDs to prevent collisions: `/data/cache/{type}/{entityType}/{entityId}/{uuid}.ext`
+- **SHA256 integrity verification**: Hashes detect when library files are corrupted or replaced (triggers cache→library restore)
+- **Perceptual hash deduplication**: Images compared using pHash at enrichment time to avoid downloading duplicates
+  - pHash similarity threshold: 90% (configurable)
+  - SHA256 is for change detection, NOT deduplication
+  - Cache size grows per unique visual selection, not per URL
 - **Split tables**: Separate `cache_*_files` and `library_*_files` tables for images, videos, audio, text
+- **Library files**: Published copies in library directories with Kodi naming (can be rebuilt from cache)
+- **Reference tracking**: `library_*_files.cache_file_id` foreign key links published files to cache source
 - **Atomic writes**: Temp → rename pattern prevents partial file corruption on disk full/crash scenarios
+- **Garbage collection**: [Planned] Remove cache files with zero library references after retention period
+
+See [ASSET_STORAGE_ARCHITECTURE.md](ASSET_STORAGE_ARCHITECTURE.md) for complete implementation details.
 
 ### Job Queue Priority
 - **1 = Critical**: Webhooks (new media, upgrades)

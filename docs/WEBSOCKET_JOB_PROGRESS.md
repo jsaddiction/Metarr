@@ -108,6 +108,10 @@ async handleLibraryScan(job: Job): Promise<void> {
 
 ### Frontend: Listening for Progress
 
+**Status**: 📋 **[Planned Feature - Example Implementation]**
+
+The following `useJobProgress` hook and component examples are intended design patterns. The frontend WebSocket integration exists (WebSocketContext.tsx), but job progress tracking is not yet implemented.
+
 ```typescript
 // React hook for job progress tracking
 function useJobProgress(jobId: number) {
@@ -385,6 +389,10 @@ async handleScheduledFileScan(job: Job): Promise<void> {
 ---
 
 ## 🎨 Frontend Implementation Ideas
+
+**Status**: 📋 **[Planned Feature - Example Implementation]**
+
+The following progress bar and dashboard components are example implementations showing the intended design. Not yet implemented in the frontend.
 
 ### Progress Bar Component
 ```tsx

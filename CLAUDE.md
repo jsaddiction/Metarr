@@ -135,7 +135,7 @@ DISCOVERED → IDENTIFIED → ENRICHING → ENRICHED → SELECTED → PUBLISHED
 - **Transactional Publishing**: Atomic writes, rollback on failure, player notification
 - **Disaster Recovery**: Restore from cache when Radarr/Sonarr deletes assets during upgrades
 - **Background Jobs**: Priority queue (webhooks > user actions > auto-enrichment > library scans)
-- **Rate Limiting**: Respect provider quotas (50/sec TMDB, 1/sec TVDB), reserved capacity for webhooks
+- **Rate Limiting**: Adaptive rate limiting with 429-based exponential backoff, reserved capacity for webhooks
 - **Real-Time Updates**: WebSocket for progress tracking, connection state awareness
 - **Scale-Aware**: Virtual scrolling, pagination, indexed queries (target: 32k items)
 

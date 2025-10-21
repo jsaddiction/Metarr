@@ -3,12 +3,23 @@
 ## Design Guidelines
 
 ### Color Scheme
-- **Primary**: Purple (#8B5FBF) - Main accent color
-- **Background**: Dark (#1E1E1E) - Main background
-- **Secondary**: Light purple (#B794C6) - Secondary elements
-- **Success**: Green (#48BB78) - Success states
-- **Error**: Red (#F56565) - Error states
-- **Warning**: Orange (#ED8936) - Warning states
+
+**Primary Color**: Tailwind violet-500
+- Hex: `#8b5cf6`
+- HSL: `258 90% 66%`
+- CSS Variable: `--color-primary-500`
+
+**Decision Date**: 2025-10-18
+**Rationale**: Migrated from custom purple (#6a4c93) to standardized Tailwind violet for consistency with shadcn/ui ecosystem.
+
+**Implementation**: All primary colors reference `primary-*` scale (e.g., `text-primary-500`, `bg-primary-600`) via CSS variables defined in globals.css.
+
+**Additional Theme Colors**:
+- **Background**: Dark (#1E1E1E / neutral-900) - Main background
+- **Success**: Green (#22c55e / green-500) - Success states
+- **Error**: Red (#ef4444 / red-500) - Error states
+- **Warning**: Orange (#f97316 / orange-500) - Warning states
+- **Info**: Blue (#3b82f6 / blue-500) - Info states
 
 ### Typography
 - Match Sonarr/Radarr font families and sizing
@@ -26,9 +37,9 @@
 
 ### Navigation Structure
 - **Metadata Menu**: Movies, Series, Music, Actors, Artists (expandable)
-- **Settings Menu**: General, Providers, Files, Media Players, Notifications (expandable)
+- **Activity Menu**: History, Running Jobs, Blocked Assets (expandable)
+- **Settings Menu**: General, Providers, Data Selection, Files, Libraries, Media Players, Notifications, Asset Limits (expandable)
 - **System Menu**: Status, Tasks, Backup, Events, Log Files (expandable)
-- **Activity**: Standalone page for job processing and recent activity
 
 ## Layout & Content Area Design System
 
@@ -172,14 +183,20 @@ Metadata (expandable)
   ├─ Actors
   └─ Artists
 
-Activity (standalone)
+Activity (expandable)
+  ├─ History
+  ├─ Running Jobs
+  └─ Blocked Assets
 
 Settings (expandable)
   ├─ General
   ├─ Providers
+  ├─ Data Selection
   ├─ Files
+  ├─ Libraries
   ├─ Media Players
-  └─ Notifications
+  ├─ Notifications
+  └─ Asset Limits
 
 System (expandable)
   ├─ Status
@@ -425,10 +442,10 @@ After extensive refinement, we settled on:
 ## Styling & Design System
 
 ### Color Palette (globals.css)
-- **Primary Purple Scale**: 50-950 shades (#8B5FBF base)
-- **Neutral Scale**: 50-900 shades for backgrounds and text
-- **Status Colors**: Success (green), Warning (orange), Error (red), Info (blue)
-- **Shadow Effects**: Purple-tinted shadows for focus states
+- **Primary Violet Scale**: 50-950 shades (#8b5cf6 / violet-500 base)
+- **Neutral Scale**: 50-950 shades for backgrounds and text
+- **Status Colors**: Success (green-500), Warning (orange-500), Error (red-500), Info (blue-500)
+- **Shadow Effects**: Violet-tinted shadows for focus states
 
 ### Component Classes
 - **Buttons**: Primary, secondary, ghost variants with hover states
@@ -489,13 +506,13 @@ Metarr features a **comprehensive dual-theme system** with full support for both
 --border: #3A3A3A (neutral-700)
 --text-primary: #FFFFFF (white)
 --text-secondary: #B0B0B0 (neutral-300)
---primary: #8B5FBF (purple-500)
+--primary: #8b5cf6 (violet-500)
 ```
 
 **Characteristics:**
 - Low eye strain for extended use
 - High contrast for accessibility
-- Purple accent maintains brand identity
+- Violet accent maintains brand identity
 - Matches Sonarr/Radarr design language
 
 ### Light Mode (Comprehensive)
@@ -508,14 +525,14 @@ Metarr features a **comprehensive dual-theme system** with full support for both
 --border: #CCCCCC (neutral-300)
 --text-primary: #1E1E1E (neutral-900)
 --text-secondary: #555555 (neutral-500)
---primary: #6A4C93 (purple-700 - darker for contrast)
+--primary: #8b5cf6 (violet-500)
 ```
 
 **Characteristics:**
 - Bright, modern appearance
 - Excellent readability in daylight
 - Softer shadows and overlays
-- Maintains purple branding
+- Maintains violet branding
 
 **WCAG Compliance:**
 All light mode text meets **WCAG AA or AAA** standards:
@@ -526,52 +543,66 @@ All light mode text meets **WCAG AA or AAA** standards:
 
 ### CSS Implementation
 
-**Light Mode Overrides:** `public/frontend/src/styles/globals.css` (lines 271-479)
+**Theme Application Method:**
+Metarr uses a **CSS variable-based theming system** instead of individual class overrides. The theme is applied at the document root level by the ThemeContext, which adds either `light` or `dark` class to `document.documentElement`.
+
+**Implementation Location:** `public/frontend/src/styles/globals.css` (lines 363-834)
+
+**How It Works:**
+1. **ThemeContext** (ThemeContext.tsx) manages theme state and applies `light` or `dark` class to `<html>` element
+2. **CSS Variables** (:root and .dark selectors) define base color values for shadcn/ui components
+3. **Utility Class Overrides** (.light selector) remap Tailwind utility classes for light mode
+
+**CSS Structure:**
+```css
+/* Base theme variables (light mode default) */
+:root {
+  --background: 0 0% 100%;        /* white */
+  --foreground: 0 0% 11.8%;       /* neutral-900 */
+  --primary: 258 90% 66%;         /* violet-500 */
+  /* ... other variables ... */
+}
+
+/* Dark mode overrides */
+.dark {
+  --background: 0 0% 11.8%;       /* neutral-900 */
+  --foreground: 0 0% 98%;         /* white */
+  --primary: 258 90% 66%;         /* violet-500 */
+  /* ... other variables ... */
+}
+
+/* Light mode utility class overrides */
+.light .bg-neutral-900 { @apply bg-white; }
+.light .bg-neutral-800 { @apply bg-neutral-50; }
+.light .text-white { @apply text-neutral-900; }
+/* ... 100+ class overrides ... */
+```
 
 **Comprehensive Coverage:**
-- ✅ Backgrounds (all neutral shades)
-- ✅ Text colors (all neutral shades)
-- ✅ Border colors (all neutral shades)
-- ✅ Modals (overlay, container, headers, footers)
+- ✅ Backgrounds (all neutral shades: 900→white, 800→50, 700→100, etc.)
+- ✅ Text colors (all neutral shades: white→900, 300→600, 400→500, etc.)
+- ✅ Border colors (all neutral shades: 900→200, 800→300, 700→300, etc.)
+- ✅ Modals (overlay opacity, container backgrounds, borders)
 - ✅ Cards (backgrounds, borders, headers, footers)
 - ✅ Forms (inputs, labels, focus states, placeholders)
 - ✅ Buttons (primary, secondary, ghost, hover states)
 - ✅ Header bar (background, borders, text)
-- ✅ Sidebar (background, borders, hover/active states)
+- ✅ Sidebar (background, borders, hover/active states, links)
 - ✅ ViewControls (backgrounds, dropdowns, hover states)
 - ✅ Tables (rows, borders, hover states)
-- ✅ Shadows (adjusted for light mode depth perception)
-- ✅ Links (color and hover states)
-- ✅ Progress bars
-- ✅ Status indicators
+- ✅ Shadows (5 levels: sm, default, md, lg, 2xl)
+- ✅ Links (primary-700 in light, primary-300 in dark)
+- ✅ Progress bars (bg-neutral-200 in light)
+- ✅ Status indicators (semantic colors preserved)
+- ✅ Primary color adjustments (bg-primary-500 → bg-primary-600 in light)
+- ✅ Warning/alert badges (yellow → orange for better contrast)
 
-**Example CSS Structure:**
-```css
-.light {
-  /* Base overrides */
-  --tw-bg-opacity: 1;
-  --tw-text-opacity: 1;
-}
-
-/* Backgrounds */
-.light .bg-neutral-900 { @apply bg-white; }
-.light .bg-neutral-800 { @apply bg-neutral-50; }
-
-/* Modals */
-.light .modal-overlay {
-  @apply bg-black/30 backdrop-blur-sm;
-}
-
-.light .modal-container {
-  @apply bg-white border-neutral-300 shadow-2xl;
-}
-
-/* Forms */
-.light .form-input:focus {
-  @apply border-primary-600;
-  box-shadow: 0 0 0 3px rgba(106, 76, 147, 0.15);
-}
-```
+**Key Implementation Details:**
+- Uses `@apply` directives to remap utility classes
+- Shadows use rgba() for precise opacity control
+- Primary buttons keep white text via `!important` override
+- Sidebar links explicitly inherit color (not purple)
+- Code blocks with primary colors get neutral treatment for contrast
 
 ### Usage in Components
 

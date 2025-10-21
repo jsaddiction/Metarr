@@ -9,6 +9,22 @@ Metarr operates through 6 core workflows that handle all media processing scenar
 - 5% manual fixes when needed
 - Field locking preserves user edits
 
+---
+
+## Implementation Status
+
+- ✅ **[Implemented]** - Webhook receiver infrastructure
+- ✅ **[Implemented]** - Job queue processing
+- ✅ **[Implemented]** - Database schema for all workflows
+- 📋 **[Planned]** - Workflow 1: New media webhook processing
+- 📋 **[Planned]** - Workflow 2: Upgrade handling with playback state
+- 📋 **[Planned]** - Workflow 3: Manual library scan
+- 📋 **[Planned]** - Workflow 4: Manual asset replacement
+- 📋 **[Planned]** - Workflow 5: Delete webhook (trash day)
+- 📋 **[Planned]** - Workflow 6: Unidentified media identification
+
+---
+
 ## Workflow 1: Webhook - New Media
 
 **Trigger**: Radarr/Sonarr sends "Download" or "Import" webhook
@@ -536,58 +552,62 @@ async function replaceAsset(
     throw new Error('Image too small (min 1000x1500)');
   }
 
+  // Generate UUID for filename
+  const uuid = crypto.randomUUID();
+
   // Calculate hashes
-  const contentHash = crypto.createHash('sha256').update(imageBuffer).digest('hex');
+  const sha256Hash = crypto.createHash('sha256').update(imageBuffer).digest('hex');
   const perceptualHash = await calculatePerceptualHash(imageBuffer);
 
-  // Check for duplicate
-  let cacheAsset = await db.cache_assets.findByHash(contentHash);
+  // Check for visual duplicate (by perceptual hash)
+  const existingImages = await db.query(`
+    SELECT * FROM cache_image_files
+    WHERE entity_type = 'movie' AND entity_id = ? AND image_type = ?
+  `, [movieId, assetType]);
 
-  if (!cacheAsset) {
-    // Store in cache
-    const cachePath = `/cache/assets/${contentHash.slice(0, 2)}/${contentHash.slice(2, 4)}/${contentHash}.jpg`;
-    await fs.writeFile(cachePath, imageBuffer);
-
-    cacheAsset = await db.cache_assets.create({
-      content_hash: contentHash,
-      file_path: cachePath,
-      file_size: imageBuffer.length,
-      mime_type: `image/${metadata.format}`,
-      width: metadata.width,
-      height: metadata.height,
-      perceptual_hash: perceptualHash,
-      source_type: source === 'upload' ? 'user' : 'provider',
-      reference_count: 0
-    });
+  for (const existing of existingImages) {
+    const similarity = comparePerceptualHashes(perceptualHash, existing.perceptual_hash);
+    if (similarity >= 0.90) {
+      throw new Error('Visually identical image already exists');
+    }
   }
+
+  // Store in cache with UUID naming
+  const cachePath = `/data/cache/images/movie/${movieId}/${uuid}.jpg`;
+  await fs.mkdir(path.dirname(cachePath), { recursive: true });
+  await fs.writeFile(cachePath, imageBuffer);
+
+  // Create cache record
+  const cacheResult = await db.execute(`
+    INSERT INTO cache_image_files (
+      entity_type, entity_id, file_path, file_name, file_size,
+      file_hash, perceptual_hash, image_type, width, height, format,
+      source_type, is_locked
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+  `, ['movie', movieId, cachePath, `${uuid}.jpg`, imageBuffer.length,
+      sha256Hash, perceptualHash, assetType, metadata.width, metadata.height,
+      metadata.format, source === 'upload' ? 'user' : 'provider']);
+
+  const cacheFileId = cacheResult.insertId;
 
   // Get movie
   const movie = await db.movies.findById(movieId);
 
-  // Decrement old asset reference count
-  if (movie.poster_id) {
-    await decrementAssetReference(movie.poster_id);
-  }
-
-  // Update movie
+  // Update movie FK column (e.g., poster_id)
   await db.movies.update(movieId, {
-    poster_id: cacheAsset.id,
-    poster_locked: true
+    [`${assetType}_id`]: cacheFileId,
+    [`${assetType}_locked`]: true
   });
 
-  // Increment new asset reference count
-  await incrementAssetReference(cacheAsset.id);
+  // Copy to library (publish)
+  const libraryPath = await copyAssetToLibrary(movieId, assetType, cachePath);
 
-  // Create asset reference
-  await db.asset_references.create({
-    cache_asset_id: cacheAsset.id,
-    entity_type: 'movie',
-    entity_id: movieId,
-    asset_type: assetType
-  });
-
-  // Copy to library
-  await copyAssetToLibrary(movieId, assetType, cacheAsset.file_path);
+  // Create library record
+  await db.execute(`
+    INSERT INTO library_image_files (cache_file_id, file_path)
+    VALUES (?, ?)
+    ON CONFLICT(file_path) DO UPDATE SET cache_file_id = excluded.cache_file_id
+  `, [cacheFileId, libraryPath]);
 
   // Update NFO
   await writeNFO(movieId);
@@ -976,27 +996,34 @@ async function translatePath(
 
 ### Asset Reference Counting
 
+**Note**: Current implementation uses foreign key tracking via `library_*_files.cache_file_id`.
+Reference counting for garbage collection is [Planned].
+
 ```typescript
-async function incrementAssetReference(cacheAssetId: number): Promise<void> {
-  await db.cache_assets.update(cacheAssetId, {
-    reference_count: sql`reference_count + 1`,
-    last_accessed_at: new Date()
-  });
+// Current approach: Find orphaned cache files via LEFT JOIN
+async function findOrphanedCacheFiles(): Promise<CacheImageFile[]> {
+  return await db.query(`
+    SELECT cif.*
+    FROM cache_image_files cif
+    LEFT JOIN library_image_files lif ON lif.cache_file_id = cif.id
+    WHERE lif.id IS NULL
+      AND cif.discovered_at < datetime('now', '-90 days')
+      AND cif.is_locked = 0
+  `);
 }
 
-async function decrementAssetReference(cacheAssetId: number): Promise<void> {
-  const asset = await db.cache_assets.findById(cacheAssetId);
+// Planned: Reference counting column for faster queries
+async function incrementAssetReference(cacheFileId: number): Promise<void> {
+  await db.execute(`
+    UPDATE cache_image_files
+    SET last_verified_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `, [cacheFileId]);
+}
 
-  if (asset.reference_count <= 1) {
-    // Mark as orphaned
-    await db.cache_assets.update(cacheAssetId, {
-      reference_count: 0
-    });
-  } else {
-    await db.cache_assets.update(cacheAssetId, {
-      reference_count: sql`reference_count - 1`
-    });
-  }
+async function decrementAssetReference(cacheFileId: number): Promise<void> {
+  // No-op in current implementation (handled by foreign key CASCADE)
+  // Planned: Decrement reference_count column when implemented
 }
 ```
 
