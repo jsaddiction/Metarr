@@ -12,14 +12,13 @@ import { logger } from '../../middleware/logging.js';
 import { DatabaseConnection } from '../../types/database.js';
 import { findAssetSpecsByFilename, validateImageDimensions, AssetTypeSpec } from './assetTypeSpecs.js';
 import {
-  insertImageFile,
-  insertVideoFile,
-  insertTextFile,
-  cacheImageFile,
-  calculateFileHash
+  insertLibraryImageFile,
+  insertLibraryVideoFile,
+  insertLibraryTextFile,
+  cacheImageFile
 } from '../files/unifiedFileService.js';
 import {
-  insertAudioFile,
+  insertLibraryAudioFile,
   cacheVideoFile,
   cacheTextFile,
   cacheAudioFile
@@ -156,26 +155,8 @@ export async function discoverAndStoreAssets(
         try {
           // === UNIFIED FILE SYSTEM WORKFLOW ===
 
-          // Step 1: Calculate file hash
-          const fileHash = await calculateFileHash(candidate.filePath);
-          const stats = await fs.stat(candidate.filePath);
-
-          // Step 2: Insert library record
-          const libraryFileId = await insertImageFile(db, {
-            entityType,
-            entityId,
-            filePath: candidate.filePath,
-            fileName: candidate.fileName,
-            fileSize: stats.size,
-            fileHash,
-            location: 'library',
-            imageType: assetType as any,
-            width: candidate.width!,
-            height: candidate.height!,
-            format: path.extname(candidate.fileName).slice(1).toLowerCase(),
-            sourceType: 'local',
-            classificationScore: calculateScore(candidate, assetType)
-          });
+          // Step 1: Insert library record
+          const libraryFileId = await insertLibraryImageFile(db, candidate.filePath);
 
           // Step 3: Cache the image (with deduplication)
           await cacheImageFile(
@@ -226,21 +207,8 @@ export async function discoverAndStoreAssets(
         const filePath = path.join(dirPath, file);
 
         try {
-          const stats = await fs.stat(filePath);
-          const fileHash = await calculateFileHash(filePath);
-
           // Insert library record
-          const libraryFileId = await insertVideoFile(db, {
-            entityType,
-            entityId,
-            filePath,
-            fileName: file,
-            fileSize: stats.size,
-            fileHash,
-            location: 'library',
-            videoType: 'trailer',
-            sourceType: 'local'
-          });
+          const libraryFileId = await insertLibraryVideoFile(db, filePath);
 
           // Cache the video
           await cacheVideoFile(db, libraryFileId, filePath, entityType, entityId, 'trailer', 'local');
@@ -263,38 +231,14 @@ export async function discoverAndStoreAssets(
         const filePath = path.join(dirPath, file);
 
         try {
-          const stats = await fs.stat(filePath);
-          const fileHash = await calculateFileHash(filePath);
-
-          // Try to extract language from filename (e.g., "movie.en.srt" or "movie.eng.srt")
-          const languageMatch = file.match(/\.([a-z]{2,3})\.[^.]+$/i);
-          const language = languageMatch ? languageMatch[1].toLowerCase() : undefined;
-
-          // Insert library record (only include subtitleLanguage if detected)
-          const textFileRecord: any = {
-            entityType,
-            entityId,
-            filePath,
-            fileName: file,
-            fileSize: stats.size,
-            fileHash,
-            location: 'library',
-            textType: 'subtitle',
-            subtitleFormat: ext.slice(1), // Remove the dot
-            sourceType: 'local'
-          };
-
-          if (language) {
-            textFileRecord.subtitleLanguage = language;
-          }
-
-          const libraryFileId = await insertTextFile(db, textFileRecord);
+          // Insert library record
+          const libraryFileId = await insertLibraryTextFile(db, filePath);
 
           // Cache the subtitle
           await cacheTextFile(db, libraryFileId, filePath, entityType, entityId, 'subtitle', 'local');
 
           result.subtitles++;
-          logger.info('Discovered subtitle', { entityId, file, language });
+          logger.info('Discovered subtitle', { entityId, file });
         } catch (error: any) {
           logger.error('Failed to store subtitle', { file, error: error.message });
         }
@@ -313,21 +257,8 @@ export async function discoverAndStoreAssets(
         const filePath = path.join(dirPath, file);
 
         try {
-          const stats = await fs.stat(filePath);
-          const fileHash = await calculateFileHash(filePath);
-
           // Insert library record
-          const libraryFileId = await insertAudioFile(db, {
-            entityType,
-            entityId,
-            filePath,
-            fileName: file,
-            fileSize: stats.size,
-            fileHash,
-            location: 'library',
-            audioType: 'theme',
-            sourceType: 'local'
-          });
+          const libraryFileId = await insertLibraryAudioFile(db, filePath);
 
           // Cache the audio
           await cacheAudioFile(db, libraryFileId, filePath, entityType, entityId, 'theme', 'local');

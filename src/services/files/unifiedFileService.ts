@@ -76,8 +76,7 @@ async function cleanupEmptyDirectories(filePath: string, cacheRoot: string): Pro
 // TYPE DEFINITIONS
 // ============================================================
 
-export interface ImageFileRecord {
-  id?: number;
+export interface CacheImageFileRecord {
   entityType: 'movie' | 'episode' | 'series' | 'season' | 'actor';
   entityId: number;
   filePath: string;
@@ -85,7 +84,6 @@ export interface ImageFileRecord {
   fileSize: number;
   fileHash: string;
   perceptualHash?: string;
-  location: 'library' | 'cache';
   imageType: 'poster' | 'fanart' | 'banner' | 'clearlogo' | 'clearart' | 'discart' | 'landscape' | 'keyart' | 'thumb' | 'actor_thumb' | 'unknown';
   width: number;
   height: number;
@@ -94,22 +92,51 @@ export interface ImageFileRecord {
   sourceUrl?: string;
   providerName?: string;
   classificationScore?: number;
+}
+
+// Legacy interface - deprecated, kept for backwards compatibility
+export interface ImageFileRecord extends CacheImageFileRecord {
+  location: 'library' | 'cache';
   isPublished?: boolean;
   libraryFileId?: number;
   cacheFileId?: number;
   referenceCount?: number;
 }
 
-export interface VideoFileRecord {
-  id?: number;
+export interface CacheVideoFileRecord {
   entityType: 'movie' | 'episode';
   entityId: number;
   filePath: string;
   fileName: string;
   fileSize: number;
   fileHash?: string;
-  location: 'library' | 'cache';
+  videoType: 'trailer' | 'sample' | 'extra'; // Note: 'main' not allowed in cache
+  codec?: string;
+  width?: number;
+  height?: number;
+  durationSeconds?: number;
+  bitrate?: number;
+  framerate?: number;
+  hdrType?: string;
+  audioCodec?: string;
+  audioChannels?: number;
+  audioLanguage?: string;
+  sourceType?: 'provider' | 'local' | 'user';
+  sourceUrl?: string;
+  providerName?: string;
+  classificationScore?: number;
+}
+
+// Legacy interface - deprecated
+export interface VideoFileRecord {
+  entityType: 'movie' | 'episode';
+  entityId: number;
+  filePath: string;
+  fileName: string;
+  fileSize: number;
+  fileHash?: string;
   videoType: 'main' | 'trailer' | 'sample' | 'extra';
+  location: 'library' | 'cache';
   codec?: string;
   width?: number;
   height?: number;
@@ -129,15 +156,13 @@ export interface VideoFileRecord {
   referenceCount?: number;
 }
 
-export interface TextFileRecord {
-  id?: number;
+export interface CacheTextFileRecord {
   entityType: 'movie' | 'episode';
   entityId: number;
   filePath: string;
   fileName: string;
   fileSize: number;
   fileHash?: string;
-  location: 'library' | 'cache';
   textType: 'nfo' | 'subtitle';
   subtitleLanguage?: string;
   subtitleFormat?: string;
@@ -146,6 +171,11 @@ export interface TextFileRecord {
   nfoNeedsRegen?: boolean;
   sourceType?: 'provider' | 'local' | 'user';
   sourceUrl?: string;
+}
+
+// Legacy interface - deprecated
+export interface TextFileRecord extends CacheTextFileRecord {
+  location: 'library' | 'cache';
   libraryFileId?: number;
   cacheFileId?: number;
   referenceCount?: number;
@@ -156,52 +186,81 @@ export interface TextFileRecord {
 // ============================================================
 
 /**
- * Insert image file record into database
+ * Insert library image file record
+ * Called during discovery phase to track files in the library
  */
-export async function insertImageFile(
+export async function insertLibraryImageFile(
   db: DatabaseConnection,
-  record: ImageFileRecord
+  filePath: string
 ): Promise<number> {
-  // Insert into cache or library table based on location
-  const result = record.location === 'cache'
-    ? await db.execute(
-        `INSERT INTO cache_image_files (
-          entity_type, entity_id, file_path, file_name, file_size, file_hash,
-          perceptual_hash, image_type, width, height, format,
-          source_type, source_url, provider_name, classification_score,
-          is_locked, discovered_at, last_accessed_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-        [
-          record.entityType,
-          record.entityId,
-          record.filePath,
-          record.fileName,
-          record.fileSize,
-          record.fileHash,
-          record.perceptualHash || null,
-          record.imageType,
-          record.width,
-          record.height,
-          record.format,
-          record.sourceType || null,
-          record.sourceUrl || null,
-          record.providerName || null,
-          record.classificationScore || null
-        ]
-      )
-    : await db.execute(
-        `INSERT INTO library_image_files (cache_file_id, file_path, published_at) VALUES (?, ?, CURRENT_TIMESTAMP)`,
-        [record.cacheFileId, record.filePath]
-      );
+  const result = await db.execute(
+    `INSERT INTO library_image_files (file_path, published_at) VALUES (?, CURRENT_TIMESTAMP)`,
+    [filePath]
+  );
 
-  logger.debug('Inserted image file', {
+  logger.debug('Inserted image file into library (awaiting cache)', {
+    libraryFileId: result.insertId,
+    filePath
+  });
+
+  return result.insertId!;
+}
+
+/**
+ * Insert cache image file record
+ * Internal function called by cacheImageFile() to store cached images
+ */
+async function insertCacheImageFile(
+  db: DatabaseConnection,
+  record: CacheImageFileRecord
+): Promise<number> {
+  const result = await db.execute(
+    `INSERT INTO cache_image_files (
+      entity_type, entity_id, file_path, file_name, file_size, file_hash,
+      perceptual_hash, image_type, width, height, format,
+      source_type, source_url, provider_name, classification_score,
+      is_locked, discovered_at, last_accessed_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+    [
+      record.entityType,
+      record.entityId,
+      record.filePath,
+      record.fileName,
+      record.fileSize,
+      record.fileHash,
+      record.perceptualHash || null,
+      record.imageType,
+      record.width,
+      record.height,
+      record.format,
+      record.sourceType || null,
+      record.sourceUrl || null,
+      record.providerName || null,
+      record.classificationScore || null
+    ]
+  );
+
+  logger.debug('Inserted image file into cache', {
     id: result.insertId,
-    location: record.location,
     imageType: record.imageType,
     fileName: record.fileName
   });
 
   return result.insertId!;
+}
+
+/**
+ * @deprecated Use insertLibraryImageFile or insertCacheImageFile instead
+ */
+export async function insertImageFile(
+  db: DatabaseConnection,
+  record: ImageFileRecord
+): Promise<number> {
+  if (record.location === 'cache') {
+    return insertCacheImageFile(db, record);
+  } else {
+    return insertLibraryImageFile(db, record.filePath);
+  }
 }
 
 /**
@@ -211,7 +270,7 @@ export async function insertImageFile(
 export async function findCachedImageByHash(
   db: DatabaseConnection,
   fileHash: string
-): Promise<ImageFileRecord | null> {
+): Promise<CacheImageFileRecord & { id: number } | null> {
   const rows = await db.query<any>(
     `SELECT * FROM cache_image_files WHERE file_hash = ? LIMIT 1`,
     [fileHash]
@@ -228,20 +287,15 @@ export async function findCachedImageByHash(
     fileName: row.file_name,
     fileSize: row.file_size,
     fileHash: row.file_hash,
-    perceptualHash: row.perceptual_hash || null,
-    location: row.location,
+    perceptualHash: row.perceptual_hash || undefined,
     imageType: row.image_type,
     width: row.width,
     height: row.height,
     format: row.format,
     sourceType: row.source_type,
-    sourceUrl: row.source_url || null,
-    providerName: row.provider_name || null,
-    classificationScore: row.classification_score || null,
-    isPublished: Boolean(row.is_published),
-    libraryFileId: row.library_file_id || null,
-    cacheFileId: row.cache_file_id || null,
-    referenceCount: row.reference_count || 0
+    sourceUrl: row.source_url || undefined,
+    providerName: row.provider_name || undefined,
+    classificationScore: row.classification_score || undefined
   };
 }
 
@@ -296,24 +350,20 @@ export async function cacheImageFile(
     await fs.rename(tempPath, cachePath);
 
     // Insert cache record
-    const cacheFileId = await insertImageFile(db, {
+    const cacheFileId = await insertCacheImageFile(db, {
       entityType,
       entityId,
       filePath: cachePath,
       fileName: `${uuid}${ext}`,
       fileSize: fileBuffer.length,
       fileHash,
-      location: 'cache',
       imageType: imageType as any,
       width: metadata.width!,
       height: metadata.height!,
       format: metadata.format!,
       sourceType,
       ...(sourceUrl && { sourceUrl }),
-      ...(providerName && { providerName }),
-      isPublished: false, // Not published until selection phase
-      ...(libraryFileId && { libraryFileId }),
-      referenceCount: 1
+      ...(providerName && { providerName })
     });
 
     // Link library file to cache (if library file exists)
@@ -401,54 +451,69 @@ export async function deleteCachedImage(
 // ============================================================
 
 /**
- * Insert video file record into database
+ * Insert library video file record
+ * Called during discovery phase to track video files in the library (trailers, extras)
  */
-export async function insertVideoFile(
+export async function insertLibraryVideoFile(
   db: DatabaseConnection,
-  record: VideoFileRecord
+  filePath: string
 ): Promise<number> {
-  // Insert into cache or library table based on location
-  const result = record.location === 'cache'
-    ? await db.execute(
-        `INSERT INTO cache_video_files (
-          entity_type, entity_id, file_path, file_name, file_size, file_hash,
-          video_type, codec, width, height, duration_seconds,
-          bitrate, framerate, hdr_type, audio_codec, audio_channels, audio_language,
-          source_type, source_url, provider_name, classification_score,
-          discovered_at, last_accessed_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-        [
-          record.entityType,
-          record.entityId,
-          record.filePath,
-          record.fileName,
-          record.fileSize,
-          record.fileHash || null,
-          record.videoType,
-          record.codec || null,
-          record.width || null,
-          record.height || null,
-          record.durationSeconds || null,
-          record.bitrate || null,
-          record.framerate || null,
-          record.hdrType || null,
-          record.audioCodec || null,
-          record.audioChannels || null,
-          record.audioLanguage || null,
-          record.sourceType || null,
-          record.sourceUrl || null,
-          record.providerName || null,
-          record.classificationScore || null
-        ]
-      )
-    : await db.execute(
-        `INSERT INTO library_video_files (cache_file_id, file_path, published_at) VALUES (?, ?, CURRENT_TIMESTAMP)`,
-        [record.cacheFileId, record.filePath]
-      );
+  const result = await db.execute(
+    `INSERT INTO library_video_files (file_path, published_at) VALUES (?, CURRENT_TIMESTAMP)`,
+    [filePath]
+  );
 
-  logger.debug('Inserted video file', {
+  logger.debug('Inserted video file into library (awaiting cache)', {
+    libraryFileId: result.insertId,
+    filePath
+  });
+
+  return result.insertId!;
+}
+
+/**
+ * Insert cache video file record
+ * Internal function called by cacheVideoFile() to store cached videos
+ */
+async function insertCacheVideoFile(
+  db: DatabaseConnection,
+  record: CacheVideoFileRecord
+): Promise<number> {
+  const result = await db.execute(
+    `INSERT INTO cache_video_files (
+      entity_type, entity_id, file_path, file_name, file_size, file_hash,
+      video_type, codec, width, height, duration_seconds,
+      bitrate, framerate, hdr_type, audio_codec, audio_channels, audio_language,
+      source_type, source_url, provider_name, classification_score,
+      discovered_at, last_accessed_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+    [
+      record.entityType,
+      record.entityId,
+      record.filePath,
+      record.fileName,
+      record.fileSize,
+      record.fileHash || null,
+      record.videoType,
+      record.codec || null,
+      record.width || null,
+      record.height || null,
+      record.durationSeconds || null,
+      record.bitrate || null,
+      record.framerate || null,
+      record.hdrType || null,
+      record.audioCodec || null,
+      record.audioChannels || null,
+      record.audioLanguage || null,
+      record.sourceType || null,
+      record.sourceUrl || null,
+      record.providerName || null,
+      record.classificationScore || null
+    ]
+  );
+
+  logger.debug('Inserted video file into cache', {
     id: result.insertId,
-    location: record.location,
     videoType: record.videoType,
     fileName: record.fileName
   });
@@ -456,59 +521,106 @@ export async function insertVideoFile(
   return result.insertId!;
 }
 
+/**
+ * @deprecated Use insertLibraryVideoFile or insertCacheVideoFile instead
+ */
+export async function insertVideoFile(
+  db: DatabaseConnection,
+  record: VideoFileRecord
+): Promise<number> {
+  if (record.location === 'cache') {
+    // Only allow valid cache video types
+    if (record.videoType === 'main') {
+      throw new Error('Main video files cannot be stored in cache_video_files');
+    }
+    return insertCacheVideoFile(db, record as CacheVideoFileRecord);
+  } else {
+    return insertLibraryVideoFile(db, record.filePath);
+  }
+}
+
 // ============================================================
 // TEXT FILE OPERATIONS
 // ============================================================
 
 /**
- * Insert text file record into database
+ * Insert library text file record
+ * Called during discovery phase to track text files in the library (NFOs, subtitles)
  */
-export async function insertTextFile(
+export async function insertLibraryTextFile(
   db: DatabaseConnection,
-  record: TextFileRecord
+  filePath: string
 ): Promise<number> {
-  // Insert into cache or library table based on location
-  const result = record.location === 'cache'
-    ? await db.execute(
-        `INSERT INTO cache_text_files (
-          entity_type, entity_id, file_path, file_name, file_size, file_hash,
-          text_type, subtitle_language, subtitle_format,
-          nfo_is_valid, nfo_has_tmdb_id, nfo_needs_regen,
-          source_type, source_url, provider_name, classification_score,
-          discovered_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-        [
-          record.entityType,
-          record.entityId,
-          record.filePath,
-          record.fileName,
-          record.fileSize,
-          record.fileHash || null,
-          record.textType,
-          record.subtitleLanguage || null,
-          record.subtitleFormat || null,
-          record.nfoIsValid !== undefined ? (record.nfoIsValid ? 1 : 0) : null,
-          record.nfoHasTmdbId !== undefined ? (record.nfoHasTmdbId ? 1 : 0) : null,
-          record.nfoNeedsRegen !== undefined ? (record.nfoNeedsRegen ? 1 : 0) : null,
-          record.sourceType || null,
-          record.sourceUrl || null,
-          null, // provider_name (not in TextFileRecord)
-          null  // classification_score (not in TextFileRecord)
-        ]
-      )
-    : await db.execute(
-        `INSERT INTO library_text_files (cache_file_id, file_path, published_at) VALUES (?, ?, CURRENT_TIMESTAMP)`,
-        [record.cacheFileId, record.filePath]
-      );
+  const result = await db.execute(
+    `INSERT INTO library_text_files (file_path, published_at) VALUES (?, CURRENT_TIMESTAMP)`,
+    [filePath]
+  );
 
-  logger.debug('Inserted text file', {
+  logger.debug('Inserted text file into library (awaiting cache)', {
+    libraryFileId: result.insertId,
+    filePath
+  });
+
+  return result.insertId!;
+}
+
+/**
+ * Insert cache text file record
+ * Internal function called by cacheTextFile() to store cached text files
+ */
+async function insertCacheTextFile(
+  db: DatabaseConnection,
+  record: CacheTextFileRecord
+): Promise<number> {
+  const result = await db.execute(
+    `INSERT INTO cache_text_files (
+      entity_type, entity_id, file_path, file_name, file_size, file_hash,
+      text_type, subtitle_language, subtitle_format,
+      nfo_is_valid, nfo_has_tmdb_id, nfo_needs_regen,
+      source_type, source_url, provider_name, classification_score,
+      discovered_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+    [
+      record.entityType,
+      record.entityId,
+      record.filePath,
+      record.fileName,
+      record.fileSize,
+      record.fileHash || null,
+      record.textType,
+      record.subtitleLanguage || null,
+      record.subtitleFormat || null,
+      record.nfoIsValid !== undefined ? (record.nfoIsValid ? 1 : 0) : null,
+      record.nfoHasTmdbId !== undefined ? (record.nfoHasTmdbId ? 1 : 0) : null,
+      record.nfoNeedsRegen !== undefined ? (record.nfoNeedsRegen ? 1 : 0) : null,
+      record.sourceType || null,
+      record.sourceUrl || null,
+      null, // provider_name
+      null  // classification_score
+    ]
+  );
+
+  logger.debug('Inserted text file into cache', {
     id: result.insertId,
-    location: record.location,
     textType: record.textType,
     fileName: record.fileName
   });
 
   return result.insertId!;
+}
+
+/**
+ * @deprecated Use insertLibraryTextFile or insertCacheTextFile instead
+ */
+export async function insertTextFile(
+  db: DatabaseConnection,
+  record: TextFileRecord
+): Promise<number> {
+  if (record.location === 'cache') {
+    return insertCacheTextFile(db, record);
+  } else {
+    return insertLibraryTextFile(db, record.filePath);
+  }
 }
 
 /**

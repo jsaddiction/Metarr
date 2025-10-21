@@ -56,15 +56,13 @@ async function cleanupEmptyDirectories(filePath: string, cacheRoot: string): Pro
   }
 }
 
-export interface AudioFileRecord {
-  id?: number;
+export interface CacheAudioFileRecord {
   entityType: 'movie' | 'episode';
   entityId: number;
   filePath: string;
   fileName: string;
   fileSize: number;
   fileHash?: string;
-  location: 'library' | 'cache';
   audioType: 'theme' | 'unknown';
   codec?: string;
   durationSeconds?: number;
@@ -76,61 +74,95 @@ export interface AudioFileRecord {
   sourceUrl?: string;
   providerName?: string;
   classificationScore?: number;
+}
+
+// Legacy interface - deprecated
+export interface AudioFileRecord extends CacheAudioFileRecord {
+  location: 'library' | 'cache';
   libraryFileId?: number;
   cacheFileId?: number;
   referenceCount?: number;
 }
 
 /**
- * Insert audio file record into database
+ * Insert library audio file record
+ * Called during discovery phase to track audio files in the library (theme songs)
  */
-export async function insertAudioFile(
+export async function insertLibraryAudioFile(
   db: DatabaseConnection,
-  record: AudioFileRecord
+  filePath: string
 ): Promise<number> {
-  // Insert into cache or library table based on location
-  const result = record.location === 'cache'
-    ? await db.execute(
-        `INSERT INTO cache_audio_files (
-          entity_type, entity_id, file_path, file_name, file_size, file_hash,
-          audio_type, codec, duration_seconds, bitrate,
-          sample_rate, channels, language,
-          source_type, source_url, provider_name, classification_score,
-          discovered_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-        [
-          record.entityType,
-          record.entityId,
-          record.filePath,
-          record.fileName,
-          record.fileSize,
-          record.fileHash || null,
-          record.audioType,
-          record.codec || null,
-          record.durationSeconds || null,
-          record.bitrate || null,
-          record.sampleRate || null,
-          record.channels || null,
-          record.language || null,
-          record.sourceType || null,
-          record.sourceUrl || null,
-          record.providerName || null,
-          record.classificationScore || null
-        ]
-      )
-    : await db.execute(
-        `INSERT INTO library_audio_files (cache_file_id, file_path, published_at) VALUES (?, ?, CURRENT_TIMESTAMP)`,
-        [record.cacheFileId, record.filePath]
-      );
+  const result = await db.execute(
+    `INSERT INTO library_audio_files (file_path, published_at) VALUES (?, CURRENT_TIMESTAMP)`,
+    [filePath]
+  );
 
-  logger.debug('Inserted audio file', {
+  logger.debug('Inserted audio file into library (awaiting cache)', {
+    libraryFileId: result.insertId,
+    filePath
+  });
+
+  return result.insertId!;
+}
+
+/**
+ * Insert cache audio file record
+ * Internal function called by cacheAudioFile() to store cached audio files
+ */
+async function insertCacheAudioFile(
+  db: DatabaseConnection,
+  record: CacheAudioFileRecord
+): Promise<number> {
+  const result = await db.execute(
+    `INSERT INTO cache_audio_files (
+      entity_type, entity_id, file_path, file_name, file_size, file_hash,
+      audio_type, codec, duration_seconds, bitrate,
+      sample_rate, channels, language,
+      source_type, source_url, provider_name, classification_score,
+      discovered_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+    [
+      record.entityType,
+      record.entityId,
+      record.filePath,
+      record.fileName,
+      record.fileSize,
+      record.fileHash || null,
+      record.audioType,
+      record.codec || null,
+      record.durationSeconds || null,
+      record.bitrate || null,
+      record.sampleRate || null,
+      record.channels || null,
+      record.language || null,
+      record.sourceType || null,
+      record.sourceUrl || null,
+      record.providerName || null,
+      record.classificationScore || null
+    ]
+  );
+
+  logger.debug('Inserted audio file into cache', {
     id: result.insertId,
-    location: record.location,
     audioType: record.audioType,
     fileName: record.fileName
   });
 
   return result.insertId!;
+}
+
+/**
+ * @deprecated Use insertLibraryAudioFile or insertCacheAudioFile instead
+ */
+export async function insertAudioFile(
+  db: DatabaseConnection,
+  record: AudioFileRecord
+): Promise<number> {
+  if (record.location === 'cache') {
+    return insertCacheAudioFile(db, record);
+  } else {
+    return insertLibraryAudioFile(db, record.filePath);
+  }
 }
 
 /**
@@ -165,7 +197,7 @@ export async function cacheVideoFile(
     // Copy to cache
     await fs.copyFile(sourceFilePath, cachePath);
 
-    // Insert cache record
+    // Insert cache record directly (we're already in the caching layer)
     const cacheResult = await db.execute(
       `INSERT INTO cache_video_files (
         entity_type, entity_id, file_path, file_name, file_size, file_hash,
