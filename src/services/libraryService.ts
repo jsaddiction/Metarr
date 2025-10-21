@@ -174,34 +174,36 @@ export class LibraryService {
       logger.info(`Starting deletion of library ${library.name}`, { libraryId: id });
 
       // ========================================
-      // Step 1: Delete cached physical files FIRST (while we can still query DB)
-      // Query file paths while movies/file records still exist, then delete from disk
-      // CRITICAL: Only delete CACHE files, NEVER library files (user's data)
-      // ========================================
-      await this.deleteCachedPhysicalFiles(db, id);
-
-      // ========================================
-      // Step 2: Delete the library
+      // Step 1: Delete the library from database
       // CASCADE automatically deletes:
-      // - movies → (via trigger) → image_files, video_files, audio_files, text_files, unknown_files
-      // - movies → (via FK) → movie_actors, movie_crew, movie_genres, movie_studios, movie_collection_members
-      // - series → (via FK) → seasons → (via FK) → episodes → (via trigger) → episode files
-      // - series → (via FK) → series_genres, series_studios
-      // - artists → (via FK) → albums → (via FK) → tracks
+      // - movies → (via trigger) → library_image_files, library_video_files, etc.
+      // - movies → (via FK) → movie_actors, movie_crews, movie_genres, etc.
+      // - series → (via FK) → seasons → episodes → episode files
+      //
+      // NOTE: CASCADE does NOT delete cache files - those are shared across libraries!
+      // Cache files are only deleted when ALL references are gone (handled by triggers)
       // ========================================
       await db.execute('DELETE FROM libraries WHERE id = ?', [id]);
-      logger.info(`Deleted library ${id} (cascaded all entities and files)`, { name: library.name });
+      logger.info(`Deleted library ${id} (cascaded all entities and library file records)`, { name: library.name });
 
       // ========================================
-      // Step 3: Clean up orphaned metadata entities
+      // Step 2: Clean up orphaned metadata entities
       // After cascade deletion, some actors/crew/genres may be orphaned (no remaining references)
-      // Delete these + their thumbnails from cache
+      // Delete these entities + their cache images
       // ========================================
       await this.cleanupOrphanedEntities(db);
 
       // ========================================
+      // Step 3: Clean up orphaned cache files
+      // After deleting library files and entities, some cache files may now have zero references
+      // Delete these orphaned cache files from both database AND disk
+      // ========================================
+      await this.cleanupOrphanedCacheFiles(db);
+
+      // ========================================
       // Step 4: Clean up empty cache directories
-      // After deleting all files, remove empty subdirectories from cache
+      // Recursively remove any empty directories in cache (after file deletion)
+      // This is a simple filesystem cleanup - never deletes files, only empty dirs
       // ========================================
       await cleanupEmptyCacheDirectories();
 
@@ -213,204 +215,95 @@ export class LibraryService {
   }
 
   /**
-   * NOTE: File record deletion is now handled by CASCADE DELETE TRIGGERS
-   * See migration 20251015_001_clean_schema.ts for trigger definitions
+   * Clean up orphaned cache files that are no longer referenced by any library files
    *
-   * Triggers automatically delete file records when parent entities are deleted:
-   * - delete_movie_files: movies → image_files, video_files, audio_files, text_files, unknown_files
-   * - delete_episode_files: episodes → (same)
-   * - delete_series_files: series → image_files, audio_files
-   * - delete_season_files: seasons → image_files
-   * - delete_actor_files: actors → image_files
-   * - delete_artist_files: artists → image_files, audio_files
+   * Cache files are shared across libraries. When a library is deleted, the library_*_files
+   * records are deleted by CASCADE, but cache_*_files remain. We need to find cache files
+   * that have NO remaining references in library_*_files tables and delete them.
+   *
+   * This handles the scenario:
+   * 1. Library A scans movie.mkv → creates library_image_files + cache_image_files
+   * 2. Library B scans same movie.mkv → creates another library_image_files, reuses cache_image_files
+   * 3. Delete Library A → deletes Library A's library_image_files, cache_image_files still has ref from Library B
+   * 4. Delete Library B → deletes Library B's library_image_files, cache_image_files now orphaned
+   * 5. This function deletes the orphaned cache_image_files record + physical file
    */
-
-  /**
-   * Delete all cached physical files from disk (unified file system)
-   * Note: This queries orphaned file records that were just deleted, so it won't find anything
-   * TODO: Query BEFORE deletion to get file paths, or keep file paths list
-   */
-  private async deleteCachedPhysicalFiles(db: DatabaseConnection, libraryId: number): Promise<void> {
+  private async cleanupOrphanedCacheFiles(db: DatabaseConnection): Promise<void> {
     const fs = await import('fs/promises');
 
     try {
       let totalDeleted = 0;
-      const deletedPaths: string[] = [];
 
-      // Helper function to delete files from cache
-      const deleteFiles = async (files: Array<{ file_path: string }>) => {
-        for (const file of files) {
-          if (!file.file_path) continue;
+      // Helper function to delete orphaned cache files
+      const deleteOrphanedFiles = async (
+        cacheTable: string,
+        libraryTable: string
+      ): Promise<number> => {
+        // Find cache files with no library file references
+        const orphanedFiles = (await db.query(
+          `SELECT id, file_path
+           FROM ${cacheTable}
+           WHERE id NOT IN (
+             SELECT DISTINCT cache_file_id
+             FROM ${libraryTable}
+             WHERE cache_file_id IS NOT NULL
+           )`,
+          []
+        )) as Array<{ id: number; file_path: string }>;
+
+        let deleted = 0;
+
+        for (const file of orphanedFiles) {
           try {
-            await fs.unlink(file.file_path);
-            totalDeleted++;
-            deletedPaths.push(file.file_path);
-            logger.debug(`Deleted cached file: ${file.file_path}`);
-          } catch (err: any) {
-            // File might not exist or already deleted
-            if (err.code !== 'ENOENT') {
-              logger.warn(`Failed to delete cached file: ${file.file_path}`, { error: err.message });
+            // Delete physical file from disk
+            if (file.file_path) {
+              await fs.unlink(file.file_path);
+              logger.debug(`Deleted orphaned cache file: ${file.file_path}`);
             }
+
+            // Delete cache record from database
+            await db.execute(`DELETE FROM ${cacheTable} WHERE id = ?`, [file.id]);
+            deleted++;
+          } catch (err: any) {
+            // File might not exist - that's okay, still delete the record
+            if (err.code !== 'ENOENT') {
+              logger.warn(`Failed to delete orphaned cache file: ${file.file_path}`, {
+                error: err.message,
+              });
+            }
+            // Still delete the database record even if file deletion failed
+            await db.execute(`DELETE FROM ${cacheTable} WHERE id = ?`, [file.id]);
+            deleted++;
           }
         }
+
+        return deleted;
       };
 
-      // ========================================
-      // Delete cached image files
-      // ========================================
-      const images = (await db.query(
-        `SELECT DISTINCT file_path
-         FROM cache_image_files
-         WHERE (
-             (entity_type = 'movie' AND entity_id IN (SELECT id FROM movies WHERE library_id = ?))
-             OR (entity_type = 'episode' AND entity_id IN (
-               SELECT e.id FROM episodes e
-               INNER JOIN series s ON e.series_id = s.id
-               WHERE s.library_id = ?
-             ))
-           )`,
-        [libraryId, libraryId]
-      )) as Array<{ file_path: string }>;
-      await deleteFiles(images);
+      // Clean up each cache file type
+      const imagesDeleted = await deleteOrphanedFiles('cache_image_files', 'library_image_files');
+      const videosDeleted = await deleteOrphanedFiles('cache_video_files', 'library_video_files');
+      const textDeleted = await deleteOrphanedFiles('cache_text_files', 'library_text_files');
+      const audioDeleted = await deleteOrphanedFiles('cache_audio_files', 'library_audio_files');
 
-      // ========================================
-      // Delete cached video files (trailers)
-      // ========================================
-      const videos = (await db.query(
-        `SELECT DISTINCT file_path
-         FROM cache_video_files
-         WHERE (
-             (entity_type = 'movie' AND entity_id IN (SELECT id FROM movies WHERE library_id = ?))
-             OR (entity_type = 'episode' AND entity_id IN (
-               SELECT e.id FROM episodes e
-               INNER JOIN series s ON e.series_id = s.id
-               WHERE s.library_id = ?
-             ))
-           )`,
-        [libraryId, libraryId]
-      )) as Array<{ file_path: string }>;
-      await deleteFiles(videos);
+      totalDeleted = imagesDeleted + videosDeleted + textDeleted + audioDeleted;
 
-      // ========================================
-      // Delete cached text files (subtitles, NFOs)
-      // ========================================
-      const textFiles = (await db.query(
-        `SELECT DISTINCT file_path
-         FROM cache_text_files
-         WHERE (
-             (entity_type = 'movie' AND entity_id IN (SELECT id FROM movies WHERE library_id = ?))
-             OR (entity_type = 'episode' AND entity_id IN (
-               SELECT e.id FROM episodes e
-               INNER JOIN series s ON e.series_id = s.id
-               WHERE s.library_id = ?
-             ))
-           )`,
-        [libraryId, libraryId]
-      )) as Array<{ file_path: string }>;
-      await deleteFiles(textFiles);
-
-      // ========================================
-      // Delete cached audio files (theme songs)
-      // ========================================
-      const audioFiles = (await db.query(
-        `SELECT DISTINCT file_path
-         FROM cache_audio_files
-         WHERE (
-             (entity_type = 'movie' AND entity_id IN (SELECT id FROM movies WHERE library_id = ?))
-             OR (entity_type = 'episode' AND entity_id IN (
-               SELECT e.id FROM episodes e
-               INNER JOIN series s ON e.series_id = s.id
-               WHERE s.library_id = ?
-             ))
-           )`,
-        [libraryId, libraryId]
-      )) as Array<{ file_path: string }>;
-      await deleteFiles(audioFiles);
-
-      logger.info(`Deleted ${totalDeleted} cached files for library ${libraryId}`, {
-        images: images.length,
-        videos: videos.length,
-        textFiles: textFiles.length,
-        audioFiles: audioFiles.length,
-      });
-
-      // ========================================
-      // Clean up empty cache directories
-      // ========================================
-      await this.cleanupEmptyCacheDirectories(libraryId);
-    } catch (error: any) {
-      logger.error(`Failed to delete cached files for library ${libraryId}`, {
-        error: error.message,
-      });
-      // Don't throw - continue with database deletion even if file deletion fails
-    }
-  }
-
-  /**
-   * Clean up empty cache directories for a deleted library
-   * Removes empty movie/series/episode subdirectories from cache
-   */
-  private async cleanupEmptyCacheDirectories(libraryId: number): Promise<void> {
-    const path = await import('path');
-
-    try {
-      const cacheBaseDir = path.join(process.cwd(), 'data', 'cache');
-
-      // Check images cache directories
-      const imagesCacheDir = path.join(cacheBaseDir, 'images');
-      await this.removeEmptyDirectories(imagesCacheDir);
-
-      // Check trailers cache directories
-      const trailersCacheDir = path.join(cacheBaseDir, 'trailers');
-      await this.removeEmptyDirectories(trailersCacheDir);
-
-      // Check subtitles cache directories
-      const subtitlesCacheDir = path.join(cacheBaseDir, 'subtitles');
-      await this.removeEmptyDirectories(subtitlesCacheDir);
-
-      logger.debug(`Cleaned up empty cache directories for library ${libraryId}`);
-    } catch (error: any) {
-      logger.warn(`Failed to clean up empty cache directories for library ${libraryId}`, {
-        error: error.message,
-      });
-    }
-  }
-
-  /**
-   * Recursively remove empty directories
-   */
-  private async removeEmptyDirectories(dirPath: string): Promise<void> {
-    const fs = await import('fs/promises');
-    const path = await import('path');
-
-    try {
-      const exists = await fs
-        .access(dirPath)
-        .then(() => true)
-        .catch(() => false);
-      if (!exists) return;
-
-      const entries = await fs.readdir(dirPath, { withFileTypes: true });
-
-      // Recursively check subdirectories
-      for (const entry of entries) {
-        if (entry.isDirectory()) {
-          const fullPath = path.join(dirPath, entry.name);
-          await this.removeEmptyDirectories(fullPath);
-        }
-      }
-
-      // After processing subdirectories, check if this directory is now empty
-      const updatedEntries = await fs.readdir(dirPath);
-      if (updatedEntries.length === 0) {
-        await fs.rmdir(dirPath);
-        logger.debug(`Removed empty cache directory: ${dirPath}`);
+      if (totalDeleted > 0) {
+        logger.info(`Deleted ${totalDeleted} orphaned cache files`, {
+          images: imagesDeleted,
+          videos: videosDeleted,
+          text: textDeleted,
+          audio: audioDeleted,
+        });
       }
     } catch (error: any) {
-      // Ignore errors - directory might be in use or not empty
-      logger.debug(`Could not remove directory ${dirPath}: ${error.message}`);
+      logger.error(`Failed to clean up orphaned cache files`, {
+        error: error.message,
+      });
+      // Don't throw - cache cleanup is not critical
     }
   }
+
 
   /**
    * Clean up orphaned metadata entities that are no longer referenced by any media
@@ -423,41 +316,33 @@ export class LibraryService {
       let totalCleaned = 0;
 
       // ========================================
-      // Step 1: Get orphaned actor IDs BEFORE deletion (to delete their thumbnails)
+      // Step 1: Get orphaned actor IDs BEFORE deletion (to delete their cached images)
       // ========================================
       const orphanedActors = (await db.query(
-        `SELECT id, thumb_id FROM actors
+        `SELECT id, image_cache_path FROM actors
          WHERE id NOT IN (
            SELECT DISTINCT actor_id FROM movie_actors
            UNION
            SELECT DISTINCT actor_id FROM episode_actors
          )`
-      )) as Array<{ id: number; thumb_id: number | null }>;
+      )) as Array<{ id: number; image_cache_path: string | null }>;
 
-      // Delete actor thumbnails from cache
+      // Delete actor cached images from filesystem
       for (const actor of orphanedActors) {
-        if (actor.thumb_id) {
+        if (actor.image_cache_path) {
           try {
-            const thumbs = (await db.query(
-              `SELECT file_path FROM cache_image_files
-               WHERE id = ?`,
-              [actor.thumb_id]
-            )) as Array<{ file_path: string }>;
-
-            for (const thumb of thumbs) {
-              await fs.unlink(thumb.file_path).catch((err) => {
-                if (err.code !== 'ENOENT') {
-                  logger.warn(`Failed to delete actor thumbnail: ${thumb.file_path}`, { error: err.message });
-                }
-              });
-            }
+            await fs.unlink(actor.image_cache_path).catch((err) => {
+              if (err.code !== 'ENOENT') {
+                logger.warn(`Failed to delete actor image: ${actor.image_cache_path}`, { error: err.message });
+              }
+            });
           } catch (err: any) {
-            logger.warn(`Failed to query actor thumbnail for actor ${actor.id}`, { error: err.message });
+            logger.warn(`Failed to delete actor image for actor ${actor.id}`, { error: err.message });
           }
         }
       }
 
-      // Delete orphaned actors (trigger will delete their image_files records)
+      // Delete orphaned actors
       const actorsResult = await db.execute(`
         DELETE FROM actors
         WHERE id NOT IN (
