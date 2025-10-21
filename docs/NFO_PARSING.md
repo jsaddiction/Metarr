@@ -392,9 +392,14 @@ The `<runtime>` field has a complex policy due to dual data sources:
 
 | XML Tag | Database Column | Value Type | Notes |
 |---------|----------------|------------|-------|
-| `<userrating>` | `user_rating` | Real | 0-10 scale |
+| `<userrating>` | `user_rating` | Real | 0-10 scale, CHECK constraint enforces range |
 | `<watched>` | - | Boolean | Playback state (not stored) |
 | `<playcount>` | - | Integer | Watch count (not stored) |
+
+**Supported Media Types:**
+- Movies: `movies.user_rating`
+- TV Shows: `series.user_rating`
+- Episodes: `episodes.user_rating`
 
 ### Ratings Tags
 
@@ -486,7 +491,11 @@ Supports multiple rating sources in a single NFO:
 
 **Mapping:**
 - Create/find country in `countries` table
-- Insert link in `movies_countries`
+- Insert link in `movie_countries` or `series_countries` junction table
+
+**Supported Media Types:**
+- Movies: `movie_countries` junction table
+- TV Shows: `series_countries` junction table
 
 ### Tag Tags
 
@@ -497,7 +506,11 @@ Supports multiple rating sources in a single NFO:
 
 **Mapping:**
 - Create/find tag in `tags` table
-- Insert link in `movies_tags`
+- Insert link in `movie_tags` or `series_tags` junction table
+
+**Supported Media Types:**
+- Movies: `movie_tags` junction table
+- TV Shows: `series_tags` junction table
 
 ### Collection/Set Tags
 

@@ -31,12 +31,33 @@ Metarr development has transitioned from **stage-based** (Stages 0-5) to **featu
 
 ---
 
+## Recent Completions
+
+### Database Schema Enhancements (2025-10-21)
+- ✅ Added `user_rating` column to movies, series, episodes tables
+- ✅ Added `countries` table with junction tables (`movie_countries`, `series_countries`)
+- ✅ Added `tags` table with junction tables (`movie_tags`, `series_tags`, `episode_tags`)
+- **Impact**: 100% NFO field compatibility with Kodi/Jellyfin
+- **Documentation**: DATABASE_SCHEMA.md, NFO_PARSING.md updated
+
+### Frontend Architecture Documentation (2025-10-21)
+- ✅ Three-tier type system documented (MovieListItem/MovieDetail/MovieMetadataForm)
+- ✅ Full-viewport asset selection modal design specified
+- ✅ Field locking UI patterns defined
+- ✅ Enrichment status indicators documented
+- ✅ Comprehensive UI patterns catalog created
+- **Impact**: Clear frontend development roadmap aligned with backend
+- **Documentation**: FRONTEND_TYPES.md, ASSET_SELECTION_UI.md, UI_PATTERNS.md created
+
+---
+
 ## Current Development Focus
 
 **Active Work** (as of 2025-10-21):
-- Frontend: shadcn/ui component integration
-- Backend: Comprehensive code audit and cleanup
-- Documentation: Parity fixes and organization
+- Frontend: Implementing three-tier type system
+- Frontend: Building asset selection modal components
+- Frontend: Field locking UI integration
+- Backend: API endpoints for asset candidate management
 
 **Pre-Release Priorities**:
 1. Fully developed end-to-end workflows (scan → enrich → publish)

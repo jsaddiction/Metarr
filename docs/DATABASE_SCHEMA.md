@@ -198,6 +198,7 @@ CREATE TABLE movies (
   tmdb_votes INTEGER,
   imdb_rating REAL,
   imdb_votes INTEGER,
+  user_rating REAL CHECK(user_rating >= 0 AND user_rating <= 10),
 
   -- Assets
   poster_id INTEGER,
@@ -307,6 +308,7 @@ CREATE TABLE series (
   tvdb_votes INTEGER,
   tmdb_rating REAL,
   tmdb_votes INTEGER,
+  user_rating REAL CHECK(user_rating >= 0 AND user_rating <= 10),
 
   -- Assets
   poster_id INTEGER,
@@ -425,6 +427,7 @@ CREATE TABLE episodes (
   -- Ratings
   tvdb_rating REAL,
   tvdb_votes INTEGER,
+  user_rating REAL CHECK(user_rating >= 0 AND user_rating <= 10),
 
   -- Assets
   thumb_id INTEGER,
@@ -850,6 +853,84 @@ CREATE TABLE music_genres (
 
 CREATE INDEX idx_music_genres_artist ON music_genres(artist_id);
 CREATE INDEX idx_music_genres_genre ON music_genres(genre_id);
+```
+
+### Countries
+
+```sql
+CREATE TABLE countries (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT UNIQUE NOT NULL
+);
+```
+
+### Movie Countries
+
+```sql
+CREATE TABLE movie_countries (
+  movie_id INTEGER NOT NULL,
+  country_id INTEGER NOT NULL,
+  PRIMARY KEY (movie_id, country_id),
+  FOREIGN KEY (movie_id) REFERENCES movies(id) ON DELETE CASCADE,
+  FOREIGN KEY (country_id) REFERENCES countries(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_movie_countries_movie ON movie_countries(movie_id);
+CREATE INDEX idx_movie_countries_country ON movie_countries(country_id);
+```
+
+### Series Countries
+
+```sql
+CREATE TABLE series_countries (
+  series_id INTEGER NOT NULL,
+  country_id INTEGER NOT NULL,
+  PRIMARY KEY (series_id, country_id),
+  FOREIGN KEY (series_id) REFERENCES series(id) ON DELETE CASCADE,
+  FOREIGN KEY (country_id) REFERENCES countries(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_series_countries_series ON series_countries(series_id);
+CREATE INDEX idx_series_countries_country ON series_countries(country_id);
+```
+
+### Tags
+
+```sql
+CREATE TABLE tags (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT UNIQUE NOT NULL
+);
+```
+
+### Movie Tags
+
+```sql
+CREATE TABLE movie_tags (
+  movie_id INTEGER NOT NULL,
+  tag_id INTEGER NOT NULL,
+  PRIMARY KEY (movie_id, tag_id),
+  FOREIGN KEY (movie_id) REFERENCES movies(id) ON DELETE CASCADE,
+  FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_movie_tags_movie ON movie_tags(movie_id);
+CREATE INDEX idx_movie_tags_tag ON movie_tags(tag_id);
+```
+
+### Series Tags
+
+```sql
+CREATE TABLE series_tags (
+  series_id INTEGER NOT NULL,
+  tag_id INTEGER NOT NULL,
+  PRIMARY KEY (series_id, tag_id),
+  FOREIGN KEY (series_id) REFERENCES series(id) ON DELETE CASCADE,
+  FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_series_tags_series ON series_tags(series_id);
+CREATE INDEX idx_series_tags_tag ON series_tags(tag_id);
 ```
 
 ### Studios

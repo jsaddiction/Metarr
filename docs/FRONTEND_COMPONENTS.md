@@ -191,6 +191,199 @@ When developing or modifying components, always test in both themes:
 
 ## Reusable UI Components
 
+### FieldLockToggle Component
+
+**Location**: `public/frontend/src/components/ui/FieldLockToggle.tsx`
+
+**Purpose**: Lock/unlock individual metadata or asset fields to prevent automation from overwriting user edits
+
+**Features:**
+- **Visual States**: Unlocked (🔓 gray) → Locked (🔒 violet)
+- **Direct Toggle**: Single click toggles state, no confirmation dialog
+- **Backend Integration**: Calls lock/unlock API endpoints
+- **Toast Notifications**: Success/failure feedback
+- **Inline Display**: Appears next to field labels or asset cards
+
+**Props:**
+```typescript
+interface FieldLockToggleProps {
+  fieldName: string;        // e.g., "title", "poster", "plot"
+  locked: boolean;          // Current lock state
+  onChange: (locked: boolean) => void; // State update callback
+  disabled?: boolean;       // Disable toggle during API call
+  className?: string;       // Additional CSS classes
+}
+```
+
+**Behavior:**
+1. User clicks lock icon
+2. Component calls: `POST /api/movies/:id/lock-field` or `POST /api/movies/:id/unlock-field`
+3. Backend updates `{field_name}_locked` column
+4. On success: Toast notification, icon updates
+5. On failure: Toast error, state reverts
+
+**Styling:**
+- **Unlocked**: Gray lock icon (text-neutral-400), transparent background
+- **Locked**: Violet lock icon (text-primary-500), subtle violet background (bg-primary-500/10)
+- **Hover**: Background darkens, cursor pointer
+- **Disabled**: Opacity 50%, cursor not-allowed
+
+**Usage Example:**
+```tsx
+// Metadata field lock
+<div className="flex items-center justify-between">
+  <label>Title</label>
+  <FieldLockToggle
+    fieldName="title"
+    locked={movie.title_locked}
+    onChange={(locked) => handleLockToggle('title', locked)}
+  />
+</div>
+
+// Asset lock
+<div className="relative">
+  <img src={posterUrl} alt="Poster" />
+  <FieldLockToggle
+    fieldName="poster"
+    locked={movie.poster_locked}
+    onChange={(locked) => handleLockToggle('poster', locked)}
+    className="absolute top-2 right-2"
+  />
+</div>
+```
+
+**Accessibility:**
+- ARIA label: "Lock {fieldName}" / "Unlock {fieldName}"
+- Keyboard accessible: Tab to focus, Space/Enter to toggle
+- Screen reader announces state changes
+
+**Design Decisions:**
+- **No Date Stamp**: Lock date not displayed in UI (stored in database for audit, not shown to user)
+- **No Confirmation Dialog**: Direct toggle for speed, locks are easily reversible
+- **No "Locked By" Display**: UI only shows locked/unlocked, details in backend logs
+
+---
+
+### EnrichmentStatusBadge Component
+
+**Location**: `public/frontend/src/components/movie/EnrichmentStatusBadge.tsx`
+
+**Purpose**: Show movie enrichment workflow state with visual indicators
+
+**Features:**
+- **Color-Coded States**: Gray (unidentified), Yellow (in progress), Green (complete)
+- **Optional Label**: Show text label or icon-only
+- **Compact Design**: Fits inline with movie title or table cell
+
+**Props:**
+```typescript
+interface EnrichmentStatusBadgeProps {
+  status: 'unidentified' | 'identified' | 'enriched';
+  showLabel?: boolean;      // Default: true
+  className?: string;
+}
+```
+
+**Status Variants:**
+
+| Status | Color | Icon | Label | Description |
+|--------|-------|------|-------|-------------|
+| **unidentified** | Gray (neutral-400) | ❓ | "Needs Identification" | Movie file discovered, TMDB/IMDB ID unknown |
+| **identified** | Yellow (yellow-500) | 🔄 | "Enriching..." | Provider ID found, metadata fetch in progress |
+| **enriched** | Green (green-500) | ✓ | "Complete" | Metadata fetched, assets available |
+
+**Styling:**
+- Badge: Rounded pill shape (rounded-full)
+- Padding: px-2 py-1
+- Font: text-xs font-medium
+- Background: Semi-transparent color fill
+
+**Usage:**
+```tsx
+// In table view
+<td>
+  <div className="flex items-center gap-2">
+    <span>{movie.title}</span>
+    <EnrichmentStatusBadge status={movie.enrichment_status} showLabel={false} />
+  </div>
+</td>
+
+// In MovieEdit header
+<div className="flex items-center gap-3">
+  <h1>Edit Movie: {movie.title}</h1>
+  <EnrichmentStatusBadge status={movie.enrichment_status} />
+</div>
+```
+
+**Behavior:**
+- Static display component (no user interaction)
+- Updates automatically when movie.enrichment_status changes
+- No loading spinners (status is always current)
+
+**Accessibility:**
+- ARIA label includes full status text
+- Color not sole indicator (icon + label for clarity)
+
+---
+
+### AssetSelectionModal Component
+
+**Location**: `public/frontend/src/components/asset/AssetSelectionModal.tsx`
+
+**Purpose**: Full-viewport modal for selecting asset candidates from multiple providers
+
+**Features:**
+- **Full-Viewport Design**: Covers entire screen for focused selection
+- **Split-Pane Layout**: Current selection (30%) vs. candidates (70%)
+- **Progressive Loading**: Lazy-load thumbnails, instant preview updates
+- **Filter & Sort**: Provider filtering, sort by votes/resolution/date
+- **Keyboard Navigation**: ESC to cancel, Enter to apply, Tab navigation
+
+**Props:**
+```typescript
+interface AssetSelectionModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  movieId: number;
+  movieTitle: string;
+  assetType: 'poster' | 'fanart' | 'landscape' | 'keyart' | 'banner' | 'clearart' | 'clearlogo' | 'discart';
+  currentAssetId?: number | null;
+  onApply: (candidateId: number) => Promise<void>;
+}
+```
+
+**Layout Structure:**
+```
+┌─────────────────────────────────────────────────────────┐
+│  [X] Select Poster for The Matrix (1999)               │ Header
+├─────────────┬───────────────────────────────────────────┤
+│ Current     │ Candidates                                │
+│ Selection   │ [Filter: All ▼] [Sort: Votes ▼]          │
+│ (30%)       │ ┌───┐ ┌───┐ ┌───┐ ┌───┐ ┌───┐           │
+│             │ │   │ │   │ │   │ │   │ │   │           │ Content
+│             │ └───┘ └───┘ └───┘ └───┘ └───┘           │
+│             │ (Scrollable grid)                         │
+└─────────────┴───────────────────────────────────────────┘
+│  [Cancel]                              [Apply]          │ Footer
+└─────────────────────────────────────────────────────────┘
+```
+
+**Behavior:**
+1. User clicks "Change Poster" in MovieEdit > Images tab
+2. Modal opens, fetches candidates: `GET /api/movies/:id/asset-candidates/poster`
+3. User clicks candidate thumbnail → Left pane updates instantly
+4. User clicks "Apply" → Backend call: `POST /api/movies/:id/assets/poster/select`
+5. Modal closes, MovieEdit refreshes with new asset
+
+**Keyboard Shortcuts:**
+- **ESC**: Cancel and close
+- **Enter**: Apply selection (when focused)
+- **Tab**: Navigate between candidates and buttons
+
+**See Also:** [ASSET_SELECTION_UI.md](ASSET_SELECTION_UI.md) for complete design specification
+
+---
+
 ### AnimatedTabs Component
 
 **Location**: `public/frontend/src/components/ui/AnimatedTabs.tsx`
