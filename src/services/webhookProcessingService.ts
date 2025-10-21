@@ -39,22 +39,25 @@ async function findLibraryByPath(db: DatabaseConnection, filePath: string): Prom
 export class WebhookProcessingService {
   private dbManager: DatabaseManager;
   private mediaPlayerManager: MediaPlayerConnectionManager;
+  private jobQueue: any; // JobQueueService - will be injected
 
-  constructor(dbManager: DatabaseManager, mediaPlayerManager: MediaPlayerConnectionManager) {
+  constructor(dbManager: DatabaseManager, mediaPlayerManager: MediaPlayerConnectionManager, jobQueue?: any) {
     this.dbManager = dbManager;
     this.mediaPlayerManager = mediaPlayerManager;
+    this.jobQueue = jobQueue;
   }
 
   /**
    * Handle Radarr Grab event
    * Queued for download - check if currently playing
+   * @returns undefined (no job created for Grab events)
    */
-  async handleRadarrGrab(payload: RadarrWebhookPayload): Promise<void> {
+  async handleRadarrGrab(payload: RadarrWebhookPayload): Promise<number | undefined> {
     const db = this.dbManager.getConnection();
 
     if (!payload.movie) {
       logger.warn('Grab webhook missing movie data');
-      return;
+      return undefined;
     }
 
     logger.info('Processing Radarr Grab event', {
@@ -73,18 +76,21 @@ export class WebhookProcessingService {
       movieTitle: payload.movie.title,
       tmdbId: payload.movie.tmdbId,
     });
+
+    return undefined; // No job created for Grab events
   }
 
   /**
    * Handle Radarr Download event
-   * Download complete - trigger full scan workflow
+   * Download complete - create scan job
+   * @returns Job ID for tracking
    */
-  async handleRadarrDownload(payload: RadarrWebhookPayload): Promise<void> {
+  async handleRadarrDownload(payload: RadarrWebhookPayload): Promise<number | undefined> {
     const db = this.dbManager.getConnection();
 
     if (!payload.movie || !payload.movieFile) {
       logger.warn('Download webhook missing movie or file data');
-      return;
+      return undefined;
     }
 
     logger.info('Processing Radarr Download event (CRITICAL)', {
@@ -124,22 +130,49 @@ export class WebhookProcessingService {
         throw new Error(`No library found for path: ${mappedPath}`);
       }
 
-      // Run unified scan
-      const scanResult = await scanMovieDirectory(this.dbManager, libraryId, mappedPath, scanContext);
+      // Create background job if job queue available
+      if (this.jobQueue) {
+        const jobId = await this.jobQueue.addJob({
+          type: 'scan-movie',
+          priority: 2, // CRITICAL - webhook triggered
+          payload: {
+            libraryId,
+            moviePath: mappedPath,
+            scanContext,
+          },
+          retry_count: 0,
+          max_retries: 3,
+        });
 
-      logger.info('Scan complete', {
-        movieId: scanResult.movieId,
-        isNewMovie: scanResult.isNewMovie,
-        pathChanged: scanResult.pathChanged,
-        restoredFromDeletion: scanResult.restoredFromDeletion,
-        nfoRegenerated: scanResult.nfoRegenerated,
-        streamsExtracted: scanResult.streamsExtracted,
-      });
+        logger.info('Created scan job for webhook download', {
+          jobId,
+          libraryId,
+          moviePath: mappedPath,
+        });
 
-      // Notify all media players to scan for new content
-      await this.notifyMediaPlayers(libraryId);
+        return jobId;
+      } else {
+        // Fallback: Run scan synchronously if no job queue (shouldn't happen in production)
+        logger.warn('No job queue available, running scan synchronously');
 
-      logger.info('Media players notified for library scan', { libraryId });
+        const scanResult = await scanMovieDirectory(this.dbManager, libraryId, mappedPath, scanContext);
+
+        logger.info('Scan complete', {
+          movieId: scanResult.movieId,
+          isNewMovie: scanResult.isNewMovie,
+          pathChanged: scanResult.pathChanged,
+          restoredFromDeletion: scanResult.restoredFromDeletion,
+          nfoRegenerated: scanResult.nfoRegenerated,
+          streamsExtracted: scanResult.streamsExtracted,
+        });
+
+        // Notify all media players to scan for new content
+        await this.notifyMediaPlayers(libraryId);
+
+        logger.info('Media players notified for library scan', { libraryId });
+
+        return undefined;
+      }
     } catch (error: any) {
       logger.error('Failed to process Download webhook', {
         movieTitle: payload.movie.title,
@@ -152,14 +185,15 @@ export class WebhookProcessingService {
 
   /**
    * Handle Radarr Rename event
-   * File renamed - update file_path
+   * File renamed - create scan job to update path
+   * @returns Job ID for tracking
    */
-  async handleRadarrRename(payload: RadarrWebhookPayload): Promise<void> {
+  async handleRadarrRename(payload: RadarrWebhookPayload): Promise<number | undefined> {
     const db = this.dbManager.getConnection();
 
     if (!payload.movie || !payload.movieFile) {
       logger.warn('Rename webhook missing movie or file data');
-      return;
+      return undefined;
     }
 
     logger.info('Processing Radarr Rename event (HIGH)', {
@@ -193,20 +227,47 @@ export class WebhookProcessingService {
         throw new Error(`No library found for path: ${mappedPath}`);
       }
 
-      // Run scan - it will automatically update the path
-      const scanResult = await scanMovieDirectory(this.dbManager, libraryId, mappedPath, scanContext);
+      // Create background job if job queue available
+      if (this.jobQueue) {
+        const jobId = await this.jobQueue.addJob({
+          type: 'scan-movie',
+          priority: 3, // HIGH - webhook triggered rename
+          payload: {
+            libraryId,
+            moviePath: mappedPath,
+            scanContext,
+          },
+          retry_count: 0,
+          max_retries: 3,
+        });
 
-      logger.info('Rename processed', {
-        movieId: scanResult.movieId,
-        pathChanged: scanResult.pathChanged,
-        oldPath: 'logged in scan service',
-        newPath: mappedPath,
-      });
+        logger.info('Created scan job for webhook rename', {
+          jobId,
+          libraryId,
+          moviePath: mappedPath,
+        });
 
-      // Notify media players about the rename
-      await this.notifyMediaPlayers(libraryId);
+        return jobId;
+      } else {
+        // Fallback: Run scan synchronously
+        logger.warn('No job queue available, running scan synchronously');
 
-      logger.info('Media players notified after rename', { libraryId });
+        const scanResult = await scanMovieDirectory(this.dbManager, libraryId, mappedPath, scanContext);
+
+        logger.info('Rename processed', {
+          movieId: scanResult.movieId,
+          pathChanged: scanResult.pathChanged,
+          oldPath: 'logged in scan service',
+          newPath: mappedPath,
+        });
+
+        // Notify media players about the rename
+        await this.notifyMediaPlayers(libraryId);
+
+        logger.info('Media players notified after rename', { libraryId });
+
+        return undefined;
+      }
     } catch (error: any) {
       logger.error('Failed to process Rename webhook', {
         movieTitle: payload.movie.title,
@@ -221,13 +282,14 @@ export class WebhookProcessingService {
    * Handle Radarr MovieFileDelete event
    * Note: Soft delete functionality removed in clean schema
    * Movie records will remain in database when files are deleted
+   * @returns undefined (no job created for delete events)
    */
-  async handleRadarrMovieFileDelete(payload: RadarrWebhookPayload): Promise<void> {
+  async handleRadarrMovieFileDelete(payload: RadarrWebhookPayload): Promise<number | undefined> {
     const db = this.dbManager.getConnection();
 
     if (!payload.movie) {
       logger.warn('MovieFileDelete webhook missing movie data');
-      return;
+      return undefined;
     }
 
     logger.info('Processing Radarr MovieFileDelete event (HIGH)', {
@@ -250,7 +312,7 @@ export class WebhookProcessingService {
           tmdbId: payload.movie.tmdbId,
           title: payload.movie.title,
         });
-        return;
+        return undefined;
       }
 
       const movieId = results[0].id;
@@ -264,6 +326,7 @@ export class WebhookProcessingService {
       });
 
       // TODO: Emit notification event 'movie.file.deleted'
+      return undefined; // No job created
     } catch (error: any) {
       logger.error('Failed to process MovieFileDelete webhook', {
         movieTitle: payload.movie.title,
@@ -307,8 +370,9 @@ export class WebhookProcessingService {
   /**
    * Handle Radarr HealthIssue event
    * Log health issue with severity and emit notification
+   * @returns undefined (no job created for health events)
    */
-  async handleRadarrHealthIssue(payload: RadarrWebhookPayload): Promise<void> {
+  async handleRadarrHealthIssue(payload: RadarrWebhookPayload): Promise<number | undefined> {
     const db = this.dbManager.getConnection();
 
     logger.warn('Processing Radarr HealthIssue event', {
@@ -355,13 +419,16 @@ export class WebhookProcessingService {
       severity,
       wikiUrl: payload.wikiUrl,
     });
+
+    return undefined; // No job created
   }
 
   /**
    * Handle Radarr HealthRestored event
    * Log health restoration
+   * @returns undefined (no job created for health events)
    */
-  async handleRadarrHealthRestored(payload: RadarrWebhookPayload): Promise<void> {
+  async handleRadarrHealthRestored(payload: RadarrWebhookPayload): Promise<number | undefined> {
     const db = this.dbManager.getConnection();
 
     logger.info('Processing Radarr HealthRestored event', {
@@ -373,13 +440,16 @@ export class WebhookProcessingService {
 
     // TODO: Emit notification event for user alerts (Stage 7+)
     logger.info('Health restored', { message: payload.message });
+
+    return undefined; // No job created
   }
 
   /**
    * Handle Radarr ApplicationUpdate event
    * Log application version update
+   * @returns undefined (no job created for update events)
    */
-  async handleRadarrApplicationUpdate(payload: RadarrWebhookPayload): Promise<void> {
+  async handleRadarrApplicationUpdate(payload: RadarrWebhookPayload): Promise<number | undefined> {
     const db = this.dbManager.getConnection();
 
     logger.info('Processing Radarr ApplicationUpdate event', {
@@ -395,13 +465,16 @@ export class WebhookProcessingService {
       from: payload.previousVersion,
       to: payload.newVersion,
     });
+
+    return undefined; // No job created
   }
 
   /**
    * Handle Radarr ManualInteractionRequired event
    * Log manual interaction needed and emit notification
+   * @returns undefined (no job created for notification events)
    */
-  async handleRadarrManualInteractionRequired(payload: RadarrWebhookPayload): Promise<void> {
+  async handleRadarrManualInteractionRequired(payload: RadarrWebhookPayload): Promise<number | undefined> {
     const db = this.dbManager.getConnection();
 
     logger.warn('Processing Radarr ManualInteractionRequired event', {
@@ -437,18 +510,21 @@ export class WebhookProcessingService {
       movieTitle: payload.movie?.title,
       message: payload.message,
     });
+
+    return undefined; // No job created
   }
 
   /**
    * Handle generic webhook events (placeholder for Stage 9/10)
    * Used for Radarr info events (MovieAdded/MovieDeleted) and all Sonarr/Lidarr events
    * Just log events to activity_log for now
+   * @returns undefined (no job created for generic events)
    */
   async handleGenericEvent(
     source: 'radarr' | 'sonarr' | 'lidarr',
     eventType: string,
     payload: any
-  ): Promise<void> {
+  ): Promise<number | undefined> {
     const db = this.dbManager.getConnection();
 
     const stageMap = { radarr: 'N/A', sonarr: '9', lidarr: '10' };
@@ -461,6 +537,8 @@ export class WebhookProcessingService {
 
     // Log to activity_log
     await this.logWebhookActivity(db, source, eventType, payload);
+
+    return undefined; // No job created
   }
 
   /**

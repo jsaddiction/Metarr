@@ -4,11 +4,22 @@
 
 Metarr uses a relational database to manage metadata, assets, jobs, and configuration. The schema supports:
 - **Multi-media types**: Movies, TV shows, music
-- **Content-addressed cache**: SHA256-based asset storage with deduplication
+- **UUID-based cache**: Split cache/library architecture with SHA256 verification hashes
 - **Job queue**: Priority-based background processing
 - **Field locking**: Preserve manual user edits
 - **Soft deletes**: 30-day recovery window
 - **Normalized metadata**: Shared actors, crew, genres across all media
+
+## Asset Storage Architecture
+
+**IMPORTANT**: As of 2025-10-20, Metarr uses a **split cache/library architecture**:
+
+- **Cache files** (`cache_*_files` tables): Permanent UUID-based storage in `/data/cache/{type}/{entityType}/{entityId}/{uuid}.ext`
+- **Library files** (`library_*_files` tables): Published copies in library directories with Kodi naming
+- **Hash verification**: SHA256 hashes stored in database for integrity checks (NOT for deduplication)
+- **Reference counting**: Tracks library references to cache files for garbage collection
+
+The documentation below contains legacy references to `cache_assets`, `asset_references`, and content-addressed storage. These sections are marked as **[LEGACY - TO BE UPDATED]** and should be ignored. Refer to the actual migration file `src/database/migrations/20251015_001_clean_schema.ts` for the current schema.
 
 ## Core Tables
 
@@ -573,7 +584,9 @@ CREATE INDEX idx_tracks_file_path ON tracks(file_path);
 
 ## Cache & Asset Tables
 
-### Cache Assets (Content-Addressed Storage)
+### Cache Assets (Content-Addressed Storage) **[LEGACY - TO BE UPDATED]**
+
+> **⚠️ WARNING**: This section is OUTDATED. The current schema uses split `cache_*_files` and `library_*_files` tables with UUID-based naming. See `src/database/migrations/20251015_001_clean_schema.ts` for accurate schema.
 
 ```sql
 CREATE TABLE cache_assets (
@@ -607,7 +620,9 @@ CREATE INDEX idx_cache_assets_type ON cache_assets(source_type);
 CREATE INDEX idx_cache_assets_refs ON cache_assets(reference_count);
 ```
 
-### Asset References (Track where assets are used)
+### Asset References (Track where assets are used) **[LEGACY - TO BE UPDATED]**
+
+> **⚠️ WARNING**: This table no longer exists. Asset tracking is now handled by `library_*_files.cache_file_id` foreign keys.
 
 ```sql
 CREATE TABLE asset_references (
@@ -625,7 +640,9 @@ CREATE INDEX idx_asset_refs_entity ON asset_references(entity_type, entity_id);
 CREATE UNIQUE INDEX idx_asset_refs_unique ON asset_references(entity_type, entity_id, asset_type);
 ```
 
-### Trailers
+### Trailers **[LEGACY - TO BE UPDATED]**
+
+> **⚠️ WARNING**: This table no longer exists. Trailers are now stored in `cache_video_files` and `library_video_files` tables.
 
 ```sql
 CREATE TABLE trailers (
@@ -1102,12 +1119,13 @@ CREATE UNIQUE INDEX idx_migrations_version ON schema_migrations(version);
 - `deleted_at IS NOT NULL` = soft deleted (30-day recovery)
 - Scheduled job purges records where `deleted_at < NOW() - 30 days`
 
-### Content-Addressed Cache
-- Assets stored by SHA256 hash: `/cache/assets/{ab}/{cd}/{hash}.ext`
-- First 2 chars → first directory level (256 options)
-- Next 2 chars → second directory level (256 options)
-- Total: 65,536 leaf directories for optimal filesystem performance
-- `perceptual_hash` enables visual duplicate detection within same media
+### UUID-Based Cache Architecture **[UPDATED 2025-10-20]**
+- **Cache files**: UUID-based naming in `/data/cache/{type}/{entityType}/{entityId}/{uuid}.ext`
+- **Library files**: Published copies in library directories with Kodi naming conventions
+- **Hash verification**: SHA256 hashes stored in database for integrity checks (NOT for deduplication)
+- **Reference counting**: `cache_*_files.reference_count` tracks library references for garbage collection
+- **Split tables**: Separate `cache_*_files` and `library_*_files` tables for images, videos, audio, text
+- **Atomic writes**: Temp → rename pattern prevents partial file corruption on disk full/crash scenarios
 
 ### Job Queue Priority
 - **1 = Critical**: Webhooks (new media, upgrades)

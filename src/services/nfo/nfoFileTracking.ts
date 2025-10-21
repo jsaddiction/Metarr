@@ -26,9 +26,9 @@ export async function trackNFOFile(
     const fileHash = await calculateFileHash(nfoFilePath);
     const stats = await fs.stat(nfoFilePath);
 
-    // Check if NFO already tracked
+    // Check if NFO already tracked (cache table - source of truth)
     const existing = await db.query<any>(
-      `SELECT id FROM text_files WHERE entity_type = ? AND entity_id = ? AND text_type = 'nfo'`,
+      `SELECT id FROM cache_text_files WHERE entity_type = ? AND entity_id = ? AND text_type = 'nfo'`,
       [entityType, entityId]
     );
 
@@ -36,7 +36,7 @@ export async function trackNFOFile(
       // Update existing record
       const existingId = (existing[0] as any).id;
       await db.execute(
-        `UPDATE text_files SET
+        `UPDATE cache_text_files SET
           file_path = ?,
           file_name = ?,
           file_size = ?,
@@ -114,7 +114,7 @@ export async function markNFOForRegeneration(
   entityId: number
 ): Promise<void> {
   await db.execute(
-    `UPDATE text_files
+    `UPDATE cache_text_files
      SET nfo_needs_regen = 1
      WHERE entity_type = ? AND entity_id = ? AND text_type = 'nfo'`,
     [entityType, entityId]
@@ -140,7 +140,7 @@ export async function getNFOFile(
 } | null> {
   const rows = await db.query<any>(
     `SELECT id, file_path, file_hash, nfo_is_valid, nfo_has_tmdb_id, nfo_needs_regen
-     FROM text_files
+     FROM cache_text_files
      WHERE entity_type = ? AND entity_id = ? AND text_type = 'nfo'
      LIMIT 1`,
     [entityType, entityId]

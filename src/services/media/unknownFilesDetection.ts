@@ -217,69 +217,86 @@ export async function buildKnownFilesSet(
       }
     }
 
-    // Add images from unified file system (image_files table)
+    // Add images from cache file system (both cache and library)
     if (entityType === 'movie') {
-      const images = await db.query<any[]>(
-        `SELECT file_path
-         FROM image_files
-         WHERE entity_type = ? AND entity_id = ? AND file_path IS NOT NULL`,
-        [entityType, entityId]
-      );
+      const [cacheImages, libraryImages] = await Promise.all([
+        db.query<any[]>(
+          `SELECT file_path FROM cache_image_files WHERE entity_type = ? AND entity_id = ? AND file_path IS NOT NULL`,
+          [entityType, entityId]
+        ),
+        db.query<any[]>(
+          `SELECT l.file_path FROM library_image_files l
+           JOIN cache_image_files c ON l.cache_file_id = c.id
+           WHERE c.entity_type = ? AND c.entity_id = ? AND l.file_path IS NOT NULL`,
+          [entityType, entityId]
+        )
+      ]);
 
-      logger.debug('Found image file paths from unified file system', {
-        entityType,
-        entityId,
-        count: images.length,
-        paths: images.map((i: any) => i.file_path)
-      });
-
-      for (const image of images) {
+      for (const image of [...cacheImages, ...libraryImages]) {
         if ((image as any).file_path) {
           knownFiles.add((image as any).file_path);
         }
       }
     }
 
-    // Add trailers from unified file system (video_files with video_type = 'trailer')
+    // Add trailers from cache file system (both cache and library)
     if (entityType === 'movie') {
-      const trailers = await db.query<any[]>(
-        `SELECT file_path
-         FROM video_files
-         WHERE entity_type = ? AND entity_id = ? AND video_type = 'trailer' AND file_path IS NOT NULL`,
-        [entityType, entityId]
-      );
+      const [cacheTrailers, libraryTrailers] = await Promise.all([
+        db.query<any[]>(
+          `SELECT file_path FROM cache_video_files WHERE entity_type = ? AND entity_id = ? AND video_type = 'trailer' AND file_path IS NOT NULL`,
+          [entityType, entityId]
+        ),
+        db.query<any[]>(
+          `SELECT l.file_path FROM library_video_files l
+           JOIN cache_video_files c ON l.cache_file_id = c.id
+           WHERE c.entity_type = ? AND c.entity_id = ? AND c.video_type = 'trailer' AND l.file_path IS NOT NULL`,
+          [entityType, entityId]
+        )
+      ]);
 
-      for (const trailer of trailers) {
+      for (const trailer of [...cacheTrailers, ...libraryTrailers]) {
         if ((trailer as any).file_path) {
           knownFiles.add((trailer as any).file_path);
         }
       }
     }
 
-    // Add external subtitles from unified file system (text_files with text_type = 'subtitle')
-    const subtitles = await db.query<any[]>(
-      `SELECT file_path
-       FROM text_files
-       WHERE entity_type = ? AND entity_id = ? AND text_type = 'subtitle' AND file_path IS NOT NULL`,
-      [entityType, entityId]
-    );
+    // Add external subtitles from cache file system (both cache and library)
+    const [cacheSubtitles, librarySubtitles] = await Promise.all([
+      db.query<any[]>(
+        `SELECT file_path FROM cache_text_files WHERE entity_type = ? AND entity_id = ? AND text_type = 'subtitle' AND file_path IS NOT NULL`,
+        [entityType, entityId]
+      ),
+      db.query<any[]>(
+        `SELECT l.file_path FROM library_text_files l
+         JOIN cache_text_files c ON l.cache_file_id = c.id
+         WHERE c.entity_type = ? AND c.entity_id = ? AND c.text_type = 'subtitle' AND l.file_path IS NOT NULL`,
+        [entityType, entityId]
+      )
+    ]);
 
-    for (const subtitle of subtitles) {
+    for (const subtitle of [...cacheSubtitles, ...librarySubtitles]) {
       if ((subtitle as any).file_path) {
         knownFiles.add((subtitle as any).file_path);
       }
     }
 
-    // Add audio files from unified file system (audio_files table)
+    // Add audio files from cache file system (both cache and library)
     if (entityType === 'movie') {
-      const audioFiles = await db.query<any[]>(
-        `SELECT file_path
-         FROM audio_files
-         WHERE entity_type = ? AND entity_id = ? AND file_path IS NOT NULL`,
-        [entityType, entityId]
-      );
+      const [cacheAudio, libraryAudio] = await Promise.all([
+        db.query<any[]>(
+          `SELECT file_path FROM cache_audio_files WHERE entity_type = ? AND entity_id = ? AND file_path IS NOT NULL`,
+          [entityType, entityId]
+        ),
+        db.query<any[]>(
+          `SELECT l.file_path FROM library_audio_files l
+           JOIN cache_audio_files c ON l.cache_file_id = c.id
+           WHERE c.entity_type = ? AND c.entity_id = ? AND l.file_path IS NOT NULL`,
+          [entityType, entityId]
+        )
+      ]);
 
-      for (const audioFile of audioFiles) {
+      for (const audioFile of [...cacheAudio, ...libraryAudio]) {
         if ((audioFile as any).file_path) {
           knownFiles.add((audioFile as any).file_path);
         }

@@ -63,14 +63,14 @@ export class ImageService {
         source_type, source_url, provider_name, classification_score,
         is_published, library_file_id, cache_file_id, reference_count,
         discovered_at, last_accessed_at,
-        0 as locked,
+        is_locked as locked,
         NULL as vote_average,
-        NULL as url,
+        source_url as url,
         NULL as deleted_on,
         discovered_at as created_at,
         last_accessed_at as updated_at
-      FROM image_files
-      WHERE entity_type = ? AND entity_id = ? AND location = 'cache'
+      FROM cache_image_files
+      WHERE entity_type = ? AND entity_id = ?
     `;
     const params: any[] = [entityType, entityId];
 
@@ -92,18 +92,17 @@ export class ImageService {
     const rows = await this.dbManager.query<any>(
       `SELECT
         id, entity_type, entity_id, file_path, file_name, file_size, file_hash,
-        perceptual_hash, location, image_type, width, height, format,
+        perceptual_hash, image_type, width, height, format,
         source_type, source_url, provider_name, classification_score,
-        is_published, library_file_id, cache_file_id, reference_count,
-        discovered_at, last_accessed_at,
+        is_locked, discovered_at, last_accessed_at,
         file_path as cache_path,
-        NULL as url,
+        source_url as url,
         NULL as deleted_on,
-        0 as locked,
+        is_locked as locked,
         NULL as vote_average,
         discovered_at as created_at,
         last_accessed_at as updated_at
-      FROM image_files
+      FROM cache_image_files
       WHERE id = ?`,
       [imageId]
     );
@@ -474,28 +473,9 @@ export class ImageService {
       await fs.remove(image.file_path);
     }
 
-    // If this is a cache file with references, decrement reference count
-    if (image.location === 'cache' && image.reference_count > 0) {
-      await this.dbManager.execute(
-        'UPDATE image_files SET reference_count = reference_count - 1 WHERE id = ?',
-        [imageId]
-      );
-
-      logger.info('Decremented image reference count', {
-        imageId,
-        newRefCount: image.reference_count - 1
-      });
-
-      // Only delete from database if no more references
-      if (image.reference_count - 1 <= 0) {
-        await this.dbManager.execute('DELETE FROM image_files WHERE id = ?', [imageId]);
-        logger.info('Deleted image file record (no references)', { imageId });
-      }
-    } else {
-      // Delete from database immediately if not a referenced cache file
-      await this.dbManager.execute('DELETE FROM image_files WHERE id = ?', [imageId]);
-      logger.info('Deleted image file record', { imageId });
-    }
+    // Delete from cache (CASCADE will handle library entries automatically)
+    await this.dbManager.execute('DELETE FROM cache_image_files WHERE id = ?', [imageId]);
+    logger.info('Deleted cache image file record', { imageId });
   }
 
   /**
@@ -515,36 +495,27 @@ export class ImageService {
       toPath: libraryPath
     });
 
-    // If this was a cache-only file, create a library entry
-    if (image.location === 'cache') {
-      // Create library file entry linked to cache
-      const db = this.dbManager.getConnection();
+    // Create library file entry linked to cache
+    const db = this.dbManager.getConnection();
+
+    // Check if library entry already exists
+    const existingLibrary = await db.query(
+      'SELECT id FROM library_image_files WHERE cache_file_id = ?',
+      [imageId]
+    );
+
+    if (existingLibrary.length === 0) {
       await db.execute(
-        `INSERT INTO image_files (
-          entity_type, entity_id, file_path, file_name, file_size, file_hash,
-          location, image_type, width, height, format, source_type,
-          is_published, cache_file_id
-        ) VALUES (?, ?, ?, ?, ?, ?, 'library', ?, ?, ?, ?, ?, 1, ?)`,
-        [
-          image.entity_type,
-          image.entity_id,
-          libraryPath,
-          path.basename(libraryPath),
-          image.file_size,
-          image.file_hash,
-          image.image_type,
-          image.width,
-          image.height,
-          image.format,
-          image.source_type,
-          imageId
-        ]
+        `INSERT INTO library_image_files (cache_file_id, file_path) VALUES (?, ?)`,
+        [imageId, libraryPath]
       );
 
       logger.info('Created library file entry linked to cache', {
         cacheFileId: imageId,
         libraryPath
       });
+    } else {
+      logger.debug('Library entry already exists', { cacheFileId: imageId });
     }
   }
 
@@ -558,7 +529,7 @@ export class ImageService {
 
     // Get all cache images for this entity
     const cacheImages = await db.query(
-      `SELECT * FROM image_files WHERE entity_type = ? AND entity_id = ? AND location = 'cache'`,
+      `SELECT * FROM cache_image_files WHERE entity_type = ? AND entity_id = ?`,
       [entityType, entityId]
     );
 
@@ -614,25 +585,8 @@ export class ImageService {
 
         // Create library file entry
         await db.execute(
-          `INSERT INTO image_files (
-            entity_type, entity_id, file_path, file_name, file_size, file_hash,
-            location, image_type, width, height, format, source_type,
-            is_published, cache_file_id
-          ) VALUES (?, ?, ?, ?, ?, ?, 'library', ?, ?, ?, ?, ?, 1, ?)`,
-          [
-            cacheImage.entity_type,
-            cacheImage.entity_id,
-            libraryPath,
-            path.basename(libraryPath),
-            cacheImage.file_size,
-            cacheImage.file_hash,
-            cacheImage.image_type,
-            cacheImage.width,
-            cacheImage.height,
-            cacheImage.format,
-            cacheImage.source_type,
-            cacheImage.id
-          ]
+          `INSERT INTO library_image_files (cache_file_id, file_path) VALUES (?, ?)`,
+          [cacheImage.id, libraryPath]
         );
 
         recoveredCount++;

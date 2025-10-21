@@ -86,8 +86,16 @@ export class App {
       })
     );
 
-    // Body parsing
-    this.express.use(express.json({ limit: '10mb' }));
+    // Body parsing with raw body capture for webhook signature validation
+    this.express.use(
+      express.json({
+        limit: '10mb',
+        verify: (req: any, _res, buf) => {
+          // Store raw body for HMAC signature validation (webhooks)
+          req.rawBody = buf.toString('utf8');
+        },
+      })
+    );
     this.express.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
     // Request logging
@@ -143,8 +151,8 @@ export class App {
     );
     this.express.use('/api', apiRoutes);
 
-    // Webhook routes (with dependency injection) - requires DB connection and connection manager
-    const webhookRoutes = createWebhookRouter(this.dbManager, this.connectionManager);
+    // Webhook routes (with dependency injection) - requires DB connection, connection manager, and job queue
+    const webhookRoutes = createWebhookRouter(this.dbManager, this.connectionManager, this.jobQueueService);
     this.express.use('/webhooks', webhookRoutes);
   }
 

@@ -6,10 +6,11 @@ import { rateLimitByIp } from '../middleware/security.js';
 
 export function createWebhookRouter(
   dbManager: DatabaseManager,
-  connectionManager: MediaPlayerConnectionManager
+  connectionManager: MediaPlayerConnectionManager,
+  jobQueue?: any
 ): Router {
   const router = Router();
-  const webhookController = new WebhookController(dbManager, connectionManager);
+  const webhookController = new WebhookController(dbManager, connectionManager, jobQueue);
 
   // Rate limiting for webhooks - 60 requests per minute
   router.use(rateLimitByIp(60000, 60));

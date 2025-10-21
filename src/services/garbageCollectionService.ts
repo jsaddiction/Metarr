@@ -204,33 +204,33 @@ export class GarbageCollectionService {
       // Build set of all referenced cache paths from database
       const referencedPaths = new Set<string>();
 
-      // Image files
-      const imageFiles = await db.query<{ cache_path: string }>(
-        'SELECT cache_path FROM image_files WHERE cache_path IS NOT NULL',
+      // Image files (cache only)
+      const imageFiles = await db.query<{ file_path: string }>(
+        'SELECT file_path FROM cache_image_files WHERE file_path IS NOT NULL',
         []
       );
-      imageFiles.forEach((f) => referencedPaths.add(f.cache_path));
+      imageFiles.forEach((f) => referencedPaths.add(f.file_path));
 
-      // Video files
-      const videoFiles = await db.query<{ cache_path: string }>(
-        'SELECT cache_path FROM video_files WHERE cache_path IS NOT NULL',
+      // Video files (cache only)
+      const videoFiles = await db.query<{ file_path: string }>(
+        'SELECT file_path FROM cache_video_files WHERE file_path IS NOT NULL',
         []
       );
-      videoFiles.forEach((f) => referencedPaths.add(f.cache_path));
+      videoFiles.forEach((f) => referencedPaths.add(f.file_path));
 
-      // Text files
-      const textFiles = await db.query<{ cache_path: string }>(
-        'SELECT cache_path FROM text_files WHERE cache_path IS NOT NULL',
+      // Text files (cache only)
+      const textFiles = await db.query<{ file_path: string }>(
+        'SELECT file_path FROM cache_text_files WHERE file_path IS NOT NULL',
         []
       );
-      textFiles.forEach((f) => referencedPaths.add(f.cache_path));
+      textFiles.forEach((f) => referencedPaths.add(f.file_path));
 
-      // Audio files
-      const audioFiles = await db.query<{ cache_path: string }>(
-        'SELECT cache_path FROM audio_files WHERE cache_path IS NOT NULL',
+      // Audio files (cache only)
+      const audioFiles = await db.query<{ file_path: string }>(
+        'SELECT file_path FROM cache_audio_files WHERE file_path IS NOT NULL',
         []
       );
-      audioFiles.forEach((f) => referencedPaths.add(f.cache_path));
+      audioFiles.forEach((f) => referencedPaths.add(f.file_path));
 
       // Actor images (will be added later)
       // const actorImages = await db.query<{ image_cache_path: string }>(
