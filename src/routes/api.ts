@@ -27,6 +27,9 @@ import { PriorityConfigService } from '../services/priorityConfigService.js';
 import { PriorityConfigController } from '../controllers/priorityConfigController.js';
 import { AssetConfigService } from '../services/assetConfigService.js';
 import { AssetConfigController } from '../controllers/assetConfigController.js';
+import { WebhookConfigController } from '../controllers/webhookConfigController.js';
+import { WebhookEventsController } from '../controllers/webhookEventsController.js';
+import { ActivityLogController } from '../controllers/activityLogController.js';
 import { ProviderRegistry } from '../services/providers/ProviderRegistry.js';
 import { FetchOrchestrator } from '../services/providers/FetchOrchestrator.js';
 import { SchedulerController } from '../controllers/schedulerController.js';
@@ -112,6 +115,15 @@ export const createApiRouter = (
   const assetConfigService = new AssetConfigService(dbManager);
   const assetConfigController = new AssetConfigController(assetConfigService);
 
+  // Initialize webhook config controller
+  const webhookConfigController = new WebhookConfigController(dbManager);
+
+  // Initialize webhook events controller
+  const webhookEventsController = new WebhookEventsController(dbManager);
+
+  // Initialize activity log controller
+  const activityLogController = new ActivityLogController(dbManager);
+
   // Initialize asset controller
   const assetController = new AssetController(db);
 
@@ -137,21 +149,66 @@ export const createApiRouter = (
   });
 
   // System information
-  router.get('/system/info', (_req, res) => {
-    res.json({
-      name: 'Metarr',
-      version: process.env.npm_package_version || '1.0.0',
-      description: 'Metadata management application bridging downloaders and media players',
-      uptime: process.uptime(),
-      nodeVersion: process.version,
-      platform: process.platform,
-      arch: process.arch,
-      memory: {
-        used: process.memoryUsage(),
-        free: process.memoryUsage().external,
-      },
-    });
+  router.get('/system/info', async (_req, res, next) => {
+    try {
+      // Get database statistics
+      const movieCount = await db.get<{ count: number }>('SELECT COUNT(*) as count FROM movies');
+      const libraryCount = await db.get<{ count: number }>('SELECT COUNT(*) as count FROM libraries');
+      const playerCount = await db.get<{ count: number }>('SELECT COUNT(*) as count FROM media_players');
+
+      // Get job queue statistics
+      const jobStats = await jobQueueService.getStats();
+
+      // Get provider statistics
+      const providerStats = await db.query<{
+        provider: string;
+        last_sync: string | null;
+      }>('SELECT provider, last_sync FROM provider_sync_status');
+
+      res.json({
+        name: 'Metarr',
+        version: process.env.npm_package_version || '1.0.0',
+        description: 'Metadata management application bridging downloaders and media players',
+        uptime: process.uptime(),
+        nodeVersion: process.version,
+        platform: process.platform,
+        arch: process.arch,
+        memory: {
+          used: process.memoryUsage(),
+          free: process.memoryUsage().external,
+        },
+        database: {
+          movies: movieCount?.count || 0,
+          libraries: libraryCount?.count || 0,
+          mediaPlayers: playerCount?.count || 0,
+        },
+        jobQueue: {
+          pending: jobStats.pending,
+          processing: jobStats.processing,
+          total: jobStats.totalActive,
+          oldestPendingAge: jobStats.oldestPendingAge,
+        },
+        providers: providerStats.map((stat) => ({
+          name: stat.provider,
+          lastSync: stat.last_sync,
+        })),
+      });
+    } catch (error: any) {
+      logger.error('Error getting system info:', error);
+      next(error);
+    }
   });
+
+  // Activity Log Routes
+  // ========================================
+  logger.debug('[API Router] Registering activity log routes');
+
+  router.get('/system/activity', (req, res, next) =>
+    activityLogController.getAllActivities(req, res, next)
+  );
+  router.get('/system/activity/:id', (req, res, next) =>
+    activityLogController.getActivityById(req, res, next)
+  );
 
   // Media Player Routes
   router.get('/media-players', (req, res, next) => mediaPlayerController.getAll(req, res, next));
@@ -558,6 +615,32 @@ export const createApiRouter = (
   );
   router.post('/settings/asset-limits/reset-all', (req, res, next) =>
     assetConfigController.resetAllLimits(req, res, next)
+  );
+
+  // ========================================
+  // Webhook Configuration Routes
+  // ========================================
+  logger.debug('[API Router] Registering webhook configuration routes');
+
+  router.get('/settings/webhooks', (req, res, next) =>
+    webhookConfigController.getAllWebhooks(req, res, next)
+  );
+  router.get('/settings/webhooks/:service', (req, res, next) =>
+    webhookConfigController.getWebhook(req, res, next)
+  );
+  router.put('/settings/webhooks/:service', (req, res, next) =>
+    webhookConfigController.updateWebhook(req, res, next)
+  );
+
+  // Webhook Events Routes
+  // ========================================
+  logger.debug('[API Router] Registering webhook events routes');
+
+  router.get('/webhooks/events', (req, res, next) =>
+    webhookEventsController.getAllEvents(req, res, next)
+  );
+  router.get('/webhooks/events/:id', (req, res, next) =>
+    webhookEventsController.getEventById(req, res, next)
   );
 
   // Scheduler routes (only if scheduler controller is available)
