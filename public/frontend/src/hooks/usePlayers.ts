@@ -3,6 +3,7 @@
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { mediaPlayerApi } from '../utils/api';
 import {
   MediaPlayer,
@@ -12,6 +13,7 @@ import {
 } from '../types/mediaPlayer';
 import { useWebSocket } from '../contexts/WebSocketContext';
 import { useEffect, useState } from 'react';
+import { showErrorToast, showSuccessToast } from '../utils/errorHandling';
 
 /**
  * Fetch all media players
@@ -59,6 +61,10 @@ export const useCreatePlayer = () => {
     mutationFn: (data: MediaPlayerFormData) => mediaPlayerApi.create(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['players'] });
+      showSuccessToast('Media player created successfully');
+    },
+    onError: (error) => {
+      showErrorToast(error, 'Create media player');
     },
   });
 };
@@ -89,6 +95,10 @@ export const useUpdatePlayer = () => {
     onSuccess: (data, { id }) => {
       queryClient.invalidateQueries({ queryKey: ['players'] });
       queryClient.invalidateQueries({ queryKey: ['player', id] });
+      showSuccessToast('Media player updated successfully');
+    },
+    onError: (error) => {
+      showErrorToast(error, 'Update media player');
     },
   });
 };
@@ -103,6 +113,10 @@ export const useDeletePlayer = () => {
     mutationFn: (id: number) => mediaPlayerApi.delete(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['players'] });
+      showSuccessToast('Media player deleted successfully');
+    },
+    onError: (error) => {
+      showErrorToast(error, 'Delete media player');
     },
   });
 };

@@ -13,6 +13,7 @@ import {
 } from '../types/library';
 import { useWebSocket } from '../contexts/WebSocketContext';
 import { useEffect, useState } from 'react';
+import { showErrorToast, showSuccessToast } from '../utils/errorHandling';
 
 /**
  * Fetch all libraries
@@ -105,6 +106,10 @@ export const useCreateLibrary = () => {
     mutationFn: (data: LibraryFormData) => libraryApi.create(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['libraries'] });
+      showSuccessToast('Library created successfully');
+    },
+    onError: (error) => {
+      showErrorToast(error, 'Create library');
     },
   });
 };
@@ -120,6 +125,10 @@ export const useUpdateLibrary = () => {
     onSuccess: (data, { id }) => {
       queryClient.invalidateQueries({ queryKey: ['libraries'] });
       queryClient.invalidateQueries({ queryKey: ['library', id] });
+      showSuccessToast('Library updated successfully');
+    },
+    onError: (error) => {
+      showErrorToast(error, 'Update library');
     },
   });
 };
@@ -144,6 +153,11 @@ export const useDeleteLibrary = () => {
       // Clear any individual movie/series queries
       queryClient.removeQueries({ queryKey: ['movie'] });
       queryClient.removeQueries({ queryKey: ['series'] });
+
+      showSuccessToast('Library deleted successfully');
+    },
+    onError: (error) => {
+      showErrorToast(error, 'Delete library');
     },
   });
 };
@@ -162,6 +176,10 @@ export const useStartLibraryScan = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['activeScans'] });
+      showSuccessToast('Library scan started');
+    },
+    onError: (error) => {
+      showErrorToast(error, 'Start library scan');
     },
   });
 };

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import Fuse from 'fuse.js';
 import { ViewControls, ViewMode } from '../../components/ui/ViewControls';
 import { VirtualizedMovieTable } from '../../components/movie/VirtualizedMovieTable';
-import { Movie } from '../../types/movie';
+import { MovieListItem } from '../../types/movie';
 import { useMovies } from '../../hooks/useMovies';
 
 export const Movies: React.FC = () => {
@@ -16,6 +16,7 @@ export const Movies: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [viewMode, setViewMode] = useState<ViewMode>('table');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
 
   // Debounce search input for performance
   useEffect(() => {
@@ -36,23 +37,32 @@ export const Movies: React.FC = () => {
     });
   }, [movies]);
 
-  // Filter movies based on debounced search term
+  // Filter movies based on debounced search term and status
   const filteredMovies = useMemo(() => {
-    if (!debouncedSearchTerm.trim()) {
-      return movies;
+    let result = movies;
+
+    // Apply search filter
+    if (debouncedSearchTerm.trim()) {
+      result = fuse.search(debouncedSearchTerm).map((r) => r.item);
     }
-    return fuse.search(debouncedSearchTerm).map((result) => result.item);
-  }, [debouncedSearchTerm, movies, fuse]);
+
+    // Apply status filter
+    if (statusFilter !== 'all') {
+      result = result.filter((m) => m.identification_status === statusFilter);
+    }
+
+    return result;
+  }, [debouncedSearchTerm, statusFilter, movies, fuse]);
 
   const handleRefresh = async () => {
     refetch();
   };
 
-  const handleMovieClick = (movie: Movie) => {
+  const handleMovieClick = (movie: MovieListItem) => {
     navigate(`/metadata/movies/${movie.id}/edit`);
   };
 
-  const handleRefreshClick = (movie: Movie) => {
+  const handleRefreshClick = (movie: MovieListItem) => {
     console.log('Refreshing metadata for:', movie.title);
     // TODO: Implement metadata refresh for individual movie
   };
@@ -113,13 +123,26 @@ export const Movies: React.FC = () => {
             onRefresh={handleRefresh}
             onSortChange={handleSortChange}
             onFilterChange={handleFilterChange}
-          />
+          >
+            {/* Status Filter Dropdown */}
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="bg-neutral-800 border border-neutral-700 rounded px-3 py-1.5 text-sm text-neutral-200 hover:bg-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-500"
+              aria-label="Filter by enrichment status"
+            >
+              <option value="all">All Status</option>
+              <option value="unidentified">Unidentified</option>
+              <option value="identified">Enriching</option>
+              <option value="enriched">Enriched</option>
+            </select>
+          </ViewControls>
         </div>
 
         <div className="content-spacing">
           <div className="flex flex-col items-center justify-center py-20 text-neutral-400">
             <p className="text-lg">No movies matching "{searchTerm}"</p>
-            <p className="text-sm mt-2">Try adjusting your search terms</p>
+            <p className="text-sm mt-2">Try adjusting your search terms or status filter</p>
           </div>
         </div>
       </>
@@ -139,7 +162,20 @@ export const Movies: React.FC = () => {
           onRefresh={handleRefresh}
           onSortChange={handleSortChange}
           onFilterChange={handleFilterChange}
-        />
+        >
+          {/* Status Filter Dropdown */}
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="bg-neutral-800 border border-neutral-700 rounded px-3 py-1.5 text-sm text-neutral-200 hover:bg-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-500"
+            aria-label="Filter by enrichment status"
+          >
+            <option value="all">All Status</option>
+            <option value="unidentified">Unidentified</option>
+            <option value="identified">Enriching</option>
+            <option value="enriched">Enriched</option>
+          </select>
+        </ViewControls>
       </div>
 
       <div className="content-spacing">

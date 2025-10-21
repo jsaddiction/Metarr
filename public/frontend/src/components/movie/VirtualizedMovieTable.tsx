@@ -1,13 +1,14 @@
 import React from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faBolt } from '@fortawesome/free-solid-svg-icons';
-import { Movie } from '../../types/movie';
+import { MovieListItem } from '../../types/movie';
 import { MovieRow } from './MovieRow';
+import { EnrichmentStatusBadge } from './EnrichmentStatusBadge';
 
 interface VirtualizedMovieTableProps {
-  movies: Movie[];
-  onMovieClick?: (movie: Movie) => void;
-  onRefreshClick?: (movie: Movie) => void;
+  movies: MovieListItem[];
+  onMovieClick?: (movie: MovieListItem) => void;
+  onRefreshClick?: (movie: MovieListItem) => void;
 }
 
 export const VirtualizedMovieTable: React.FC<VirtualizedMovieTableProps> = ({
@@ -27,6 +28,9 @@ export const VirtualizedMovieTable: React.FC<VirtualizedMovieTableProps> = ({
               </th>
               <th className="h-10 px-2 text-left align-middle font-medium text-muted-foreground w-[25%]">
                 Movie Title
+              </th>
+              <th className="h-10 px-2 text-left align-middle font-medium text-muted-foreground w-[140px]">
+                Status
               </th>
               <th className="h-10 px-2 text-left align-middle font-medium text-muted-foreground">
                 Metadata

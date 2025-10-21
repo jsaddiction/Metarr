@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { parseApiError } from '../utils/errorHandling';
 
 interface JobHistoryRecord {
   id: number;
@@ -26,9 +27,9 @@ interface JobHistoryResponse {
 }
 
 export function useJobHistory(filters?: JobHistoryFilters) {
-  return useQuery({
+  return useQuery<JobHistoryResponse, Error>({
     queryKey: ['jobs', 'history', filters],
-    queryFn: async (): Promise<JobHistoryResponse> => {
+    queryFn: async () => {
       const params = new URLSearchParams();
       if (filters?.limit) params.set('limit', filters.limit.toString());
       if (filters?.type) params.set('type', filters.type);
@@ -36,10 +37,12 @@ export function useJobHistory(filters?: JobHistoryFilters) {
 
       const response = await fetch(`/api/jobs/history?${params}`);
       if (!response.ok) {
-        throw new Error('Failed to fetch job history');
+        const errorMessage = await parseApiError(response);
+        throw new Error(errorMessage);
       }
       return response.json();
     },
+    retry: 1,
     staleTime: 30000, // Consider data fresh for 30 seconds
   });
 }

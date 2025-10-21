@@ -9,6 +9,7 @@ import {
   UpdateProviderRequest,
   TestProviderResponse,
 } from '../types/provider';
+import { showErrorToast, showSuccessToast } from '../utils/errorHandling';
 
 /**
  * Fetch all providers with their metadata
@@ -42,6 +43,10 @@ export const useUpdateProvider = () => {
     onSuccess: (data, { name }) => {
       queryClient.invalidateQueries({ queryKey: ['providers'] });
       queryClient.invalidateQueries({ queryKey: ['provider', name] });
+      showSuccessToast('Provider configuration updated successfully');
+    },
+    onError: (error) => {
+      showErrorToast(error, 'Update provider');
     },
   });
 };
@@ -65,6 +70,10 @@ export const useDisableProvider = () => {
     mutationFn: (name: string) => providerApi.disable(name),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['providers'] });
+      showSuccessToast('Provider disabled successfully');
+    },
+    onError: (error) => {
+      showErrorToast(error, 'Disable provider');
     },
   });
 };

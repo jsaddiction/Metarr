@@ -38,6 +38,11 @@ const queryClient = new QueryClient({
       staleTime: Infinity, // Data is fresh until explicitly invalidated
       refetchOnWindowFocus: false, // Don't refetch on window focus
       retry: 1, // Only retry once on failure
+      useErrorBoundary: false, // Handle errors in components, not error boundary
+    },
+    mutations: {
+      useErrorBoundary: false, // Handle mutation errors in components
+      retry: false, // Don't retry mutations by default (user actions should be explicit)
     },
   },
 });

@@ -327,7 +327,7 @@ export const MovieEdit: React.FC = () => {
         </AnimatedTabsContent>
 
         <AnimatedTabsContent value="images">
-          {id && <ImagesTab movieId={parseInt(id)} />}
+          {id && <ImagesTab movieId={parseInt(id)} movieTitle={movie?.title} />}
         </AnimatedTabsContent>
 
         <AnimatedTabsContent value="cast">

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faExternalLinkAlt } from '@fortawesome/free-solid-svg-icons';
 import { useMovie } from '../../hooks/useMovies';
+import { useToggleLockField } from '../../hooks/useLockField';
 import { SaveBar } from '../common/SaveBar';
 import { GridField } from './GridField';
 import { TextAreaField } from './TextAreaField';
@@ -52,6 +53,9 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
   // Use TanStack Query to fetch movie data
   const { data: movieData, isLoading: loading } = useMovie(movieId);
 
+  // Use lock field mutation hook
+  const toggleLockField = useToggleLockField();
+
   const [metadata, setMetadata] = useState<MovieMetadata | null>(null);
   const [originalMetadata, setOriginalMetadata] = useState<MovieMetadata | null>(null);
   const [saving, setSaving] = useState(false);
@@ -100,19 +104,28 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
     });
   }, []);
 
-  const toggleFieldLock = useCallback((field: string) => {
+  const handleToggleLock = useCallback((field: string) => {
+    if (!metadata) return;
+
+    const lockField = `${field}_locked` as keyof MovieMetadata;
+    const currentlyLocked = Boolean(metadata[lockField]);
+
+    // Call the backend API to toggle the lock
+    toggleLockField.mutate({
+      movieId,
+      fieldName: field,
+      currentlyLocked,
+    });
+
+    // Optimistically update local state
     setMetadata((prev) => {
       if (!prev) return prev;
-
-      const lockField = `${field}_locked` as keyof MovieMetadata;
-      const newLockedValue = !prev[lockField];
-
       return {
         ...prev,
-        [lockField]: newLockedValue,
+        [lockField]: !currentlyLocked,
       };
     });
-  }, []);
+  }, [metadata, movieId, toggleLockField]);
 
   const handleSave = async () => {
     if (!metadata) return;
@@ -233,7 +246,7 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
               value={metadata.title}
               locked={metadata.title_locked}
               onChange={(val) => handleFieldChange('title', val)}
-              onToggleLock={toggleFieldLock}
+              onToggleLock={handleToggleLock}
               className="col-span-3"
             />
             <GridField
@@ -243,7 +256,7 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
               locked={metadata.year_locked}
               type="number"
               onChange={(val) => handleFieldChange('year', val)}
-              onToggleLock={toggleFieldLock}
+              onToggleLock={handleToggleLock}
             />
           </div>
 
@@ -255,7 +268,7 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
               value={metadata.original_title}
               locked={metadata.original_title_locked}
               onChange={(val) => handleFieldChange('original_title', val)}
-              onToggleLock={toggleFieldLock}
+              onToggleLock={handleToggleLock}
             />
             <GridField
               label="Sort Title"
@@ -263,7 +276,7 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
               value={metadata.sort_title}
               locked={metadata.sort_title_locked}
               onChange={(val) => handleFieldChange('sort_title', val)}
-              onToggleLock={toggleFieldLock}
+              onToggleLock={handleToggleLock}
             />
           </div>
 
@@ -275,7 +288,7 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
               value={metadata.mpaa}
               locked={metadata.mpaa_locked}
               onChange={(val) => handleFieldChange('mpaa', val)}
-              onToggleLock={toggleFieldLock}
+              onToggleLock={handleToggleLock}
             />
             <GridField
               label="Premiered"
@@ -284,7 +297,7 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
               locked={metadata.premiered_locked}
               type="date"
               onChange={(val) => handleFieldChange('premiered', val)}
-              onToggleLock={toggleFieldLock}
+              onToggleLock={handleToggleLock}
             />
             <GridField
               label="User Rating"
@@ -293,7 +306,7 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
               locked={metadata.user_rating_locked}
               type="number"
               onChange={(val) => handleFieldChange('user_rating', val)}
-              onToggleLock={toggleFieldLock}
+              onToggleLock={handleToggleLock}
             />
             <GridField
               label="Tagline"
@@ -301,7 +314,7 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
               value={metadata.tagline}
               locked={metadata.tagline_locked}
               onChange={(val) => handleFieldChange('tagline', val)}
-              onToggleLock={toggleFieldLock}
+              onToggleLock={handleToggleLock}
             />
           </div>
 
@@ -312,7 +325,7 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
             value={metadata.outline}
             locked={metadata.outline_locked}
             onChange={(val) => handleFieldChange('outline', val)}
-            onToggleLock={toggleFieldLock}
+            onToggleLock={handleToggleLock}
             rows={2}
           />
 
@@ -323,7 +336,7 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
             value={metadata.plot}
             locked={metadata.plot_locked}
             onChange={(val) => handleFieldChange('plot', val)}
-            onToggleLock={toggleFieldLock}
+            onToggleLock={handleToggleLock}
             rows={3}
           />
 
@@ -348,7 +361,7 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
               value={metadata.trailer_url}
               locked={metadata.trailer_url_locked}
               onChange={(val) => handleFieldChange('trailer_url', val)}
-              onToggleLock={toggleFieldLock}
+              onToggleLock={handleToggleLock}
             />
           </div>
 

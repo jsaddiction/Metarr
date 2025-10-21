@@ -113,6 +113,8 @@ export interface QueueStats {
   processing: number;
   totalActive: number;
   oldestPendingAge: number | null; // milliseconds
+  completed?: number; // Completed in last hour (optional for backend compatibility)
+  failed?: number; // Failed in last hour (optional for backend compatibility)
 }
 
 /**
@@ -197,4 +199,11 @@ export interface IJobQueueStorage {
    * @returns Queue statistics
    */
   getStats(): Promise<QueueStats>;
+
+  /**
+   * Get recent jobs (active + recently completed/failed)
+   * Used by frontend to show current job activity
+   * @returns List of recent jobs
+   */
+  getRecentJobs?(): Promise<Job[]>;
 }

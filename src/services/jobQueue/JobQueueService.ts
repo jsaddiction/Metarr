@@ -276,6 +276,18 @@ export class JobQueueService {
   }
 
   /**
+   * Get recent jobs (active + recently completed/failed in last hour)
+   * Used by frontend for job monitoring
+   */
+  async getRecentJobs(): Promise<Job[]> {
+    // Use storage method if available, otherwise fall back to active jobs only
+    if (this.storage.getRecentJobs) {
+      return await this.storage.getRecentJobs();
+    }
+    return await this.storage.listJobs();
+  }
+
+  /**
    * Get queue statistics
    */
   async getStats(): Promise<QueueStats> {

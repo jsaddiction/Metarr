@@ -389,7 +389,10 @@ export class SQLiteJobQueueStorage implements IJobQueueStorage {
   }
 
   async getStats(): Promise<QueueStats> {
-    const stats = await this.db.query<any>(
+    const oneHourAgo = new Date(Date.now() - 3600000).toISOString();
+
+    // Get active queue stats
+    const queueStats = await this.db.query<any>(
       `SELECT
         SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
         SUM(CASE WHEN status = 'processing' THEN 1 ELSE 0 END) as processing,
@@ -399,13 +402,80 @@ export class SQLiteJobQueueStorage implements IJobQueueStorage {
        FROM job_queue`
     );
 
-    const row = stats[0];
+    // Get recent history stats (last hour)
+    const historyStats = await this.db.query<any>(
+      `SELECT
+        SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
+        SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed
+       FROM job_history
+       WHERE completed_at > ?`,
+      [oneHourAgo]
+    );
+
+    const queueRow = queueStats[0];
+    const historyRow = historyStats[0];
 
     return {
-      pending: row.pending || 0,
-      processing: row.processing || 0,
-      totalActive: (row.pending || 0) + (row.processing || 0),
-      oldestPendingAge: row.oldest_pending_age || null,
+      pending: queueRow.pending || 0,
+      processing: queueRow.processing || 0,
+      totalActive: (queueRow.pending || 0) + (queueRow.processing || 0),
+      oldestPendingAge: queueRow.oldest_pending_age || null,
+      completed: historyRow.completed || 0,
+      failed: historyRow.failed || 0,
     };
+  }
+
+  /**
+   * Get recent jobs (active + recently completed/failed)
+   * Used by frontend to show current job activity
+   */
+  async getRecentJobs(): Promise<Job[]> {
+    const oneHourAgo = new Date(Date.now() - 3600000).toISOString();
+
+    // Get all active jobs
+    const activeJobs = await this.listJobs();
+
+    // Get recent history (last hour)
+    const recentHistory = await this.db.query<any>(
+      `SELECT * FROM job_history
+       WHERE completed_at > ?
+       ORDER BY completed_at DESC
+       LIMIT 50`,
+      [oneHourAgo]
+    );
+
+    // Convert history records to Job format (for frontend compatibility)
+    const historyAsJobs: Job[] = recentHistory.map((record) => ({
+      id: record.job_id,
+      type: record.type,
+      priority: record.priority,
+      payload: JSON.parse(record.payload),
+      status: record.status === 'completed' ? 'completed' : 'failed',
+      error: record.error,
+      retry_count: record.retry_count,
+      max_retries: 0, // History records don't retry
+      created_at: record.created_at,
+      started_at: record.started_at,
+      updated_at: record.completed_at,
+    })) as any;
+
+    // Combine and sort by priority (active first) then by created_at
+    return [...activeJobs, ...historyAsJobs].sort((a, b) => {
+      // Active jobs first
+      const aIsActive = a.status === 'pending' || a.status === 'processing';
+      const bIsActive = b.status === 'pending' || b.status === 'processing';
+      if (aIsActive && !bIsActive) return -1;
+      if (!aIsActive && bIsActive) return 1;
+
+      // Then by priority
+      if (a.priority !== b.priority) return a.priority - b.priority;
+
+      // Then by created_at (newest first for completed, oldest first for active)
+      if (aIsActive) {
+        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+      } else {
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      }
+    });
   }
 }

@@ -2,10 +2,12 @@
  * WebSocket Context - Provides WebSocket connection to React components
  */
 
-import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useEffect, useState, useRef, useCallback, ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { ResilientWebSocket } from '../services/ResilientWebSocket';
 import { ConnectionState, ServerMessage } from '../types/websocket';
+import { Job } from '../hooks/useJobs';
 
 interface WebSocketContextValue {
   ws: ResilientWebSocket | null;
@@ -26,6 +28,10 @@ let globalConnectionState: ConnectionState = 'disconnected';
 export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({ children }) => {
   const queryClient = useQueryClient();
   const [connectionState, setConnectionState] = useState<ConnectionState>(globalConnectionState);
+
+  // Batching for enrichment updates (avoid UI spam during bulk enrichment)
+  const enrichmentBatchRef = useRef<Set<number>>(new Set());
+  const enrichmentTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     // Only create WebSocket if it doesn't exist
@@ -52,6 +58,16 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({ children }
       globalWs.onStateChange((state) => {
         globalConnectionState = state;
         setConnectionState(state);
+
+        // Show toast notifications for connection state changes (except initial connection)
+        if (state === 'error') {
+          console.error('[WebSocket] Connection error');
+          // Don't show toast on initial connection error (too spammy)
+        } else if (state === 'connected' && globalWs && (globalWs as any).reconnectAttempts > 0) {
+          toast.success('WebSocket reconnected', {
+            description: 'Real-time updates restored',
+          });
+        }
       });
 
       // Subscribe to server messages and invalidate queries
@@ -72,6 +88,37 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({ children }
   }, []);
 
   /**
+   * Batch enrichment updates to avoid spamming the UI
+   * Collects movie IDs and flushes after 500ms of no new updates
+   */
+  const batchEnrichmentUpdate = useCallback((movieId: number) => {
+    enrichmentBatchRef.current.add(movieId);
+
+    // Clear existing timer
+    if (enrichmentTimerRef.current) {
+      clearTimeout(enrichmentTimerRef.current);
+    }
+
+    // Flush batch after 500ms of no new updates
+    enrichmentTimerRef.current = setTimeout(() => {
+      const batch = Array.from(enrichmentBatchRef.current);
+      enrichmentBatchRef.current.clear();
+
+      console.log(`[WebSocket] Flushing batch of ${batch.length} enrichment updates`);
+
+      // Invalidate queries for all movies in batch
+      batch.forEach((id) => {
+        queryClient.invalidateQueries({ queryKey: ['movie', id] });
+        queryClient.invalidateQueries({ queryKey: ['movieImages', id] });
+        queryClient.invalidateQueries({ queryKey: ['movieExtras', id] });
+      });
+
+      // Refetch movies list once for all updates
+      queryClient.refetchQueries({ queryKey: ['movies'] });
+    }, 500);
+  }, [queryClient]);
+
+  /**
    * Handle server messages and invalidate relevant queries
    */
   const handleServerMessage = React.useCallback((message: ServerMessage) => {
@@ -81,20 +128,18 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({ children }
         break;
 
       case 'moviesChanged':
-        // Invalidate and refetch movies queries immediately
-        queryClient.invalidateQueries({ queryKey: ['movies'] });
-        // Force refetch by using refetchQueries (not just invalidate)
-        queryClient.refetchQueries({ queryKey: ['movies'] });
+        // Use batching for enrichment updates (avoid UI spam during bulk enrichment)
+        if (message.movieIds && message.movieIds.length > 0) {
+          // Batch updates for enrichment to avoid spamming
+          message.movieIds.forEach((id) => batchEnrichmentUpdate(id));
 
-        // Also invalidate actors since they're discovered during movie scanning
-        queryClient.invalidateQueries({ queryKey: ['actors'] });
-
-        if (message.movieIds.length > 0) {
-          message.movieIds.forEach((id) => {
-            queryClient.invalidateQueries({ queryKey: ['movie', id] });
-            queryClient.invalidateQueries({ queryKey: ['movieImages', id] });
-            queryClient.invalidateQueries({ queryKey: ['movieExtras', id] });
-          });
+          // Also invalidate actors since they're discovered during movie scanning
+          queryClient.invalidateQueries({ queryKey: ['actors'] });
+        } else {
+          // Non-enrichment updates (immediate refetch)
+          queryClient.invalidateQueries({ queryKey: ['movies'] });
+          queryClient.refetchQueries({ queryKey: ['movies'] });
+          queryClient.invalidateQueries({ queryKey: ['actors'] });
         }
         break;
 
@@ -149,11 +194,45 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({ children }
         queryClient.invalidateQueries();
         break;
 
+      case 'job:started':
+        // Job started - invalidate jobs list and stats
+        queryClient.invalidateQueries({ queryKey: ['jobs'] });
+        queryClient.invalidateQueries({ queryKey: ['jobStats'] });
+        break;
+
+      case 'job:progress':
+        // Update specific job progress optimistically
+        if ((message as any).jobId !== undefined) {
+          queryClient.setQueryData<Job[]>(['jobs'], (old) => {
+            if (!old) return old;
+            return old.map(job =>
+              job.id === (message as any).jobId
+                ? { ...job, progress: (message as any).progress, message: (message as any).message }
+                : job
+            );
+          });
+        }
+        break;
+
+      case 'job:completed':
+        // Job completed - invalidate jobs list and stats
+        queryClient.invalidateQueries({ queryKey: ['jobs'] });
+        queryClient.invalidateQueries({ queryKey: ['jobStats'] });
+        toast.success(`Job completed: ${(message as any).type || 'Unknown'}`);
+        break;
+
+      case 'job:failed':
+        // Job failed - invalidate jobs list and stats
+        queryClient.invalidateQueries({ queryKey: ['jobs'] });
+        queryClient.invalidateQueries({ queryKey: ['jobStats'] });
+        toast.error(`Job failed: ${(message as any).error || 'Unknown error'}`);
+        break;
+
       default:
         // Handle other message types
         break;
     }
-  }, [queryClient]);
+  }, [queryClient, batchEnrichmentUpdate]);
 
   const value: WebSocketContextValue = {
     ws: globalWs,

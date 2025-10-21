@@ -14,7 +14,7 @@ import {
   ScanCompletedEvent,
   ScanFailedEvent,
 } from '../types/library';
-import { Movie, MovieListResult } from '../types/movie';
+import { MovieListItem, MovieDetail, MovieListResult } from '../types/movie';
 import {
   ProviderWithMetadata,
   UpdateProviderRequest,
@@ -374,8 +374,8 @@ export const movieApi = {
    * Subscribe to real-time movie updates via Server-Sent Events
    */
   subscribeToUpdates(
-    onAdded?: (movies: Movie[]) => void,
-    onUpdated?: (movie: Movie) => void,
+    onAdded?: (movies: MovieListItem[]) => void,
+    onUpdated?: (movie: MovieListItem) => void,
     onRemoved?: (id: number) => void
   ): () => void {
     const eventSource = new EventSource(`${API_BASE_URL}/movies/updates`);

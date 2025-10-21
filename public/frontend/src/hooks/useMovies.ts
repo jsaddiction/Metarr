@@ -3,9 +3,11 @@
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { movieApi } from '../utils/api';
-import { Movie, MovieListResult } from '../types/movie';
+import { MovieListItem, MovieDetail, MovieListResult } from '../types/movie';
 import { useWebSocket } from '../contexts/WebSocketContext';
+import { parseApiError } from '../utils/errorHandling';
 
 interface UseMoviesOptions {
   status?: string;
@@ -19,7 +21,23 @@ interface UseMoviesOptions {
 export const useMovies = (options?: UseMoviesOptions) => {
   return useQuery<MovieListResult, Error>({
     queryKey: options ? ['movies', options] : ['movies'],
-    queryFn: () => movieApi.getAll(options),
+    queryFn: async () => {
+      console.log('[useMovies] Fetching movies with options:', options);
+      try {
+        const result = await movieApi.getAll(options);
+        console.log('[useMovies] Received result:', result);
+        console.log('[useMovies] Movies count:', result?.movies?.length || 0);
+        return result;
+      } catch (error) {
+        console.error('[useMovies] Error fetching movies:', error);
+        const errorMessage = await parseApiError(error as Response).catch(() =>
+          error instanceof Error ? error.message : 'Failed to fetch movies'
+        );
+        throw new Error(errorMessage);
+      }
+    },
+    retry: 1,
+    staleTime: 5 * 60 * 1000, // 5 minutes - will be updated via WebSocket when changed
   });
 };
 
@@ -35,7 +53,7 @@ export const useMovies = (options?: UseMoviesOptions) => {
  * - useMovie(1, ['files', 'candidates', 'locks']) - Full data
  */
 export const useMovie = (id?: number | null, include?: string[]) => {
-  return useQuery<Movie, Error>({
+  return useQuery<MovieDetail, Error>({
     queryKey: include ? ['movie', id, include] : ['movie', id],
     queryFn: async () => {
       if (!id) throw new Error('Movie ID is required');
@@ -50,12 +68,14 @@ export const useMovie = (id?: number | null, include?: string[]) => {
       const response = await fetch(url);
 
       if (!response.ok) {
-        throw new Error(`Failed to fetch movie: ${response.statusText}`);
+        const errorMessage = await parseApiError(response);
+        throw new Error(errorMessage);
       }
 
       return response.json();
     },
     enabled: !!id,
+    retry: 1,
     staleTime: 5 * 60 * 1000, // 5 minutes - will be updated via WebSocket when changed
   });
 };
@@ -67,7 +87,7 @@ export const useUpdateMovie = () => {
   const queryClient = useQueryClient();
   const { ws } = useWebSocket();
 
-  return useMutation<Movie, Error, { id: number; updates: Partial<Movie> }>({
+  return useMutation<MovieListItem, Error, { id: number; updates: Partial<MovieDetail> }>({
     mutationFn: async ({ id, updates }) => {
       // Send update via WebSocket if connected
       if (ws && ws.getState() === 'connected') {
@@ -96,7 +116,7 @@ export const useUpdateMovie = () => {
 
       // Snapshot previous values
       const previousMovies = queryClient.getQueryData<MovieListResult>(['movies']);
-      const previousMovie = queryClient.getQueryData<Movie>(['movie', id]);
+      const previousMovie = queryClient.getQueryData<MovieDetail>(['movie', id]);
 
       // Optimistically update to the new value
       if (previousMovies) {
@@ -109,7 +129,7 @@ export const useUpdateMovie = () => {
       }
 
       if (previousMovie) {
-        queryClient.setQueryData<Movie>(['movie', id], { ...previousMovie, ...updates });
+        queryClient.setQueryData<MovieDetail>(['movie', id], { ...previousMovie, ...updates });
       }
 
       // Return snapshot for rollback
@@ -123,6 +143,12 @@ export const useUpdateMovie = () => {
       if (context?.previousMovie) {
         queryClient.setQueryData(['movie', id], context.previousMovie);
       }
+
+      // Show error toast
+      toast.error('Failed to update movie', {
+        description: err.message,
+      });
+
       console.error('Failed to update movie:', err);
     },
     onSettled: (data, error, { id }) => {
@@ -141,11 +167,23 @@ export const useDeleteMovie = () => {
 
   return useMutation<void, Error, number>({
     mutationFn: async (id: number) => {
-      // TODO: Implement delete endpoint in backend
-      throw new Error('Delete movie not yet implemented');
+      const response = await fetch(`/api/movies/${id}`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) {
+        const errorMessage = await parseApiError(response);
+        throw new Error(errorMessage);
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['movies'] });
+      toast.success('Movie deleted successfully');
+    },
+    onError: (error) => {
+      toast.error('Failed to delete movie', {
+        description: error.message,
+      });
     },
   });
 };

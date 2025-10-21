@@ -3,7 +3,7 @@
  */
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Movie, MovieListResult } from '../types/movie';
+import { MovieListItem, MovieDetail, MovieListResult } from '../types/movie';
 import { toast } from 'sonner';
 
 interface LockFieldRequest {

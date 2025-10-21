@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { parseApiError } from '../utils/errorHandling';
 
 interface Actor {
   id: number;
@@ -23,15 +24,17 @@ interface ActorListResult {
 }
 
 export const useActors = () => {
-  return useQuery<ActorListResult>({
+  return useQuery<ActorListResult, Error>({
     queryKey: ['actors'],
     queryFn: async () => {
       const response = await fetch('/api/actors?limit=10000'); // Fetch all actors at once
       if (!response.ok) {
-        throw new Error('Failed to fetch actors');
+        const errorMessage = await parseApiError(response);
+        throw new Error(errorMessage);
       }
       return response.json();
     },
+    retry: 1,
     staleTime: 5 * 60 * 1000, // 5 minutes - will be updated via WebSocket when changed
   });
 };

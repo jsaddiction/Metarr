@@ -1,482 +1,366 @@
 /**
  * AssetSelectionModal Component
  *
- * Two-section modal for multi-asset selection:
- * - Top: Currently selected assets (clickable to remove)
- * - Bottom: Available provider results (clickable to add)
+ * Full-viewport modal with split-pane layout for asset selection.
+ * Left Pane (30%): Current selection with large preview
+ * Right Pane (70%): Candidate grid with filters and sorting
+ *
+ * Design Philosophy:
+ * - Desktop-first (optimized for 1920x1080+ screens)
+ * - Visual-first decision making (large previews, minimal metadata)
+ * - Instant feedback (no loading spinners for local actions)
  */
 
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
-  faSpinner,
-  faCheck,
   faTimes,
+  faLock,
+  faLockOpen,
+  faTrash,
+  faSpinner,
   faExclamationTriangle,
-  faUpload,
 } from '@fortawesome/free-solid-svg-icons';
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import type { AssetType, AssetCandidate } from '../../types/asset';
-import { getProviderDisplayName } from '../../utils/providerNames';
-
-interface CurrentAsset {
-  id: number;
-  source_url: string | null;  // Original provider URL
-  cache_url: string;          // Cache serving URL
-  provider_name?: string | null;
-  width?: number | null;
-  height?: number | null;
-  perceptualHash?: string;
-}
-
-interface ProviderAssetResult {
-  images?: {
-    [key in AssetType]?: AssetCandidate[];
-  };
-  success: boolean;
-  error?: string;
-}
-
-interface ProviderResultsResponse {
-  providers: {
-    [providerName: string]: ProviderAssetResult;
-  };
-}
+import { useAssetCandidates, useSelectAsset, useBlockAsset, AssetCandidate } from '../../hooks/useAssetCandidates';
+import type { AssetType } from '../../types/asset';
 
 interface AssetSelectionModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (selectedAssets: Array<{ asset: AssetCandidate; provider: string }>) => Promise<void>;
-  onUpload?: (file: File) => Promise<void>;
   assetType: AssetType;
   assetTypeLabel: string;
-  currentAssets: CurrentAsset[];
-  maxLimit: number;
-  providerResults?: ProviderResultsResponse;
-  isLoading?: boolean;
-  isSaving?: boolean;
-  error?: Error | null;
+  movieTitle: string;
+  movieId: number;
+  currentAssetUrl?: string;
+  currentAssetId?: number;
 }
-
-// Aspect ratios for most asset types - clearlogo uses fixed height instead
-const ASSET_TYPE_ASPECT_RATIOS: Partial<Record<AssetType, string>> = {
-  poster: 'aspect-[2/3]',
-  fanart: 'aspect-[16/9]',
-  banner: 'aspect-[1000/185]',
-  // clearlogo: removed - uses fixed height with object-contain instead (variable aspect ratios)
-  clearart: 'aspect-[1000/562]',
-  landscape: 'aspect-[16/9]',
-  keyart: 'aspect-[2/3]',
-  discart: 'aspect-square',
-};
-
-// Grid columns based on asset type (responsive: mobile / tablet / desktop / xl)
-const ASSET_TYPE_GRID_COLS: Record<AssetType, string> = {
-  poster: 'grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8',       // Tall/portrait: more columns
-  keyart: 'grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8',       // Tall/portrait: more columns
-  fanart: 'grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5',       // 16:9: moderate columns
-  landscape: 'grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5',    // 16:9: moderate columns
-  clearart: 'grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5',     // Similar to 16:9
-  banner: 'grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3',       // Very wide (5.4:1): fewer columns
-  clearlogo: 'grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4',    // Wide (2.58:1): fewer columns than 16:9
-  discart: 'grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8',      // Square: more columns
-};
-
-// Standardized height for selected assets row - width adjusts to maintain aspect ratio
-// This ensures all asset types are clearly visible at the top
-const SELECTED_ROW_HEIGHT = 'h-24'; // 96px - consistent height for all asset types
 
 export const AssetSelectionModal: React.FC<AssetSelectionModalProps> = ({
   isOpen,
   onClose,
-  onSave,
-  onUpload,
   assetType,
   assetTypeLabel,
-  currentAssets,
-  maxLimit,
-  providerResults,
-  isLoading = false,
-  isSaving = false,
-  error = null,
+  movieTitle,
+  movieId,
+  currentAssetUrl,
+  currentAssetId,
 }) => {
-  // Local state for selected assets
-  const [selectedAssets, setSelectedAssets] = useState<Array<{ asset: AssetCandidate; provider: string }>>([]);
-  const [isUploading, setIsUploading] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  // State
+  const [selectedCandidate, setSelectedCandidate] = useState<AssetCandidate | null>(null);
+  const [providerFilter, setProviderFilter] = useState<string>('all');
+  const [sortBy, setSortBy] = useState<string>('votes');
 
-  // Initialize selected assets from currentAssets when dialog opens
+  // Hooks
+  const { data: candidates = [], isLoading, error } = useAssetCandidates(
+    movieId,
+    assetType,
+    false // Don't include blocked candidates
+  );
+  const selectAssetMutation = useSelectAsset();
+  const blockAssetMutation = useBlockAsset();
+
+  // Close modal on ESC key
   useEffect(() => {
-    if (isOpen && currentAssets) {
-      const initial = currentAssets.map((current) => ({
-        asset: {
-          providerId: 'tmdb' as const,
-          providerResultId: current.id.toString(),
-          assetType,
-          url: current.source_url || current.cache_url,  // Use source_url (original provider URL)
-          thumbnailUrl: current.cache_url,
-          width: current.width ?? undefined,
-          height: current.height ?? undefined,
-        },
-        provider: current.provider_name || 'Custom',
-      }));
-      setSelectedAssets(initial);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    if (isOpen) {
+      window.addEventListener('keydown', handleKeyDown);
+      return () => window.removeEventListener('keydown', handleKeyDown);
     }
-  }, [isOpen, currentAssets, assetType]);
+  }, [isOpen, onClose]);
 
-  // Extract all available assets from provider results
-  const availableAssets = useMemo(() => {
-    if (!providerResults?.providers) return [];
+  // Reset selection when modal closes
+  useEffect(() => {
+    if (!isOpen) {
+      setSelectedCandidate(null);
+    }
+  }, [isOpen]);
 
-    const assets: Array<{ asset: AssetCandidate; provider: string }> = [];
+  if (!isOpen) return null;
 
-    for (const [providerName, result] of Object.entries(providerResults.providers)) {
-      if (!result || !result.images || !result.images[assetType]) continue;
-
-      const providerAssets = result.images[assetType] || [];
-
-      for (const asset of providerAssets) {
-        assets.push({
-          asset,
-          provider: providerName,
+  // Handle apply selection
+  const handleApply = async () => {
+    if (selectedCandidate) {
+      try {
+        await selectAssetMutation.mutateAsync({
+          candidateId: selectedCandidate.id,
+          selectedBy: 'user',
         });
+        onClose();
+      } catch (error) {
+        console.error('Failed to select asset:', error);
+        alert('Failed to select asset. Please try again.');
       }
     }
+  };
 
-    // Sort by resolution (highest first)
-    assets.sort((a, b) => (b.asset.width || 0) - (a.asset.width || 0));
+  // Handle remove current selection
+  const handleRemove = async () => {
+    if (!confirm('Remove this asset? You can select a new one from the candidates.')) {
+      return;
+    }
 
-    return assets;
-  }, [providerResults, assetType]);
+    // TODO: Implement reset asset endpoint
+    console.log('Remove asset not yet implemented');
+  };
 
-  // Check if an asset is already selected
-  const isSelected = (asset: AssetCandidate) => {
-    return selectedAssets.some((selected) => {
-      // Match by URL or perceptual hash
-      if (selected.asset.url === asset.url) return true;
-      if (asset.perceptualHash && selected.asset.perceptualHash === asset.perceptualHash) return true;
-      return false;
+  // Filter and sort candidates
+  const filteredCandidates = candidates
+    .filter(c => providerFilter === 'all' || c.provider === providerFilter)
+    .sort((a, b) => {
+      if (sortBy === 'votes') return (b.vote_count || 0) - (a.vote_count || 0);
+      if (sortBy === 'resolution') return (b.width || 0) - (a.width || 0);
+      return 0;
     });
-  };
 
-  // Add asset to selection
-  const handleAddAsset = (asset: AssetCandidate, provider: string) => {
-    if (selectedAssets.length >= maxLimit) return;
-    if (isSelected(asset)) return;
+  // Get unique providers for filter
+  const providers = Array.from(new Set(candidates.map(c => c.provider)));
 
-    setSelectedAssets((prev) => [...prev, { asset, provider }]);
-  };
-
-  // Remove asset from selection
-  const handleRemoveAsset = (index: number) => {
-    setSelectedAssets((prev) => prev.filter((_, i) => i !== index));
-  };
-
-  // Handle save
-  const handleSave = async () => {
-    // Don't close the modal - let the parent close it after save completes
-    // The isSaving prop will show loading state while save is in progress
-    await onSave(selectedAssets);
-  };
-
-  // Handle upload
-  const handleUploadClick = () => {
-    fileInputRef.current?.click();
-  };
-
-  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files || !e.target.files[0] || !onUpload) return;
-
-    const file = e.target.files[0];
-    setIsUploading(true);
-
-    try {
-      await onUpload(file);
-      // File input will be cleared and modal will stay open to show the new image
-    } catch (error) {
-      console.error('Failed to upload image:', error);
-      alert('Failed to upload image');
-    } finally {
-      setIsUploading(false);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-    }
-  };
-
-  const aspectRatio = ASSET_TYPE_ASPECT_RATIOS[assetType];
-  const gridCols = ASSET_TYPE_GRID_COLS[assetType];
-  const emptySlotCount = Math.max(0, maxLimit - selectedAssets.length);
+  // Determine what to show in left pane
+  const displayAsset = selectedCandidate || (currentAssetUrl ? {
+    url: currentAssetUrl,
+    provider: 'Current',
+    width: null,
+    height: null,
+    vote_count: null,
+  } : null);
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-6xl max-h-[90vh] flex flex-col p-0">
-        {/* Hidden file input */}
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/jpeg,image/jpg,image/png"
-          onChange={handleFileSelect}
-          className="hidden"
-          aria-label="Upload image file"
-        />
+    <div
+      className="fixed inset-0 z-50 flex bg-black/80"
+      onClick={onClose}
+    >
+      {/* Modal content - offset by sidebar (left: 14rem = 224px = w-56) and header (top: 3.5rem = 56px = h-14) */}
+      <div
+        className="flex-1 flex ml-56 mt-14"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* LEFT PANE - Current Selection (30%) */}
+        <div className="w-[30%] min-w-[320px] bg-neutral-900 border-r border-neutral-700 p-6 overflow-y-auto">
+          <h3 className="text-lg font-semibold text-white mb-4">Current Selection</h3>
 
-        <DialogHeader className="px-6 pt-4 pb-3 border-b border-neutral-700">
-          <DialogTitle className="text-xl font-semibold text-white flex items-baseline gap-2">
-            <span>Select {assetTypeLabel}</span>
-            <span className="text-sm text-neutral-500 font-normal">
-              Click to add or remove • Max: {maxLimit}
-            </span>
-          </DialogTitle>
-        </DialogHeader>
-
-        {/* TOP SECTION: Selected Assets */}
-        <div className="px-6 py-2 border-b-2 border-primary-500/30 bg-neutral-900/30">
-          {selectedAssets.length > 0 && (
-            <div className="flex items-center justify-between mb-2">
-              <div className="text-xs text-neutral-500">
-                {selectedAssets.length} selected
+          {displayAsset ? (
+            <div className="space-y-4">
+              {/* Large Preview */}
+              <div className="relative">
+                <img
+                  src={'url' in displayAsset ? displayAsset.url : (displayAsset as AssetCandidate).url}
+                  alt="Preview"
+                  className="w-full rounded-lg border border-neutral-700 object-contain"
+                />
               </div>
-              <button
-                onClick={() => setSelectedAssets([])}
-                className="text-xs text-neutral-500 hover:text-error transition-colors"
-              >
-                Clear All
-              </button>
+
+              {/* Metadata */}
+              <div className="space-y-2 text-sm">
+                {'provider' in displayAsset && displayAsset.provider && (
+                  <div className="flex justify-between">
+                    <span className="text-neutral-400">Provider:</span>
+                    <span className="text-white">{displayAsset.provider}</span>
+                  </div>
+                )}
+
+                {displayAsset.width && displayAsset.height && (
+                  <div className="flex justify-between">
+                    <span className="text-neutral-400">Resolution:</span>
+                    <span className="text-white">
+                      {displayAsset.width} × {displayAsset.height}
+                    </span>
+                  </div>
+                )}
+
+                {displayAsset.vote_count !== null && displayAsset.vote_count !== undefined && (
+                  <div className="flex justify-between">
+                    <span className="text-neutral-400">Votes:</span>
+                    <span className="text-white">{displayAsset.vote_count}</span>
+                  </div>
+                )}
+
+                {displayAsset.vote_average !== null && displayAsset.vote_average !== undefined && (
+                  <div className="flex justify-between">
+                    <span className="text-neutral-400">Rating:</span>
+                    <span className="text-white">{displayAsset.vote_average.toFixed(1)}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Action Buttons */}
+              {!selectedCandidate && currentAssetId && (
+                <div className="flex flex-col gap-2 mt-4">
+                  <button
+                    onClick={handleRemove}
+                    className="w-full px-4 py-2 rounded bg-neutral-700 hover:bg-neutral-600 text-white transition-colors flex items-center justify-center gap-2"
+                  >
+                    <FontAwesomeIcon icon={faTrash} />
+                    Remove
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center h-64 text-neutral-500">
+              <div className="text-6xl mb-4">⬜</div>
+              <div className="text-center">
+                <div className="font-medium mb-1">No {assetTypeLabel.toLowerCase()} selected</div>
+                <div className="text-sm">Select from candidates →</div>
+              </div>
             </div>
           )}
+        </div>
 
-          {/* Horizontal scrollable row */}
-          <div className="flex gap-2 overflow-x-auto pb-1">
-            {/* Selected assets */}
-            {selectedAssets.map((item, index) => (
-              <div
-                key={`selected-${index}`}
-                className="relative flex-shrink-0 cursor-pointer group"
-                onClick={() => handleRemoveAsset(index)}
-              >
-                {/* Standardized height for all asset types - width auto-adjusts to aspect ratio */}
-                <div className={`relative ${SELECTED_ROW_HEIGHT} ${assetType === 'clearlogo' ? 'min-w-32 bg-neutral-800/50' : 'bg-neutral-800'} rounded flex items-center justify-center p-2 border-2 border-primary-500 transition-all group-hover:border-error overflow-hidden`}>
-                  <img
-                    src={item.asset.thumbnailUrl || item.asset.url}
-                    alt={`Selected ${index + 1}`}
-                    className="h-full w-auto object-contain group-hover:opacity-50 transition-opacity"
-                  />
-                  {/* Remove overlay on hover */}
-                  <div className="absolute inset-0 bg-error/80 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                    <FontAwesomeIcon icon={faTimes} className="text-white text-xl" />
+        {/* RIGHT PANE - Candidates Grid (70%) */}
+        <div className="flex-1 bg-neutral-800 flex flex-col">
+          {/* Header */}
+          <div className="flex items-center justify-between p-6 border-b border-neutral-700">
+            <h2 className="text-xl font-semibold text-white">
+              Select {assetTypeLabel} for {movieTitle}
+            </h2>
+            <button
+              onClick={onClose}
+              className="w-10 h-10 flex items-center justify-center rounded hover:bg-neutral-700 text-neutral-400 hover:text-white transition-colors"
+              aria-label="Close modal"
+            >
+              <FontAwesomeIcon icon={faTimes} />
+            </button>
+          </div>
+
+          {/* Filters & Sort Bar */}
+          <div className="flex items-center gap-4 p-4 border-b border-neutral-700">
+            <select
+              value={providerFilter}
+              onChange={(e) => setProviderFilter(e.target.value)}
+              className="bg-neutral-900 border border-neutral-700 rounded px-3 py-2 text-sm text-white"
+            >
+              <option value="all">All Providers</option>
+              {providers.map(p => (
+                <option key={p} value={p}>{p}</option>
+              ))}
+            </select>
+
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              className="bg-neutral-900 border border-neutral-700 rounded px-3 py-2 text-sm text-white"
+            >
+              <option value="votes">Sort by Votes</option>
+              <option value="resolution">Sort by Resolution</option>
+            </select>
+
+            <div className="ml-auto text-sm text-neutral-400">
+              {filteredCandidates.length} candidates
+            </div>
+          </div>
+
+          {/* Candidates Grid */}
+          <div className="flex-1 overflow-y-auto p-4">
+            {isLoading ? (
+              <div className="flex flex-col items-center justify-center h-64">
+                <FontAwesomeIcon icon={faSpinner} spin className="text-4xl text-primary-500 mb-4" />
+                <div className="text-neutral-400">Loading candidates...</div>
+              </div>
+            ) : error ? (
+              <div className="bg-error/20 border border-error rounded-md p-4">
+                <div className="flex items-center gap-3">
+                  <FontAwesomeIcon icon={faExclamationTriangle} className="text-error text-xl" />
+                  <div>
+                    <h4 className="font-semibold text-white mb-1">Failed to fetch candidates</h4>
+                    <p className="text-sm text-neutral-300">
+                      {error instanceof Error ? error.message : 'Unknown error'}
+                    </p>
                   </div>
                 </div>
-                {/* Provider badge */}
-                <div className="absolute bottom-1 left-1 right-1 bg-black/70 text-[10px] text-center text-white rounded px-1 py-0.5 truncate">
-                  {getProviderDisplayName(item.provider)}
-                </div>
               </div>
-            ))}
-
-            {/* Empty slots */}
-            {Array.from({ length: emptySlotCount }).map((_, index) => (
-              <div
-                key={`empty-${index}`}
-                className={`${SELECTED_ROW_HEIGHT} ${assetType === 'clearlogo' ? 'min-w-32' : aspectRatio ? 'w-24' : 'w-32'} flex-shrink-0 border-2 border-dashed border-neutral-600 rounded bg-neutral-800/30 flex items-center justify-center`}
-              >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="h-5 w-5 text-neutral-600"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
+            ) : filteredCandidates.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-64 text-neutral-500">
+                <div className="text-4xl mb-4">📭</div>
+                <div>No candidates found</div>
               </div>
-            ))}
-          </div>
-        </div>
+            ) : (
+              <div className="grid grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
+                {filteredCandidates.map(candidate => (
+                  <button
+                    key={candidate.id}
+                    onClick={() => setSelectedCandidate(candidate)}
+                    className={`
+                      relative group rounded-lg overflow-hidden border-2 transition-all
+                      ${selectedCandidate?.id === candidate.id
+                        ? 'border-primary-500 ring-2 ring-primary-500/50'
+                        : 'border-neutral-700 hover:border-neutral-500'
+                      }
+                    `}
+                  >
+                    <img
+                      src={candidate.url}
+                      alt={`${assetTypeLabel} option`}
+                      className="w-full aspect-[2/3] object-cover"
+                      loading="lazy"
+                    />
 
-        {/* BOTTOM SECTION: Available Candidates */}
-        <div className="flex-1 overflow-y-auto px-6 py-3">
-          {/* Loading State */}
-          {isLoading && (
-            <div className="text-center py-12">
-              <FontAwesomeIcon icon={faSpinner} spin className="text-4xl text-primary-500 mb-4" />
-              <p className="text-neutral-300">Fetching assets from providers...</p>
-            </div>
-          )}
-
-          {/* Error State */}
-          {error && (
-            <div className="bg-error/20 border border-error rounded-md p-4 mb-6">
-              <div className="flex items-center gap-3">
-                <FontAwesomeIcon icon={faExclamationTriangle} className="text-error text-xl" />
-                <div>
-                  <h4 className="font-semibold text-white mb-1">Failed to fetch assets</h4>
-                  <p className="text-sm text-neutral-300">
-                    {error instanceof Error ? error.message : 'Unknown error'}
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Grid of available assets */}
-          {!isLoading && !error && (
-            <>
-              {availableAssets.length === 0 ? (
-                <div className="text-center py-12 bg-neutral-800/30 rounded border border-dashed border-neutral-700">
-                  <p className="text-neutral-400">No assets found from providers</p>
-                </div>
-              ) : (
-                <div className={`grid ${gridCols} gap-2`}>
-                  {availableAssets.map((item, index) => {
-                    const selected = isSelected(item.asset);
-                    const canSelect = selectedAssets.length < maxLimit;
-
-                    return (
-                      <div
-                        key={`available-${index}`}
-                        className={`relative group ${
-                          selected
-                            ? 'cursor-not-allowed'
-                            : canSelect
-                            ? 'cursor-pointer'
-                            : 'cursor-not-allowed opacity-50'
-                        }`}
-                        onClick={() => !selected && canSelect && handleAddAsset(item.asset, item.provider)}
-                      >
-                        {/* Special handling for clearlogo: fixed height with object-contain */}
-                        {assetType === 'clearlogo' ? (
-                          <div
-                            className={`relative min-h-24 w-full bg-neutral-800/50 rounded flex items-center justify-center p-3 border-2 transition-all ${
-                              selected
-                                ? 'border-neutral-600 opacity-40'
-                                : canSelect
-                                ? 'border-neutral-700 hover:border-primary-500 hover:shadow-lg hover:shadow-primary-500/20'
-                                : 'border-neutral-700'
-                            }`}
-                          >
-                            <img
-                              src={item.asset.thumbnailUrl || item.asset.url}
-                              alt={`Option ${index + 1}`}
-                              className="w-full h-auto object-contain"
-                              loading="lazy"
-                            />
-                          </div>
-                        ) : (
-                          <div
-                            className={`${aspectRatio} bg-neutral-800 rounded overflow-hidden border-2 transition-all ${
-                              selected
-                                ? 'border-neutral-600 opacity-40'
-                                : canSelect
-                                ? 'border-neutral-700 hover:border-primary-500 hover:shadow-lg hover:shadow-primary-500/20'
-                                : 'border-neutral-700'
-                            }`}
-                          >
-                            <img
-                              src={item.asset.thumbnailUrl || item.asset.url}
-                              alt={`Option ${index + 1}`}
-                              className="w-full h-full object-cover"
-                            />
+                    {/* Info overlay at bottom */}
+                    <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-transparent p-2">
+                      <div className="text-xs text-white">
+                        <div className="font-medium">{candidate.provider}</div>
+                        {candidate.width && candidate.height && (
+                          <div className="text-neutral-300">
+                            {candidate.width} × {candidate.height}
                           </div>
                         )}
-
-                        {/* Selected overlay */}
-                        {selected && (
-                          <div className="absolute inset-0 bg-primary-500/40 flex items-center justify-center">
-                            <div className="bg-primary-500 rounded-full p-2">
-                              <FontAwesomeIcon icon={faCheck} className="text-white text-lg" />
-                            </div>
+                        {candidate.vote_count !== null && candidate.vote_count !== undefined && (
+                          <div className="text-neutral-300">
+                            ⭐ {candidate.vote_count} votes
                           </div>
                         )}
-
-                        {/* Hover overlay for available assets */}
-                        {!selected && canSelect && (
-                          <div className="absolute inset-0 bg-primary-500/0 group-hover:bg-primary-500/20 transition-all flex items-center justify-center opacity-0 group-hover:opacity-100">
-                            <div className="bg-primary-500 rounded-full p-2 transform scale-0 group-hover:scale-100 transition-transform">
-                              <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                className="h-5 w-5 text-white"
-                                fill="none"
-                                viewBox="0 0 24 24"
-                                stroke="currentColor"
-                              >
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                              </svg>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Info overlay at bottom */}
-                        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-transparent p-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <div className="text-[9px] text-white font-semibold truncate">{getProviderDisplayName(item.provider)}</div>
-                          {item.asset.width && item.asset.height && (
-                            <div className="text-[9px] text-neutral-300">
-                              {item.asset.width}×{item.asset.height}
-                            </div>
-                          )}
-                        </div>
                       </div>
-                    );
-                  })}
-                </div>
-              )}
-            </>
-          )}
-        </div>
+                    </div>
 
-        {/* Footer */}
-        <DialogFooter className="gap-2 border-t border-neutral-700 px-6 py-3">
-          <div className="flex justify-between items-center w-full">
-            {/* Left side - Upload button */}
-            <div>
-              {onUpload && (
-                <Button
-                  onClick={handleUploadClick}
-                  variant="outline"
-                  size="sm"
-                  disabled={isUploading || selectedAssets.length >= maxLimit}
-                >
-                  {isUploading ? (
-                    <>
-                      <FontAwesomeIcon icon={faSpinner} spin className="mr-2" />
-                      Uploading...
-                    </>
-                  ) : (
-                    <>
-                      <FontAwesomeIcon icon={faUpload} className="mr-2" />
-                      Upload
-                    </>
-                  )}
-                </Button>
-              )}
-            </div>
-
-            {/* Right side - Cancel and Save */}
-            <div className="flex gap-2">
-              <Button onClick={onClose} variant="outline" size="sm" disabled={isSaving}>
-                Cancel
-              </Button>
-              <Button
-                onClick={handleSave}
-                disabled={selectedAssets.length === 0 || isSaving}
-                size="sm"
-              >
-                {isSaving ? (
-                  <>
-                    <FontAwesomeIcon icon={faSpinner} spin className="mr-2" />
-                    Saving...
-                  </>
-                ) : (
-                  <>
-                    Save {selectedAssets.length > 0 && `(${selectedAssets.length})`}
-                  </>
-                )}
-              </Button>
-            </div>
+                    {/* Selected indicator */}
+                    {selectedCandidate?.id === candidate.id && (
+                      <div className="absolute top-2 right-2 bg-primary-500 rounded-full p-1.5">
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          className="h-4 w-4 text-white"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                      </div>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+
+          {/* Footer */}
+          <div className="flex items-center justify-end gap-3 p-4 border-t border-neutral-700">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 rounded bg-neutral-700 hover:bg-neutral-600 text-white transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleApply}
+              disabled={!selectedCandidate || selectAssetMutation.isPending}
+              className="px-4 py-2 rounded bg-primary-600 hover:bg-primary-700 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              {selectAssetMutation.isPending ? (
+                <>
+                  <FontAwesomeIcon icon={faSpinner} spin />
+                  Applying...
+                </>
+              ) : (
+                'Apply Selection'
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 };

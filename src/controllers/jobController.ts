@@ -47,7 +47,16 @@ export class JobController {
   getStats = async (_req: Request, res: Response): Promise<void> => {
     try {
       const stats = await this.jobQueue.getStats();
-      res.json(stats);
+
+      // Transform stats to match frontend expectations
+      const response = {
+        pending: stats.pending,
+        running: stats.processing, // Frontend expects 'running' instead of 'processing'
+        completed: stats.completed || 0,
+        failed: stats.failed || 0,
+      };
+
+      res.json(response);
     } catch (error: any) {
       logger.error('Error getting job stats:', error);
       res.status(500).json({ error: error.message });
@@ -56,7 +65,8 @@ export class JobController {
 
   /**
    * GET /api/jobs
-   * Get active jobs (pending or processing)
+   * Get recent jobs (active + recently completed/failed in last hour)
+   * Returns array of jobs for frontend compatibility
    */
   getActive = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -64,15 +74,24 @@ export class JobController {
       const type = req.query.type as string | undefined;
       const status = req.query.status as 'pending' | 'processing' | undefined;
 
-      const jobs = await this.jobQueue.getActiveJobs({
-        ...(type && { type: type as any }),
-        ...(status && { status }),
-        limit,
-      });
+      // Use getRecentJobs instead of getActiveJobs to include recently completed/failed
+      let jobs = await this.jobQueue.getRecentJobs();
 
+      // Apply filters if provided
+      if (type) {
+        jobs = jobs.filter((job) => job.type === type);
+      }
+      if (status) {
+        jobs = jobs.filter((job) => job.status === status);
+      }
+
+      // Apply limit
+      jobs = jobs.slice(0, limit);
+
+      // Return jobs array directly (frontend expects array, not { jobs: [...] })
       res.json({ jobs });
     } catch (error: any) {
-      logger.error('Error getting active jobs:', error);
+      logger.error('Error getting jobs:', error);
       res.status(500).json({ error: error.message });
     }
   };

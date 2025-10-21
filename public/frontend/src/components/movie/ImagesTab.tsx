@@ -28,6 +28,7 @@ import type { AssetType, AssetCandidate } from '../../types/asset';
 
 interface ImagesTabProps {
   movieId: number;
+  movieTitle?: string;
 }
 
 interface Image {
@@ -62,7 +63,7 @@ const ASSET_TYPE_INFO: Record<string, { label: string; aspectRatio: string; grid
   discart: { label: 'Disc Art', aspectRatio: 'aspect-square', gridCols: 'grid grid-cols-3 md:grid-cols-5 lg:grid-cols-7 xl:grid-cols-9 gap-4' },
 };
 
-export const ImagesTab: React.FC<ImagesTabProps> = ({ movieId }) => {
+export const ImagesTab: React.FC<ImagesTabProps> = ({ movieId, movieTitle = 'Unknown Movie' }) => {
   // Use TanStack Query hooks
   const queryClient = useQueryClient();
   const { data: images = {}, isLoading: loading } = useMovieImages(movieId);
@@ -412,23 +413,21 @@ export const ImagesTab: React.FC<ImagesTabProps> = ({ movieId }) => {
         </div>
       )}
 
-      {/* Asset Selection Modal */}
+      {/* Asset Selection Modal - New Full-Viewport Design */}
       {assetDialogOpen && selectedAssetType && (
         <AssetSelectionModal
           isOpen={assetDialogOpen}
           onClose={() => setAssetDialogOpen(false)}
-          onSave={handleAssetSelect}
-          onUpload={async (file: File) => {
-            await uploadImageMutation.mutateAsync({ file, type: selectedAssetType });
-          }}
           assetType={selectedAssetType}
           assetTypeLabel={ASSET_TYPE_INFO[selectedAssetType]?.label || selectedAssetType}
-          currentAssets={images[selectedAssetType] || []}
-          maxLimit={assetLimits[selectedAssetType] ?? 1}
-          providerResults={providerResults}
-          isLoading={isLoadingProviders}
-          isSaving={replaceAssetsMutation.isPending}
-          error={providerError as Error | null}
+          movieTitle={movieTitle}
+          movieId={movieId}
+          currentAssetUrl={
+            images[selectedAssetType]?.[0]?.cache_url
+          }
+          currentAssetId={
+            images[selectedAssetType]?.[0]?.id
+          }
         />
       )}
 

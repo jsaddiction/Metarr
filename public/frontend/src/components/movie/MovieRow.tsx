@@ -14,15 +14,16 @@ import {
   faMusic,
   faUserGroup,
 } from '@fortawesome/free-solid-svg-icons';
-import { Movie } from '../../types/movie';
+import { MovieListItem } from '../../types/movie';
 import { AssetIndicator } from './AssetIndicator';
 import { BookmarkToggle } from '../ui/BookmarkToggle';
 import { useToggleMonitored } from '../../hooks/useToggleMonitored';
+import { EnrichmentStatusBadge } from './EnrichmentStatusBadge';
 
 interface MovieRowProps {
-  movie: Movie;
-  onClick?: (movie: Movie) => void;
-  onRefresh?: (movie: Movie) => void;
+  movie: MovieListItem;
+  onClick?: (movie: MovieListItem) => void;
+  onRefresh?: (movie: MovieListItem) => void;
 }
 
 export const MovieRow = React.memo<MovieRowProps>(({ movie, onClick, onRefresh }) => {
@@ -64,6 +65,14 @@ export const MovieRow = React.memo<MovieRowProps>(({ movie, onClick, onRefresh }
             <span className="text-sm text-neutral-500">({movie.year})</span>
           )}
         </div>
+      </td>
+
+      {/* Status Column */}
+      <td className="p-2 align-middle">
+        <EnrichmentStatusBadge
+          status={movie.identification_status || 'unidentified'}
+          size="sm"
+        />
       </td>
 
       {/* Metadata Column */}

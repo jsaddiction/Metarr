@@ -3,7 +3,7 @@
  */
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Movie, MovieListResult } from '../types/movie';
+import { MovieListItem, MovieDetail, MovieListResult } from '../types/movie';
 import { toast } from 'sonner';
 
 interface ToggleMonitoredResponse {
@@ -46,7 +46,7 @@ export const useToggleMonitored = () => {
 
       // Snapshot previous values
       const previousMovies = queryClient.getQueryData<MovieListResult>(['movies']);
-      const previousMovie = queryClient.getQueryData<Movie>(['movie', movieId]);
+      const previousMovie = queryClient.getQueryData<MovieDetail>(['movie', movieId]);
 
       // Optimistically toggle the monitored status
       if (previousMovies) {
@@ -59,7 +59,7 @@ export const useToggleMonitored = () => {
       }
 
       if (previousMovie) {
-        queryClient.setQueryData<Movie>(['movie', movieId], {
+        queryClient.setQueryData<MovieDetail>(['movie', movieId], {
           ...previousMovie,
           monitored: !previousMovie.monitored,
         });
