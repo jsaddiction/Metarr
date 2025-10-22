@@ -115,10 +115,9 @@ export class MovieService {
         (SELECT COUNT(*) FROM movie_crew WHERE movie_id = m.id AND role = 'writer') as writer_count,
         (SELECT COUNT(DISTINCT studio_id) FROM movie_studios WHERE movie_id = m.id) as studio_count,
 
-        -- NFO parsed timestamp (scalar subquery)
-        (SELECT MAX(c.discovered_at) FROM library_text_files l
-         JOIN cache_text_files c ON l.cache_file_id = c.id
-         WHERE c.entity_type = 'movie' AND c.entity_id = m.id AND c.text_type = 'nfo') as nfo_parsed_at,
+        -- NFO parsed timestamp (scalar subquery from cache - source of truth)
+        (SELECT MAX(discovered_at) FROM cache_text_files
+         WHERE entity_type = 'movie' AND entity_id = m.id AND text_type = 'nfo') as nfo_parsed_at,
 
         -- Asset counts from cache tables (source of truth for all assets)
         (SELECT COUNT(*) FROM cache_image_files WHERE entity_type = 'movie' AND entity_id = m.id AND image_type = 'poster') as poster_count,
