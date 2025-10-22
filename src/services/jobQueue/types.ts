@@ -23,6 +23,7 @@ export type JobType =
   | 'enrich-metadata' // Fetch metadata from providers
   | 'select-assets' // Auto-select assets (YOLO/Hybrid mode)
   | 'publish' // Publish entity to library
+  | 'verify-movie' // Verify movie directory integrity (manual trigger)
 
   // Scheduled tasks (LOW priority 8-10)
   | 'scheduled-file-scan' // Scheduled filesystem scan (automatic)

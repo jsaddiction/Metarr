@@ -10,6 +10,10 @@ import { MediaPlayerConnectionManager } from './mediaPlayerConnectionManager.js'
 import { WorkflowControlService } from './workflowControlService.js';
 import { websocketBroadcaster } from './websocketBroadcaster.js';
 import { logger } from '../middleware/logging.js';
+import { hashFile } from './hash/hashService.js';
+import { extractMediaInfo } from './media/ffprobeService.js';
+import fs from 'fs/promises';
+import path from 'path';
 
 /**
  * Job Handlers
@@ -22,6 +26,7 @@ export class JobHandlers {
   private db: DatabaseConnection;
   private dbManager: any; // DatabaseManager - using any for now to avoid circular dependency
   private jobQueue: JobQueueService;
+  private cacheDir: string;
   private assetDiscovery: AssetDiscoveryService;
   private providerAssets: ProviderAssetService;
   private assetSelection: AssetSelectionService;
@@ -43,6 +48,7 @@ export class JobHandlers {
     this.db = db;
     this.dbManager = dbManager;
     this.jobQueue = jobQueue;
+    this.cacheDir = cacheDir;
     this.assetDiscovery = new AssetDiscoveryService(db, cacheDir);
     this.providerAssets = new ProviderAssetService(db, cacheDir, tmdbClient);
     this.assetSelection = new AssetSelectionService(db);
@@ -75,6 +81,7 @@ export class JobHandlers {
     jobQueue.registerHandler('enrich-metadata', this.handleEnrichMetadata.bind(this));
     jobQueue.registerHandler('select-assets', this.handleSelectAssets.bind(this));
     jobQueue.registerHandler('publish', this.handlePublish.bind(this));
+    jobQueue.registerHandler('verify-movie', this.handleVerifyMovie.bind(this));
 
     // Scheduled tasks
     jobQueue.registerHandler('library-scan', this.handleLibraryScan.bind(this));
@@ -735,13 +742,13 @@ export class JobHandlers {
    * Handle fetch-provider-assets job (JOB CHAINING PATTERN)
    *
    * This handler:
-   * 1. Fetches assets from provider (TMDB/TVDB)
+   * 1. Fetches assets from provider (TMDB/TVDB or ProviderOrchestrator)
    * 2. Chains to select-assets job (if enrichment workflow enabled)
    *
    * Payload: {
    *   entityType: 'movie' | 'series' | 'episode',
    *   entityId: number,
-   *   provider: 'tmdb' | 'tvdb',
+   *   provider: 'tmdb' | 'tvdb' | 'orchestrator',
    *   providerId: number,
    *   chainContext?: { source, libraryId }
    * }
@@ -774,7 +781,33 @@ export class JobHandlers {
 
     // 1. Fetch assets from provider
     let result;
-    if (provider === 'tmdb' && entityType === 'movie') {
+    if (provider === 'orchestrator' && entityType === 'movie') {
+      // Use ProviderOrchestrator for multi-provider fetch
+      const { ProviderOrchestrator } = await import('./providers/ProviderOrchestrator.js');
+      const { ProviderRegistry } = await import('./providers/ProviderRegistry.js');
+      const { ProviderConfigService } = await import('./providerConfigService.js');
+
+      const registry = ProviderRegistry.getInstance();
+      const configService = new ProviderConfigService(this.db);
+      const orchestrator = new ProviderOrchestrator(registry, configService);
+
+      // Fetch metadata from all providers
+      const metadataResult = await orchestrator.fetchMetadata(
+        entityType,
+        { tmdb: providerId },
+        { strategy: 'aggregate_all', fillGaps: true }
+      );
+
+      logger.info('[JobHandlers] Fetched metadata from all providers', {
+        service: 'JobHandlers',
+        handler: 'handleFetchProviderAssets',
+        jobId: job.id,
+        providersUsed: metadataResult.providerId,
+        completeness: metadataResult.completeness,
+      });
+
+      result = { fetched: true }; // Simplified result for now
+    } else if (provider === 'tmdb' && entityType === 'movie') {
       result = await this.providerAssets.fetchMovieAssets(entityId, providerId);
       logger.info('[JobHandlers] Fetched assets from TMDB', {
         service: 'JobHandlers',
@@ -1062,6 +1095,176 @@ export class JobHandlers {
   }
 
   /**
+   * Handle verify-movie job (PHASE 3B - Cache/Library Verification)
+   *
+   * This handler ensures library directory matches cache:
+   * - Verifies all expected assets exist and match hashes
+   * - Restores missing/corrupted files from cache
+   * - Removes unauthorized files
+   * - Triggers NFO regen if video file changed
+   *
+   * Payload: {
+   *   entityType: 'movie',
+   *   entityId: number,
+   *   directoryPath: string
+   * }
+   */
+  private async handleVerifyMovie(job: Job): Promise<void> {
+    const { entityType, entityId, directoryPath } = job.payload;
+
+    logger.info('[JobHandlers] Starting verification workflow', {
+      service: 'JobHandlers',
+      handler: 'handleVerifyMovie',
+      jobId: job.id,
+      entityId,
+      directoryPath,
+    });
+
+    let videoChanged = false;
+    let assetsChanged = false;
+    let filesRecycled = 0;
+    let filesRestored = 0;
+
+    try {
+      // Phase 0: Video file hash verification (FFprobe re-extraction if mismatch)
+      const videoResult = await this.verifyMainVideoFile(entityId);
+      videoChanged = videoResult.changed;
+      const mainVideoFilename = videoResult.filename;
+
+      if (videoResult.changed) {
+        logger.info('[JobHandlers] Video file changed, FFprobe re-extraction completed', {
+          jobId: job.id,
+          entityId,
+        });
+      }
+
+      // Phase 1: Scan directory in-memory (don't store to DB)
+      const libraryFiles = await this.scanDirectoryInMemory(directoryPath);
+
+      // Remove main video file from the map so it won't be considered for recycling
+      if (mainVideoFilename) {
+        libraryFiles.delete(mainVideoFilename);
+        logger.debug('[JobHandlers] Main video file excluded from verification', {
+          jobId: job.id,
+          entityId,
+          filename: mainVideoFilename,
+        });
+      }
+
+      // Phase 2: Get expected files from cache
+      const cacheAssets = await this.getCacheAssets(entityId);
+
+      // Phase 3: Verify each cached asset exists and matches hash
+      for (const cacheAsset of cacheAssets) {
+        const libraryFile = libraryFiles.get(cacheAsset.expectedFilename);
+
+        if (!libraryFile) {
+          // Missing file - restore from cache
+          logger.warn('[JobHandlers] Missing file, restoring from cache', {
+            jobId: job.id,
+            entityId,
+            filename: cacheAsset.expectedFilename,
+          });
+          await this.restoreFileFromCache(
+            cacheAsset.cachePath,
+            path.join(directoryPath, cacheAsset.expectedFilename)
+          );
+          filesRestored++;
+          assetsChanged = true;
+        } else {
+          // File exists - verify hash
+          const hashResult = await hashFile(libraryFile.fullPath);
+          if (hashResult.hash !== cacheAsset.hash) {
+            // Hash mismatch - restore from cache
+            logger.warn('[JobHandlers] Hash mismatch, restoring from cache', {
+              jobId: job.id,
+              entityId,
+              filename: cacheAsset.expectedFilename,
+              expectedHash: cacheAsset.hash.substring(0, 8),
+              actualHash: hashResult.hash.substring(0, 8),
+            });
+            await this.recycleFile(libraryFile.fullPath);
+            await this.restoreFileFromCache(
+              cacheAsset.cachePath,
+              path.join(directoryPath, cacheAsset.expectedFilename)
+            );
+            filesRecycled++;
+            filesRestored++;
+            assetsChanged = true;
+          }
+          // Remove verified file from map
+          libraryFiles.delete(cacheAsset.expectedFilename);
+        }
+      }
+
+      // Phase 4: Remove unauthorized files (anything left in libraryFiles map)
+      for (const [filename, fileInfo] of libraryFiles) {
+        if (!this.isIgnoredFile(filename)) {
+          logger.warn('[JobHandlers] Unauthorized file detected, recycling', {
+            jobId: job.id,
+            entityId,
+            filename,
+          });
+          await this.recycleFile(fileInfo.fullPath);
+          filesRecycled++;
+          assetsChanged = true;
+        }
+      }
+
+      // Phase 5: Conditional workflow chain
+      if (videoChanged) {
+        // Video file changed → Re-publish (includes NFO regen)
+        logger.info('[JobHandlers] Video changed, queuing re-publish job', {
+          jobId: job.id,
+          entityId,
+        });
+        await this.jobQueue.addJob({
+          type: 'publish',
+          priority: 3,
+          retry_count: 0,
+          max_retries: 3,
+          payload: {
+            entityType,
+            entityId,
+            libraryPath: directoryPath,
+            chainContext: { source: 'verify-video-changed' },
+          },
+        });
+      } else if (assetsChanged) {
+        // Only assets changed → Just notify players (no NFO regen needed)
+        logger.info('[JobHandlers] Assets changed, notifying media players', {
+          jobId: job.id,
+          entityId,
+        });
+        await this.notifyMediaPlayers(entityId, directoryPath);
+      }
+
+      logger.info('[JobHandlers] Verification complete', {
+        service: 'JobHandlers',
+        handler: 'handleVerifyMovie',
+        jobId: job.id,
+        entityId,
+        videoChanged,
+        assetsChanged,
+        filesRestored,
+        filesRecycled,
+      });
+
+      // Broadcast completion
+      websocketBroadcaster.broadcastMoviesUpdated([entityId]);
+    } catch (error: any) {
+      logger.error('[JobHandlers] Verification failed', {
+        service: 'JobHandlers',
+        handler: 'handleVerifyMovie',
+        jobId: job.id,
+        entityId,
+        error: error.message,
+      });
+      throw error;
+    }
+  }
+
+  /**
    * Handle publish job (FINAL STEP IN CHAIN)
    *
    * This handler:
@@ -1121,6 +1324,69 @@ export class JobHandlers {
       nfoGenerated: result.nfoGenerated,
       chainSource: chainContext?.source
     });
+
+    // Queue player notification jobs (STUBBED - implementation pending)
+    const libraryId = chainContext?.libraryId;
+    if (libraryId) {
+      try {
+        // Get all media player groups that manage this library
+        const groups = await this.db.query<{
+          id: number;
+          type: string;
+        }>(
+          `SELECT DISTINCT mpg.id, mpg.type
+           FROM media_player_groups mpg
+           JOIN media_player_libraries mpl ON mpl.group_id = mpg.id
+           WHERE mpl.library_id = ? AND mpg.enabled = 1`,
+          [libraryId]
+        );
+
+        logger.info('[JobHandlers] Queueing player notification jobs (STUBBED)', {
+          service: 'JobHandlers',
+          handler: 'handlePublish',
+          jobId: job.id,
+          libraryId,
+          groupCount: groups.length,
+        });
+
+        // Queue notification job for each player group
+        for (const group of groups) {
+          const notifyJobType = group.type === 'kodi' ? 'notify-kodi' :
+                               group.type === 'jellyfin' ? 'notify-jellyfin' :
+                               'notify-plex';
+
+          await this.jobQueue.addJob({
+            type: notifyJobType as any,
+            priority: 5, // NORMAL priority
+            payload: {
+              groupId: group.id,
+              libraryId,
+              libraryPath,
+              event: 'publish',
+            },
+            retry_count: 0,
+            max_retries: 2,
+          });
+
+          logger.debug('[JobHandlers] Queued player notification', {
+            service: 'JobHandlers',
+            handler: 'handlePublish',
+            jobId: job.id,
+            groupId: group.id,
+            groupType: group.type,
+          });
+        }
+      } catch (error: any) {
+        logger.warn('[JobHandlers] Failed to queue player notifications', {
+          service: 'JobHandlers',
+          handler: 'handlePublish',
+          jobId: job.id,
+          libraryId,
+          error: error.message,
+        });
+        // Don't throw - publishing succeeded, notification failure is non-critical
+      }
+    }
 
     // Emit WebSocket event for frontend
     websocketBroadcaster.broadcast('entity.published', {
@@ -1874,5 +2140,433 @@ export class JobHandlers {
 
       // Don't throw - let other asset caching jobs continue
     }
+  }
+
+  // ============================================================================
+  // VERIFICATION WORKFLOW HELPERS
+  // ============================================================================
+
+  /**
+   * Phase 0: Verify main video file hash
+   * If hash changed → Re-run FFprobe and update stream details in DB
+   * This triggers NFO regeneration via publish job
+   * Returns: changed status and filename for exclusion from recycling
+   */
+  private async verifyMainVideoFile(
+    entityId: number
+  ): Promise<{ changed: boolean; filename: string | null }> {
+    try {
+      // Get movie details including video file path and stored hash
+      const movie = await this.db.get<{
+        file_path: string;
+        file_hash: string | null;
+      }>(
+        `SELECT file_path, file_hash FROM movies WHERE id = ?`,
+        [entityId]
+      );
+
+      if (!movie || !movie.file_path) {
+        logger.warn('[JobHandlers] No video file found for movie', {
+          entityId,
+        });
+        return { changed: false, filename: null };
+      }
+
+      // Extract just the filename from the full path
+      const filename = path.basename(movie.file_path);
+
+      // Calculate current hash
+      const hashResult = await hashFile(movie.file_path);
+
+      // Compare with stored hash
+      if (hashResult.hash === movie.file_hash) {
+        logger.debug('[JobHandlers] Video file hash matches', {
+          entityId,
+          hash: hashResult.hash.substring(0, 8),
+        });
+        return { changed: false, filename };
+      }
+
+      // Hash mismatch → Re-extract streams with FFprobe
+      logger.info('[JobHandlers] Video file hash mismatch, re-extracting streams', {
+        entityId,
+        oldHash: movie.file_hash?.substring(0, 8),
+        newHash: hashResult.hash.substring(0, 8),
+      });
+
+      const mediaInfo = await extractMediaInfo(movie.file_path);
+
+      // Update movie file_hash
+      await this.db.execute(
+        `UPDATE movies SET file_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+        [hashResult.hash, entityId]
+      );
+
+      // Delete old streams
+      await this.db.execute(`DELETE FROM video_streams WHERE movie_id = ?`, [entityId]);
+      await this.db.execute(`DELETE FROM audio_streams WHERE movie_id = ?`, [entityId]);
+      await this.db.execute(`DELETE FROM subtitle_streams WHERE movie_id = ? AND source_type = 'embedded'`, [
+        entityId,
+      ]);
+
+      // Insert new video streams
+      for (const stream of mediaInfo.videoStreams) {
+        await this.db.execute(
+          `INSERT INTO video_streams (
+            movie_id, stream_index, codec, codec_long_name, profile,
+            width, height, aspect_ratio, framerate, bit_rate,
+            pix_fmt, color_range, color_space, color_transfer, color_primaries,
+            language, title, is_default, is_forced
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            entityId,
+            stream.streamIndex,
+            stream.codecName,
+            stream.codecLongName,
+            stream.profile,
+            stream.width,
+            stream.height,
+            stream.aspectRatio,
+            stream.fps,
+            stream.bitRate,
+            stream.pixFmt,
+            stream.colorRange,
+            stream.colorSpace,
+            stream.colorTransfer,
+            stream.colorPrimaries,
+            stream.language,
+            stream.title,
+            stream.isDefault ? 1 : 0,
+            stream.isForced ? 1 : 0,
+          ]
+        );
+      }
+
+      // Insert new audio streams
+      for (const stream of mediaInfo.audioStreams) {
+        await this.db.execute(
+          `INSERT INTO audio_streams (
+            movie_id, stream_index, codec, codec_long_name, profile,
+            channels, channel_layout, sample_rate, bit_rate,
+            language, title, is_default, is_forced
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            entityId,
+            stream.streamIndex,
+            stream.codecName,
+            stream.codecLongName,
+            stream.profile,
+            stream.channels,
+            stream.channelLayout,
+            stream.sampleRate,
+            stream.bitRate,
+            stream.language,
+            stream.title,
+            stream.isDefault ? 1 : 0,
+            stream.isForced ? 1 : 0,
+          ]
+        );
+      }
+
+      // Insert new embedded subtitle streams
+      for (const stream of mediaInfo.subtitleStreams.filter((s) => s.sourceType === 'embedded')) {
+        await this.db.execute(
+          `INSERT INTO subtitle_streams (
+            movie_id, stream_index, codec, source_type,
+            language, title, is_default, is_forced, is_sdh
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            entityId,
+            stream.streamIndex,
+            stream.codecName,
+            stream.sourceType,
+            stream.language,
+            stream.title,
+            stream.isDefault ? 1 : 0,
+            stream.isForced ? 1 : 0,
+            stream.isSdh ? 1 : 0,
+          ]
+        );
+      }
+
+      logger.info('[JobHandlers] Video streams re-extracted successfully', {
+        entityId,
+        videoStreams: mediaInfo.videoStreams.length,
+        audioStreams: mediaInfo.audioStreams.length,
+        subtitleStreams: mediaInfo.subtitleStreams.length,
+      });
+
+      return { changed: true, filename: path.basename(movie.file_path) };
+    } catch (error: any) {
+      logger.error('[JobHandlers] Failed to verify video file', {
+        entityId,
+        error: error.message,
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Phase 1: Scan directory in-memory
+   * Returns Map of filename → file info (don't store to DB)
+   */
+  private async scanDirectoryInMemory(
+    directoryPath: string
+  ): Promise<Map<string, { fullPath: string; size: number }>> {
+    const fileMap = new Map<string, { fullPath: string; size: number }>();
+
+    try {
+      const entries = await fs.readdir(directoryPath, { withFileTypes: true });
+
+      for (const entry of entries) {
+        if (entry.isFile()) {
+          const fullPath = path.join(directoryPath, entry.name);
+          const stats = await fs.stat(fullPath);
+          fileMap.set(entry.name, {
+            fullPath,
+            size: stats.size,
+          });
+        }
+      }
+
+      logger.debug('[JobHandlers] Directory scanned in-memory', {
+        directoryPath,
+        fileCount: fileMap.size,
+      });
+
+      return fileMap;
+    } catch (error: any) {
+      logger.error('[JobHandlers] Failed to scan directory', {
+        directoryPath,
+        error: error.message,
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Phase 2: Get expected files from cache
+   * Returns array of cache assets with expected filenames and hashes
+   */
+  private async getCacheAssets(
+    entityId: number
+  ): Promise<Array<{ cachePath: string; expectedFilename: string; hash: string }>> {
+    const assets: Array<{ cachePath: string; expectedFilename: string; hash: string }> = [];
+
+    try {
+      // Get movie base name for Kodi naming
+      const movie = await this.db.get<{ title: string; year: number | null; file_path: string }>(
+        `SELECT title, year, file_path FROM movies WHERE id = ?`,
+        [entityId]
+      );
+
+      if (!movie) {
+        throw new Error(`Movie ${entityId} not found`);
+      }
+
+      const baseName = `${movie.title}${movie.year ? ` (${movie.year})` : ''}`;
+
+      // NFO file (stored in cache_text_files)
+      const nfo = await this.db.get<{ file_path: string; file_hash: string | null }>(
+        `SELECT file_path, file_hash FROM cache_text_files WHERE entity_type = 'movie' AND entity_id = ? AND text_type = 'nfo' AND file_path IS NOT NULL`,
+        [entityId]
+      );
+      if (nfo && nfo.file_path && nfo.file_hash) {
+        assets.push({
+          cachePath: nfo.file_path,
+          expectedFilename: `${baseName}.nfo`,
+          hash: nfo.file_hash,
+        });
+      }
+
+      // Images (poster, fanart, etc.)
+      const images = await this.db.query<{ file_path: string; image_type: string; file_hash: string }>(
+        `SELECT file_path, image_type, file_hash FROM cache_image_files WHERE entity_type = 'movie' AND entity_id = ? AND file_path IS NOT NULL AND file_hash IS NOT NULL`,
+        [entityId]
+      );
+      for (const image of images) {
+        const kodiType = this.getKodiImageType(image.image_type);
+        assets.push({
+          cachePath: image.file_path,
+          expectedFilename: `${baseName}-${kodiType}.jpg`,
+          hash: image.file_hash,
+        });
+      }
+
+      // Trailers
+      const trailers = await this.db.query<{ file_path: string; file_hash: string; file_name: string }>(
+        `SELECT file_path, file_hash, file_name FROM cache_video_files WHERE entity_type = 'movie' AND entity_id = ? AND video_type = 'trailer' AND file_path IS NOT NULL AND file_hash IS NOT NULL`,
+        [entityId]
+      );
+      for (let i = 0; i < trailers.length; i++) {
+        const trailer = trailers[i];
+        const ext = path.extname(trailer.file_path);
+        const filename = i === 0 ? `${baseName}-trailer${ext}` : `${baseName}-trailer${i + 1}${ext}`;
+        assets.push({
+          cachePath: trailer.file_path,
+          expectedFilename: filename,
+          hash: trailer.file_hash,
+        });
+      }
+
+      // External subtitles (join subtitle_streams with cache_text_files)
+      const subtitles = await this.db.query<{ file_path: string; language: string; file_hash: string }>(
+        `SELECT ctf.file_path, ss.language, ctf.file_hash
+         FROM subtitle_streams ss
+         JOIN cache_text_files ctf ON ctf.id = ss.cache_asset_id
+         WHERE ss.entity_type = 'movie' AND ss.entity_id = ? AND ctf.file_path IS NOT NULL AND ctf.file_hash IS NOT NULL`,
+        [entityId]
+      );
+      for (const subtitle of subtitles) {
+        const lang = subtitle.language || 'unknown';
+        assets.push({
+          cachePath: subtitle.file_path,
+          expectedFilename: `${baseName}.${lang}.srt`,
+          hash: subtitle.file_hash,
+        });
+      }
+
+      logger.debug('[JobHandlers] Cache assets retrieved', {
+        entityId,
+        assetCount: assets.length,
+      });
+
+      return assets;
+    } catch (error: any) {
+      logger.error('[JobHandlers] Failed to get cache assets', {
+        entityId,
+        error: error.message,
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Restore file from cache to library
+   */
+  private async restoreFileFromCache(cachePath: string, targetPath: string): Promise<void> {
+    try {
+      await fs.copyFile(cachePath, targetPath);
+      logger.debug('[JobHandlers] File restored from cache', {
+        cachePath,
+        targetPath,
+      });
+    } catch (error: any) {
+      logger.error('[JobHandlers] Failed to restore file from cache', {
+        cachePath,
+        targetPath,
+        error: error.message,
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Recycle file to trash directory
+   */
+  private async recycleFile(filePath: string): Promise<void> {
+    try {
+      // TODO: Move to actual trash directory (for now, just delete)
+      // In production, this should move to data/trash/{timestamp}/{filename}
+      await fs.unlink(filePath);
+      logger.debug('[JobHandlers] File recycled', {
+        filePath,
+      });
+    } catch (error: any) {
+      logger.error('[JobHandlers] Failed to recycle file', {
+        filePath,
+        error: error.message,
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Check if file should be ignored during verification
+   * Returns true for system/hidden files that should NOT be recycled
+   * Note: Main video file is excluded separately via libraryFiles.delete()
+   */
+  private isIgnoredFile(filename: string): boolean {
+    const ignoredPatterns = [
+      /^\./, // Hidden files (.DS_Store, .gitkeep, etc.)
+      /^Thumbs\.db$/i, // Windows thumbnail cache
+      /^desktop\.ini$/i, // Windows desktop config
+    ];
+
+    return ignoredPatterns.some((pattern) => pattern.test(filename));
+  }
+
+  /**
+   * Notify media players about library changes
+   */
+  private async notifyMediaPlayers(entityId: number, libraryPath: string): Promise<void> {
+    try {
+      // Get library ID from movie
+      const movie = await this.db.get<{ library_id: number }>(
+        `SELECT library_id FROM movies WHERE id = ?`,
+        [entityId]
+      );
+
+      if (!movie || !movie.library_id) {
+        logger.warn('[JobHandlers] No library ID found for movie', {
+          entityId,
+        });
+        return;
+      }
+
+      // Queue player notification jobs (same pattern as handlePublish)
+      const playerGroups = await this.db.query<{ id: number; name: string }>(
+        `SELECT DISTINCT mpg.id, mpg.name
+         FROM media_player_groups mpg
+         JOIN media_player_libraries mpl ON mpl.group_id = mpg.id
+         WHERE mpl.library_id = ?`,
+        [movie.library_id]
+      );
+
+      for (const group of playerGroups) {
+        // Queue notification for this player group
+        await this.jobQueue.addJob({
+          type: 'notify-kodi', // TODO: Support other player types
+          priority: 4,
+          retry_count: 0,
+          max_retries: 3,
+          payload: {
+            groupId: group.id,
+            libraryPath,
+          },
+        });
+
+        logger.debug('[JobHandlers] Queued player notification', {
+          entityId,
+          groupId: group.id,
+          groupName: group.name,
+        });
+      }
+    } catch (error: any) {
+      logger.error('[JobHandlers] Failed to notify media players', {
+        entityId,
+        error: error.message,
+      });
+      // Don't throw - player notification is optional
+    }
+  }
+
+  /**
+   * Map internal image type to Kodi naming convention
+   */
+  private getKodiImageType(imageType: string): string {
+    const mapping: Record<string, string> = {
+      poster: 'poster',
+      fanart: 'fanart',
+      backdrop: 'fanart',
+      logo: 'logo',
+      clearlogo: 'clearlogo',
+      banner: 'banner',
+      thumb: 'thumb',
+      clearart: 'clearart',
+      discart: 'disc',
+    };
+
+    return mapping[imageType] || imageType;
   }
 }
