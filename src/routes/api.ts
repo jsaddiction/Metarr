@@ -30,6 +30,8 @@ import { AssetConfigController } from '../controllers/assetConfigController.js';
 import { WebhookConfigController } from '../controllers/webhookConfigController.js';
 import { WebhookEventsController } from '../controllers/webhookEventsController.js';
 import { ActivityLogController } from '../controllers/activityLogController.js';
+import { SettingsController } from '../controllers/settingsController.js';
+import { WorkflowControlService } from '../services/workflowControlService.js';
 import { ProviderRegistry } from '../services/providers/ProviderRegistry.js';
 import { FetchOrchestrator } from '../services/providers/FetchOrchestrator.js';
 import { SchedulerController } from '../controllers/schedulerController.js';
@@ -123,6 +125,10 @@ export const createApiRouter = (
 
   // Initialize activity log controller
   const activityLogController = new ActivityLogController(dbManager);
+
+  // Initialize workflow control service and settings controller
+  const workflowControlService = new WorkflowControlService(db);
+  const settingsController = new SettingsController(workflowControlService);
 
   // Initialize asset controller
   const assetController = new AssetController(db);
@@ -533,6 +539,14 @@ export const createApiRouter = (
   router.get('/jobs', jobController.getActive);
   router.get('/jobs/history', jobController.getHistory);
   router.get('/jobs/:jobId', jobController.getJob);
+
+  // Settings Routes (Workflow Control)
+  logger.debug('[API Router] Registering settings routes');
+  router.get('/settings/workflow', (req, res) => settingsController.getWorkflowSettings(req, res));
+  router.put('/settings/workflow', (req, res) => settingsController.updateWorkflowSettings(req, res));
+  router.put('/settings/workflow/:stage', (req, res) => settingsController.updateWorkflowStage(req, res));
+  router.post('/settings/workflow/enable-all', (req, res) => settingsController.enableAllWorkflows(req, res));
+  router.post('/settings/workflow/disable-all', (req, res) => settingsController.disableAllWorkflows(req, res));
 
   // Automation Config Routes
   logger.debug('[API Router] Registering automation config routes');

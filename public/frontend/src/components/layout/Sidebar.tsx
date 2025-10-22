@@ -26,7 +26,8 @@ import {
   faBan,
   faSliders,
   faBook,
-  faHome
+  faHome,
+  faNetworkWired
 } from '@fortawesome/free-solid-svg-icons';
 import { useTheme } from '../../contexts/ThemeContext';
 
@@ -241,6 +242,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ isCollapsed = false, isMobileO
           icon: faSliders,
           label: 'Asset Limits',
           path: '/settings/asset-limits',
+        },
+        {
+          icon: faNetworkWired,
+          label: 'Workflow',
+          path: '/settings/workflow',
         },
       ],
     },

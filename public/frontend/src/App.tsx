@@ -29,6 +29,7 @@ import { Libraries } from './pages/settings/Libraries';
 import { MediaPlayers } from './pages/settings/MediaPlayers';
 import { Notifications } from './pages/settings/Notifications';
 import { AssetLimits } from './pages/settings/AssetLimits';
+import { Workflow } from './pages/settings/Workflow';
 import { SaveBarDemo } from './pages/test/SaveBarDemo';
 
 // Configure QueryClient
@@ -75,6 +76,7 @@ function usePageTitle() {
     '/settings/media-players': 'Media Players',
     '/settings/notifications': 'Notifications',
     '/settings/asset-limits': 'Asset Limits',
+    '/settings/workflow': 'Workflow Control',
     '/system/status': 'System Status',
     '/system/tasks': 'Tasks',
     '/system/backup': 'Backup',
@@ -127,6 +129,7 @@ function AppRoutes() {
         <Route path="/settings/media-players" element={<MediaPlayers />} />
         <Route path="/settings/notifications" element={<Notifications />} />
         <Route path="/settings/asset-limits" element={<AssetLimits />} />
+        <Route path="/settings/workflow" element={<Workflow />} />
 
         {/* Test routes */}
         <Route path="/test/save-bar-demo" element={<SaveBarDemo />} />
