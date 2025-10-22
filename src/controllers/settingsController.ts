@@ -18,7 +18,7 @@ export class SettingsController {
    * GET /api/settings/workflow
    * Get all workflow settings
    */
-  async getWorkflowSettings(req: Request, res: Response): Promise<void> {
+  async getWorkflowSettings(_req: Request, res: Response): Promise<void> {
     try {
       const settings = await this.workflowControl.getAll();
 
@@ -109,7 +109,7 @@ export class SettingsController {
    * POST /api/settings/workflow/enable-all
    * Enable all workflow stages (production mode)
    */
-  async enableAllWorkflows(req: Request, res: Response): Promise<void> {
+  async enableAllWorkflows(_req: Request, res: Response): Promise<void> {
     try {
       await this.workflowControl.enableAll();
       const settings = await this.workflowControl.getAll();
@@ -132,7 +132,7 @@ export class SettingsController {
    * POST /api/settings/workflow/disable-all
    * Disable all workflow stages (development mode)
    */
-  async disableAllWorkflows(req: Request, res: Response): Promise<void> {
+  async disableAllWorkflows(_req: Request, res: Response): Promise<void> {
     try {
       await this.workflowControl.disableAll();
       const settings = await this.workflowControl.getAll();

@@ -83,8 +83,7 @@ export class WorkflowControlService {
     });
 
     // Emit WebSocket event
-    websocketBroadcaster.broadcast({
-      type: 'workflow.updated',
+    websocketBroadcaster.broadcast('workflow.updated', {
       stage,
       enabled
     });

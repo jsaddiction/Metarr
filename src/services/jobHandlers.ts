@@ -629,59 +629,6 @@ export class JobHandlers {
   }
 
   /**
-   * Process movie webhook (discover → fetch → select → publish)
-   * Used by handleScanMovie
-   */
-  private async processMovieWebhook(movie: any): Promise<void> {
-    // 1. Check if movie exists in database
-    const existing = await this.db.query<{ id: number }>(
-      `SELECT id FROM movies WHERE radarr_id = ?`,
-      [movie.id]
-    );
-
-    let movieId: number;
-
-    if (existing.length === 0) {
-      // Insert new movie
-      const result = await this.db.execute(
-        `INSERT INTO movies (title, year, radarr_id, tmdb_id, imdb_id, file_path, state)
-         VALUES (?, ?, ?, ?, ?, ?, 'discovered')`,
-        [movie.title, movie.year, movie.id, movie.tmdbId, movie.imdbId, movie.path]
-      );
-      movieId = result.insertId!;
-      logger.info(`Created movie ${movieId}: ${movie.title} (${movie.year})`);
-    } else {
-      movieId = existing[0].id;
-      logger.info(`Movie already exists: ${movieId}`);
-    }
-
-    // 2. Discover assets from filesystem
-    await this.assetDiscovery.scanDirectory(movie.path, 'movie', movieId);
-
-    // 3. Fetch assets from TMDB (if tmdbId available)
-    if (movie.tmdbId && this.tmdbClient) {
-      await this.providerAssets.fetchMovieAssets(movieId, movie.tmdbId);
-    }
-
-    // 4. Check automation config and select assets if needed
-    const config = await this.getAutomationConfig(movieId, 'movie');
-    if (config && config.mode !== 'manual') {
-      // Auto-select assets based on mode
-      await this.autoSelectAssets(movieId, 'movie', config.mode);
-    }
-
-    // 5. Publish if YOLO mode
-    if (config && config.mode === 'yolo') {
-      await this.publishing.publish({
-        entityType: 'movie',
-        entityId: movieId,
-        libraryPath: movie.path,
-        mediaFilename: `${movie.title} (${movie.year})`
-      });
-    }
-  }
-
-  /**
    * Process series webhook
    * TODO: Implement series/episode processing
    * Currently unused - will be implemented when series support is added
@@ -1176,8 +1123,7 @@ export class JobHandlers {
     });
 
     // Emit WebSocket event for frontend
-    websocketBroadcaster.broadcast({
-      type: 'entity.published',
+    websocketBroadcaster.broadcast('entity.published', {
       entityType,
       entityId,
       assetsPublished: result.assetsPublished,
@@ -1443,6 +1389,8 @@ export class JobHandlers {
    * Auto-select assets based on mode (LEGACY - kept for backward compatibility)
    * New code should use handleSelectAssets job instead
    */
+  // @ts-expect-error - Intentionally unused, kept for reference
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   private async autoSelectAssets(
     entityId: number,
     entityType: 'movie' | 'series' | 'episode',

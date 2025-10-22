@@ -304,37 +304,20 @@ export class AssetController {
   /**
    * GET /api/assets/needs-publishing/:entityType/:entityId
    * Check if entity needs publishing
+   * TODO: Re-implement with new publishing service API
    */
-  needsPublishing = async (req: Request, res: Response): Promise<void> => {
-    try {
-      const { entityType, entityId } = req.params;
-
-      const needsPublishing = await this.publishing.needsPublishing(
-        entityType,
-        parseInt(entityId)
-      );
-
-      res.json({ needsPublishing });
-    } catch (error: any) {
-      logger.error('Error checking needs publishing:', error);
-      res.status(500).json({ error: error.message });
-    }
+  needsPublishing = async (_req: Request, res: Response): Promise<void> => {
+    // TODO: Implement with new publishing service
+    res.status(501).json({ error: 'Not implemented - needs refactor with new publishing service' });
   };
 
   /**
    * GET /api/assets/needs-publishing/:entityType
    * Get all entities of type that need publishing
+   * TODO: Re-implement with new publishing service API
    */
-  getEntitiesNeedingPublish = async (req: Request, res: Response): Promise<void> => {
-    try {
-      const { entityType } = req.params;
-
-      const entityIds = await this.publishing.getEntitiesNeedingPublish(entityType);
-
-      res.json({ entityIds });
-    } catch (error: any) {
-      logger.error('Error getting entities needing publish:', error);
-      res.status(500).json({ error: error.message });
-    }
+  getEntitiesNeedingPublish = async (_req: Request, res: Response): Promise<void> => {
+    // TODO: Implement with new publishing service
+    res.status(501).json({ error: 'Not implemented - needs refactor with new publishing service' });
   };
 }
