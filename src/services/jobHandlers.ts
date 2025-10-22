@@ -7,6 +7,7 @@ import { PublishingService } from './publishingService.js';
 import { TMDBClient } from './providers/tmdb/TMDBClient.js';
 import { NotificationConfigService } from './notificationConfigService.js';
 import { MediaPlayerConnectionManager } from './mediaPlayerConnectionManager.js';
+import { WorkflowControlService } from './workflowControlService.js';
 import { websocketBroadcaster } from './websocketBroadcaster.js';
 import { logger } from '../middleware/logging.js';
 
@@ -27,6 +28,7 @@ export class JobHandlers {
   private publishing: PublishingService;
   private notificationConfig: NotificationConfigService;
   private mediaPlayerManager: MediaPlayerConnectionManager;
+  private workflowControl: WorkflowControlService;
   private tmdbClient: TMDBClient | undefined;
 
   constructor(
@@ -47,6 +49,7 @@ export class JobHandlers {
     this.publishing = new PublishingService(db);
     this.notificationConfig = notificationConfig;
     this.mediaPlayerManager = mediaPlayerManager;
+    this.workflowControl = new WorkflowControlService(db);
     this.tmdbClient = tmdbClient;
   }
 
@@ -115,6 +118,19 @@ export class JobHandlers {
       source,
       eventType,
     });
+
+    // Check if webhook processing is enabled
+    const webhooksEnabled = await this.workflowControl.isEnabled('webhooks');
+    if (!webhooksEnabled) {
+      logger.info('[JobHandlers] Webhook processing disabled, skipping', {
+        service: 'JobHandlers',
+        handler: 'handleWebhookReceived',
+        jobId: job.id,
+        source,
+        eventType
+      });
+      return;
+    }
 
     // Only process Download events for now
     if (eventType !== 'Download') {
@@ -223,14 +239,19 @@ export class JobHandlers {
   }
 
   /**
-   * Handle scan-movie job
+   * Handle scan-movie job (JOB CHAINING PATTERN)
+   *
+   * This handler:
+   * 1. Inserts/updates movie in database
+   * 2. Chains to discover-assets job (if scanning workflow enabled)
    *
    * Payload: {
-   *   movie: { id, title, year, path, tmdbId, imdbId }
+   *   movie: { id, title, year, path, tmdbId, imdbId, folderPath },
+   *   libraryId?: number
    * }
    */
   private async handleScanMovie(job: Job): Promise<void> {
-    const { movie } = job.payload;
+    const { movie, libraryId } = job.payload;
 
     logger.info('[JobHandlers] Processing movie scan', {
       service: 'JobHandlers',
@@ -240,13 +261,72 @@ export class JobHandlers {
       movieYear: movie.year,
     });
 
-    await this.processMovieWebhook(movie);
+    // 1. Check if movie exists in database
+    const existing = await this.db.query<{ id: number }>(
+      `SELECT id FROM movies WHERE radarr_id = ?`,
+      [movie.id]
+    );
 
-    logger.info('[JobHandlers] Movie scan complete', {
+    let movieId: number;
+
+    if (existing.length === 0) {
+      // Insert new movie
+      const result = await this.db.execute(
+        `INSERT INTO movies (library_id, title, year, radarr_id, tmdb_id, imdb_id, file_path, identification_status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'identified')`,
+        [libraryId, movie.title, movie.year, movie.id, movie.tmdbId, movie.imdbId, movie.path]
+      );
+      movieId = result.insertId!;
+      logger.info(`[JobHandlers] Created movie ${movieId}: ${movie.title} (${movie.year})`);
+    } else {
+      movieId = existing[0].id;
+      // Update existing movie
+      await this.db.execute(
+        `UPDATE movies SET title = ?, year = ?, tmdb_id = ?, imdb_id = ?, file_path = ?, updated_at = CURRENT_TIMESTAMP
+         WHERE id = ?`,
+        [movie.title, movie.year, movie.tmdbId, movie.imdbId, movie.path, movieId]
+      );
+      logger.info(`[JobHandlers] Updated movie ${movieId}: ${movie.title} (${movie.year})`);
+    }
+
+    // 2. Check if scanning workflow is enabled
+    const scanningEnabled = await this.workflowControl.isEnabled('scanning');
+    if (!scanningEnabled) {
+      logger.info('[JobHandlers] Scanning workflow disabled, stopping chain', {
+        service: 'JobHandlers',
+        handler: 'handleScanMovie',
+        jobId: job.id,
+        movieId
+      });
+      return;
+    }
+
+    // 3. Chain to discover-assets job
+    const discoverJobId = await this.jobQueue.addJob({
+      type: 'discover-assets',
+      priority: 3, // Maintain HIGH priority from webhook
+      payload: {
+        entityType: 'movie',
+        entityId: movieId,
+        directoryPath: movie.path,
+        chainContext: {
+          source: 'webhook',
+          tmdbId: movie.tmdbId,
+          imdbId: movie.imdbId,
+          libraryId
+        }
+      },
+      retry_count: 0,
+      max_retries: 3,
+    });
+
+    logger.info('[JobHandlers] Movie scan complete, chained to discover-assets', {
       service: 'JobHandlers',
       handler: 'handleScanMovie',
       jobId: job.id,
+      movieId,
       movieTitle: movie.title,
+      discoverJobId
     });
   }
 
@@ -615,55 +695,191 @@ export class JobHandlers {
   }
 
   /**
-   * Handle discover-assets job
+   * Handle discover-assets job (JOB CHAINING PATTERN)
+   *
+   * This handler:
+   * 1. Scans directory for local assets (images, videos, text files)
+   * 2. Chains to fetch-provider-assets job (if identification workflow enabled)
    *
    * Payload: {
    *   entityType: 'movie' | 'series' | 'episode',
    *   entityId: number,
-   *   directoryPath: string
+   *   directoryPath: string,
+   *   chainContext?: { source, tmdbId, imdbId, libraryId }
    * }
    */
   private async handleDiscoverAssets(job: Job): Promise<void> {
-    const { entityType, entityId, directoryPath } = job.payload;
+    const { entityType, entityId, directoryPath, chainContext } = job.payload;
 
-    logger.info(`Discovering assets for ${entityType} ${entityId} in ${directoryPath}`);
+    logger.info('[JobHandlers] Discovering assets', {
+      service: 'JobHandlers',
+      handler: 'handleDiscoverAssets',
+      jobId: job.id,
+      entityType,
+      entityId,
+      directoryPath
+    });
 
+    // 1. Scan directory for local assets
     const result = await this.assetDiscovery.scanDirectory(
       directoryPath,
       entityType,
       entityId
     );
 
-    logger.info(`Asset discovery complete`, result);
+    logger.info('[JobHandlers] Asset discovery complete', {
+      service: 'JobHandlers',
+      handler: 'handleDiscoverAssets',
+      jobId: job.id,
+      ...result
+    });
+
+    // 2. Check if identification workflow is enabled
+    const identificationEnabled = await this.workflowControl.isEnabled('identification');
+    if (!identificationEnabled) {
+      logger.info('[JobHandlers] Identification workflow disabled, stopping chain', {
+        service: 'JobHandlers',
+        handler: 'handleDiscoverAssets',
+        jobId: job.id,
+        entityType,
+        entityId
+      });
+      return;
+    }
+
+    // 3. Check if we have provider ID to fetch from
+    if (!chainContext?.tmdbId) {
+      logger.info('[JobHandlers] No TMDB ID available, cannot fetch provider assets', {
+        service: 'JobHandlers',
+        handler: 'handleDiscoverAssets',
+        jobId: job.id,
+        entityType,
+        entityId
+      });
+      return;
+    }
+
+    // 4. Chain to fetch-provider-assets job
+    const fetchJobId = await this.jobQueue.addJob({
+      type: 'fetch-provider-assets',
+      priority: 5, // NORMAL priority for provider fetches
+      payload: {
+        entityType,
+        entityId,
+        provider: 'tmdb',
+        providerId: chainContext.tmdbId,
+        chainContext
+      },
+      retry_count: 0,
+      max_retries: 3,
+    });
+
+    logger.info('[JobHandlers] Asset discovery complete, chained to fetch-provider-assets', {
+      service: 'JobHandlers',
+      handler: 'handleDiscoverAssets',
+      jobId: job.id,
+      entityType,
+      entityId,
+      fetchJobId
+    });
   }
 
   /**
-   * Handle fetch-provider-assets job
+   * Handle fetch-provider-assets job (JOB CHAINING PATTERN)
+   *
+   * This handler:
+   * 1. Fetches assets from provider (TMDB/TVDB)
+   * 2. Chains to select-assets job (if enrichment workflow enabled)
    *
    * Payload: {
    *   entityType: 'movie' | 'series' | 'episode',
    *   entityId: number,
    *   provider: 'tmdb' | 'tvdb',
-   *   providerId: number
+   *   providerId: number,
+   *   chainContext?: { source, libraryId }
    * }
    */
   private async handleFetchProviderAssets(job: Job): Promise<void> {
-    const { entityType, entityId, provider, providerId } = job.payload;
+    const { entityType, entityId, provider, providerId, chainContext } = job.payload;
+
+    logger.info('[JobHandlers] Fetching provider assets', {
+      service: 'JobHandlers',
+      handler: 'handleFetchProviderAssets',
+      jobId: job.id,
+      entityType,
+      entityId,
+      provider,
+      providerId
+    });
 
     // Check if entity is monitored
     const isMonitored = await this.isEntityMonitored(entityType, entityId);
     if (!isMonitored) {
-      logger.info(`Skipping asset fetch for unmonitored ${entityType} ${entityId}`);
+      logger.info('[JobHandlers] Skipping asset fetch for unmonitored entity', {
+        service: 'JobHandlers',
+        handler: 'handleFetchProviderAssets',
+        jobId: job.id,
+        entityType,
+        entityId
+      });
       return;
     }
 
-    logger.info(`Fetching assets from ${provider} for ${entityType} ${entityId}`);
-
+    // 1. Fetch assets from provider
+    let result;
     if (provider === 'tmdb' && entityType === 'movie') {
-      const result = await this.providerAssets.fetchMovieAssets(entityId, providerId);
-      logger.info(`Fetched ${result.fetched} assets from TMDB`, result);
+      result = await this.providerAssets.fetchMovieAssets(entityId, providerId);
+      logger.info('[JobHandlers] Fetched assets from TMDB', {
+        service: 'JobHandlers',
+        handler: 'handleFetchProviderAssets',
+        jobId: job.id,
+        fetched: result.fetched
+      });
+    } else {
+      logger.warn('[JobHandlers] Unsupported provider/entityType combination', {
+        service: 'JobHandlers',
+        handler: 'handleFetchProviderAssets',
+        jobId: job.id,
+        provider,
+        entityType
+      });
+      return;
     }
-    // TODO: Add TVDB support
+
+    // 2. Check if enrichment workflow is enabled
+    const enrichmentEnabled = await this.workflowControl.isEnabled('enrichment');
+    if (!enrichmentEnabled) {
+      logger.info('[JobHandlers] Enrichment workflow disabled, stopping chain', {
+        service: 'JobHandlers',
+        handler: 'handleFetchProviderAssets',
+        jobId: job.id,
+        entityType,
+        entityId
+      });
+      return;
+    }
+
+    // 3. Chain to select-assets job
+    const selectJobId = await this.jobQueue.addJob({
+      type: 'select-assets',
+      priority: 5, // NORMAL priority
+      payload: {
+        entityType,
+        entityId,
+        chainContext
+      },
+      retry_count: 0,
+      max_retries: 3,
+    });
+
+    logger.info('[JobHandlers] Provider assets fetched, chained to select-assets', {
+      service: 'JobHandlers',
+      handler: 'handleFetchProviderAssets',
+      jobId: job.id,
+      entityType,
+      entityId,
+      selectJobId
+    });
   }
 
   /**
@@ -753,60 +969,182 @@ export class JobHandlers {
   }
 
   /**
-   * Handle select-assets job
+   * Handle select-assets job (JOB CHAINING PATTERN)
+   *
+   * This handler:
+   * 1. Auto-selects best assets based on automation config
+   * 2. Chains to publish job (if publishing workflow enabled and YOLO mode)
    *
    * Payload: {
    *   entityType: 'movie' | 'series' | 'episode',
    *   entityId: number,
-   *   mode: 'yolo' | 'hybrid',
-   *   assetTypes?: string[] (optional, defaults to all)
+   *   mode?: 'yolo' | 'hybrid' | 'manual',
+   *   assetTypes?: string[],
+   *   chainContext?: { source, libraryId }
    * }
    */
   private async handleSelectAssets(job: Job): Promise<void> {
-    const { entityType, entityId, mode, assetTypes } = job.payload;
+    const { entityType, entityId, mode, assetTypes, chainContext } = job.payload;
 
-    logger.info(`Auto-selecting assets for ${entityType} ${entityId} (${mode} mode)`);
+    logger.info('[JobHandlers] Auto-selecting assets', {
+      service: 'JobHandlers',
+      handler: 'handleSelectAssets',
+      jobId: job.id,
+      entityType,
+      entityId,
+      mode
+    });
 
-    const types = assetTypes || ['poster', 'fanart', 'banner', 'clearlogo', 'trailer'];
+    // Get automation config for this entity
+    const config = await this.getAutomationConfig(entityId, entityType);
+    const selectionMode = mode || config?.mode || 'manual';
+
+    // Skip if manual mode (user must select)
+    if (selectionMode === 'manual') {
+      logger.info('[JobHandlers] Manual mode, skipping auto-selection', {
+        service: 'JobHandlers',
+        handler: 'handleSelectAssets',
+        jobId: job.id,
+        entityType,
+        entityId
+      });
+      return;
+    }
+
+    // 1. Auto-select assets
+    const types = assetTypes || ['poster', 'fanart', 'banner', 'clearlogo', 'clearart', 'discart', 'landscape'];
+    let selectedCount = 0;
 
     for (const assetType of types) {
-      const config = {
+      const selectConfig = {
         entityType,
         entityId,
         assetType,
-        mode
+        mode: selectionMode
       };
 
       let result;
-      if (mode === 'yolo') {
-        result = await this.assetSelection.selectAssetYOLO(config);
+      if (selectionMode === 'yolo') {
+        result = await this.assetSelection.selectAssetYOLO(selectConfig);
       } else {
-        result = await this.assetSelection.selectAssetHybrid(config);
+        result = await this.assetSelection.selectAssetHybrid(selectConfig);
       }
 
       if (result.selected) {
-        logger.info(`Selected ${assetType} for ${entityType} ${entityId}`, {
+        selectedCount++;
+        logger.info('[JobHandlers] Selected asset', {
+          service: 'JobHandlers',
+          handler: 'handleSelectAssets',
+          jobId: job.id,
+          assetType,
           candidateId: result.candidateId
         });
       }
     }
+
+    logger.info('[JobHandlers] Asset selection complete', {
+      service: 'JobHandlers',
+      handler: 'handleSelectAssets',
+      jobId: job.id,
+      selectedCount,
+      totalTypes: types.length
+    });
+
+    // 2. Check if publishing workflow is enabled
+    const publishingEnabled = await this.workflowControl.isEnabled('publishing');
+    if (!publishingEnabled) {
+      logger.info('[JobHandlers] Publishing workflow disabled, stopping chain', {
+        service: 'JobHandlers',
+        handler: 'handleSelectAssets',
+        jobId: job.id,
+        entityType,
+        entityId
+      });
+      return;
+    }
+
+    // 3. Only publish in YOLO mode (hybrid requires user approval)
+    if (selectionMode !== 'yolo') {
+      logger.info('[JobHandlers] Not in YOLO mode, skipping publish', {
+        service: 'JobHandlers',
+        handler: 'handleSelectAssets',
+        jobId: job.id,
+        entityType,
+        entityId,
+        mode: selectionMode
+      });
+      return;
+    }
+
+    // 4. Get entity details for publishing
+    const entity = await this.getEntityForPublish(entityType, entityId);
+    if (!entity) {
+      logger.error('[JobHandlers] Entity not found for publishing', {
+        service: 'JobHandlers',
+        handler: 'handleSelectAssets',
+        jobId: job.id,
+        entityType,
+        entityId
+      });
+      return;
+    }
+
+    // 5. Chain to publish job
+    const publishJobId = await this.jobQueue.addJob({
+      type: 'publish',
+      priority: 5, // NORMAL priority
+      payload: {
+        entityType,
+        entityId,
+        libraryPath: entity.file_path,
+        mediaFilename: entity.title,
+        chainContext
+      },
+      retry_count: 0,
+      max_retries: 3,
+    });
+
+    logger.info('[JobHandlers] Assets selected, chained to publish', {
+      service: 'JobHandlers',
+      handler: 'handleSelectAssets',
+      jobId: job.id,
+      entityType,
+      entityId,
+      publishJobId
+    });
   }
 
   /**
-   * Handle publish job
+   * Handle publish job (FINAL STEP IN CHAIN)
+   *
+   * This handler:
+   * 1. Publishes selected assets to library directory
+   * 2. Generates NFO file
+   * 3. Notifies media players (optional)
+   *
+   * This is the final step in the workflow chain.
    *
    * Payload: {
    *   entityType: 'movie' | 'series' | 'episode',
    *   entityId: number,
    *   libraryPath: string,
-   *   mediaFilename?: string
+   *   mediaFilename?: string,
+   *   chainContext?: { source, libraryId }
    * }
    */
   private async handlePublish(job: Job): Promise<void> {
-    const { entityType, entityId, libraryPath, mediaFilename } = job.payload;
+    const { entityType, entityId, libraryPath, mediaFilename, chainContext } = job.payload;
 
-    logger.info(`Publishing ${entityType} ${entityId} to ${libraryPath}`);
+    logger.info('[JobHandlers] Publishing to library', {
+      service: 'JobHandlers',
+      handler: 'handlePublish',
+      jobId: job.id,
+      entityType,
+      entityId,
+      libraryPath
+    });
 
+    // Publish assets and NFO
     const result = await this.publishing.publish({
       entityType,
       entityId,
@@ -815,10 +1153,36 @@ export class JobHandlers {
     });
 
     if (!result.success) {
+      logger.error('[JobHandlers] Publishing failed', {
+        service: 'JobHandlers',
+        handler: 'handlePublish',
+        jobId: job.id,
+        entityType,
+        entityId,
+        errors: result.errors
+      });
       throw new Error(`Publishing failed: ${result.errors.join(', ')}`);
     }
 
-    logger.info(`Published ${entityType} ${entityId}`, result);
+    logger.info('[JobHandlers] Publishing complete (END OF CHAIN)', {
+      service: 'JobHandlers',
+      handler: 'handlePublish',
+      jobId: job.id,
+      entityType,
+      entityId,
+      assetsPublished: result.assetsPublished,
+      nfoGenerated: result.nfoGenerated,
+      chainSource: chainContext?.source
+    });
+
+    // Emit WebSocket event for frontend
+    websocketBroadcaster.broadcast({
+      type: 'entity.published',
+      entityType,
+      entityId,
+      assetsPublished: result.assetsPublished,
+      nfoGenerated: result.nfoGenerated
+    });
   }
 
   /**
@@ -1050,7 +1414,34 @@ export class JobHandlers {
   }
 
   /**
-   * Auto-select assets based on mode
+   * Get entity details for publishing
+   */
+  private async getEntityForPublish(
+    entityType: string,
+    entityId: number
+  ): Promise<{ file_path: string; title: string } | null> {
+    try {
+      const table = entityType === 'movie' ? 'movies' : entityType === 'series' ? 'series' : 'episodes';
+      const result = await this.db.query<{ file_path: string; title: string }>(
+        `SELECT file_path, title FROM ${table} WHERE id = ?`,
+        [entityId]
+      );
+
+      return result.length > 0 ? result[0] : null;
+    } catch (error: any) {
+      logger.error('[JobHandlers] Failed to get entity for publish', {
+        service: 'JobHandlers',
+        entityType,
+        entityId,
+        error: error.message
+      });
+      return null;
+    }
+  }
+
+  /**
+   * Auto-select assets based on mode (LEGACY - kept for backward compatibility)
+   * New code should use handleSelectAssets job instead
    */
   private async autoSelectAssets(
     entityId: number,

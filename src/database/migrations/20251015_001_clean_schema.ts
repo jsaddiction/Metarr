@@ -1302,6 +1302,16 @@ export class CleanSchemaMigration {
       )
     `);
 
+    // Insert default workflow settings (all disabled for development safety)
+    await db.execute(`
+      INSERT INTO app_settings (key, value) VALUES
+        ('workflow.webhooks', 'false'),
+        ('workflow.scanning', 'false'),
+        ('workflow.identification', 'false'),
+        ('workflow.enrichment', 'false'),
+        ('workflow.publishing', 'false')
+    `);
+
     // Ignore Patterns (for unknown file detection)
     await db.execute(`
       CREATE TABLE ignore_patterns (

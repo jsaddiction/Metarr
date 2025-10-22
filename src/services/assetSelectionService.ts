@@ -15,7 +15,7 @@ import { logger } from '../middleware/logging.js';
  * - Lock asset type on entity (e.g., poster_locked = 1)
  * - Set selected_by (user ID or 'auto')
  * - Set selected_at timestamp
- * - Mark entity as having unpublished changes (has_unpublished_changes = 1)
+ * - Trigger publishing job if auto-publish is enabled
  */
 
 export interface SelectionConfig {
@@ -83,9 +83,6 @@ export class AssetSelectionService {
       // Lock the asset type on the entity
       await this.lockAssetType(asset.entity_type, asset.entity_id, asset.asset_type);
 
-      // Mark entity as having unpublished changes
-      await this.markDirty(asset.entity_type, asset.entity_id);
-
       logger.info(`Asset selected manually: ${asset.asset_type} for ${asset.entity_type} ${asset.entity_id}`, {
         candidateId,
         userId
@@ -140,9 +137,6 @@ export class AssetSelectionService {
 
       // Lock the asset type
       await this.lockAssetType(config.entityType, config.entityId, config.assetType);
-
-      // Mark entity as dirty
-      await this.markDirty(config.entityType, config.entityId);
 
       logger.info(`Asset selected automatically (YOLO): ${config.assetType} for ${config.entityType} ${config.entityId}`, {
         candidateId: bestCandidate.id,
@@ -306,9 +300,6 @@ export class AssetSelectionService {
       // Deselect all candidates of this type
       await this.deselectAssetType(entityType, entityId, assetType);
 
-      // Mark entity as dirty
-      await this.markDirty(entityType, entityId);
-
       logger.info(`Asset type unlocked: ${assetType} for ${entityType} ${entityId}`);
 
       return true;
@@ -419,20 +410,6 @@ export class AssetSelectionService {
     );
   }
 
-  /**
-   * Mark entity as having unpublished changes (dirty)
-   */
-  private async markDirty(entityType: string, entityId: number): Promise<void> {
-    const table = this.getTableName(entityType);
-    if (!table) {
-      return;
-    }
-
-    await this.db.execute(
-      `UPDATE ${table} SET has_unpublished_changes = 1 WHERE id = ?`,
-      [entityId]
-    );
-  }
 
   /**
    * Get lock column name for asset type

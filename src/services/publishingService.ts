@@ -12,8 +12,7 @@ import { logger } from '../middleware/logging.js';
  * 2. Generate NFO file with current metadata
  * 3. Calculate NFO hash and store in published_nfo_hash
  * 4. Update last_published_at timestamp
- * 5. Clear has_unpublished_changes flag
- * 6. Log publication in publish_log table
+ * 5. Log publication in publish_log table
  *
  * Publishing is idempotent - can be called multiple times safely.
  */
@@ -399,8 +398,7 @@ export class PublishingService {
 
     await this.db.execute(
       `UPDATE ${table}
-       SET has_unpublished_changes = 0,
-           last_published_at = CURRENT_TIMESTAMP,
+       SET last_published_at = CURRENT_TIMESTAMP,
            published_nfo_hash = ?
        WHERE id = ?`,
       [nfoHash, entityId]
@@ -469,33 +467,35 @@ export class PublishingService {
   }
 
   /**
-   * Check if entity needs republishing (has unpublished changes)
+   * Check if entity has been published (has published_nfo_hash)
+   * This can be used to determine if initial publishing is needed
    */
-  async needsPublishing(entityType: string, entityId: number): Promise<boolean> {
+  async hasBeenPublished(entityType: string, entityId: number): Promise<boolean> {
     const table = this.getTableName(entityType);
     if (!table) {
       return false;
     }
 
-    const result = await this.db.query<{ has_unpublished_changes: number }>(
-      `SELECT has_unpublished_changes FROM ${table} WHERE id = ?`,
+    const result = await this.db.query<{ published_nfo_hash: string | null }>(
+      `SELECT published_nfo_hash FROM ${table} WHERE id = ?`,
       [entityId]
     );
 
-    return result.length > 0 && result[0].has_unpublished_changes === 1;
+    return result.length > 0 && result[0].published_nfo_hash !== null;
   }
 
   /**
-   * Get all entities that need publishing
+   * Get all entities that have never been published
+   * Useful for initial publishing after enrichment
    */
-  async getEntitiesNeedingPublish(entityType: string): Promise<number[]> {
+  async getUnpublishedEntities(entityType: string): Promise<number[]> {
     const table = this.getTableName(entityType);
     if (!table) {
       return [];
     }
 
     const result = await this.db.query<{ id: number }>(
-      `SELECT id FROM ${table} WHERE has_unpublished_changes = 1`,
+      `SELECT id FROM ${table} WHERE published_nfo_hash IS NULL AND monitored = 1`,
       []
     );
 
