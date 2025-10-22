@@ -37,7 +37,7 @@ export class WebSocketController {
     wsServer: MetarrWebSocketServer,
     jobQueue?: any // JobQueueService - optional for backward compatibility
   ) {
-    this.movieService = new MovieService(dbManager);
+    this.movieService = new MovieService(dbManager, jobQueue);
     this.mediaPlayerService = new MediaPlayerService(dbManager, connectionManager);
     this.libraryService = new LibraryService(dbManager);
     // Note: LibraryScanService requires jobQueue but websocketController may not have it
