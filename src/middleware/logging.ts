@@ -24,6 +24,7 @@ if (config.logging.file.enabled) {
       level: 'error',
       maxsize: parseInt(config.logging.file.maxSize) * 1024 * 1024,
       maxFiles: config.logging.file.maxFiles,
+      options: { flags: 'a' }, // Append mode without exclusive lock (Windows compatibility)
     })
   );
 
@@ -32,6 +33,7 @@ if (config.logging.file.enabled) {
       filename: `${config.logging.file.path}/app.log`,
       maxsize: parseInt(config.logging.file.maxSize) * 1024 * 1024,
       maxFiles: config.logging.file.maxFiles,
+      options: { flags: 'a' }, // Append mode without exclusive lock (Windows compatibility)
     })
   );
 }
