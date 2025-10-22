@@ -120,18 +120,18 @@ export class MovieService {
          JOIN cache_text_files c ON l.cache_file_id = c.id
          WHERE c.entity_type = 'movie' AND c.entity_id = m.id AND c.text_type = 'nfo') as nfo_parsed_at,
 
-        -- Asset counts from split cache/library tables (scalar subqueries)
-        (SELECT COUNT(*) FROM library_image_files l JOIN cache_image_files c ON l.cache_file_id = c.id WHERE c.entity_type = 'movie' AND c.entity_id = m.id AND c.image_type = 'poster') as poster_count,
-        (SELECT COUNT(*) FROM library_image_files l JOIN cache_image_files c ON l.cache_file_id = c.id WHERE c.entity_type = 'movie' AND c.entity_id = m.id AND c.image_type = 'fanart') as fanart_count,
-        (SELECT COUNT(*) FROM library_image_files l JOIN cache_image_files c ON l.cache_file_id = c.id WHERE c.entity_type = 'movie' AND c.entity_id = m.id AND c.image_type = 'landscape') as landscape_count,
-        (SELECT COUNT(*) FROM library_image_files l JOIN cache_image_files c ON l.cache_file_id = c.id WHERE c.entity_type = 'movie' AND c.entity_id = m.id AND c.image_type = 'keyart') as keyart_count,
-        (SELECT COUNT(*) FROM library_image_files l JOIN cache_image_files c ON l.cache_file_id = c.id WHERE c.entity_type = 'movie' AND c.entity_id = m.id AND c.image_type = 'banner') as banner_count,
-        (SELECT COUNT(*) FROM library_image_files l JOIN cache_image_files c ON l.cache_file_id = c.id WHERE c.entity_type = 'movie' AND c.entity_id = m.id AND c.image_type = 'clearart') as clearart_count,
-        (SELECT COUNT(*) FROM library_image_files l JOIN cache_image_files c ON l.cache_file_id = c.id WHERE c.entity_type = 'movie' AND c.entity_id = m.id AND c.image_type = 'clearlogo') as clearlogo_count,
-        (SELECT COUNT(*) FROM library_image_files l JOIN cache_image_files c ON l.cache_file_id = c.id WHERE c.entity_type = 'movie' AND c.entity_id = m.id AND c.image_type = 'discart') as discart_count,
-        (SELECT COUNT(*) FROM library_video_files l JOIN cache_video_files c ON l.cache_file_id = c.id WHERE c.entity_type = 'movie' AND c.entity_id = m.id AND c.video_type = 'trailer') as trailer_count,
-        (SELECT COUNT(*) FROM library_text_files l JOIN cache_text_files c ON l.cache_file_id = c.id WHERE c.entity_type = 'movie' AND c.entity_id = m.id AND c.text_type = 'subtitle') as subtitle_count,
-        (SELECT COUNT(*) FROM library_audio_files l JOIN cache_audio_files c ON l.cache_file_id = c.id WHERE c.entity_type = 'movie' AND c.entity_id = m.id AND c.audio_type = 'theme') as theme_count
+        -- Asset counts from cache tables (source of truth for all assets)
+        (SELECT COUNT(*) FROM cache_image_files WHERE entity_type = 'movie' AND entity_id = m.id AND image_type = 'poster') as poster_count,
+        (SELECT COUNT(*) FROM cache_image_files WHERE entity_type = 'movie' AND entity_id = m.id AND image_type = 'fanart') as fanart_count,
+        (SELECT COUNT(*) FROM cache_image_files WHERE entity_type = 'movie' AND entity_id = m.id AND image_type = 'landscape') as landscape_count,
+        (SELECT COUNT(*) FROM cache_image_files WHERE entity_type = 'movie' AND entity_id = m.id AND image_type = 'keyart') as keyart_count,
+        (SELECT COUNT(*) FROM cache_image_files WHERE entity_type = 'movie' AND entity_id = m.id AND image_type = 'banner') as banner_count,
+        (SELECT COUNT(*) FROM cache_image_files WHERE entity_type = 'movie' AND entity_id = m.id AND image_type = 'clearart') as clearart_count,
+        (SELECT COUNT(*) FROM cache_image_files WHERE entity_type = 'movie' AND entity_id = m.id AND image_type = 'clearlogo') as clearlogo_count,
+        (SELECT COUNT(*) FROM cache_image_files WHERE entity_type = 'movie' AND entity_id = m.id AND image_type = 'discart') as discart_count,
+        (SELECT COUNT(*) FROM cache_video_files WHERE entity_type = 'movie' AND entity_id = m.id AND video_type = 'trailer') as trailer_count,
+        (SELECT COUNT(*) FROM cache_text_files WHERE entity_type = 'movie' AND entity_id = m.id AND text_type = 'subtitle') as subtitle_count,
+        (SELECT COUNT(*) FROM cache_audio_files WHERE entity_type = 'movie' AND entity_id = m.id AND audio_type = 'theme') as theme_count
 
       FROM movies m
 
