@@ -94,15 +94,6 @@ export interface CacheImageFileRecord {
   classificationScore?: number;
 }
 
-// Legacy interface - deprecated, kept for backwards compatibility
-export interface ImageFileRecord extends CacheImageFileRecord {
-  location: 'library' | 'cache';
-  isPublished?: boolean;
-  libraryFileId?: number;
-  cacheFileId?: number;
-  referenceCount?: number;
-}
-
 export interface CacheVideoFileRecord {
   entityType: 'movie' | 'episode';
   entityId: number;
@@ -127,35 +118,6 @@ export interface CacheVideoFileRecord {
   classificationScore?: number;
 }
 
-// Legacy interface - deprecated
-export interface VideoFileRecord {
-  entityType: 'movie' | 'episode';
-  entityId: number;
-  filePath: string;
-  fileName: string;
-  fileSize: number;
-  fileHash?: string;
-  videoType: 'main' | 'trailer' | 'sample' | 'extra';
-  location: 'library' | 'cache';
-  codec?: string;
-  width?: number;
-  height?: number;
-  durationSeconds?: number;
-  bitrate?: number;
-  framerate?: number;
-  hdrType?: string;
-  audioCodec?: string;
-  audioChannels?: number;
-  audioLanguage?: string;
-  sourceType?: 'provider' | 'local' | 'user';
-  sourceUrl?: string;
-  providerName?: string;
-  classificationScore?: number;
-  libraryFileId?: number;
-  cacheFileId?: number;
-  referenceCount?: number;
-}
-
 export interface CacheTextFileRecord {
   entityType: 'movie' | 'episode';
   entityId: number;
@@ -173,13 +135,6 @@ export interface CacheTextFileRecord {
   sourceUrl?: string;
 }
 
-// Legacy interface - deprecated
-export interface TextFileRecord extends CacheTextFileRecord {
-  location: 'library' | 'cache';
-  libraryFileId?: number;
-  cacheFileId?: number;
-  referenceCount?: number;
-}
 
 // ============================================================
 // IMAGE FILE OPERATIONS
@@ -208,9 +163,9 @@ export async function insertLibraryImageFile(
 
 /**
  * Insert cache image file record
- * Internal function called by cacheImageFile() to store cached images
+ * Called by cacheImageFile() and other services to store cached images
  */
-async function insertCacheImageFile(
+export async function insertCacheImageFile(
   db: DatabaseConnection,
   record: CacheImageFileRecord
 ): Promise<number> {
@@ -247,20 +202,6 @@ async function insertCacheImageFile(
   });
 
   return result.insertId!;
-}
-
-/**
- * @deprecated Use insertLibraryImageFile or insertCacheImageFile instead
- */
-export async function insertImageFile(
-  db: DatabaseConnection,
-  record: ImageFileRecord
-): Promise<number> {
-  if (record.location === 'cache') {
-    return insertCacheImageFile(db, record);
-  } else {
-    return insertLibraryImageFile(db, record.filePath);
-  }
 }
 
 /**
@@ -473,9 +414,9 @@ export async function insertLibraryVideoFile(
 
 /**
  * Insert cache video file record
- * Internal function called by cacheVideoFile() to store cached videos
+ * Called to store cached video files (trailers, samples, extras)
  */
-async function insertCacheVideoFile(
+export async function insertCacheVideoFile(
   db: DatabaseConnection,
   record: CacheVideoFileRecord
 ): Promise<number> {
@@ -521,24 +462,6 @@ async function insertCacheVideoFile(
   return result.insertId!;
 }
 
-/**
- * @deprecated Use insertLibraryVideoFile or insertCacheVideoFile instead
- */
-export async function insertVideoFile(
-  db: DatabaseConnection,
-  record: VideoFileRecord
-): Promise<number> {
-  if (record.location === 'cache') {
-    // Only allow valid cache video types
-    if (record.videoType === 'main') {
-      throw new Error('Main video files cannot be stored in cache_video_files');
-    }
-    return insertCacheVideoFile(db, record as CacheVideoFileRecord);
-  } else {
-    return insertLibraryVideoFile(db, record.filePath);
-  }
-}
-
 // ============================================================
 // TEXT FILE OPERATIONS
 // ============================================================
@@ -566,9 +489,9 @@ export async function insertLibraryTextFile(
 
 /**
  * Insert cache text file record
- * Internal function called by cacheTextFile() to store cached text files
+ * Called to store cached text files (NFOs, subtitles)
  */
-async function insertCacheTextFile(
+export async function insertCacheTextFile(
   db: DatabaseConnection,
   record: CacheTextFileRecord
 ): Promise<number> {
@@ -609,19 +532,6 @@ async function insertCacheTextFile(
   return result.insertId!;
 }
 
-/**
- * @deprecated Use insertLibraryTextFile or insertCacheTextFile instead
- */
-export async function insertTextFile(
-  db: DatabaseConnection,
-  record: TextFileRecord
-): Promise<number> {
-  if (record.location === 'cache') {
-    return insertCacheTextFile(db, record);
-  } else {
-    return insertLibraryTextFile(db, record.filePath);
-  }
-}
 
 /**
  * Calculate SHA256 hash for a file
@@ -636,16 +546,16 @@ export async function calculateFileHash(filePath: string): Promise<string> {
 // ============================================================
 
 /**
- * Get all files for an entity
+ * Get all cached files for an entity
  */
 export async function getEntityFiles(
   db: DatabaseConnection,
   entityType: 'movie' | 'episode',
   entityId: number
 ): Promise<{
-  videoFiles: VideoFileRecord[];
-  imageFiles: ImageFileRecord[];
-  textFiles: TextFileRecord[];
+  videoFiles: CacheVideoFileRecord[];
+  imageFiles: CacheImageFileRecord[];
+  textFiles: CacheTextFileRecord[];
 }> {
   const [videoFiles, imageFiles, textFiles] = await Promise.all([
     db.query<any[]>(

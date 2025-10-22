@@ -8,7 +8,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { DatabaseConnection } from '../../types/database.js';
 import { logger } from '../../middleware/logging.js';
-import { insertTextFile, calculateFileHash } from '../files/unifiedFileService.js';
+import { insertCacheTextFile, calculateFileHash } from '../files/unifiedFileService.js';
 import { FullMovieNFO } from '../../types/models.js';
 
 /**
@@ -68,14 +68,13 @@ export async function trackNFOFile(
       return existingId;
     } else {
       // Insert new record
-      const nfoFileId = await insertTextFile(db, {
+      const nfoFileId = await insertCacheTextFile(db, {
         entityType,
         entityId,
         filePath: nfoFilePath,
         fileName: path.basename(nfoFilePath),
         fileSize: stats.size,
         fileHash,
-        location: 'library', // NFOs always in library
         textType: 'nfo',
         nfoIsValid: nfoData.valid,
         nfoHasTmdbId: Boolean(nfoData.tmdbId),
