@@ -119,18 +119,17 @@ Phase 2: LAZY ENRICHMENT (hours to days, background)
   - Non-blocking, resumable
 ```
 
-**Data State Machine**
+**Job-Driven Architecture**
 
 ```
-DISCOVERED → IDENTIFIED → ENRICHING → ENRICHED → SELECTED → PUBLISHED
-                                                             ↑
-                                                    (dirty state tracking)
+Job completes → Triggers next job → Chain continues
+Example: Enrichment → Asset Selection → Publishing
 ```
 
 ### Key Features
 
-- **Content-Addressed Cache**: SHA256-based naming, automatic deduplication, immutable storage
-- **Dirty State Tracking**: `has_unpublished_changes` flag, batch publishing, rollback capability
+- **UUID-Based Cache**: UUID naming with SHA256 deduplication, immutable storage
+- **Job Queue State Machine**: Event-driven job chaining, no explicit state tracking
 - **Field & Asset Locking**: Per-field and per-asset granular locking preserves user intent
 - **Transactional Publishing**: Atomic writes, rollback on failure, player notification
 - **Disaster Recovery**: Restore from cache when Radarr/Sonarr deletes assets during upgrades
