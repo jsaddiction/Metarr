@@ -6,6 +6,7 @@ import { FetchOrchestrator, ProgressCallback } from '../services/providers/Fetch
 import { AssetType } from '../types/providers/capabilities.js';
 import { AssetSelectionService } from '../services/assetSelectionService.js';
 import { AssetCandidateService } from '../services/assetCandidateService.js';
+import { ProviderOrchestrator } from '../services/providers/ProviderOrchestrator.js';
 import { logger } from '../middleware/logging.js';
 
 export class MovieController {
@@ -14,8 +15,13 @@ export class MovieController {
     private scanService: LibraryScanService,
     private fetchOrchestrator?: FetchOrchestrator,
     private assetSelectionService?: AssetSelectionService,
-    private assetCandidateService?: AssetCandidateService
-  ) {}
+    private assetCandidateService?: AssetCandidateService,
+    // providerOrchestrator is injected for future use, currently service methods create their own instances
+    private providerOrchestrator?: ProviderOrchestrator
+  ) {
+    // Keep reference to providerOrchestrator for future direct use
+    void this.providerOrchestrator;
+  }
 
   async getAll(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
@@ -1159,6 +1165,203 @@ export class MovieController {
       res.json(result);
     } catch (error) {
       logger.error('Restore movie failed', {
+        movieId: req.params.id,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+      next(error);
+    }
+  }
+
+  /**
+   * Search TMDB for identification
+   * Endpoint: POST /api/movies/:id/search-tmdb
+   * Body: { query: string, year?: number }
+   *
+   * Returns search results from TMDB via ProviderOrchestrator
+   */
+  async searchForIdentification(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const movieId = parseInt(req.params.id);
+      const { query, year } = req.body;
+
+      // Validate request
+      if (!query) {
+        res.status(400).json({ error: 'query is required' });
+        return;
+      }
+
+      // Validate movie exists
+      const movie = await this.movieService.getById(movieId);
+      if (!movie) {
+        res.status(404).json({ error: 'Movie not found' });
+        return;
+      }
+
+      logger.info('Searching TMDB for identification', {
+        movieId,
+        query,
+        year
+      });
+
+      // Call service method
+      const results = await this.movieService.searchForIdentification(movieId, query, year);
+
+      res.json({ results });
+    } catch (error) {
+      logger.error('Search for identification failed', {
+        movieId: req.params.id,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+      next(error);
+    }
+  }
+
+  /**
+   * Assign TMDB ID to movie
+   * Endpoint: POST /api/movies/:id/identify
+   * Body: { tmdbId: number, title: string, year?: number, imdbId?: string }
+   *
+   * Updates movie with provider IDs and sets identification_status to 'identified'
+   */
+  async identifyMovie(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const movieId = parseInt(req.params.id);
+      const { tmdbId, title, year, imdbId } = req.body;
+
+      // Validate request
+      if (!tmdbId || !title) {
+        res.status(400).json({ error: 'tmdbId and title are required' });
+        return;
+      }
+
+      // Validate movie exists
+      const movie = await this.movieService.getById(movieId);
+      if (!movie) {
+        res.status(404).json({ error: 'Movie not found' });
+        return;
+      }
+
+      logger.info('Identifying movie', {
+        movieId,
+        tmdbId,
+        title,
+        year
+      });
+
+      // Call service method
+      const result = await this.movieService.identifyMovie(movieId, { tmdbId, title, year, imdbId });
+
+      // Broadcast WebSocket update
+      websocketBroadcaster.broadcastMoviesUpdated([movieId]);
+
+      res.json(result);
+    } catch (error) {
+      logger.error('Identify movie failed', {
+        movieId: req.params.id,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+      next(error);
+    }
+  }
+
+  /**
+   * Trigger verify job for movie
+   * Endpoint: POST /api/movies/:id/jobs/verify
+   *
+   * Queues verify-movie job with priority 3
+   */
+  async triggerVerify(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const movieId = parseInt(req.params.id);
+
+      // Validate movie exists
+      const movie = await this.movieService.getById(movieId);
+      if (!movie) {
+        res.status(404).json({ error: 'Movie not found' });
+        return;
+      }
+
+      logger.info('Triggering verify job', {
+        movieId,
+        movieTitle: movie.title
+      });
+
+      // Call service method
+      const result = await this.movieService.triggerVerify(movieId);
+
+      res.json(result);
+    } catch (error) {
+      logger.error('Trigger verify failed', {
+        movieId: req.params.id,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+      next(error);
+    }
+  }
+
+  /**
+   * Trigger enrichment job for movie
+   * Endpoint: POST /api/movies/:id/jobs/enrich
+   *
+   * Queues fetch-provider-assets job using ProviderOrchestrator with priority 3
+   */
+  async triggerEnrich(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const movieId = parseInt(req.params.id);
+
+      // Validate movie exists
+      const movie = await this.movieService.getById(movieId);
+      if (!movie) {
+        res.status(404).json({ error: 'Movie not found' });
+        return;
+      }
+
+      logger.info('Triggering enrichment job', {
+        movieId,
+        movieTitle: movie.title
+      });
+
+      // Call service method
+      const result = await this.movieService.triggerEnrich(movieId);
+
+      res.json(result);
+    } catch (error) {
+      logger.error('Trigger enrich failed', {
+        movieId: req.params.id,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+      next(error);
+    }
+  }
+
+  /**
+   * Trigger publish job for movie
+   * Endpoint: POST /api/movies/:id/jobs/publish
+   *
+   * Queues publish job with priority 3 and player notifications
+   */
+  async triggerPublish(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const movieId = parseInt(req.params.id);
+
+      // Validate movie exists
+      const movie = await this.movieService.getById(movieId);
+      if (!movie) {
+        res.status(404).json({ error: 'Movie not found' });
+        return;
+      }
+
+      logger.info('Triggering publish job', {
+        movieId,
+        movieTitle: movie.title
+      });
+
+      // Call service method
+      const result = await this.movieService.triggerPublish(movieId);
+
+      res.json(result);
+    } catch (error) {
+      logger.error('Trigger publish failed', {
         movieId: req.params.id,
         error: error instanceof Error ? error.message : 'Unknown error'
       });

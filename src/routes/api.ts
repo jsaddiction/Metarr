@@ -34,6 +34,7 @@ import { SettingsController } from '../controllers/settingsController.js';
 import { WorkflowControlService } from '../services/workflowControlService.js';
 import { ProviderRegistry } from '../services/providers/ProviderRegistry.js';
 import { FetchOrchestrator } from '../services/providers/FetchOrchestrator.js';
+import { ProviderOrchestrator } from '../services/providers/ProviderOrchestrator.js';
 import { SchedulerController } from '../controllers/schedulerController.js';
 import { FileScannerScheduler } from '../services/schedulers/FileScannerScheduler.js';
 import { ProviderUpdaterScheduler } from '../services/schedulers/ProviderUpdaterScheduler.js';
@@ -74,6 +75,7 @@ export const createApiRouter = (
   // Initialize provider registry and fetch orchestrator
   const providerRegistry = ProviderRegistry.getInstance();
   const fetchOrchestrator = new FetchOrchestrator(providerRegistry, providerConfigService);
+  const providerOrchestrator = new ProviderOrchestrator(providerRegistry, providerConfigService);
 
   // Initialize asset selection service
   const assetSelectionService = new AssetSelectionService(db);
@@ -82,13 +84,14 @@ export const createApiRouter = (
   const assetCandidateService = new AssetCandidateService(dbManager);
 
   // Initialize movie service and controller
-  const movieService = new MovieService(dbManager);
+  const movieService = new MovieService(dbManager, jobQueueService);
   const movieController = new MovieController(
     movieService,
     libraryScanService,
     fetchOrchestrator,
     assetSelectionService,
-    assetCandidateService
+    assetCandidateService,
+    providerOrchestrator
   );
 
   // Initialize ignore pattern service and controller
@@ -436,6 +439,33 @@ export const createApiRouter = (
   router.post('/movies/:id/restore', (req, res, next) => {
     logger.debug('[Route Hit] /movies/:id/restore with id:', req.params.id);
     movieController.restoreMovie(req, res, next);
+  });
+
+  // Identification routes
+  router.post('/movies/:id/search-tmdb', (req, res, next) => {
+    logger.debug('[Route Hit] /movies/:id/search-tmdb with id:', req.params.id);
+    movieController.searchForIdentification(req, res, next);
+  });
+
+  router.post('/movies/:id/identify', (req, res, next) => {
+    logger.debug('[Route Hit] /movies/:id/identify with id:', req.params.id);
+    movieController.identifyMovie(req, res, next);
+  });
+
+  // Manual job trigger routes
+  router.post('/movies/:id/jobs/verify', (req, res, next) => {
+    logger.debug('[Route Hit] /movies/:id/jobs/verify with id:', req.params.id);
+    movieController.triggerVerify(req, res, next);
+  });
+
+  router.post('/movies/:id/jobs/enrich', (req, res, next) => {
+    logger.debug('[Route Hit] /movies/:id/jobs/enrich with id:', req.params.id);
+    movieController.triggerEnrich(req, res, next);
+  });
+
+  router.post('/movies/:id/jobs/publish', (req, res, next) => {
+    logger.debug('[Route Hit] /movies/:id/jobs/publish with id:', req.params.id);
+    movieController.triggerPublish(req, res, next);
   });
 
   // Movie detail (MUST come last among movie routes)

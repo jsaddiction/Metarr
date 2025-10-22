@@ -12,6 +12,11 @@ import { cacheService } from './cacheService.js';
 import { getDefaultMaxCount } from '../config/assetTypeDefaults.js';
 import https from 'https';
 import http from 'http';
+import { ProviderOrchestrator } from './providers/ProviderOrchestrator.js';
+import { ProviderRegistry } from './providers/ProviderRegistry.js';
+import { ProviderConfigService } from './providerConfigService.js';
+import { WorkflowControlService } from './workflowControlService.js';
+import { JobQueueService } from './jobQueue/JobQueueService.js';
 
 export type AssetStatus = 'none' | 'partial' | 'complete';
 
@@ -70,7 +75,11 @@ export interface MovieListResult {
 }
 
 export class MovieService {
-  constructor(private db: DatabaseManager) {}
+  private jobQueue: JobQueueService | undefined;
+
+  constructor(private db: DatabaseManager, jobQueue?: JobQueueService) {
+    this.jobQueue = jobQueue;
+  }
 
   async getAll(filters?: MovieFilters): Promise<MovieListResult> {
     const whereClauses: string[] = ['1=1'];
@@ -2076,6 +2085,369 @@ export class MovieService {
         error: error.message
       });
       throw error;
+    }
+  }
+
+  /**
+   * Search TMDB for identification
+   * Uses ProviderOrchestrator to search across providers
+   *
+   * @param movieId - Movie ID (for logging)
+   * @param query - Search query (movie title)
+   * @param year - Optional year filter
+   * @returns Array of search results
+   */
+  async searchForIdentification(
+    movieId: number,
+    query: string,
+    year?: number
+  ): Promise<any[]> {
+    try {
+      const conn = this.db.getConnection();
+
+      // Initialize services
+      const providerRegistry = ProviderRegistry.getInstance();
+      const providerConfigService = new ProviderConfigService(conn);
+      const orchestrator = new ProviderOrchestrator(providerRegistry, providerConfigService);
+
+      // Search across providers
+      const results = await orchestrator.searchAcrossProviders({
+        entityType: 'movie',
+        query,
+        ...(year !== undefined && { year }),
+      });
+
+      logger.info('Search for identification complete', {
+        movieId,
+        query,
+        year,
+        resultsCount: results.length,
+      });
+
+      return results;
+    } catch (error: any) {
+      logger.error('Search for identification failed', {
+        movieId,
+        query,
+        year,
+        error: error.message,
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Identify movie with TMDB ID
+   * Updates movie record with provider IDs and respects field locks
+   *
+   * @param movieId - Movie ID
+   * @param data - Identification data (tmdbId, title, year, imdbId)
+   * @returns Updated movie
+   */
+  async identifyMovie(
+    movieId: number,
+    data: { tmdbId: number; title: string; year?: number; imdbId?: string }
+  ): Promise<any> {
+    const conn = this.db.getConnection();
+
+    try {
+      // Get field locks
+      const locks = await this.getFieldLocks(movieId);
+
+      // Build update dynamically based on locks
+      const updates: string[] = [];
+      const values: any[] = [];
+
+      // TMDB ID (no lock field - always update)
+      updates.push('tmdb_id = ?');
+      values.push(data.tmdbId);
+
+      // IMDB ID (no lock field - always update if provided)
+      if (data.imdbId) {
+        updates.push('imdb_id = ?');
+        values.push(data.imdbId);
+      }
+
+      // Title (respect lock)
+      if (!locks.title_locked) {
+        updates.push('title = ?');
+        values.push(data.title);
+      }
+
+      // Year (respect lock)
+      if (data.year && !locks.year_locked) {
+        updates.push('year = ?');
+        values.push(data.year);
+      }
+
+      // Set identification status to 'identified'
+      updates.push('identification_status = ?');
+      values.push('identified');
+
+      // Update timestamp
+      updates.push('updated_at = CURRENT_TIMESTAMP');
+
+      // Add movieId for WHERE clause
+      values.push(movieId);
+
+      // Execute update
+      await conn.execute(
+        `UPDATE movies SET ${updates.join(', ')} WHERE id = ?`,
+        values
+      );
+
+      logger.info('Movie identified', {
+        movieId,
+        tmdbId: data.tmdbId,
+        title: data.title,
+        year: data.year,
+        lockedFields: Object.keys(locks).filter((k) => locks[k]),
+      });
+
+      // Return updated movie
+      return await this.getById(movieId);
+    } catch (error: any) {
+      logger.error('Failed to identify movie', {
+        movieId,
+        data,
+        error: error.message,
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Trigger verify job for movie
+   * Queues verify-movie job with priority 3 (manual trigger)
+   *
+   * @param movieId - Movie ID
+   * @returns Job details
+   */
+  async triggerVerify(movieId: number): Promise<any> {
+    const conn = this.db.getConnection();
+
+    try {
+      // Verification is a maintenance operation - no workflow control check needed
+      // Users should always be able to verify cache/library integrity
+
+      // Get movie details
+      const movie = await this.getById(movieId);
+      if (!movie) {
+        throw new Error('Movie not found');
+      }
+
+      // Get directory path
+      const directoryPath = getDirectoryPath(movie.filePath);
+
+      // Queue verify-movie job
+      if (!this.jobQueue) {
+        throw new Error('Job queue not available. Cannot trigger verify job.');
+      }
+
+      const jobId = await this.jobQueue.addJob({
+        type: 'verify-movie',
+        priority: 3, // HIGH priority (manual trigger)
+        payload: {
+          entityType: 'movie',
+          entityId: movieId,
+          directoryPath,
+        },
+        retry_count: 0,
+        max_retries: 3,
+      });
+
+      logger.info('Verify job queued', {
+        movieId,
+        jobId,
+        directoryPath,
+      });
+
+      return {
+        success: true,
+        jobId,
+        message: 'Verify job queued successfully',
+      };
+    } catch (error: any) {
+      logger.error('Failed to trigger verify job', {
+        movieId,
+        error: error.message,
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Trigger enrichment job for movie
+   * Queues fetch-provider-assets job using ProviderOrchestrator with priority 3
+   *
+   * @param movieId - Movie ID
+   * @returns Job details
+   */
+  async triggerEnrich(movieId: number): Promise<any> {
+    const conn = this.db.getConnection();
+
+    try {
+      // Check workflow control
+      const workflowControl = new WorkflowControlService(conn);
+      const enrichmentEnabled = await workflowControl.isEnabled('enrichment');
+
+      if (!enrichmentEnabled) {
+        throw new Error('Enrichment workflow is disabled. Enable it in Settings > Workflow Control.');
+      }
+
+      // Get movie details
+      const movie = await this.getById(movieId);
+      if (!movie) {
+        throw new Error('Movie not found');
+      }
+
+      // Validate TMDB ID exists
+      if (!movie.tmdbId) {
+        throw new Error('Movie must be identified (have TMDB ID) before enrichment. Use Identify first.');
+      }
+
+      // Queue fetch-provider-assets job with orchestrator
+      if (!this.jobQueue) {
+        throw new Error('Job queue not available. Cannot trigger enrichment job.');
+      }
+
+      const jobId = await this.jobQueue.addJob({
+        type: 'fetch-provider-assets',
+        priority: 3, // HIGH priority (manual trigger)
+        payload: {
+          entityType: 'movie',
+          entityId: movieId,
+          provider: 'orchestrator', // Use ProviderOrchestrator for multi-provider fetch
+          providerId: movie.tmdbId,
+        },
+        retry_count: 0,
+        max_retries: 3,
+      });
+
+      logger.info('Enrichment job queued', {
+        movieId,
+        jobId,
+        tmdbId: movie.tmdbId,
+      });
+
+      return {
+        success: true,
+        jobId,
+        message: 'Enrichment job queued successfully',
+      };
+    } catch (error: any) {
+      logger.error('Failed to trigger enrichment job', {
+        movieId,
+        error: error.message,
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Trigger publish job for movie
+   * Queues publish job with priority 3 and player notifications
+   *
+   * @param movieId - Movie ID
+   * @returns Job details
+   */
+  async triggerPublish(movieId: number): Promise<any> {
+    const conn = this.db.getConnection();
+
+    try {
+      // Check workflow control
+      const workflowControl = new WorkflowControlService(conn);
+      const publishingEnabled = await workflowControl.isEnabled('publishing');
+
+      if (!publishingEnabled) {
+        throw new Error('Publishing workflow is disabled. Enable it in Settings > Workflow Control.');
+      }
+
+      // Get movie details
+      const movie = await this.getById(movieId);
+      if (!movie) {
+        throw new Error('Movie not found');
+      }
+
+      // Get directory path and library ID
+      const directoryPath = getDirectoryPath(movie.filePath);
+
+      // Queue publish job
+      if (!this.jobQueue) {
+        throw new Error('Job queue not available. Cannot trigger publish job.');
+      }
+
+      const jobId = await this.jobQueue.addJob({
+        type: 'publish',
+        priority: 3, // HIGH priority (manual trigger)
+        payload: {
+          entityType: 'movie',
+          entityId: movieId,
+          libraryPath: directoryPath,
+          mediaFilename: movie.title,
+          chainContext: {
+            source: 'manual',
+            libraryId: movie.libraryId,
+          },
+        },
+        retry_count: 0,
+        max_retries: 3,
+      });
+
+      logger.info('Publish job queued', {
+        movieId,
+        jobId,
+        libraryPath: directoryPath,
+      });
+
+      return {
+        success: true,
+        jobId,
+        message: 'Publish job queued successfully',
+      };
+    } catch (error: any) {
+      logger.error('Failed to trigger publish job', {
+        movieId,
+        error: error.message,
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Get field locks for a movie
+   * Helper method used by identification and enrichment
+   *
+   * @param movieId - Movie ID
+   * @returns Object with lock status for each field
+   */
+  private async getFieldLocks(movieId: number): Promise<Record<string, boolean>> {
+    const conn = this.db.getConnection();
+
+    try {
+      const result = await conn.query<any>('SELECT * FROM movies WHERE id = ?', [movieId]);
+
+      if (result.length === 0) {
+        return {};
+      }
+
+      const row = result[0];
+      const locks: Record<string, boolean> = {};
+
+      // Extract all *_locked columns
+      for (const key in row) {
+        if (key.endsWith('_locked')) {
+          locks[key] = row[key] === 1;
+        }
+      }
+
+      return locks;
+    } catch (error: any) {
+      logger.error('Failed to get field locks', {
+        movieId,
+        error: error.message,
+      });
+      return {};
     }
   }
 }
