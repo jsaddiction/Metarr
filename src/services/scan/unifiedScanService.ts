@@ -14,10 +14,10 @@ import { DatabaseManager } from '../../database/DatabaseManager.js';
 import { parseFullMovieNfos } from '../nfo/nfoParser.js';
 import { trackNFOFile } from '../nfo/nfoFileTracking.js';
 import { extractAndStoreMediaInfo } from '../media/ffprobeService.js';
-import { discoverAndStoreAssets } from '../media/assetDiscovery_unified.js';
-import { detectAndStoreUnknownFiles } from '../media/unknownFilesDetection.js';
 import { IgnorePatternService } from '../ignorePatternService.js';
 import { findOrCreateMovie, rehashMovieFile, MovieLookupContext } from './movieLookupService.js';
+import { classifyFilesInDirectory, verifyCachedFiles } from './fileClassificationService.js';
+import { processClassifiedFiles } from './fileProcessingService.js';
 
 /**
  * Unified Scan Service
@@ -273,37 +273,41 @@ export async function scanMovieDirectory(
         result.errors.push(`FFprobe failed: ${error.message}`);
       }
 
-      // Discover assets
+      // COIN-SORTER SCANNER: Two-pass file classification and processing
       try {
-        const assets = await discoverAndStoreAssets(
+        // PASS 1: Classify all files (read-only, deterministic)
+        const classification = await classifyFilesInDirectory(movieDir, ignorePatternService);
+
+        // PASS 2: Process classified files (cache to database)
+        const processingResult = await processClassifiedFiles(
           db,
+          classification,
           'movie',
           movieId,
-          movieDir,
           path.basename(videoFilePath)
         );
-        result.assetsFound = {
-          images: assets.images,
-          trailers: assets.trailers,
-          subtitles: assets.subtitles,
-        };
-      } catch (error: any) {
-        result.errors.push(`Asset discovery failed: ${error.message}`);
-      }
 
-      // Detect unknown files
-      try {
-        const unknownResult = await detectAndStoreUnknownFiles(
-          db,
-          'movie',
+        result.assetsFound = {
+          images: processingResult.imagesProcessed,
+          trailers: processingResult.trailersProcessed,
+          subtitles: processingResult.subtitlesProcessed,
+        };
+        result.unknownFilesFound = processingResult.unknownLogged;
+
+        if (processingResult.errors.length > 0) {
+          result.errors.push(...processingResult.errors);
+        }
+
+        logger.info('Coin-sorter scanner complete', {
           movieId,
-          movieDir,
-          videoFilePath,
-          ignorePatternService
-        );
-        result.unknownFilesFound = unknownResult.unknownFiles.length;
+          nfoProcessed: processingResult.nfoProcessed,
+          imagesProcessed: processingResult.imagesProcessed,
+          trailersProcessed: processingResult.trailersProcessed,
+          subtitlesProcessed: processingResult.subtitlesProcessed,
+          unknownLogged: processingResult.unknownLogged,
+        });
       } catch (error: any) {
-        result.errors.push(`Unknown files detection failed: ${error.message}`);
+        result.errors.push(`File classification/processing failed: ${error.message}`);
       }
 
       // ARCHITECTURAL CHANGE: Actors are NO LONGER discovered during initial scan
@@ -351,37 +355,54 @@ export async function scanMovieDirectory(
         // Note: NFO regeneration will happen during enrichment job, not scan job
       }
 
-      // Re-discover assets (always, since directory changed)
+      // RESCAN: Verify existing cached files still match specifications
       try {
-        const assets = await discoverAndStoreAssets(
-          db,
-          'movie',
-          movieId,
-          movieDir,
-          path.basename(videoFilePath)
-        );
-        result.assetsFound = {
-          images: assets.images,
-          trailers: assets.trailers,
-          subtitles: assets.subtitles,
-        };
-      } catch (error: any) {
-        result.errors.push(`Asset discovery failed: ${error.message}`);
-      }
+        logger.info('Verifying cached files against specifications', { movieId });
 
-      // Re-detect unknown files
-      try {
-        const unknownResult = await detectAndStoreUnknownFiles(
-          db,
-          'movie',
+        const verification = await verifyCachedFiles(db, 'movie', movieId);
+
+        logger.info('Cached file verification complete', {
           movieId,
-          movieDir,
-          videoFilePath,
-          ignorePatternService
-        );
-        result.unknownFilesFound = unknownResult.unknownFiles.length;
+          valid: verification.valid.length,
+          invalid: verification.invalid.length,
+          missing: verification.missing.length,
+        });
+
+        // If files are invalid or missing, re-classify and process
+        if (verification.invalid.length > 0 || verification.missing.length > 0) {
+          logger.warn('Found invalid or missing cached files, re-processing directory', {
+            movieId,
+            invalid: verification.invalid,
+            missing: verification.missing,
+          });
+
+          // PASS 1: Classify all files
+          const classification = await classifyFilesInDirectory(movieDir, ignorePatternService);
+
+          // PASS 2: Process classified files
+          const processingResult = await processClassifiedFiles(
+            db,
+            classification,
+            'movie',
+            movieId,
+            path.basename(videoFilePath)
+          );
+
+          result.assetsFound = {
+            images: processingResult.imagesProcessed,
+            trailers: processingResult.trailersProcessed,
+            subtitles: processingResult.subtitlesProcessed,
+          };
+          result.unknownFilesFound = processingResult.unknownLogged;
+
+          if (processingResult.errors.length > 0) {
+            result.errors.push(...processingResult.errors);
+          }
+        } else {
+          logger.info('All cached files valid, no reprocessing needed', { movieId });
+        }
       } catch (error: any) {
-        result.errors.push(`Unknown files detection failed: ${error.message}`);
+        result.errors.push(`File verification/reprocessing failed: ${error.message}`);
       }
 
       // ARCHITECTURAL CHANGE: Actors are NO LONGER discovered during rescans

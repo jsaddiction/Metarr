@@ -81,11 +81,11 @@ export const MOVIE_ASSET_SPECS: AssetTypeSpec[] = [
   {
     type: 'clearart',
     keywords: ['clearart'],
-    aspectRatio: { target: 1000/562, tolerance: 0.3 }, // ~1.78:1 ratio (flexible)
-    minDimensions: { width: 500, height: 281 },
+    aspectRatio: { target: 1000/562, tolerance: 0.5 }, // ~1.78:1 ratio (very flexible due to varied dimensions)
+    minDimensions: { width: 400, height: 200 }, // More permissive (many clearart variations exist)
     recommendedDimensions: { width: 1000, height: 562 },
     extensions: ['.png'], // Must be PNG for transparency
-    description: 'Character/prop images with transparent background',
+    description: 'Character/prop images with transparent background (highly variable dimensions)',
   },
   {
     type: 'discart',
@@ -134,24 +134,29 @@ export function findAssetSpecsByFilename(filename: string): AssetTypeSpec[] {
 }
 
 /**
- * Validate if image dimensions match asset spec
+ * Validate if image dimensions match asset spec with 10% tolerance
  */
 export function validateImageDimensions(
   width: number,
   height: number,
   spec: AssetTypeSpec
 ): { valid: boolean; reason?: string } {
-  // Check minimum dimensions
+  const DIMENSION_TOLERANCE = 0.10; // 10% tolerance on min dimensions
+
+  // Check minimum dimensions with 10% tolerance
   if (spec.minDimensions) {
-    if (width < spec.minDimensions.width || height < spec.minDimensions.height) {
+    const minWidthWithTolerance = spec.minDimensions.width * (1 - DIMENSION_TOLERANCE);
+    const minHeightWithTolerance = spec.minDimensions.height * (1 - DIMENSION_TOLERANCE);
+
+    if (width < minWidthWithTolerance || height < minHeightWithTolerance) {
       return {
         valid: false,
-        reason: `Too small (min: ${spec.minDimensions.width}x${spec.minDimensions.height})`,
+        reason: `Too small (min: ${spec.minDimensions.width}x${spec.minDimensions.height}, with 10% tolerance: ${Math.round(minWidthWithTolerance)}x${Math.round(minHeightWithTolerance)})`,
       };
     }
   }
 
-  // Check aspect ratio
+  // Check aspect ratio (using spec's own tolerance)
   if (spec.aspectRatio) {
     const actualRatio = width / height;
     const targetRatio = spec.aspectRatio.target;

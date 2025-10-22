@@ -18,7 +18,8 @@ Metarr operates through 6 core workflows that handle all media processing scenar
 - ✅ **[Implemented]** - Database schema for all workflows
 - 📋 **[Planned]** - Workflow 1: New media webhook processing
 - 📋 **[Planned]** - Workflow 2: Upgrade handling with playback state
-- 📋 **[Planned]** - Workflow 3: Manual library scan
+- 📋 **[Planned]** - Workflow 3A: Library scan (discovery & import)
+- 📋 **[Planned]** - Workflow 3B: Media item rescan (verification & reconciliation)
 - 📋 **[Planned]** - Workflow 4: Manual asset replacement
 - 📋 **[Planned]** - Workflow 5: Delete webhook (trash day)
 - 📋 **[Planned]** - Workflow 6: Unidentified media identification
@@ -291,16 +292,18 @@ async function handleUpgradeDownloadWebhook(webhook: WebhookPayload): Promise<vo
   - NFO write: <1 second
   - Playback restore: 5 seconds (wait for scan)
 
-## Workflow 3: Manual Library Scan
+## Workflow 3A: Library Scan (Discovery & Import)
 
-**Trigger**: User clicks "Scan Library" or scheduled scan runs
+**Trigger**: User clicks "Scan Library", scheduled library-wide scan
 
-**Purpose**: Discover new files, remove deleted files, realign metadata
+**Purpose**: Discover files in filesystem, import to cache, create database records
+
+**Flow**: Filesystem → Database → Cache
 
 ### Flow Diagram
 
 ```
-Scan Initiated
+Scan Initiated (Library-Wide)
     ↓
 Create Scan Job (Priority 7 - Low)
     ↓
@@ -312,26 +315,15 @@ Filesystem Walk
 │   │
 │   ├─ Check Database (by file_path)
 │   │   │
-│   │   ├─ EXISTS → Compare file_hash
-│   │   │   │
-│   │   │   ├─ SAME → Skip (no changes)
-│   │   │   │
-│   │   │   └─ DIFFERENT → File replaced
-│   │   │       - Delete old streams
-│   │   │       - Re-run FFprobe
-│   │   │       - Keep metadata (unless locked)
-│   │   │       - Update file_hash
+│   │   ├─ NOT EXISTS → New file
+│   │   │   - Create database record
+│   │   │   - Parse NFO (if present)
+│   │   │   - Extract FFprobe streams
+│   │   │   - Discover assets → Copy to cache
+│   │   │   - Status: identified or unidentified
 │   │   │
-│   │   └─ NOT EXISTS → New file
-│   │       - Parse filename (title, year)
-│   │       - Create database record
-│   │       - Status: unidentified
-│   │       - Add to enrichment queue
-│   │
-│   └─ Check for sidecar files
-│       - NFO file → Parse for provider IDs
-│       - Subtitle files → Link to movie
-│       - Image files → Import to cache
+│   │   └─ EXISTS → Skip (already in database)
+│   │       - Note: Use Workflow 3B (Rescan) to verify
 │
 └─ Check for deleted files
     - Database records not found in filesystem
@@ -359,112 +351,106 @@ Process Unidentified Files
     - Lower priority (5) than webhooks (1)
 ```
 
-### Code Example
+**Key Principle**: Library Scan is about **discovery** - finding what's on disk and importing it.
 
-```typescript
-async function scanLibrary(libraryId: number): Promise<ScanResult> {
-  const library = await db.libraries.findById(libraryId);
-  const scanJob = await db.scan_jobs.create({
-    library_id: libraryId,
-    scan_type: 'full',
-    status: 'running',
-    started_at: new Date()
-  });
+---
 
-  const stats = {
-    total: 0,
-    added: 0,
-    updated: 0,
-    removed: 0,
-    unidentified: 0
-  };
+## Workflow 3B: Media Item Rescan (Verification & Reconciliation)
 
-  // Walk filesystem
-  const files = await walkDirectory(library.path, ['.mkv', '.mp4', '.avi']);
-  stats.total = files.length;
+**Trigger**: User clicks refresh icon on movie, per-item verification
 
-  for (const file of files) {
-    const fileHash = await calculateHash(file.path);
-    const existing = await db.movies.findByPath(file.path);
+**Purpose**: Verify library matches cache, remove unauthorized files, trigger workflow chain
 
-    if (existing) {
-      // Check if file changed
-      if (existing.file_hash !== fileHash) {
-        await updateMovie(existing.id, file, fileHash);
-        stats.updated++;
-      }
-    } else {
-      // New file
-      const parsed = parseFilename(file.name);
-      const movie = await db.movies.create({
-        library_id: libraryId,
-        file_path: file.path,
-        file_name: file.name,
-        file_size: file.size,
-        file_hash: fileHash,
-        title: parsed.title,
-        year: parsed.year,
-        identification_status: 'unidentified',
-        enrichment_priority: 5
-      });
+**Flow**: Cache → Library (verify alignment)
 
-      stats.added++;
+**Core Principle**: Cache is source of truth. Library must mirror cache selection exactly.
 
-      // Try to identify
-      const match = await searchTMDB(parsed.title, parsed.year);
-      if (match && match.confidence > 0.85) {
-        await db.movies.update(movie.id, {
-          tmdb_id: match.id,
-          imdb_id: match.imdb_id,
-          identification_status: 'identified'
-        });
+### Flow Diagram
 
-        // Add to enrichment queue
-        await jobQueue.add({
-          type: 'enrichment',
-          priority: 5,
-          payload: { movieId: movie.id }
-        });
-      } else {
-        stats.unidentified++;
-      }
-    }
-  }
+```
+Rescan Single Movie
+    ↓
+Query Database for Movie Record
+    ↓
+Get Cache Asset Selection (all cache_*_files for this movie)
+    ↓
+Get Library File Tracking (all library_*_files for this movie)
+    ↓
+PHASE 1: Video File Verification
+│
+├─ Compare file hash (library vs cache)
+│   ├─ Hash Match → OK
+│   └─ Hash Mismatch → Video replaced/modified
+│       ├─ Re-extract FFprobe streams
+│       ├─ Update cache file hash
+│       └─ Queue re-enrichment (if configured)
+│
+PHASE 2: Asset Verification
+│
+├─ For each selected cache asset:
+│   ├─ Check if published to library
+│   │   ├─ Published → Verify hash match
+│   │   │   ├─ Match → OK
+│   │   │   └─ Mismatch → Library file corrupted
+│   │   │       └─ Re-publish from cache
+│   │   │
+│   │   └─ Not Published → Missing from library
+│   │       └─ Publish cache asset to library
+│
+PHASE 3: Unknown Files Verification
+│
+├─ For each unknown file record:
+│   ├─ Check if file still exists
+│   ├─ Verify hash matches record
+│   └─ Update or remove record as needed
+│
+PHASE 4: Extra Files Cleanup
+│
+├─ Scan library directory for all files
+├─ Build expected files set:
+│   ├─ Main video file
+│   ├─ Published cache assets
+│   ├─ Unknown files (tracked)
+│   └─ Ignored files (matching ignore patterns)
+│
+└─ For each file in directory:
+    ├─ In expected set? → OK
+    └─ NOT in expected set? → REMOVE (unauthorized)
 
-  // Check for deleted files
-  const allMovies = await db.movies.findByLibrary(libraryId);
-  const filePaths = new Set(files.map(f => f.path));
+PHASE 5: Workflow Chain (if configured)
+│
+├─ Re-enrichment (if auto_enrich_on_rescan)
+├─ Re-publishing (if auto_publish_on_rescan)
+└─ Player Notification (if changes detected)
+    - Only notify if directory actually changed
+    - Show notification: "Movie has been refreshed"
+```
 
-  for (const movie of allMovies) {
-    if (!filePaths.has(movie.file_path) && !movie.deleted_at) {
-      await db.movies.update(movie.id, {
-        deleted_at: addDays(new Date(), 30)
-      });
-      stats.removed++;
-    }
-  }
+**Key Principle**: Rescan is about **verification** - ensuring library matches cache ideal state.
 
-  // Update scan job
-  await db.scan_jobs.update(scanJob.id, {
-    status: 'completed',
-    completed_at: new Date(),
-    total_items: stats.total,
-    added_items: stats.added,
-    updated_items: stats.updated,
-    removed_items: stats.removed
-  });
+### Configuration Options
 
-  return stats;
-}
+Rescan behavior is controlled by workflow settings:
+
+```
+auto_enrich_on_rescan: false      # Avoid unnecessary API calls
+auto_publish_on_rescan: true      # Ensure library matches cache
+cleanup_unauthorized_files: true  # Remove files not in cache/unknown
+notify_player_on_rescan: true     # Tell player to refresh
+notify_player_only_if_changed: true  # Skip notification if nothing changed
 ```
 
 ### Timing
 
-- **Scan Duration**: Depends on library size
+- **Library Scan**: Depends on library size
   - Small (100 movies): 1-2 minutes
   - Medium (1000 movies): 10-15 minutes
   - Large (5000 movies): 30-60 minutes
-- **Per File**: ~1-2 seconds (hash calculation + database lookup)
+- **Media Item Rescan**: 2-5 seconds per movie
+  - Hash verification: <1 second
+  - Asset verification: 1-2 seconds
+  - Cleanup: <1 second
+  - Workflow trigger: 1-2 seconds (if configured)
 
 ## Workflow 4: Manual Asset Replacement
 
@@ -635,157 +621,211 @@ async function replaceAsset(
   - Library copy: <1 second
   - NFO write: <1 second
 
-## Workflow 5: Delete Webhook (Trash Day)
+## Workflow 5: Recycle Bin System
 
-**Trigger**: Radarr sends "MovieDelete" webhook
+**Trigger**: Entity deletion (UI/webhook), unauthorized files during rescan
 
-**Purpose**: Soft delete with 30-day recovery period
+**Purpose**: Temporary storage for deleted files with configurable retention period
+
+**Core Principle**: Cache files are recycled, library files are immediately deleted
+
+### Recycle Bin Architecture
+
+**Storage:**
+```
+data/recycle/              # Flat directory (no subdirectories)
+  ├─ a1b2c3d4-uuid.jpg    # UUID naming prevents conflicts
+  ├─ e5f6g7h8-uuid.mkv    # Extension preserved for type identification
+  └─ i9j0k1l2-uuid.srt
+```
+
+**Database:**
+```sql
+CREATE TABLE recycle_bin (
+  id INTEGER PRIMARY KEY,
+  uuid TEXT UNIQUE NOT NULL,              -- UUID for recycled file
+  original_path TEXT NOT NULL,            -- Where it came from
+  original_filename TEXT NOT NULL,        -- Display name
+  recycle_path TEXT NOT NULL,             -- data/recycle/{uuid}.ext
+  file_size INTEGER NOT NULL,
+  file_hash TEXT,                         -- SHA256 for verification
+
+  entity_type TEXT,                       -- 'movie', 'episode', 'album', NULL
+  entity_id INTEGER,                      -- FK to parent entity
+
+  item_type TEXT NOT NULL,                -- 'image', 'video', 'text', 'audio', 'unknown'
+  deletion_reason TEXT NOT NULL,          -- 'entity_deleted', 'unauthorized', etc.
+  deleted_by TEXT NOT NULL,               -- 'system', 'user', 'webhook'
+
+  deleted_at DATETIME DEFAULT CURRENT_TIMESTAMP  -- Used to calculate expiry
+);
+```
+
+**Note**: No `restored_at`, `restored_to`, or `metadata` fields. Record is **deleted on successful restore**.
 
 ### Flow Diagram
 
 ```
-MovieDelete Webhook
+Movie Deleted (User or Webhook)
     ↓
-Find Movie Record (by provider ID)
+1. Set movies.deleted_at = NOW() (soft delete entity)
     ↓
-Soft Delete
-- Set: deleted_at = NOW() + 30 days
-- Status: Visible in "Trash" UI
+2. Find All Cache Files for Movie
+    ├─ cache_image_files (posters, fanart, etc.)
+    ├─ cache_video_files (trailers)
+    ├─ cache_text_files (NFO, subtitles)
+    └─ cache_audio_files
     ↓
-User Has 30 Days to:
-│
-├─ RESTORE → Clear deleted_at
-│   - Movie returns to library
-│   - All assets intact
-│   - No re-download needed
-│
-└─ DO NOTHING → Auto-delete after 30 days
+3. For Each Cache File:
+    ├─ Generate UUID
+    ├─ Move to data/recycle/{uuid}.ext
+    ├─ Create recycle_bin record
+    └─ Delete cache_*_files record
+    ↓
+4. Delete All Library Files Immediately
+    ├─ library_image_files → DELETE physical file
+    ├─ library_video_files → DELETE physical file
+    ├─ library_text_files → DELETE physical file
+    └─ Delete library_*_files records
+    ↓
+COMPLETE: Cache files in recycle bin, library files gone
 
-Scheduled Job (Daily):
-│
-└─ Find Expired Records
-    - Query: deleted_at < NOW()
-    │
-    └─ For each expired movie:
-        │
-        ├─ Delete database record
-        │   - Cascade: all relationships
-        │   - Cascade: stream details
-        │   - Cascade: asset references
-        │
-        ├─ Decrement cache reference counts
-        │   - For each linked asset
-        │   - If ref_count = 0 → mark orphaned
-        │
-        └─ Delete library files (NFO, assets)
+---
 
-Cache Cleanup (Weekly):
-│
-└─ Find orphaned assets
-    - Query: reference_count = 0 AND created_at < NOW() - 90 days
-    │
-    └─ Delete physical files
-        - Remove from /cache/assets/
-        - Delete cache_assets record
+Unauthorized File Found During Rescan
+    ↓
+Check if File Matches Ignore Pattern
+    ├─ YES → Skip (leave in library)
+    └─ NO → Proceed
+    ↓
+Recycle File
+    ├─ Generate UUID
+    ├─ Move from library to data/recycle/{uuid}.ext
+    ├─ Create recycle_bin record (item_type='unknown')
+    └─ Log: "Unauthorized file recycled"
+    ↓
+COMPLETE: File moved to recycle bin
+
+---
+
+User Restores File from Recycle Bin
+    ↓
+Query recycle_bin Record
+    ↓
+IF item_type = 'unknown':
+    ├─ Move file back to original_path
+    ├─ Add original_path to ignore_patterns table (exact path)
+    ├─ DELETE recycle_bin record
+    └─ Success: File restored and auto-ignored
+    ↓
+IF item_type = 'image|video|text|audio':
+    ├─ Move file back to cache directory (original_path)
+    ├─ Recreate cache_*_files record
+    ├─ DELETE recycle_bin record
+    └─ Success: Cache file restored (can re-publish later)
+    ↓
+COMPLETE: File restored, recycle_bin record removed
+
+---
+
+Garbage Collection (Daily at 3:00 AM)
+    ↓
+Query workflow_control_settings.recycle_retention_days (default: 30)
+    ↓
+Find Expired Items:
+  SELECT * FROM recycle_bin
+  WHERE deleted_at <= datetime('now', '-' || @retentionDays || ' days')
+    ↓
+For Each Expired Item:
+    ├─ DELETE physical file (data/recycle/{uuid}.ext)
+    ├─ DELETE recycle_bin record
+    └─ Log: "Permanently deleted expired recycle bin item"
+    ↓
+COMPLETE: Expired files permanently deleted
 ```
 
-### Code Example
+### Deletion Reasons
 
+| Reason | Description | Source |
+|--------|-------------|--------|
+| `entity_deleted` | Movie/show was deleted | User or webhook |
+| `library_removed` | Library was removed from Metarr | User |
+| `unauthorized` | File found in library not tracked in cache | Rescan |
+| `user_deleted` | User explicitly deleted this file | User |
+| `cache_orphaned` | Cache file with no entity reference | Garbage collection |
+
+### Configuration
+
+**Workflow Settings:**
+```
+recycle_enabled: true           # Global toggle (when false, immediate permanent delete)
+recycle_retention_days: 30      # Days before permanent deletion
+```
+
+**Query for Expiry:**
+```sql
+-- NO expired_at column stored
+-- Calculate expiry dynamically based on current retention setting
+SELECT * FROM recycle_bin
+WHERE deleted_at <= datetime('now', '-' || @retentionDays || ' days')
+```
+
+**Why Dynamic Calculation?**
+- User changes retention days → Immediately affects ALL files
+- Old files respect new policy
+- No need to update existing records
+
+### Ignore Patterns Integration
+
+**Restored Unknown Files:**
+When user restores an unknown/unauthorized file, it's automatically added to `ignore_patterns`:
+
+```sql
+INSERT OR IGNORE INTO ignore_patterns (pattern, scope, description)
+VALUES (
+  '/movies/Movie/sample.mkv',  -- Exact path (not glob)
+  'global',
+  'Auto-ignored after restore from recycle bin'
+)
+```
+
+**Scanner Checks:**
 ```typescript
-async function handleMovieDeleteWebhook(webhook: WebhookPayload): Promise<void> {
-  const movie = await db.movies.findByTmdbId(webhook.movie.tmdbId);
-
-  if (!movie) {
-    return; // Already deleted
-  }
-
-  // Soft delete (30-day grace period)
-  await db.movies.update(movie.id, {
-    deleted_at: addDays(new Date(), 30)
-  });
-
-  await db.activity_log.create({
-    event_type: 'movie.deleted',
-    severity: 'warning',
-    entity_type: 'movie',
-    entity_id: movie.id,
-    description: `Movie soft-deleted via webhook: ${movie.title}. Recoverable for 30 days.`,
-    metadata: JSON.stringify(webhook)
-  });
+// Check exact paths first (fast)
+if (pattern.startsWith('/') || pattern.match(/^[A-Z]:\\/)) {
+  return filePath === pattern;
 }
-
-async function restoreMovie(movieId: number): Promise<void> {
-  const movie = await db.movies.findById(movieId);
-
-  if (!movie.deleted_at) {
-    throw new Error('Movie is not deleted');
-  }
-
-  // Restore
-  await db.movies.update(movieId, {
-    deleted_at: null
-  });
-
-  await db.activity_log.create({
-    event_type: 'movie.restored',
-    severity: 'success',
-    entity_type: 'movie',
-    entity_id: movieId,
-    description: `Movie restored from trash: ${movie.title}`
-  });
-}
-
-// Scheduled job (runs daily)
-async function permanentlyDeleteExpired(): Promise<void> {
-  const expired = await db.movies.findExpired();
-
-  for (const movie of expired) {
-    // Get all linked assets before deletion
-    const assets = await db.asset_references.findByEntity('movie', movie.id);
-
-    // Delete movie (cascades to all relationships)
-    await db.movies.delete(movie.id);
-
-    // Decrement asset reference counts
-    for (const asset of assets) {
-      await decrementAssetReference(asset.cache_asset_id);
-    }
-
-    // Delete library files
-    await deleteLibraryFiles(movie.file_path);
-
-    await db.activity_log.create({
-      event_type: 'movie.permanently_deleted',
-      severity: 'warning',
-      entity_type: 'movie',
-      entity_id: movie.id,
-      description: `Movie permanently deleted after grace period: ${movie.title}`
-    });
-  }
-}
-
-// Scheduled job (runs weekly)
-async function cleanupOrphanedAssets(): Promise<void> {
-  const orphaned = await db.cache_assets.find({
-    reference_count: 0,
-    created_at: { $lt: subDays(new Date(), 90) }
-  });
-
-  for (const asset of orphaned) {
-    // Delete physical file
-    await fs.unlink(asset.file_path);
-
-    // Delete database record
-    await db.cache_assets.delete(asset.id);
-  }
-
-  await db.activity_log.create({
-    event_type: 'cache.cleanup',
-    severity: 'info',
-    description: `Cleaned up ${orphaned.length} orphaned assets`
-  });
-}
+// Then check glob patterns
+return minimatch(filePath, pattern);
 ```
+
+### UI Components
+
+**Recycle Bin Page (`/system/recycle-bin`):**
+- Fuzzy search bar (filename, path, reason)
+- Filter by item type, deletion reason
+- Table columns: Filename, Original Path, Type, Reason, Deleted, Expires In, Size, Actions
+- Actions: Restore + Ignore, Restore Only, Delete Now
+- Bulk actions: Restore Selected, Delete Selected, Empty Recycle Bin
+
+**Settings -> Workflow Control:**
+- Toggle: Enable Recycle Bin
+- Input: Retention Period (days)
+- Button: Empty Recycle Bin Now
+
+**Settings -> Ignore Patterns:**
+- Fuzzy search bar
+- Badge differentiation: 🌐 Glob Pattern vs 📄 Exact Path
+- Manage both manually added patterns and auto-ignored restored files
+
+### Key Implementation Notes
+
+1. **Flat Storage**: `data/recycle/` contains all recycled files with UUID naming - no subdirectories
+2. **Dynamic Expiry**: Query calculates expiry based on current `recycle_retention_days` setting
+3. **Restore = Delete Record**: Upon successful restore, `recycle_bin` record is deleted (not marked restored)
+4. **Library Files Deleted Immediately**: Only cache files are recycled, library copies are permanently deleted
+5. **Unknown Files Auto-Ignored**: Restored unknown files automatically added to `ignore_patterns` as exact paths
+6. **Graceful Failure**: If library directory already deleted by *arr apps, log warning and continue with cache recycling
 
 ## Workflow 6: Unidentified Media
 
