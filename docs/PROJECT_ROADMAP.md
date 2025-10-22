@@ -1,69 +1,290 @@
 # Metarr Project Roadmap
 
 **Last Updated**: 2025-10-21
-**Development Phase**: Pre-Release
-**Current Branch**: `master`
+**Current Phase**: Core Feature Development
+**Target v1.0**: Feature-complete with Movies, Kodi, and Webhooks
 
 ---
 
-## Development Model
+## Vision Statement
 
-Metarr development has transitioned from **stage-based** (Stages 0-5) to **feature-based** workflow.
-
-**Current Phase**: Pre-Release Development
-**Goal**: Build distributable codebase with production-ready features
-**Success Metric**: Reliability + Functionality + Feature Completeness (verified via Docker testing)
+Metarr will be a production-ready metadata management system that bridges media managers (*arr stack) and media players (Kodi/Jellyfin/Plex), providing intelligent automation with complete user control.
 
 ---
 
-## Stage Completion History
+## Release Strategy
 
-| Stage | Name | Tag | Completion Date | Notes |
-|-------|------|-----|-----------------|-------|
-| 0 | Planning & Git Workflow | `stage-0-complete` | 2025-10-15 | Documentation foundation |
-| 1 | Monitored/Unmonitored System | `stage-1-complete` | 2025-10-15 | BookmarkToggle component |
-| 2 | Field & Asset Locking | `stage-2-complete` | 2025-10-15 | LockIcon component, field-level locking |
-| 3 | Asset Candidate Caching | *(no tag)* | 2025-10-15 | **Completed without tag** - Three-tier asset system |
-| 4 | Webhooks | `stage-4-complete` | 2025-10-15 | Radarr/Sonarr integration, automatic enrichment |
-| 5 | Kodi Integration | `stage-5-complete` | 2025-10-15 | Universal group architecture, player management |
+### v1.0 - Core Feature Complete (Target: Q1 2025)
+**Goal**: Fully functional for movies with Kodi integration and webhook automation
 
-**Post-Stage Development**: Feature-based development began after Stage 5. See [GIT_WORKFLOW.md](GIT_WORKFLOW.md) for current conventions.
+### v1.1 - TV Shows Extension (Target: Q2 2025)
+**Goal**: Complete TV show support with season/episode management
+
+### v1.2 - Multi-Player Support (Target: Q2 2025)
+**Goal**: Add Jellyfin and Plex integration
+
+### v2.0 - Music & Advanced Features (Target: Q3 2025)
+**Goal**: Music library support, advanced automation
 
 ---
 
-## Recent Completions
+## Implementation Priority (Critical Path to v1.0)
 
-### Database Schema Enhancements (2025-10-21)
-- ✅ Added `user_rating` column to movies, series, episodes tables
-- ✅ Added `countries` table with junction tables (`movie_countries`, `series_countries`)
-- ✅ Added `tags` table with junction tables (`movie_tags`, `series_tags`, `episode_tags`)
-- **Impact**: 100% NFO field compatibility with Kodi/Jellyfin
-- **Documentation**: DATABASE_SCHEMA.md, NFO_PARSING.md updated
+### 🔴 Phase 1: Critical Media Processing (In Progress)
 
-### Frontend Architecture Documentation (2025-10-21)
-- ✅ Three-tier type system documented (MovieListItem/MovieDetail/MovieMetadataForm)
-- ✅ Full-viewport asset selection modal design specified
-- ✅ Field locking UI patterns defined
-- ✅ Enrichment status indicators documented
-- ✅ Comprehensive UI patterns catalog created
-- **Impact**: Clear frontend development roadmap aligned with backend
-- **Documentation**: FRONTEND_TYPES.md, ASSET_SELECTION_UI.md, UI_PATTERNS.md created
+#### Subtitle Management
+- [ ] **Extract subtitles from MKV/MP4 containers** (ffmpeg/mkvtoolnix)
+- [ ] **Language detection and naming**
+- [ ] **Format support (SRT/ASS/SSA)**
+- [ ] **Forced/SDH flag preservation**
+- [ ] **OpenSubtitles integration** (fallback)
+
+#### NFO Generation & Parsing
+- [ ] **Kodi NFO XML generation** (CRITICAL - Next Priority)
+- [ ] **Parse existing NFO files**
+- [ ] **Field mapping bidirectional**
+- [ ] **Actor/crew with thumbnails**
+- [ ] **Ratings and certifications**
+- [ ] **Custom field preservation**
+
+#### Asset Selection Algorithm
+- [x] Basic scoring algorithm implemented
+- [ ] **Resolution scoring (4K > 1080p > 720p)** (enhance existing)
+- [ ] **Language preferences**
+- [ ] **Aspect ratio matching**
+- [ ] **Vote count weighting**
+- [ ] **Provider priority**
+
+### 🔴 Phase 2: Integration Layer (Partially Complete)
+
+#### Webhook Processing (Radarr/Sonarr)
+- [x] Webhook receiver endpoint
+- [x] Workflow control integration
+- [x] Job chaining architecture
+- [ ] **Download complete handler** (enhance existing)
+- [ ] **Upgrade handler** (restore from cache)
+- [ ] **Movie deleted handler**
+- [ ] **Signature validation** (security)
+- [ ] **Path resolution improvements**
+- [ ] **Retry mechanism**
+
+#### Kodi Integration
+- [x] JSON-RPC client
+- [x] Universal group architecture
+- [x] Group-level path mapping
+- [ ] **Library scan trigger after publish**
+- [ ] **Clean library command**
+- [ ] **Notification system**
+- [ ] **Playback state preservation**
+- [ ] **Multi-instance support** (group-aware scanning)
+
+### 🟡 Phase 3: Media Assets (Partially Complete)
+
+#### Trailer Management
+- [ ] **YouTube trailer discovery**
+- [ ] **yt-dlp integration**
+- [ ] **Quality selection (1080p default)**
+- [ ] **Local trailer detection**
+- [ ] **NFO trailer entry**
+
+#### Image Management
+- [x] Basic image downloading
+- [x] Content-addressed cache storage
+- [x] Deduplication (SHA256-based)
+- [ ] **All artwork types (poster/fanart/logo/clearart/banner/discart)**
+- [ ] **Resolution requirements per type**
+- [ ] **Format conversion if needed**
+- [ ] **Thumbnail generation for actors**
+
+### 🟢 Phase 4: Architecture & Deployment (Partially Complete)
+
+#### Job Queue Migration
+- [x] **Event-driven job chaining** (COMPLETE 2025-10-21)
+- [x] **Workflow control system** (COMPLETE 2025-10-21)
+- [x] **WebSocket progress events**
+- [ ] **Remove legacy state tracking columns** (optional cleanup)
+- [ ] **Status derivation from jobs** (optional enhancement)
+
+#### Workflow Control System (COMPLETE 2025-10-21)
+- [x] **WorkflowControlService with caching**
+- [x] **Settings API endpoints**
+- [x] **Frontend workflow settings page**
+- [x] **Job handler integration**
+- [x] **Dependency validation**
+
+#### Docker Environment
+- [ ] **Multi-stage Dockerfile**
+- [ ] **docker-compose.yml with PostgreSQL**
+- [ ] **Development environment stack**
+- [ ] **Mock services for testing**
+
+---
+
+## Completed Features ✅
+
+### Infrastructure
+- ✅ Multi-database support (SQLite + PostgreSQL)
+- ✅ Job queue with retry/backoff
+- ✅ WebSocket real-time updates
+- ✅ UUID-based cache storage
+- ✅ Provider rate limiting
+
+### Media Processing
+- ✅ Directory scanning
+- ✅ FFprobe integration
+- ✅ TMDB/TVDB/FanArt providers
+- ✅ Basic image downloading
+- ✅ File deduplication
+
+### Frontend
+- ✅ React + TypeScript + Vite
+- ✅ Movie list/detail views
+- ✅ Field locking UI
+- ✅ Dark/light themes
+
+---
+
+## Development Environment Setup
+
+### Required Stack
+```yaml
+version: '3.8'
+
+services:
+  # Metarr Development
+  metarr:
+    build: .
+    environment:
+      - NODE_ENV=development
+      - DB_TYPE=postgres
+      - REDIS_URL=redis://redis:6379
+    volumes:
+      - ./src:/app/src
+      - ./test-library:/media
+      - metarr-cache:/data/cache
+    ports:
+      - "3000:3000"
+      - "3001:3001"
+
+  # PostgreSQL
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_DB=metarr
+      - POSTGRES_USER=metarr
+      - POSTGRES_PASSWORD=dev
+    ports:
+      - "5432:5432"
+
+  # Redis
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  # Mock Radarr
+  mock-radarr:
+    image: mockserver/mockserver
+    volumes:
+      - ./dev/mocks:/config
+    ports:
+      - "7878:1080"
+
+  # Test Kodi
+  kodi:
+    image: linuxserver/kodi-headless
+    volumes:
+      - ./test-library:/media
+    ports:
+      - "8080:8080"
+      - "9090:9090"
+```
+
+### Test Media Structure
+```
+test-library/
+├── movies/
+│   ├── The Matrix (1999)/
+│   │   ├── The Matrix (1999).mkv       # Has embedded subs
+│   │   ├── The Matrix (1999).en.srt    # External sub
+│   │   └── movie.nfo                   # Existing NFO
+│   └── Inception (2010)/
+│       └── Inception (2010).mkv        # Test file
+└── incoming/
+    └── New.Movie.2024.1080p.mkv        # Radarr download
+```
+
+---
+
+## Success Metrics for v1.0
+
+### Functional
+- Process 100 movies < 10 minutes
+- Extract subtitles from 90% of containers
+- Generate valid Kodi NFOs
+- Process webhooks < 5 seconds
+- Update Kodi library automatically
+
+### Performance
+- 1000+ movie library support
+- Concurrent job processing
+- Image caching with deduplication
+- Resilient to provider failures
+
+---
+
+## Post-v1.0 Roadmap
+
+### v1.1 - TV Shows
+- Series/season/episode hierarchy
+- TVDB primary provider
+- Episode thumbnails
+- Air date tracking
+
+### v1.2 - Multi-Player
+- Jellyfin API integration
+- Plex API integration
+- Player-specific metadata formats
+- Unified publishing
+
+### v2.0 - Music & Advanced
+- Music library support
+- MusicBrainz provider
+- Advanced automation rules
+- Custom metadata fields
 
 ---
 
 ## Current Development Focus
 
-**Active Work** (as of 2025-10-21):
-- Frontend: Implementing three-tier type system
-- Frontend: Building asset selection modal components
-- Frontend: Field locking UI integration
-- Backend: API endpoints for asset candidate management
+**Last Updated**: 2025-10-21
+
+**Recent Completion** (2025-10-21):
+- ✅ **Workflow Control System**: Global enable/disable switches for 5 automation stages
+  - Backend: WorkflowControlService with 1-minute caching + WebSocket broadcasting
+  - Backend: SettingsController with full CRUD API for workflow settings
+  - Backend: All job handlers refactored to check workflow settings before proceeding
+  - Frontend: Workflow settings page with dependency validation
+  - Frontend: Quick Actions (Enable All/Disable All), individual stage toggles
+  - All stages default to disabled for development safety
+- ✅ **Job Chaining Architecture**: Event-driven pipeline replacing synchronous processing
+  - Each job handler creates next job in chain (webhook → scan → discover → fetch → select → publish)
+  - Chain context passing for maintaining metadata throughout pipeline
+  - Workflow-aware job creation (only chains if stage enabled)
+
+**Immediate Next Steps**:
+1. **Test Workflow Control System** - Verify end-to-end job chaining and workflow toggles
+2. **NFO Generation & Publishing** - Complete handlePublish to write Kodi NFO + assets
+3. **Subtitle Extraction** - Extract embedded subtitles from MKV/MP4 containers
+4. **Asset Selection Algorithm** - Enhance scoring with resolution/language/aspect ratio
 
 **Pre-Release Priorities**:
-1. Fully developed end-to-end workflows (scan → enrich → publish)
-2. Basic feature completeness (metadata management, asset handling, player integration)
-3. Docker deployment testing in live environment
-4. Reliability and stability verification
+1. ✅ Workflow control and job chaining architecture complete
+2. ⏳ NFO generation and publishing (critical for Kodi integration)
+3. ⏳ Subtitle extraction and management
+4. ⏳ Enhanced asset selection algorithm
+5. ⏳ Docker deployment testing in live environment
+6. ⏳ End-to-end automation testing (webhook → publish → Kodi notification)
 
 **v1.0 Release Criteria**: See "Release Philosophy" section below.
 
@@ -113,8 +334,10 @@ Metarr development has transitioned from **stage-based** (Stages 0-5) to **featu
 - ✅ Jobs: Background job queue with priority and circuit breaker
 - ✅ Webhooks: Radarr/Sonarr/Lidarr integration (Stage 4)
 - ✅ Media Players: Universal group architecture with group-level path mapping (Stage 5)
+- ✅ Workflow Control: Global automation stage toggles (webhooks, scanning, identification, enrichment, publishing)
+- ✅ Job Chaining: Event-driven pipeline architecture (webhook → scan → discover → fetch → select → publish)
 
-**What's Next**: Pre-release polish, Docker deployment testing, feature completion
+**What's Next**: NFO generation, subtitle extraction, enhanced asset selection, end-to-end testing
 
 ---
 
@@ -407,36 +630,48 @@ git checkout -b docs/api-documentation-update
 
 ### Completed Work
 
-**Backend** (100%):
+**Backend** (95%):
 - Database schema and migrations
 - Service layer (cache, jobs, WebSocket)
-- API endpoints (movies, libraries, assets)
+- API endpoints (movies, libraries, assets, workflow settings)
 - Security hardening
 - Scheduled background jobs
+- Event-driven job chaining architecture
+- Workflow control system (global automation toggles)
+- Webhook receiver endpoints
+- Kodi JSON-RPC client (basic implementation)
+- Path mapping service (group-level)
 
-**Frontend** (50%):
+**Frontend** (60%):
 - Layout and routing
 - Movies table with virtual scrolling
 - BookmarkToggle component (monitored system)
 - LockIcon component (field locking)
 - Asset candidate browser (scoring + selection)
+- Workflow settings page (enable/disable automation stages)
 
 ### Remaining for v1.0
 
-**Backend**:
-- Webhook receiver endpoints
-- Kodi JSON-RPC client
-- Path mapping service
+**Backend** (Critical):
+- NFO file generation (Kodi XML format)
+- NFO parsing (import existing metadata)
+- Subtitle extraction from video containers
+- Enhanced asset selection algorithm (resolution/language/aspect ratio)
+- Publishing service (write NFO + assets to library)
+- Kodi library scan trigger (after publish)
 
-**Frontend**:
+**Frontend** (Important):
 - Webhook configuration UI
 - Kodi player management UI
-- Webhook event history
+- Webhook event history display
+- Asset selection modal (browse/select candidates)
+- Real-time job progress indicators
 
 **DevOps**:
-- Dockerfile
+- Multi-stage Dockerfile
 - Docker Compose with PostgreSQL
 - Deployment documentation
+- End-to-end testing in Docker environment
 
 ---
 
@@ -450,10 +685,15 @@ git checkout -b docs/api-documentation-update
 - [x] Score and auto-select best assets
 - [x] Monitor/unmonitor movies (automation control)
 - [x] Lock fields and assets (preserve user edits)
-- [ ] Receive webhooks from Radarr/Sonarr
-- [ ] Trigger enrichment on webhook events
-- [ ] Publish assets to library directory
-- [ ] Notify Kodi to refresh library
+- [x] Workflow control system (global automation toggles)
+- [x] Event-driven job chaining architecture
+- [x] Receive webhooks from Radarr/Sonarr (basic implementation)
+- [x] Trigger enrichment on webhook events (job chaining)
+- [ ] **Generate Kodi NFO files** (CRITICAL)
+- [ ] **Extract embedded subtitles** (CRITICAL)
+- [ ] **Publish NFO + assets to library directory** (CRITICAL)
+- [ ] **Notify Kodi to refresh library** (CRITICAL)
+- [ ] **Enhanced asset selection algorithm**
 - [ ] Docker deployment ready
 
 ### Automation Flow Test

@@ -283,8 +283,7 @@ Metarr uses a **full-viewport modal design** for selecting asset candidates from
 3. Backend:
    - Downloads asset to cache (if not already cached)
    - Updates movie.poster_id foreign key
-   - Copies cache file to library with Kodi naming
-   - Sets has_unpublished_changes flag
+   - Creates publishing job to copy to library (if auto-publish enabled)
 4. Frontend:
    - Closes modal
    - Updates MovieEdit page with new poster
