@@ -88,6 +88,7 @@ export class GarbageCollectionService {
       moviesDeleted: 0,
       seriesDeleted: 0,
       cacheFilesDeleted: 0,
+      emptyDirectoriesRemoved: 0,
       errors: [],
     };
 
@@ -100,6 +101,9 @@ export class GarbageCollectionService {
 
       // Clean up orphaned cache files (not referenced in database)
       result.cacheFilesDeleted = await this.cleanupOrphanedCacheFiles(db);
+
+      // Remove empty cache directories
+      result.emptyDirectoriesRemoved = await this.cleanupEmptyDirectories();
 
       logger.info('Garbage collection complete', result);
     } catch (error: any) {
@@ -291,6 +295,101 @@ export class GarbageCollectionService {
       return 0;
     }
   }
+
+  /**
+   * Remove empty directories from cache
+   *
+   * Recursively walks cache directories and removes empty subdirectories.
+   * Protects top-level cache type directories (images/, videos/, etc.)
+   */
+  private async cleanupEmptyDirectories(): Promise<number> {
+    try {
+      logger.info('Starting empty directory cleanup');
+
+      const cacheRoot = path.join(process.cwd(), 'data', 'cache');
+      const cacheTypes = ['images', 'videos', 'text', 'audio', 'actors'];
+      let totalRemoved = 0;
+
+      for (const cacheType of cacheTypes) {
+        const cachePath = path.join(cacheRoot, cacheType);
+
+        try {
+          await fs.access(cachePath);
+          const removed = await this.removeEmptyDirectoriesRecursive(cachePath, cacheRoot);
+          totalRemoved += removed;
+
+          if (removed > 0) {
+            logger.info('Cleaned empty directories', {
+              cacheType,
+              removed
+            });
+          }
+        } catch (error: any) {
+          if (error.code !== 'ENOENT') {
+            logger.warn('Error accessing cache directory', {
+              cacheType,
+              error: error.message
+            });
+          }
+        }
+      }
+
+      logger.info('Empty directory cleanup complete', { totalRemoved });
+      return totalRemoved;
+    } catch (error: any) {
+      logger.error('Failed to cleanup empty directories', {
+        error: error.message
+      });
+      return 0;
+    }
+  }
+
+  /**
+   * Recursively remove empty directories
+   */
+  private async removeEmptyDirectoriesRecursive(
+    dirPath: string,
+    rootPath: string
+  ): Promise<number> {
+    let removed = 0;
+
+    try {
+      const entries = await fs.readdir(dirPath, { withFileTypes: true });
+
+      // Recursively process subdirectories first
+      for (const entry of entries) {
+        if (entry.isDirectory()) {
+          const subDirPath = path.join(dirPath, entry.name);
+          removed += await this.removeEmptyDirectoriesRecursive(subDirPath, rootPath);
+        }
+      }
+
+      // After processing subdirectories, check if this directory is now empty
+      const remainingEntries = await fs.readdir(dirPath);
+
+      if (remainingEntries.length === 0) {
+        // Calculate depth to protect top-level directories
+        const relativePath = path.relative(rootPath, dirPath);
+        const depth = relativePath.split(path.sep).length;
+
+        // Only remove subdirectories (depth > 1), not top-level cache dirs
+        if (depth > 1 && dirPath.startsWith(rootPath)) {
+          await fs.rmdir(dirPath);
+          logger.debug('Removed empty cache directory', { directory: dirPath });
+          removed++;
+        }
+      }
+    } catch (error: any) {
+      if (error.code !== 'ENOENT') {
+        logger.debug('Error during directory cleanup', {
+          directory: dirPath,
+          error: error.message
+        });
+      }
+    }
+
+    return removed;
+  }
 }
 
 export interface GarbageCollectionResult {
@@ -299,5 +398,6 @@ export interface GarbageCollectionResult {
   moviesDeleted: number;
   seriesDeleted: number;
   cacheFilesDeleted: number;
+  emptyDirectoriesRemoved: number;
   errors: string[];
 }
