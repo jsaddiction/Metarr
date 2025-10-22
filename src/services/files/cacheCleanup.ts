@@ -13,7 +13,7 @@ import { logger } from '../../middleware/logging.js';
  */
 export async function cleanupEmptyCacheDirectories(): Promise<void> {
   const cacheRoot = path.join(process.cwd(), 'data', 'cache');
-  const cacheTypes = ['images', 'videos', 'text', 'audio'];
+  const cacheTypes = ['images', 'videos', 'text', 'audio', 'actors'];
 
   let totalRemoved = 0;
 
