@@ -215,6 +215,27 @@ export async function buildKnownFilesSet(
       for (const assetName of standardAssets) {
         knownFiles.add(path.join(mediaDir, assetName));
       }
+
+      // Also add media-file-named variants (e.g., "Movie Name (tt1234)-poster.jpg")
+      // These are Kodi-valid and commonly created by tools, but get cached with UUID names
+      const mediaFileAssetBases = ['poster', 'fanart', 'banner', 'clearlogo', 'clearart', 'disc', 'discart', 'landscape', 'thumb', 'keyart'];
+      const imageExtensions = ['.jpg', '.jpeg', '.png'];
+      for (const baseName of mediaFileAssetBases) {
+        for (const ext of imageExtensions) {
+          const assetPath = path.join(mediaDir, `${mediaBaseName}-${baseName}${ext}`);
+          knownFiles.add(assetPath);
+          // Also add numbered variants (e.g., "Movie-fanart1.jpg", "Movie-fanart2.jpg")
+          for (let i = 1; i <= 20; i++) {
+            knownFiles.add(path.join(mediaDir, `${mediaBaseName}-${baseName}${i}${ext}`));
+          }
+        }
+      }
+
+      // Add media-file-named trailer (e.g., "Movie Name (tt1234)-trailer.mp4")
+      const videoExtensions = ['.mp4', '.mkv', '.avi', '.mov', '.webm', '.m4v'];
+      for (const ext of videoExtensions) {
+        knownFiles.add(path.join(mediaDir, `${mediaBaseName}-trailer${ext}`));
+      }
     }
 
     // Add images from cache file system (both cache and library)
