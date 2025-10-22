@@ -50,6 +50,23 @@ interface MovieNFOData {
     name: string;
     overview?: string;
   };
+  streamDetails?: {
+    video?: Array<{
+      codec: string;
+      aspect: string;
+      width: number;
+      height: number;
+      framerate?: number;
+    }>;
+    audio?: Array<{
+      codec: string;
+      language: string;
+      channels: number;
+    }>;
+    subtitle?: Array<{
+      language: string;
+    }>;
+  };
 }
 
 interface TVShowNFOData {
@@ -213,6 +230,45 @@ export async function generateMovieNFO(movieDir: string, data: MovieNFOData): Pr
       };
       if (data.set.overview) {
         nfoObj.set.overview = data.set.overview;
+      }
+    }
+
+    // Stream Details (fileinfo section for Kodi)
+    // Contains technical metadata about the actual media file
+    if (data.streamDetails) {
+      const { video, audio, subtitle } = data.streamDetails;
+
+      if (video && video.length > 0 || audio && audio.length > 0 || subtitle && subtitle.length > 0) {
+        nfoObj.fileinfo = {
+          streamdetails: {}
+        };
+
+        // Video stream information
+        if (video && video.length > 0) {
+          nfoObj.fileinfo.streamdetails.video = video.map(v => ({
+            codec: v.codec,
+            aspect: v.aspect,
+            width: v.width,
+            height: v.height,
+            ...(v.framerate !== undefined && { framerate: v.framerate })
+          }));
+        }
+
+        // Audio stream information
+        if (audio && audio.length > 0) {
+          nfoObj.fileinfo.streamdetails.audio = audio.map(a => ({
+            codec: a.codec,
+            language: a.language,
+            channels: a.channels
+          }));
+        }
+
+        // Subtitle stream information
+        if (subtitle && subtitle.length > 0) {
+          nfoObj.fileinfo.streamdetails.subtitle = subtitle.map(s => ({
+            language: s.language
+          }));
+        }
       }
     }
 
@@ -486,6 +542,22 @@ export async function generateMovieNFOFromDatabase(
       [movieId]
     );
 
+    // Fetch countries (from clean schema)
+    const countries = await db.query(
+      `SELECT c.name FROM countries c
+       JOIN movie_countries mc ON c.id = mc.country_id
+       WHERE mc.movie_id = ?`,
+      [movieId]
+    );
+
+    // Fetch tags (from clean schema)
+    const tags = await db.query(
+      `SELECT t.name FROM tags t
+       JOIN movie_tags mt ON t.id = mt.tag_id
+       WHERE mt.movie_id = ?`,
+      [movieId]
+    );
+
     // Ratings are stored directly in movies table, not separate ratings table
     const ratings: any[] = [];
     if (movie.tmdb_rating) {
@@ -522,6 +594,77 @@ export async function generateMovieNFOFromDatabase(
       };
     }
 
+    // Fetch stream details (video, audio, subtitle streams)
+    // These provide technical metadata about the actual media file for Kodi
+    const videoStreams = await db.query<{
+      codec: string;
+      width: number;
+      height: number;
+      aspect_ratio: string;
+      framerate?: number;
+    }>(
+      `SELECT codec, width, height, aspect_ratio, framerate
+       FROM video_streams
+       WHERE entity_type = 'movie' AND entity_id = ?
+       ORDER BY stream_index`,
+      [movieId]
+    );
+
+    const audioStreams = await db.query<{
+      codec: string;
+      language: string;
+      channels: number;
+    }>(
+      `SELECT codec, language, channels
+       FROM audio_streams
+       WHERE entity_type = 'movie' AND entity_id = ?
+       ORDER BY stream_index`,
+      [movieId]
+    );
+
+    const subtitleStreams = await db.query<{
+      language: string;
+    }>(
+      `SELECT language
+       FROM subtitle_streams
+       WHERE entity_type = 'movie' AND entity_id = ?
+       ORDER BY stream_index`,
+      [movieId]
+    );
+
+    // Build stream details object if any streams exist
+    let streamDetails: MovieNFOData['streamDetails'] = undefined;
+    if (videoStreams.length > 0 || audioStreams.length > 0 || subtitleStreams.length > 0) {
+      streamDetails = {};
+
+      // Transform video streams to NFO format
+      if (videoStreams.length > 0) {
+        streamDetails.video = videoStreams.map(v => ({
+          codec: v.codec,
+          aspect: v.aspect_ratio,
+          width: v.width,
+          height: v.height,
+          ...(v.framerate !== undefined && v.framerate !== null && { framerate: v.framerate })
+        }));
+      }
+
+      // Transform audio streams to NFO format
+      if (audioStreams.length > 0) {
+        streamDetails.audio = audioStreams.map(a => ({
+          codec: a.codec,
+          language: a.language || 'und', // Use 'und' for undefined language
+          channels: a.channels
+        }));
+      }
+
+      // Transform subtitle streams to NFO format
+      if (subtitleStreams.length > 0) {
+        streamDetails.subtitle = subtitleStreams.map(s => ({
+          language: s.language || 'und'
+        }));
+      }
+    }
+
     // Build NFO data object
     const nfoData: MovieNFOData = {
       title: movie.title,
@@ -539,11 +682,12 @@ export async function generateMovieNFOFromDatabase(
       directors: directors.map((d: any) => d.name),
       writers: writers.map((w: any) => w.name),
       studios: studios.map((s: any) => s.name),
-      countries: [], // Not in clean schema
-      tags: [], // Not in clean schema
+      countries: countries.map((c: any) => c.name),
+      tags: tags.map((t: any) => t.name),
       actors: actors,
       ratings: ratings,
       ...(setData && { set: setData }),
+      ...(streamDetails && { streamDetails }),
     };
 
     // Generate NFO file
