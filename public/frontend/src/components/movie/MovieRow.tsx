@@ -1,7 +1,6 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
-  faRefresh,
   faFile,
   faImage,
   faImages,
@@ -14,11 +13,21 @@ import {
   faMusic,
   faUserGroup,
 } from '@fortawesome/free-solid-svg-icons';
+import { Search, CheckCircle, Sparkles, Upload, MoreVertical } from 'lucide-react';
 import { MovieListItem } from '../../types/movie';
 import { AssetIndicator } from './AssetIndicator';
 import { BookmarkToggle } from '../ui/BookmarkToggle';
 import { useToggleMonitored } from '../../hooks/useToggleMonitored';
 import { EnrichmentStatusBadge } from './EnrichmentStatusBadge';
+import { useTriggerJob } from '../../hooks/useTriggerJob';
+import { useNavigate } from 'react-router-dom';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 interface MovieRowProps {
   movie: MovieListItem;
@@ -28,14 +37,11 @@ interface MovieRowProps {
 
 export const MovieRow = React.memo<MovieRowProps>(({ movie, onClick, onRefresh }) => {
   const toggleMonitored = useToggleMonitored();
+  const triggerJob = useTriggerJob();
+  const navigate = useNavigate();
 
   const handleClick = () => {
     onClick?.(movie);
-  };
-
-  const handleRefreshClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    onRefresh?.(movie);
   };
 
   const handleToggleMonitored = (newMonitoredStatus: boolean) => {
@@ -171,13 +177,71 @@ export const MovieRow = React.memo<MovieRowProps>(({ movie, onClick, onRefresh }
 
       {/* Actions Column */}
       <td className="p-2 align-middle text-center">
-        <button
-          className="btn btn-ghost p-2"
-          title="Refresh Metadata"
-          onClick={handleRefreshClick}
-        >
-          <FontAwesomeIcon icon={faRefresh} />
-        </button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              className="btn btn-ghost p-2"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <MoreVertical className="w-4 h-4" />
+            </button>
+          </DropdownMenuTrigger>
+
+          <DropdownMenuContent align="end" className="w-48">
+            {/* Show Identify only for unidentified movies */}
+            {movie.identification_status === 'unidentified' && (
+              <>
+                <DropdownMenuItem
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    navigate(`/metadata/movies/${movie.id}/edit`);
+                  }}
+                >
+                  <Search className="w-4 h-4" />
+                  <span>Identify</span>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+              </>
+            )}
+
+            {/* Verify - always available */}
+            <DropdownMenuItem
+              onClick={(e) => {
+                e.stopPropagation();
+                triggerJob.mutate({ movieId: movie.id, jobType: 'verify' });
+              }}
+            >
+              <CheckCircle className="w-4 h-4" />
+              <span>Verify</span>
+            </DropdownMenuItem>
+
+            {/* Enrich - only if identified */}
+            <DropdownMenuItem
+              onClick={(e) => {
+                e.stopPropagation();
+                triggerJob.mutate({ movieId: movie.id, jobType: 'enrich' });
+              }}
+              disabled={movie.identification_status === 'unidentified'}
+            >
+              <Sparkles className="w-4 h-4" />
+              <span>Enrich</span>
+            </DropdownMenuItem>
+
+            <DropdownMenuSeparator />
+
+            {/* Publish - only if enriched */}
+            <DropdownMenuItem
+              onClick={(e) => {
+                e.stopPropagation();
+                triggerJob.mutate({ movieId: movie.id, jobType: 'publish' });
+              }}
+              disabled={movie.identification_status !== 'enriched'}
+            >
+              <Upload className="w-4 h-4" />
+              <span>Publish</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </td>
     </tr>
   );

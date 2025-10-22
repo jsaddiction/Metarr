@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faExternalLinkAlt } from '@fortawesome/free-solid-svg-icons';
+import { faExternalLinkAlt, faExclamationTriangle, faChevronDown, faChevronUp } from '@fortawesome/free-solid-svg-icons';
 import { useMovie } from '../../hooks/useMovies';
 import { useToggleLockField } from '../../hooks/useLockField';
 import { SaveBar } from '../common/SaveBar';
 import { GridField } from './GridField';
 import { TextAreaField } from './TextAreaField';
+import { toast } from 'sonner';
+import { useQueryClient } from '@tanstack/react-query';
 
 interface MetadataTabProps {
   movieId: number;
@@ -49,9 +51,19 @@ interface MovieMetadata {
   tags?: string[];
 }
 
+interface SearchResult {
+  tmdbId: number;
+  title: string;
+  year?: number;
+  plot?: string;
+  posterUrl?: string;
+  imdbId?: string;
+}
+
 export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
   // Use TanStack Query to fetch movie data
   const { data: movieData, isLoading: loading } = useMovie(movieId);
+  const queryClient = useQueryClient();
 
   // Use lock field mutation hook
   const toggleLockField = useToggleLockField();
@@ -59,6 +71,12 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
   const [metadata, setMetadata] = useState<MovieMetadata | null>(null);
   const [originalMetadata, setOriginalMetadata] = useState<MovieMetadata | null>(null);
   const [saving, setSaving] = useState(false);
+
+  // Identification banner state
+  const [bannerExpanded, setBannerExpanded] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searching, setSearching] = useState(false);
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
 
   // Update local state when movie data changes (from TanStack Query cache)
   useEffect(() => {
@@ -156,6 +174,88 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
     }
   };
 
+  const handleSearch = async () => {
+    if (!searchQuery.trim()) return;
+
+    setSearching(true);
+    setSearchResults([]);
+
+    try {
+      const response = await fetch(`/api/movies/${movieId}/search-tmdb`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: searchQuery,
+          year: metadata?.year
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to search TMDB');
+      }
+
+      const data = await response.json();
+      setSearchResults(data.results || []);
+
+      if (data.results?.length === 0) {
+        toast.info('No results found', {
+          description: 'Try adjusting your search query',
+        });
+      }
+    } catch (error: any) {
+      console.error('Search failed:', error);
+      toast.error('Search failed', {
+        description: error.message,
+      });
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const handleIdentify = async (result: SearchResult) => {
+    try {
+      const response = await fetch(`/api/movies/${movieId}/identify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tmdbId: result.tmdbId,
+          title: result.title,
+          year: result.year,
+          imdbId: result.imdbId,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to identify movie');
+      }
+
+      toast.success('Movie identified!', {
+        description: "Click 'Enrich' to fetch full metadata.",
+      });
+
+      // Invalidate queries to refresh UI
+      queryClient.invalidateQueries({ queryKey: ['movie', movieId] });
+      queryClient.invalidateQueries({ queryKey: ['movies'] });
+
+      // Clear search state
+      setSearchQuery('');
+      setSearchResults([]);
+    } catch (error: any) {
+      console.error('Identify failed:', error);
+      toast.error('Failed to identify movie', {
+        description: error.message,
+      });
+    }
+  };
+
+  const handleSearchKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      handleSearch();
+    }
+  };
+
   if (loading) {
     return (
       <div className="text-center py-12">
@@ -233,6 +333,105 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
       />
 
       <div className="space-y-3">
+        {/* Identification Banner - Only show if unidentified */}
+        {movieData?.identification_status === 'unidentified' && (
+          <div className="border border-yellow-600/50 bg-yellow-500/10 rounded-lg overflow-hidden">
+            <div className="p-4">
+              <div className="flex items-start gap-3">
+                <FontAwesomeIcon
+                  icon={faExclamationTriangle}
+                  className="text-yellow-500 text-xl mt-0.5 flex-shrink-0"
+                />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="text-lg font-semibold text-yellow-500">Movie Unidentified</h3>
+                    <button
+                      onClick={() => setBannerExpanded(!bannerExpanded)}
+                      className="text-yellow-500 hover:text-yellow-400 transition-colors"
+                    >
+                      <FontAwesomeIcon icon={bannerExpanded ? faChevronUp : faChevronDown} />
+                    </button>
+                  </div>
+                  <p className="text-sm text-neutral-300 mb-3">
+                    Search TMDB to identify this movie and enable metadata enrichment.
+                  </p>
+
+                  {bannerExpanded && (
+                    <div className="space-y-3">
+                      {/* Search Input */}
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          onKeyPress={handleSearchKeyPress}
+                          placeholder="Search title..."
+                          className="flex-1 h-9 px-3 py-2 text-sm bg-neutral-900 border border-neutral-700 rounded-md text-white placeholder-neutral-500 focus:outline-none focus:border-primary-500"
+                          disabled={searching}
+                        />
+                        <button
+                          onClick={handleSearch}
+                          disabled={searching || !searchQuery.trim()}
+                          className="btn btn-primary px-4 h-9 text-sm disabled:opacity-50"
+                        >
+                          {searching ? 'Searching...' : 'Search TMDB'}
+                        </button>
+                      </div>
+
+                      {/* Search Results */}
+                      {searchResults.length > 0 && (
+                        <div className="space-y-2 max-h-64 overflow-y-auto border border-neutral-700 rounded-md bg-neutral-900/50">
+                          {searchResults.map((result) => (
+                            <div
+                              key={result.tmdbId}
+                              className="flex items-start gap-3 p-3 hover:bg-neutral-800/50 transition-colors border-b border-neutral-700 last:border-b-0"
+                            >
+                              {/* Poster Thumbnail */}
+                              {result.posterUrl ? (
+                                <img
+                                  src={result.posterUrl}
+                                  alt={result.title}
+                                  className="w-12 h-18 object-cover rounded flex-shrink-0"
+                                />
+                              ) : (
+                                <div className="w-12 h-18 bg-neutral-800 rounded flex items-center justify-center flex-shrink-0">
+                                  <FontAwesomeIcon icon={faExternalLinkAlt} className="text-neutral-600" />
+                                </div>
+                              )}
+
+                              {/* Movie Info */}
+                              <div className="flex-1 min-w-0">
+                                <h4 className="font-semibold text-white">
+                                  {result.title} {result.year && `(${result.year})`}
+                                </h4>
+                                {result.plot && (
+                                  <p className="text-sm text-neutral-400 line-clamp-1 mt-1">
+                                    {result.plot}
+                                  </p>
+                                )}
+                                <p className="text-xs text-neutral-500 mt-1">
+                                  TMDB ID: {result.tmdbId}
+                                </p>
+                              </div>
+
+                              {/* Select Button */}
+                              <button
+                                onClick={() => handleIdentify(result)}
+                                className="btn btn-secondary btn-sm px-3 h-8 text-sm flex-shrink-0"
+                              >
+                                Select
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
       {/* Grid layout */}
       <div className="card">
