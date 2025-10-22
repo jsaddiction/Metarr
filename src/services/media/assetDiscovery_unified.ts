@@ -1,8 +1,9 @@
 /**
  * Asset Discovery for Unified File System
  *
- * Discovers local assets (images, videos, subtitles, audio) and stores them in unified file tables.
- * Implements library → cache workflow with deduplication.
+ * Discovers local assets (images, videos, subtitles, audio) during library scanning.
+ * Discovered files are stored ONLY in cache_*_files tables (source of truth).
+ * Library tables (library_*_files) are reserved for published files written by Metarr during publishing phase.
  */
 
 import fs from 'fs/promises';
@@ -12,13 +13,9 @@ import { logger } from '../../middleware/logging.js';
 import { DatabaseConnection } from '../../types/database.js';
 import { findAssetSpecsByFilename, validateImageDimensions, AssetTypeSpec } from './assetTypeSpecs.js';
 import {
-  insertLibraryImageFile,
-  insertLibraryVideoFile,
-  insertLibraryTextFile,
   cacheImageFile
 } from '../files/unifiedFileService.js';
 import {
-  insertLibraryAudioFile,
   cacheVideoFile,
   cacheTextFile,
   cacheAudioFile
@@ -153,15 +150,14 @@ export async function discoverAndStoreAssets(
 
       for (const candidate of validCandidates) {
         try {
-          // === UNIFIED FILE SYSTEM WORKFLOW ===
+          // === CACHE-ONLY WORKFLOW FOR DISCOVERY ===
+          // Discovery phase: Files found in library → Store in cache as source of truth
+          // Library tables are ONLY for published files (written by Metarr during publishing)
 
-          // Step 1: Insert library record
-          const libraryFileId = await insertLibraryImageFile(db, candidate.filePath);
-
-          // Step 3: Cache the image (with deduplication)
-          await cacheImageFile(
+          // Cache the discovered image (no library file ID during discovery)
+          const cacheFileId = await cacheImageFile(
             db,
-            libraryFileId,
+            null, // No library file ID for discovered files
             candidate.filePath,
             entityType,
             entityId,
@@ -173,16 +169,16 @@ export async function discoverAndStoreAssets(
           // All discovered assets are candidates until selection algorithm chooses the best
 
           result.images++;
-          logger.info('Discovered and stored asset', {
+          logger.info('Discovered and cached asset', {
             entityId,
             assetType,
             file: candidate.fileName,
             dimensions: `${candidate.width}x${candidate.height}`,
             score: calculateScore(candidate, assetType),
-            libraryFileId
+            cacheFileId
           });
         } catch (error: any) {
-          logger.error('Failed to store asset', {
+          logger.error('Failed to cache discovered asset', {
             assetType,
             file: candidate.fileName,
             error: error.message
@@ -207,16 +203,13 @@ export async function discoverAndStoreAssets(
         const filePath = path.join(dirPath, file);
 
         try {
-          // Insert library record
-          const libraryFileId = await insertLibraryVideoFile(db, filePath);
-
-          // Cache the video
-          await cacheVideoFile(db, libraryFileId, filePath, entityType, entityId, 'trailer', 'local');
+          // Cache the discovered trailer (no library file ID for discovered files)
+          const cacheFileId = await cacheVideoFile(db, null, filePath, entityType, entityId, 'trailer', 'local');
 
           result.trailers++;
-          logger.info('Discovered trailer', { entityId, file });
+          logger.info('Discovered and cached trailer', { entityId, file, cacheFileId });
         } catch (error: any) {
-          logger.error('Failed to store trailer', { file, error: error.message });
+          logger.error('Failed to cache discovered trailer', { file, error: error.message });
         }
       }
     }
@@ -231,16 +224,13 @@ export async function discoverAndStoreAssets(
         const filePath = path.join(dirPath, file);
 
         try {
-          // Insert library record
-          const libraryFileId = await insertLibraryTextFile(db, filePath);
-
-          // Cache the subtitle
-          await cacheTextFile(db, libraryFileId, filePath, entityType, entityId, 'subtitle', 'local');
+          // Cache the discovered subtitle (no library file ID for discovered files)
+          const cacheFileId = await cacheTextFile(db, null, filePath, entityType, entityId, 'subtitle', 'local');
 
           result.subtitles++;
-          logger.info('Discovered subtitle', { entityId, file });
+          logger.info('Discovered and cached subtitle', { entityId, file, cacheFileId });
         } catch (error: any) {
-          logger.error('Failed to store subtitle', { file, error: error.message });
+          logger.error('Failed to cache discovered subtitle', { file, error: error.message });
         }
       }
     }
@@ -257,16 +247,13 @@ export async function discoverAndStoreAssets(
         const filePath = path.join(dirPath, file);
 
         try {
-          // Insert library record
-          const libraryFileId = await insertLibraryAudioFile(db, filePath);
-
-          // Cache the audio
-          await cacheAudioFile(db, libraryFileId, filePath, entityType, entityId, 'theme', 'local');
+          // Cache the discovered theme song (no library file ID for discovered files)
+          const cacheFileId = await cacheAudioFile(db, null, filePath, entityType, entityId, 'theme', 'local');
 
           result.subtitles++; // Note: We don't have a theme counter, using subtitles for now
-          logger.info('Discovered theme song', { entityId, file });
+          logger.info('Discovered and cached theme song', { entityId, file, cacheFileId });
         } catch (error: any) {
-          logger.error('Failed to store theme song', { file, error: error.message });
+          logger.error('Failed to cache discovered theme song', { file, error: error.message });
         }
       }
     }

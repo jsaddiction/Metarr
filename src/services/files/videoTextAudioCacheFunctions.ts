@@ -168,10 +168,11 @@ export async function insertAudioFile(
 /**
  * Cache a video file (trailers) - UUID-based naming, NO deduplication
  * Every library file gets its own cache copy
+ * @param libraryFileId - Optional library file ID (null for discovered files, number for published files)
  */
 export async function cacheVideoFile(
   db: DatabaseConnection,
-  libraryFileId: number,
+  libraryFileId: number | null,
   sourceFilePath: string,
   entityType: 'movie' | 'episode',
   entityId: number,
@@ -217,14 +218,16 @@ export async function cacheVideoFile(
 
     const cacheFileId = cacheResult.insertId!;
 
-    // Link library file to cache
-    await db.execute(
-      `UPDATE library_video_files SET cache_file_id = ? WHERE id = ?`,
-      [cacheFileId, libraryFileId]
-    );
+    // Link library file to cache (if library file exists - only for published files)
+    if (libraryFileId !== null) {
+      await db.execute(
+        `UPDATE library_video_files SET cache_file_id = ? WHERE id = ?`,
+        [cacheFileId, libraryFileId]
+      );
+    }
 
     logger.info('Video cached successfully', {
-      libraryFileId,
+      libraryFileId: libraryFileId ?? 'N/A (discovered)',
       cacheFileId,
       uuid,
       hash: fileHash.substring(0, 8),
@@ -235,22 +238,22 @@ export async function cacheVideoFile(
     return cacheFileId;
   } catch (error: any) {
     logger.error('Failed to cache video file', {
-      libraryFileId,
+      libraryFileId: libraryFileId ?? 'N/A (discovered)',
       sourceFilePath,
       error: error.message
     });
-    // Return library file ID as fallback
-    return libraryFileId;
+    throw error;
   }
 }
 
 /**
  * Cache a text file (subtitles) - UUID-based naming, NO deduplication
  * Every library file gets its own cache copy
+ * @param libraryFileId - Optional library file ID (null for discovered files, number for published files)
  */
 export async function cacheTextFile(
   db: DatabaseConnection,
-  libraryFileId: number,
+  libraryFileId: number | null,
   sourceFilePath: string,
   entityType: 'movie' | 'episode',
   entityId: number,
@@ -276,17 +279,11 @@ export async function cacheTextFile(
     // Copy to cache
     await fs.copyFile(sourceFilePath, cachePath);
 
-    // Get subtitle language and format from library file (via JOIN to cache)
-    const libraryFile = await db.query<{ subtitle_language: string; subtitle_format: string }>(
-      `SELECT c.subtitle_language, c.subtitle_format
-       FROM library_text_files l
-       JOIN cache_text_files c ON l.cache_file_id = c.id
-       WHERE l.id = ?`,
-      [libraryFileId]
-    );
-
-    const subtitleLanguage = libraryFile.length > 0 ? libraryFile[0].subtitle_language : null;
-    const subtitleFormat = libraryFile.length > 0 ? libraryFile[0].subtitle_format : null;
+    // For discovered files, we can't get subtitle info from library file (it doesn't exist yet)
+    // For published files, we could query but it's better to pass it as parameters
+    // For now, leave as null - can be enriched later
+    const subtitleLanguage = null;
+    const subtitleFormat = ext.substring(1); // Remove dot from extension
 
     // Insert cache record
     const cacheResult = await db.execute(
@@ -311,14 +308,16 @@ export async function cacheTextFile(
 
     const cacheFileId = cacheResult.insertId!;
 
-    // Link library file to cache
-    await db.execute(
-      `UPDATE library_text_files SET cache_file_id = ? WHERE id = ?`,
-      [cacheFileId, libraryFileId]
-    );
+    // Link library file to cache (if library file exists - only for published files)
+    if (libraryFileId !== null) {
+      await db.execute(
+        `UPDATE library_text_files SET cache_file_id = ? WHERE id = ?`,
+        [cacheFileId, libraryFileId]
+      );
+    }
 
     logger.info('Text file cached successfully', {
-      libraryFileId,
+      libraryFileId: libraryFileId ?? 'N/A (discovered)',
       cacheFileId,
       hash: fileHash.substring(0, 8),
       textType,
@@ -328,22 +327,22 @@ export async function cacheTextFile(
     return cacheFileId;
   } catch (error: any) {
     logger.error('Failed to cache text file', {
-      libraryFileId,
+      libraryFileId: libraryFileId ?? 'N/A (discovered)',
       sourceFilePath,
       error: error.message
     });
-    // Return library file ID as fallback
-    return libraryFileId;
+    throw error;
   }
 }
 
 /**
  * Cache an audio file (theme songs) - UUID-based naming, NO deduplication
  * Every library file gets its own cache copy
+ * @param libraryFileId - Optional library file ID (null for discovered files, number for published files)
  */
 export async function cacheAudioFile(
   db: DatabaseConnection,
-  libraryFileId: number,
+  libraryFileId: number | null,
   sourceFilePath: string,
   entityType: 'movie' | 'episode',
   entityId: number,
@@ -389,14 +388,16 @@ export async function cacheAudioFile(
 
     const cacheFileId = cacheResult.insertId!;
 
-    // Link library file to cache
-    await db.execute(
-      `UPDATE library_audio_files SET cache_file_id = ? WHERE id = ?`,
-      [cacheFileId, libraryFileId]
-    );
+    // Link library file to cache (if library file exists - only for published files)
+    if (libraryFileId !== null) {
+      await db.execute(
+        `UPDATE library_audio_files SET cache_file_id = ? WHERE id = ?`,
+        [cacheFileId, libraryFileId]
+      );
+    }
 
     logger.info('Audio file cached successfully', {
-      libraryFileId,
+      libraryFileId: libraryFileId ?? 'N/A (discovered)',
       cacheFileId,
       uuid,
       hash: fileHash.substring(0, 8),
@@ -407,12 +408,11 @@ export async function cacheAudioFile(
     return cacheFileId;
   } catch (error: any) {
     logger.error('Failed to cache audio file', {
-      libraryFileId,
+      libraryFileId: libraryFileId ?? 'N/A (discovered)',
       sourceFilePath,
       error: error.message
     });
-    // Return library file ID as fallback
-    return libraryFileId;
+    throw error;
   }
 }
 
