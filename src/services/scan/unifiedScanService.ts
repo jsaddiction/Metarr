@@ -14,10 +14,11 @@ import { DatabaseManager } from '../../database/DatabaseManager.js';
 import { parseFullMovieNfos } from '../nfo/nfoParser.js';
 import { trackNFOFile } from '../nfo/nfoFileTracking.js';
 import { extractAndStoreMediaInfo } from '../media/ffprobeService.js';
-import { IgnorePatternService } from '../ignorePatternService.js';
+// import { IgnorePatternService } from '../ignorePatternService.js';
 import { findOrCreateMovie, rehashMovieFile, MovieLookupContext } from './movieLookupService.js';
-import { classifyFilesInDirectory, verifyCachedFiles } from './fileClassificationService.js';
-import { processClassifiedFiles } from './fileProcessingService.js';
+import { gatherAllFacts } from './factGatheringService.js';
+import { classifyDirectory } from './classificationService.js';
+import { canProcessDirectory } from './processingDecisionService.js';
 
 /**
  * Unified Scan Service
@@ -150,8 +151,8 @@ export async function scanMovieDirectory(
     errors: [],
   };
 
-  // Create ignore pattern service
-  const ignorePatternService = new IgnorePatternService(dbManager);
+  // Create ignore pattern service (for future use with asset filtering)
+  // const ignorePatternService = new IgnorePatternService(dbManager);
 
   try {
     // Find main video file
@@ -273,41 +274,42 @@ export async function scanMovieDirectory(
         result.errors.push(`FFprobe failed: ${error.message}`);
       }
 
-      // COIN-SORTER SCANNER: Two-pass file classification and processing
+      // NEW FILE SCANNER: Fact gathering → Classification → Decision
       try {
-        // PASS 1: Classify all files (read-only, deterministic)
-        const classification = await classifyFilesInDirectory(movieDir, ignorePatternService);
+        logger.info('Starting new file scanner', { movieId, movieDir });
 
-        // PASS 2: Process classified files (cache to database)
-        const processingResult = await processClassifiedFiles(
-          db,
-          classification,
-          'movie',
+        // Phase 1: Gather all facts (metadata extraction)
+        const scanFacts = await gatherAllFacts(movieDir);
+
+        // Phase 2: Classify files based on facts
+        const classificationResult = await classifyDirectory(scanFacts);
+
+        // Phase 3: Check if we can process
+        const decision = canProcessDirectory(classificationResult);
+
+        logger.info('File scanner complete', {
           movieId,
-          path.basename(videoFilePath)
-        );
-
-        result.assetsFound = {
-          images: processingResult.imagesProcessed,
-          trailers: processingResult.trailersProcessed,
-          subtitles: processingResult.subtitlesProcessed,
-        };
-        result.unknownFilesFound = processingResult.unknownLogged;
-
-        if (processingResult.errors.length > 0) {
-          result.errors.push(...processingResult.errors);
-        }
-
-        logger.info('Coin-sorter scanner complete', {
-          movieId,
-          nfoProcessed: processingResult.nfoProcessed,
-          imagesProcessed: processingResult.imagesProcessed,
-          trailersProcessed: processingResult.trailersProcessed,
-          subtitlesProcessed: processingResult.subtitlesProcessed,
-          unknownLogged: processingResult.unknownLogged,
+          status: classificationResult.status,
+          totalFiles: classificationResult.totalFiles,
+          totalClassified: classificationResult.totalClassified,
+          totalUnknown: classificationResult.totalUnknown,
+          canProcess: decision.canProcess,
+          discStructure: classificationResult.isDiscStructure,
         });
+
+        // Update result stats
+        result.assetsFound = {
+          images: classificationResult.images.totalClassified,
+          trailers: classificationResult.videos.trailers.length,
+          subtitles: classificationResult.text.subtitles.length,
+        };
+        result.unknownFilesFound = classificationResult.totalUnknown;
+
+        // TODO: Store classification result for publish service
+        // TODO: If decision.canProcess is false, flag for manual classification
+
       } catch (error: any) {
-        result.errors.push(`File classification/processing failed: ${error.message}`);
+        result.errors.push(`File classification failed: ${error.message}`);
       }
 
       // ARCHITECTURAL CHANGE: Actors are NO LONGER discovered during initial scan
@@ -355,54 +357,41 @@ export async function scanMovieDirectory(
         // Note: NFO regeneration will happen during enrichment job, not scan job
       }
 
-      // RESCAN: Verify existing cached files still match specifications
+      // RESCAN: Re-scan directory to pick up any new/changed files
       try {
-        logger.info('Verifying cached files against specifications', { movieId });
+        logger.info('Re-scanning movie directory', { movieId, movieDir });
 
-        const verification = await verifyCachedFiles(db, 'movie', movieId);
+        // Phase 1: Gather all facts (metadata extraction)
+        const scanFacts = await gatherAllFacts(movieDir);
 
-        logger.info('Cached file verification complete', {
+        // Phase 2: Classify files based on facts
+        const classificationResult = await classifyDirectory(scanFacts);
+
+        // Phase 3: Check if we can process
+        const decision = canProcessDirectory(classificationResult);
+
+        logger.info('Re-scan complete', {
           movieId,
-          valid: verification.valid.length,
-          invalid: verification.invalid.length,
-          missing: verification.missing.length,
+          status: classificationResult.status,
+          totalFiles: classificationResult.totalFiles,
+          totalClassified: classificationResult.totalClassified,
+          totalUnknown: classificationResult.totalUnknown,
+          canProcess: decision.canProcess,
         });
 
-        // If files are invalid or missing, re-classify and process
-        if (verification.invalid.length > 0 || verification.missing.length > 0) {
-          logger.warn('Found invalid or missing cached files, re-processing directory', {
-            movieId,
-            invalid: verification.invalid,
-            missing: verification.missing,
-          });
+        // Update result stats
+        result.assetsFound = {
+          images: classificationResult.images.totalClassified,
+          trailers: classificationResult.videos.trailers.length,
+          subtitles: classificationResult.text.subtitles.length,
+        };
+        result.unknownFilesFound = classificationResult.totalUnknown;
 
-          // PASS 1: Classify all files
-          const classification = await classifyFilesInDirectory(movieDir, ignorePatternService);
+        // TODO: Compare with existing cached files and update database
+        // TODO: Store classification result for publish service
 
-          // PASS 2: Process classified files
-          const processingResult = await processClassifiedFiles(
-            db,
-            classification,
-            'movie',
-            movieId,
-            path.basename(videoFilePath)
-          );
-
-          result.assetsFound = {
-            images: processingResult.imagesProcessed,
-            trailers: processingResult.trailersProcessed,
-            subtitles: processingResult.subtitlesProcessed,
-          };
-          result.unknownFilesFound = processingResult.unknownLogged;
-
-          if (processingResult.errors.length > 0) {
-            result.errors.push(...processingResult.errors);
-          }
-        } else {
-          logger.info('All cached files valid, no reprocessing needed', { movieId });
-        }
       } catch (error: any) {
-        result.errors.push(`File verification/reprocessing failed: ${error.message}`);
+        result.errors.push(`Re-scan failed: ${error.message}`);
       }
 
       // ARCHITECTURAL CHANGE: Actors are NO LONGER discovered during rescans
