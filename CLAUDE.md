@@ -1,528 +1,254 @@
-# Metarr - Metadata Management Application
+# Metarr - Intelligent Media Metadata Manager
 
-## Comprehensive Documentation
+## What is Metarr?
 
-Detailed architecture documentation is located in `docs/`. **Read specific files only when needed for the current task** to avoid context overload.
+Metarr is a Docker-first metadata management application that bridges your media downloaders (*arr stack) and media players (Kodi/Jellyfin/Plex). It provides intelligent automation with complete user control, maintaining a protected cache of all metadata and artwork to prevent data loss during media upgrades.
 
-The documentation follows a hierarchical structure: **WHAT** (overview) → **WHY** (design) → **HOW** (implementation).
+**Core Value Proposition:**
+- **Automated enrichment** from multiple providers (TMDB, TVDB, Fanart.tv)
+- **Protected asset cache** survives media manager deletions and provider removals
+- **Granular field locking** preserves manual edits from automation
+- **Disaster recovery** built-in via content-addressed storage
 
----
-
-## TIER 1: WHAT - Understanding Metarr
-
-### Application Overview
-
-Metarr is a web-based metadata management application inspired by MediaElch, designed for Docker deployment. It provides intelligent metadata management with **user control first**, bridging media managers (Sonarr/Radarr/Lidarr) and media players (Kodi/Jellyfin/Plex).
-
-**Core Principle**: "Intelligent Defaults with Manual Override Capability"
-
-- Manual edits are sacred: Locks prevent automation from overwriting user changes
-- Webhooks (if enabled): Fully automated for hands-off operation
-- Cache as source of truth: Immutable, content-addressed storage protects against data loss
-
-### Navigation Documents (Start Here)
-
-1. **[PROJECT_ROADMAP.md](docs/PROJECT_ROADMAP.md)** - **START HERE** - Current status, what's done, what's next
-2. **[STAGE_DEFINITIONS.md](docs/STAGE_DEFINITIONS.md)** - Detailed stage plans and tasks
-3. **[GIT_WORKFLOW.md](docs/GIT_WORKFLOW.md)** - Branch strategy, commit conventions, development rules
-
----
-
-## TIER 2: WHY - Design Philosophy
-
-### Understanding Design Decisions
-
-1. **[DESIGN_DECISIONS.md](docs/DESIGN_DECISIONS.md)** - Why we made specific architectural choices
-2. **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** - Complete architectural vision and design principles
-
----
-
-## TIER 3: HOW - Implementation Details
-
-### Core Systems
-
-- **[DATABASE_SCHEMA.md](docs/DATABASE_SCHEMA.md)** - Complete schema with asset tables and field locking
-- **[WORKFLOWS.md](docs/WORKFLOWS.md)** - Two-phase scanning, enrichment, publishing, field locking, automation
-- **[API_ARCHITECTURE.md](docs/API_ARCHITECTURE.md)** - REST API + WebSocket communication
-- **[JOB_QUEUE_ARCHITECTURE.md](docs/JOB_QUEUE_ARCHITECTURE.md)** - Background job system with priorities
-- **[UNIFIED_FILE_SYSTEM.md](docs/UNIFIED_FILE_SYSTEM.md)** - Asset storage (cache + library, two-copy architecture)
-- **[WEBSOCKET_JOB_PROGRESS.md](docs/WEBSOCKET_JOB_PROGRESS.md)** - Real-time progress updates
-
-### External Integrations
-
-- **[WEBHOOKS.md](docs/WEBHOOKS.md)** - Radarr/Sonarr/Lidarr webhook handling and automation
-- **[METADATA_PROVIDERS.md](docs/METADATA_PROVIDERS.md)** - TMDB, TVDB integration, rate limiting
-- **[KODI_API.md](docs/KODI_API.md)** - Kodi JSON-RPC reference
-- **[NFO_PARSING.md](docs/NFO_PARSING.md)** - Kodi NFO format parsing
-
-### System Architecture
-
-- **[PATH_MAPPING.md](docs/PATH_MAPPING.md)** - Path translation between systems
-- **[NOTIFICATIONS_AND_LOGGING.md](docs/NOTIFICATIONS_AND_LOGGING.md)** - Logging, notifications, retention
-- **[BACKEND_ARCHITECTURE_RULES.md](docs/BACKEND_ARCHITECTURE_RULES.md)** - Backend coding standards
-
-### Frontend & Testing
-
-- **[UI_DESIGN.md](docs/UI_DESIGN.md)** - Layout, color scheme, component patterns
-- **[FRONTEND_COMPONENTS.md](docs/FRONTEND_COMPONENTS.md)** - React components reference
-- **[TESTING.md](docs/TESTING.md)** - Test infrastructure, writing tests, current status
-
----
-
-## Executive Summary
-
-Metarr is a **web-based metadata management application** inspired by MediaElch, designed to give users complete control over media library metadata while optionally leveraging intelligent automation. It bridges media managers (Sonarr/Radarr/Lidarr) and media players (Kodi/Jellyfin/Plex) with a flexible workflow system.
-
-### Design Philosophy
+## Core Philosophy
 
 **"Intelligent Defaults with Manual Override Capability"**
 
-1. **Automation First**: Set it and forget it.
-   - Webhooks initiate enrichment process
-   - Missing data is replaced with an online provider.
-   - Cached files for quick restructure of target library item.
+1. **User Control First**: Every automated decision can be overridden
+2. **Field-Level Locking**: Manual edits are sacred and preserved
+3. **Protected Cache**: Source of truth that survives all external changes
+4. **Graceful Degradation**: Each phase optional except scanning
 
-2. **Manual Edits are Sacred**: Any user change locks that field/asset
-   - Locked fields excluded from all future automation
-   - Visual indicators: 🔒 User Selected vs 🤖 Auto Selected
-   - Unlock capability when user wants automation back
+## Quick Start
 
-3. **Webhooks = Full Automation**: If enabled, new downloads auto-publish
-   - User opted in because they want automation
-   - Seamless integration with existing \*arr stack
-   - Upgrades restore from cache (disaster recovery built-in)
+```bash
+# Clone and install
+git clone https://github.com/yourusername/metarr.git
+cd metarr
+npm install
 
-### Core Architecture
+# Development (zero configuration required!)
+npm run dev:all         # Starts backend (port 3000) and frontend (port 3001)
 
-**Three-Tier Asset System** (replaces two-copy architecture)
-
-```
-Tier 1: CANDIDATES (Provider URLs + Metadata)
-  ↓ User selects or algorithm chooses
-Tier 2: CACHE (Content-Addressed Immutable Storage)
-  ↓ User clicks "Publish"
-Tier 3: LIBRARY (Published Assets for Players)
+# Production
+npm run build          # Build backend
+npm run build:frontend # Build frontend
+npm start             # Run production server
 ```
 
-**Two-Phase Scanning** (fast feedback, non-blocking)
+**Zero Configuration**: Metarr includes embedded API keys for all providers. Clone → Install → Run. No API signup required for development.
+
+## Elemental Phases
+
+Metarr operates through independent, idempotent phases that form an automated chain. Each phase adds value and can run multiple times safely.
+
+### Phase Rules
+1. **Independence**: Each phase operates standalone
+2. **Idempotency**: Safe to run multiple times without corruption
+3. **Recoverable**: Destructive operations use recycle bin
+4. **Optional**: All phases except scanning can be disabled
+5. **Observable**: All phases emit progress events
+6. **Chainable**: Phases trigger subsequent phases via job queue
+
+### Phase Overview
+
+| Phase | Purpose | Triggers | Required |
+|-------|---------|----------|----------|
+| **[Scanning](docs/phases/SCANNING.md)** | Discover & classify files | Manual, webhook, schedule | Yes |
+| **[Enrichment](docs/phases/ENRICHMENT.md)** | Fetch metadata & select assets | Post-scan, manual, refresh | No |
+| **[Publishing](docs/phases/PUBLISHING.md)** | Deploy assets to library | Post-selection, manual | No |
+| **[Player Sync](docs/phases/PLAYER_SYNC.md)** | Update media players | Post-publish, manual | No |
+| **[Verification](docs/phases/VERIFICATION.md)** | Ensure cache↔library consistency | Manual, schedule | No |
+
+### Job-Driven Automation
 
 ```
-Phase 1: FAST LOCAL SCAN (minutes)
-  - Filesystem discovery, NFO parsing, FFprobe
-  - No provider API calls
-  - User sees library immediately
-
-Phase 2: LAZY ENRICHMENT (hours to days, background)
-  - Provider metadata fetch (rate-limited)
-  - Asset candidate collection
-  - Auto-selection (if enabled)
-  - Non-blocking, resumable
+User Action / Webhook → Job Created → Worker Processes → Next Phase Job
+                                    ↓
+                            Phase Disabled?
+                                   ↓
+                            Skip to Next Phase
 ```
 
-**Job-Driven Architecture**
-
-```
-Job completes → Triggers next job → Chain continues
-Example: Enrichment → Asset Selection → Publishing
-```
-
-### Key Features
-
-- **UUID-Based Cache**: UUID naming with SHA256 deduplication, immutable storage
-- **Job Queue State Machine**: Event-driven job chaining, no explicit state tracking
-- **Field & Asset Locking**: Per-field and per-asset granular locking preserves user intent
-- **Transactional Publishing**: Atomic writes, rollback on failure, player notification
-- **Disaster Recovery**: Restore from cache when Radarr/Sonarr deletes assets during upgrades
-- **Background Jobs**: Priority queue (webhooks > user actions > auto-enrichment > library scans)
-- **Rate Limiting**: Adaptive rate limiting with 429-based exponential backoff, reserved capacity for webhooks
-- **Real-Time Updates**: WebSocket for progress tracking, connection state awareness
-- **Scale-Aware**: Virtual scrolling, pagination, indexed queries (target: 32k items)
+Each phase completion triggers the next phase via job creation. Workers check phase configuration and either process or skip to the next phase.
 
 ## Technology Stack
 
 ### Backend
-
-- **Runtime**: Node.js with TypeScript
-- **Web Framework**: Express.js
-- **Database**: Multi-database support (SQLite3 for development, PostgreSQL for production)
+- **Runtime**: Node.js 20+ with TypeScript
+- **Framework**: Express.js
+- **Database**: SQLite (dev) / PostgreSQL (production)
+- **Job Queue**: SQLite-based with worker pool
 - **Communication**: REST API + WebSocket
 
 ### Frontend
+- **Framework**: React 18+ with TypeScript
+- **Build**: Vite
+- **Styling**: Tailwind CSS v4 (violet primary)
+- **Components**: shadcn/ui + custom AnimatedTabs
+- **State**: React hooks + WebSocket updates
 
-- **Framework**: React with Vite
-- **Language**: TypeScript
-- **Styling**: Tailwind CSS v4 with violet theme (Tailwind violet-500: #8b5cf6)
-- **UI Components**: shadcn/ui (Radix UI primitives) with custom AnimatedTabs
-- **State Management**: React hooks + WebSocket for real-time updates
+### External Integrations
+- **Providers**: TMDB, TVDB, Fanart.tv, MusicBrainz
+- **Players**: Kodi, Jellyfin, Plex
+- **Downloaders**: Radarr, Sonarr, Lidarr (webhooks)
 
-### UI Component Standards
+## Asset Management Architecture
 
-**Theme:**
-- **PRIMARY COLOR**: Tailwind violet-500 (#8b5cf6, HSL 258 90% 66%)
-- **IMPLEMENTATION**: CSS variables in [globals.css](public/frontend/src/styles/globals.css) using `@theme` block
-- **USAGE**: All primary colors reference `primary-*` scale (e.g., `text-primary-500`, `bg-primary-600`)
-- **DECISION DATE**: 2025-10-18 - Migrated from custom purple (#6a4c93) to standardized Tailwind violet for consistency with shadcn/ui ecosystem
+### Two-Copy System
+```
+CACHE (Protected)              LIBRARY (Working)
+/data/cache/                   /media/movies/
+  ├── images/                    ├── Movie (2024)/
+  │   └── {uuid}/                │   ├── movie.mkv
+  │       ├── poster.jpg         │   ├── movie-poster.jpg
+  │       └── fanart.jpg         │   └── movie-fanart.jpg
+  └── trailers/                  └── ...
+      └── {uuid}/
+```
 
-**Tabs Component:**
-- **USE**: Custom `AnimatedTabs` component ([src/components/ui/AnimatedTabs.tsx](public/frontend/src/components/ui/AnimatedTabs.tsx))
-- **WHY**: Provides unique sliding violet indicator animation that aligns with Metarr's brand identity
-- **DO NOT**: Use standard shadcn/ui Tabs (lacks animation, generic appearance)
-- **DECISION DATE**: 2025-10-18 - After evaluating shadcn/ui and hybrid approaches, determined that custom AnimatedTabs provides best ROI (simple maintenance, unique branding, 100 lines vs 180+ for hybrid)
+**Cache**: Content-addressed storage with SHA256 deduplication
+**Library**: Kodi naming convention for player compatibility
 
-**Cards Component:**
-- **USE**: shadcn/ui Card components ([src/components/ui/card.tsx](public/frontend/src/components/ui/card.tsx))
-- **STRUCTURE**: `<Card>` → `<CardHeader>` → `<CardTitle>` + `<CardContent>`
-- **CUSTOMIZATION**: CardTitle uses `text-primary-500` for violet-colored headers
-- **DECISION DATE**: 2025-10-18 - Migrated 13 placeholder pages from custom CSS `.card` classes to shadcn Cards for consistency
+### Asset Tiers Explained
 
-### Integrations
+1. **CANDIDATES**: Provider URLs and metadata stored in database (not files)
+2. **CACHE**: Downloaded files in protected storage (source of truth)
+3. **LIBRARY**: Working copies for media player scanning
 
-- **Media Players**: Kodi (WebSocket + HTTP), Jellyfin (REST), Plex (future)
-- **Metadata Providers**: TMDB (movies/TV), TVDB (TV shows), MusicBrainz (music - future)
-- **Downloaders**: Sonarr, Radarr, Lidarr (webhook receivers)
+## Cross-Cutting Documentation
+
+### System Design
+- **[Database Schema](docs/DATABASE.md)** - Complete data model
+- **[API Architecture](docs/API.md)** - REST + WebSocket patterns
+- **[UI Standards](docs/UI_STANDARDS.md)** - Frontend components and theme
+
+### Development
+- **[Git Workflow](docs/technical/GIT_WORKFLOW.md)** - Commit conventions
+- **[Testing](docs/DEVELOPMENT.md#testing)** - Test infrastructure
+- **[Backend Rules](docs/DEVELOPMENT.md#backend-rules)** - Coding standards
+
+### Technical Details
+- **[Provider APIs](docs/providers/)** - TMDB, TVDB integration details
+- **[Player APIs](docs/players/)** - Kodi, Jellyfin protocols
+- **[NFO Format](docs/technical/NFO_PARSING.md)** - Kodi NFO structure
+- **[Webhooks](docs/technical/WEBHOOKS.md)** - *arr webhook handling
+
+## Configuration
+
+### Environment Variables (Optional)
+```env
+# Database (defaults to SQLite)
+DB_TYPE=sqlite|postgres
+DATABASE_URL=postgresql://user:pass@localhost/metarr
+
+# API Keys (embedded defaults provided)
+TMDB_API_KEY=your_personal_key
+TVDB_API_KEY=your_personal_key
+FANART_TV_API_KEY=your_personal_key
+
+# Paths
+CACHE_PATH=/data/cache
+LIBRARY_PATH=/media
+```
+
+### Monitored vs Unmonitored
+
+- **Monitored**: Metarr manages all metadata and assets
+- **Unmonitored**: Global lock on downloadable content
+  - Still processes webhooks for renames/deletions
+  - Still updates stream info from upgrades
+  - Preserves all user customizations
 
 ## Development Commands
 
-### Essential Commands
-
 ```bash
-# Backend Development
-npm run build           # Build TypeScript to JavaScript
-npm start              # Run production build
+# Development
+npm run dev:all        # Full stack development
+npm run lint          # ESLint check
+npm run format        # Prettier format
+npm run typecheck     # TypeScript validation
 
-# Frontend Development
-npm run build:frontend   # Build frontend for production
-npm run dev:all         # Run both backend and frontend concurrently
+# Building
+npm run build         # Build backend
+npm run build:frontend # Build frontend
 
-# Code Quality
-npm run lint           # Run ESLint
-npm run lint:fix       # Fix ESLint issues automatically
-npm run format         # Format code with Prettier
-npm run typecheck      # Type check without building
+# Testing
+npm test              # Run test suite
+npm run test:watch    # Watch mode
 ```
-
-### Development Workflow
-
-1. Run `npm run dev:all` to start both backend and frontend servers **human run only**
-2. Backend runs on `http://localhost:3000`
-3. Frontend runs on `http://localhost:3001` with proxy to backend
-4. Use `npm run lint` before committing changes
-5. Run `npm run typecheck` to ensure type safety
-6. Format code with `npm run format`
 
 ## Project Structure
 
 ```
 src/
-├── config/           # Configuration management
-├── controllers/      # Request handlers and business logic
-├── database/        # Database setup and management
-│   ├── migrations/  # Database schema migrations
-│   └── seeders/     # Database seed data
-├── middleware/      # Express middleware functions
-├── models/          # Data models and database entities
-├── routes/          # API route definitions
-├── services/        # Business logic and external integrations
-├── types/           # TypeScript type definitions
-└── utils/           # Utility functions and helpers
+├── controllers/      # Request handlers
+├── services/        # Business logic
+├── models/          # Data models
+├── routes/          # API endpoints
+├── database/        # Migrations & schema
+├── config/          # Configuration
+└── utils/           # Helpers
 
-public/
-├── frontend/        # React frontend application
-│   ├── src/
-│   │   ├── components/  # React components
-│   │   │   ├── layout/     # Layout components (Sidebar, Header, Layout)
-│   │   │   ├── movie/      # Movie-specific components (MovieTableView)
-│   │   │   └── ui/         # Reusable UI components (ViewControls)
-│   │   ├── pages/       # Page components
-│   │   │   ├── metadata/   # Metadata management pages (Movies)
-│   │   │   ├── settings/   # Settings submenu pages (General, Providers, etc.)
-│   │   │   └── system/     # System submenu pages (Status, Tasks, etc.)
-│   │   ├── styles/      # CSS and styling
-│   │   └── utils/       # Frontend utilities
-│   └── index.html       # Frontend entry point
-└── dist/           # Built frontend assets
+public/frontend/
+├── src/
+│   ├── components/  # React components
+│   ├── pages/       # Route pages
+│   └── styles/      # CSS & theme
+└── index.html
 
-docs/               # Comprehensive documentation
-vite.config.ts      # Frontend build configuration
+data/                # Runtime data (git-ignored)
+├── cache/           # Protected assets
+├── recycle/         # Deleted items
+└── metarr.sqlite    # Database
 
-data/               # Runtime data (NOT in git)
-├── cache/          # Protected asset storage (SOURCE OF TRUTH)
-│   ├── images/     # {entityId}/poster_hash.jpg, fanart_hash.jpg
-│   ├── trailers/   # {entityId}/trailer_hash.mp4
-│   └── subtitles/  # {entityId}/subtitle_lang_hash.srt
-└── metarr.sqlite   # Database (metadata SOURCE OF TRUTH)
+docs/
+├── phases/          # Elemental phase docs
+├── providers/       # Provider specifics
+├── players/         # Player protocols
+└── technical/       # Implementation details
 ```
-
-## Two-Copy Architecture: Asset Management
-
-### Core Principle
-
-**Metarr maintains TWO copies of every asset for resilience and disaster recovery:**
-
-1. **Cache Copy** (Source of Truth)
-   - Location: `data/cache/{type}/{entityId}/`
-   - Purpose: Protected from Radarr/Sonarr/Lidarr deletion
-   - Survives: Media manager cleanup, web source removal
-   - Never deleted by Metarr except during explicit entity removal
-
-2. **Library Copy** (Working Copy)
-   - Location: Movie directory with media file
-   - Purpose: For media player scans (Kodi/Jellyfin/Plex)
-   - Naming: Kodi naming convention (`moviename-poster.jpg`)
-   - Can be: Deleted by media managers, rebuilt from cache
-
-### Asset Flow
-
-**Discovery in Library** (Most Common)
-
-```
-User places file → Metarr scans directory → Copies to cache → Keeps library copy
-                                          → Stores both paths in database
-```
-
-**Download from Web** (TMDB/TVDB)
-
-```
-Download to temp → Process (hash, dimensions) → Move to cache → Copy to library
-                                               → Store both paths in database
-```
-
-**User Assignment** (Unknown Files)
-
-```
-Unknown file in library → User identifies type → Copy to cache → Rename/move library copy to Kodi naming
-                                                → Store both paths in database
-```
-
-### Disaster Recovery Scenarios
-
-**Scenario 1: Radarr Deletes Images During Upgrade**
-
-```
-Before: Library has poster.jpg, fanart.jpg (both in cache too)
-Radarr: Deletes all images during movie quality upgrade
-Metarr: Detects missing files during next scan or webhook
-Action: Copies from cache → library (uses cached files)
-Result: Images restored, no web API calls needed
-```
-
-**Scenario 2: TMDB Removes Image from API**
-
-```
-Before: Image URL stored in database, cached locally
-TMDB:   Removes image from their servers (happens occasionally)
-Metarr: Cannot re-download, but has cache copy
-Action: Can still rebuild library from cache
-Result: Image preserved despite web source removal
-```
-
-**Scenario 3: User Accidentally Deletes Movie Directory**
-
-```
-Before: Database has metadata, cache has all assets
-User:   rm -rf "/movies/The Matrix (1999)/"
-Metarr: Database still has movie entry, cache intact
-Action: User re-downloads movie file via Radarr
-        Metarr receives webhook, rebuilds directory from cache
-Result: All metadata and assets restored (only movie file re-downloaded)
-```
-
-### Database Schema (Two Paths)
-
-```sql
--- Images table
-CREATE TABLE images (
-  cache_path TEXT,      -- /data/cache/images/123/poster_abc.jpg (SOURCE OF TRUTH)
-  library_path TEXT     -- /movies/The Matrix/The Matrix-poster.jpg (WORKING COPY)
-);
-
--- Trailers table
-CREATE TABLE trailers (
-  cache_path TEXT,      -- /data/cache/trailers/123/trailer_def.mp4
-  local_path TEXT       -- /movies/The Matrix/The Matrix-trailer.mp4
-);
-
--- Subtitles table
-CREATE TABLE subtitle_streams (
-  cache_path TEXT,      -- /data/cache/subtitles/123/subtitle_eng_ghi.srt
-  file_path TEXT        -- /movies/The Matrix/The Matrix.en.srt
-);
-```
-
-### What Metarr DOES NOT Backup
-
-- **Media files themselves** (movies, TV episodes, music files)
-- Reason: Too large, user has Radarr/Sonarr for this
-- Metarr only tracks the file path to generate proper asset naming
-
-### Backup Strategy
-
-**Critical to backup:**
-
-1. Database (`data/metarr.sqlite` or PostgreSQL database)
-2. Cache directory (`data/cache/`)
-
-**Optional to backup:** 3. Configuration files
-
-**Do NOT need to backup:**
-
-- Media files (user's responsibility via Radarr/Sonarr backups)
-- Library directory assets (can be rebuilt from cache)
-- Logs
-
-## Configuration
-
-### Environment Variables
-
-```env
-
-```
-
-### Zero-Configuration Philosophy
-
-**Metarr works completely out-of-the-box with ZERO required environment variables for local development.**
-
-The application includes embedded default API keys for services that offer free project-level keys. This means:
-
-- Clone the repo → `npm install` → `npm run dev` → **It just works!**
-- No API key signup required to start developing
-- No configuration files to create
-- Environment variables are **optional** and only needed for Docker deployment or personal preferences
-
-**Providers with Embedded Keys:**
-
-- **TMDB (The Movie Database)**
-  - Embedded: Project API key (40 requests per 10 seconds)
-  - Override: Set `TMDB_API_KEY` environment variable for personal usage tracking
-  - Get yours: https://www.themoviedb.org/settings/api
-
-- **TVDB (The TV Database)**
-  - Embedded: Project API key (30 requests per 10 seconds)
-  - Override: Set `TVDB_API_KEY` environment variable for personal usage tracking
-  - Get yours: https://thetvdb.com/api-information
-
-- **FanArt.tv**
-  - Embedded: Project API key (10 requests per second)
-  - Override: Set `FANART_TV_API_KEY` for 2x faster rate limits (20 req/sec)
-  - Get yours: https://fanart.tv/get-an-api-key/
-
-**Why Override with Your Own Key?**
-
-- Track your personal API usage and analytics
-- Support the provider services by registering as a user
-- Get higher rate limits (FanArt.tv: 20 req/sec vs 10 req/sec)
-- All keys are completely free for personal/open-source use
-
-**Implementation:**
-
-- Default keys: `src/config/providerDefaults.ts`
-- Fallback logic: `src/config/ConfigManager.ts`
-- User overrides via environment variables take precedence
-- Logs indicate which key type is being used (default vs user-provided)
-
-## Development Notes
-
-### Adding New Providers
-
-1. Create provider class in `src/services/providers/`
-2. Implement `IMetadataProvider` interface
-3. Add provider configuration to `src/config/providers.ts`
-4. Register provider in `src/services/providerService.ts`
-
-### Adding New Media Players
-
-1. Create player class in `src/services/players/`
-2. Implement `IMediaPlayer` interface
-3. Add player configuration to `src/config/players.ts`
-4. Register player in `src/services/playerService.ts`
-
-### Database Migrations
-
-**Two migration strategies** pre-release | post-release
-
-- Pre-release: during development of v1
-  1. Manipulate initial schema directly
-  2. file change initiates nodemon restart
-  3. database file deletion code removes old database
-  4. initial migration creates new database
-- Post-release: only after docker image creation and distribution
-  1. Create migration file in `src/database/migrations/`
-  2. Follow naming convention: `YYYYMMDD_HHmmss_description.ts`
-  3. Implement `up()` and `down()` methods
-  4. Run with migration service
 
 ## Troubleshooting
 
 ### Common Issues
 
-1. **Database Connection**: Check DB_TYPE and connection settings
-2. **API Keys**: Verify provider API key validity
-3. **Media Player Connection**: Test network connectivity and credentials
-4. **Webhook Delivery**: Check firewall and port accessibility
+1. **Port conflicts**: Check ports 3000 (backend) and 3001 (frontend)
+2. **Database locked**: Ensure single instance running
+3. **API rate limits**: Check provider rate limiting in logs
+4. **Player connection**: Verify network and credentials
 
-### Logging
-
-- Application logs: `logs/app.log`
-- Error logs: `logs/error.log`
-- Job processing: `logs/jobs.log`
-- Database queries: Debug mode only
-- See `docs/NOTIFICATIONS_AND_LOGGING.md` for log rotation and retention
-
-**Monitoring Logs During Development (Windows):**
+### Log Monitoring
 
 ```bash
-# Tail logs in real-time using PowerShell
-powershell -Command "Get-Content logs/app.log -Tail 50 -Wait"
-powershell -Command "Get-Content logs/error.log -Tail 50 -Wait"
+# Windows PowerShell
+Get-Content logs/app.log -Tail 50 -Wait
+Get-Content logs/error.log -Tail 50 -Wait
+
+# Linux/Mac
+tail -f logs/app.log
+tail -f logs/error.log
 ```
 
-**IMPORTANT:** Always monitor both `app.log` and `error.log` when troubleshooting backend server issues. Run these commands in background terminals to capture real-time activity.
+## Critical Developer Rules
 
-## ⚠️ Critical Development Rules for Claude (AI Assistant)
+### For AI Assistants (Claude, etc.)
 
-### Git Commit Policy - NO AI ATTRIBUTION!
+1. **NO Git Attribution**: Never add AI signatures to commits
+2. **NO Server Control**: Never run/kill Node.js processes
+3. **Read First**: Always read files before editing
+4. **Use TodoWrite**: Track all multi-step tasks
 
-**NEVER add Claude attribution to commit messages.**
+### For Human Developers
 
-This is the human developer's project. Commit messages should reflect their work, not Claude's assistance.
+1. **You control servers**: Only you run `npm run dev`
+2. **Monitor logs**: Keep `logs/app.log` and `logs/error.log` visible
+3. **Test changes**: Verify in browser before committing
 
-**Example**:
-```bash
-# ❌ WRONG
-git commit -m "feat: add feature
+See [Git Workflow](docs/technical/GIT_WORKFLOW.md) for complete guidelines.
 
-🤖 Generated with Claude Code
-Co-Authored-By: Claude <noreply@anthropic.com>"
+## Getting Help
 
-# ✅ CORRECT
-git commit -m "stage-4: backend: add webhook receiver endpoints"
-```
-
-### Server Management - DO NOT TOUCH!
-
-**YOU (the human) control all Node.js servers. Claude NEVER runs server commands.**
-
-**Claude Must NEVER Run**:
-
-- `npm run dev`, `npm run dev:backend`, `npm run dev:frontend`, `npm start`
-- `pkill node`, `killall node`, or any process killing commands
-- Any command that starts/stops/restarts servers
-
-**Why**: Killing Node processes terminates Claude's session, losing all context. This is catastrophic during troubleshooting.
-
-**What Claude Should Do**:
-
-- ✅ Ask you to restart servers when needed
-- ✅ Tell you when hot-reload or nodemon should handle changes
-- ✅ Read logs to diagnose issues
-- ✅ Make code changes and let you test
-
-**See [docs/GIT_WORKFLOW.md](docs/GIT_WORKFLOW.md) for complete Claude rules and development workflow.**
-
-## Future Enhancements
-
-- Plex media player support
-- Advanced metadata matching algorithms
-- Custom metadata provider plugins
-- Bulk library processing
-- Mobile application companion
+- **Documentation**: Start with phase docs in `docs/phases/`
+- **Issues**: Report bugs at [GitHub Issues](https://github.com/yourusername/metarr/issues)
+- **Discord**: Join community at [Discord Server](https://discord.gg/metarr)
