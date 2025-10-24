@@ -1,61 +1,35 @@
 /**
- * Recycling Service - Safe file and directory recycling
+ * Recycling Service - Safe file recycling with UUID flat file storage
  *
- * Moves files/directories to timestamped recycle bins instead of deleting them.
+ * Uses flat file storage with UUID naming to prevent collisions.
+ * Atomic file operations ensure data integrity.
  * Critical safety feature: NEVER recycle main movie file.
  *
  * Recycle bin structure:
  * /data/recycle/
- *   2025-10-23_143022_movie-123/
- *     unknown-file.xyz
- *     extrafanarts/          <- Entire directory moved
- *       fanart1.jpg
- *       fanart2.jpg
+ *   a1b2c3d4-e5f6-7890-1234-567890abcdef.xyz  <- UUID-named files
+ *   b2c3d4e5-f6a1-2345-6789-0abcdef12345.jpg
  */
 
 import fs from 'fs/promises';
 import path from 'path';
+import crypto from 'crypto';
 import { logger } from '../../middleware/logging.js';
 
 const RECYCLE_BASE_PATH = path.join(process.cwd(), 'data', 'recycle');
 
 /**
- * Create timestamped recycle bin directory for entity
+ * Ensure recycle bin directory exists
  */
-export async function createRecycleBin(
-  entityType: 'movie' | 'episode',
-  entityId: number
-): Promise<string> {
+export async function ensureRecycleBinExists(): Promise<void> {
   try {
-    // Ensure base recycle directory exists
     await fs.mkdir(RECYCLE_BASE_PATH, { recursive: true });
-
-    // Create timestamped directory: YYYY-MM-DD_HHmmss_movie-123
-    const timestamp = new Date()
-      .toISOString()
-      .replace(/T/, '_')
-      .replace(/:/g, '')
-      .slice(0, 17); // 2025-10-23_143022
-
-    const recycleBinName = `${timestamp}_${entityType}-${entityId}`;
-    const recycleBinPath = path.join(RECYCLE_BASE_PATH, recycleBinName);
-
-    await fs.mkdir(recycleBinPath, { recursive: true });
-
-    logger.info('Created recycle bin', {
-      entityType,
-      entityId,
-      recycleBinPath,
-    });
-
-    return recycleBinPath;
   } catch (error: any) {
-    logger.error('Failed to create recycle bin', {
-      entityType,
-      entityId,
+    logger.error('Failed to create recycle bin directory', {
+      recycleBinPath: RECYCLE_BASE_PATH,
       error: error.message,
     });
-    throw new Error(`Failed to create recycle bin: ${error.message}`);
+    throw new Error(`Failed to create recycle bin directory: ${error.message}`);
   }
 }
 
@@ -107,204 +81,84 @@ export async function validateBeforeRecycling(
 }
 
 /**
- * Recycle a single file (move to recycle bin)
+ * Recycle a single file (move to recycle bin with UUID naming)
+ * Uses atomic file operations (copy + rename) for data integrity
  */
 export async function recycleFile(
   filePath: string,
-  recycleBinPath: string,
   mainMovieFilePath?: string
-): Promise<{ success: boolean; newPath?: string; error?: string }> {
+): Promise<{ success: boolean; recyclePath?: string; error?: string }> {
   try {
     // Validate safety
     const validation = await validateBeforeRecycling(filePath, mainMovieFilePath);
     if (!validation.safe) {
-      const errorResult: { success: boolean; newPath?: string; error?: string } = {
+      return {
         success: false,
+        error: validation.reason ?? 'Validation failed',
       };
-      if (validation.reason) {
-        errorResult.error = validation.reason;
-      }
-      return errorResult;
     }
 
-    const filename = path.basename(filePath);
-    const destinationPath = path.join(recycleBinPath, filename);
+    // Ensure recycle bin exists
+    await ensureRecycleBinExists();
 
-    // Move file to recycle bin
-    await fs.rename(filePath, destinationPath);
+    // Generate UUID filename with original extension
+    const ext = path.extname(filePath);
+    const uuid = crypto.randomUUID();
+    const recycleFileName = `${uuid}${ext}`;
+    const recyclePath = path.join(RECYCLE_BASE_PATH, recycleFileName);
+    const tempPath = `${recyclePath}.tmp.${Date.now()}`;
 
-    logger.info('Recycled file', {
-      originalPath: filePath,
-      recyclePath: destinationPath,
-    });
+    // Atomic move: copy to temp, then rename
+    try {
+      await fs.copyFile(filePath, tempPath);
+      await fs.rename(tempPath, recyclePath);
 
-    return {
-      success: true,
-      newPath: destinationPath,
-    };
+      // Remove original file
+      await fs.unlink(filePath);
+
+      logger.info('Recycled file', {
+        originalPath: filePath,
+        recyclePath,
+        uuid,
+      });
+
+      return {
+        success: true,
+        recyclePath,
+      };
+    } catch (error) {
+      // Clean up temp file on failure
+      try {
+        await fs.unlink(tempPath);
+      } catch {
+        // Ignore cleanup errors
+      }
+      throw error;
+    }
   } catch (error: any) {
     logger.error('Failed to recycle file', {
       filePath,
-      recycleBinPath,
       error: error.message,
     });
     return {
       success: false,
       error: error.message,
     };
-  }
-}
-
-/**
- * Recycle entire directory (move to recycle bin)
- * Used for legacy directories (extrafanarts, extrathumbs)
- */
-export async function recycleDirectory(
-  directoryPath: string,
-  recycleBinPath: string,
-  mainMovieFilePath?: string
-): Promise<{ success: boolean; newPath?: string; error?: string }> {
-  try {
-    // Check if directory exists
-    try {
-      const stats = await fs.stat(directoryPath);
-      if (!stats.isDirectory()) {
-        return {
-          success: false,
-          error: 'Path is not a directory',
-        };
-      }
-    } catch {
-      return {
-        success: false,
-        error: 'Directory does not exist',
-      };
-    }
-
-    // CRITICAL: Check that main movie is NOT inside this directory
-    if (mainMovieFilePath) {
-      const absoluteDirPath = path.resolve(directoryPath);
-      const absoluteMainMovie = path.resolve(mainMovieFilePath);
-
-      if (absoluteMainMovie.startsWith(absoluteDirPath + path.sep)) {
-        logger.error('CRITICAL: Main movie file is inside directory to be recycled', {
-          directoryPath: absoluteDirPath,
-          mainMovieFile: absoluteMainMovie,
-        });
-        return {
-          success: false,
-          error: 'CRITICAL: Cannot recycle directory containing main movie file',
-        };
-      }
-    }
-
-    const directoryName = path.basename(directoryPath);
-    const destinationPath = path.join(recycleBinPath, directoryName);
-
-    // Move entire directory to recycle bin
-    await fs.rename(directoryPath, destinationPath);
-
-    logger.info('Recycled directory', {
-      originalPath: directoryPath,
-      recyclePath: destinationPath,
-    });
-
-    return {
-      success: true,
-      newPath: destinationPath,
-    };
-  } catch (error: any) {
-    logger.error('Failed to recycle directory', {
-      directoryPath,
-      recycleBinPath,
-      error: error.message,
-    });
-    return {
-      success: false,
-      error: error.message,
-    };
-  }
-}
-
-/**
- * List all recycle bins for an entity
- */
-export async function listRecycleBins(
-  entityType: 'movie' | 'episode',
-  entityId: number
-): Promise<string[]> {
-  try {
-    // Ensure recycle base path exists
-    try {
-      await fs.access(RECYCLE_BASE_PATH);
-    } catch {
-      return []; // No recycle bins exist
-    }
-
-    const entries = await fs.readdir(RECYCLE_BASE_PATH, { withFileTypes: true });
-    const recycleBins: string[] = [];
-
-    const pattern = `_${entityType}-${entityId}`;
-
-    for (const entry of entries) {
-      if (entry.isDirectory() && entry.name.includes(pattern)) {
-        recycleBins.push(path.join(RECYCLE_BASE_PATH, entry.name));
-      }
-    }
-
-    return recycleBins.sort().reverse(); // Most recent first
-  } catch (error: any) {
-    logger.error('Failed to list recycle bins', {
-      entityType,
-      entityId,
-      error: error.message,
-    });
-    return [];
-  }
-}
-
-/**
- * List all files in a recycle bin
- */
-export async function listRecycledItems(
-  recycleBinPath: string
-): Promise<{ files: string[]; directories: string[] }> {
-  try {
-    const entries = await fs.readdir(recycleBinPath, { withFileTypes: true });
-
-    const files: string[] = [];
-    const directories: string[] = [];
-
-    for (const entry of entries) {
-      const fullPath = path.join(recycleBinPath, entry.name);
-      if (entry.isDirectory()) {
-        directories.push(fullPath);
-      } else {
-        files.push(fullPath);
-      }
-    }
-
-    return { files, directories };
-  } catch (error: any) {
-    logger.error('Failed to list recycled items', {
-      recycleBinPath,
-      error: error.message,
-    });
-    return { files: [], directories: [] };
   }
 }
 
 /**
  * Restore file from recycle bin to original location
+ * Uses atomic file operations (copy + rename) for data integrity
  */
 export async function restoreFromRecycleBin(
-  recycledFilePath: string,
+  recyclePath: string,
   destinationPath: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
     // Check if source exists
     try {
-      await fs.access(recycledFilePath);
+      await fs.access(recyclePath);
     } catch {
       return {
         success: false,
@@ -327,18 +181,34 @@ export async function restoreFromRecycleBin(
     const destinationDir = path.dirname(destinationPath);
     await fs.mkdir(destinationDir, { recursive: true });
 
-    // Move file back
-    await fs.rename(recycledFilePath, destinationPath);
+    // Atomic move: copy to temp, then rename
+    const tempPath = `${destinationPath}.tmp.${Date.now()}`;
 
-    logger.info('Restored file from recycle bin', {
-      recycledPath: recycledFilePath,
-      destinationPath,
-    });
+    try {
+      await fs.copyFile(recyclePath, tempPath);
+      await fs.rename(tempPath, destinationPath);
 
-    return { success: true };
+      // Remove from recycle bin
+      await fs.unlink(recyclePath);
+
+      logger.info('Restored file from recycle bin', {
+        recyclePath,
+        destinationPath,
+      });
+
+      return { success: true };
+    } catch (error) {
+      // Clean up temp file on failure
+      try {
+        await fs.unlink(tempPath);
+      } catch {
+        // Ignore cleanup errors
+      }
+      throw error;
+    }
   } catch (error: any) {
     logger.error('Failed to restore from recycle bin', {
-      recycledFilePath,
+      recyclePath,
       destinationPath,
       error: error.message,
     });
@@ -350,22 +220,32 @@ export async function restoreFromRecycleBin(
 }
 
 /**
- * Permanently delete recycle bin and all contents
+ * Permanently delete a file from recycle bin
  */
-export async function permanentlyDeleteRecycleBin(
-  recycleBinPath: string
+export async function permanentlyDeleteFromRecycleBin(
+  recyclePath: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    await fs.rm(recycleBinPath, { recursive: true, force: true });
+    // Check if file exists
+    try {
+      await fs.access(recyclePath);
+    } catch {
+      return {
+        success: false,
+        error: 'Recycled file does not exist',
+      };
+    }
 
-    logger.warn('Permanently deleted recycle bin', {
-      recycleBinPath,
+    await fs.unlink(recyclePath);
+
+    logger.warn('Permanently deleted file from recycle bin', {
+      recyclePath,
     });
 
     return { success: true };
   } catch (error: any) {
-    logger.error('Failed to permanently delete recycle bin', {
-      recycleBinPath,
+    logger.error('Failed to permanently delete from recycle bin', {
+      recyclePath,
       error: error.message,
     });
     return {
@@ -378,145 +258,99 @@ export async function permanentlyDeleteRecycleBin(
 /**
  * Get recycle bin statistics
  */
-export async function getRecycleBinStats(
-  recycleBinPath: string
-): Promise<{
+export async function getRecycleBinStats(): Promise<{
   totalFiles: number;
-  totalDirectories: number;
   totalSizeBytes: number;
 }> {
   try {
-    const { files, directories } = await listRecycledItems(recycleBinPath);
+    // Ensure recycle bin exists
+    try {
+      await fs.access(RECYCLE_BASE_PATH);
+    } catch {
+      return { totalFiles: 0, totalSizeBytes: 0 };
+    }
 
+    const entries = await fs.readdir(RECYCLE_BASE_PATH, { withFileTypes: true });
+
+    let totalFiles = 0;
     let totalSizeBytes = 0;
 
-    // Calculate file sizes
-    for (const file of files) {
-      try {
-        const stats = await fs.stat(file);
-        totalSizeBytes += stats.size;
-      } catch {
-        // Skip if file can't be accessed
-      }
-    }
-
-    // Calculate directory sizes (recursive)
-    for (const dir of directories) {
-      totalSizeBytes += await getDirectorySize(dir);
-    }
-
-    return {
-      totalFiles: files.length,
-      totalDirectories: directories.length,
-      totalSizeBytes,
-    };
-  } catch (error: any) {
-    logger.error('Failed to get recycle bin stats', {
-      recycleBinPath,
-      error: error.message,
-    });
-    return {
-      totalFiles: 0,
-      totalDirectories: 0,
-      totalSizeBytes: 0,
-    };
-  }
-}
-
-/**
- * Helper: Calculate total size of directory recursively
- */
-async function getDirectorySize(directoryPath: string): Promise<number> {
-  try {
-    let totalSize = 0;
-    const entries = await fs.readdir(directoryPath, { withFileTypes: true });
-
     for (const entry of entries) {
-      const fullPath = path.join(directoryPath, entry.name);
-
-      if (entry.isDirectory()) {
-        totalSize += await getDirectorySize(fullPath);
-      } else {
+      if (entry.isFile()) {
+        totalFiles++;
         try {
-          const stats = await fs.stat(fullPath);
-          totalSize += stats.size;
+          const filePath = path.join(RECYCLE_BASE_PATH, entry.name);
+          const stats = await fs.stat(filePath);
+          totalSizeBytes += stats.size;
         } catch {
           // Skip if file can't be accessed
         }
       }
     }
 
-    return totalSize;
-  } catch {
-    return 0;
+    return {
+      totalFiles,
+      totalSizeBytes,
+    };
+  } catch (error: any) {
+    logger.error('Failed to get recycle bin stats', {
+      error: error.message,
+    });
+    return {
+      totalFiles: 0,
+      totalSizeBytes: 0,
+    };
   }
 }
 
 /**
- * Clean up old recycle bins (older than specified days)
+ * Clean up old recycle bin files that are no longer in database
+ * (Orphaned files from manual database deletions)
  */
-export async function cleanupOldRecycleBins(
-  olderThanDays: number = 30
+export async function cleanupOrphanedRecycleBinFiles(
+  validRecyclePaths: string[]
 ): Promise<{ deletedCount: number; errors: string[] }> {
   try {
+    // Ensure recycle bin exists
+    try {
+      await fs.access(RECYCLE_BASE_PATH);
+    } catch {
+      return { deletedCount: 0, errors: [] };
+    }
+
     const entries = await fs.readdir(RECYCLE_BASE_PATH, { withFileTypes: true });
-    const cutoffDate = new Date();
-    cutoffDate.setDate(cutoffDate.getDate() - olderThanDays);
+    const validPathsSet = new Set(validRecyclePaths);
 
     let deletedCount = 0;
     const errors: string[] = [];
 
     for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
+      if (!entry.isFile()) continue;
 
-      // Extract timestamp from directory name: 2025-10-23_143022_movie-123
-      const match = entry.name.match(/^(\d{4}-\d{2}-\d{2}_\d{6})_/);
-      if (!match) continue;
+      const fullPath = path.join(RECYCLE_BASE_PATH, entry.name);
 
-      const timestamp = match[1];
-      const dirDate = parseRecycleBinTimestamp(timestamp);
-
-      if (dirDate && dirDate < cutoffDate) {
-        const recycleBinPath = path.join(RECYCLE_BASE_PATH, entry.name);
-        const result = await permanentlyDeleteRecycleBin(recycleBinPath);
-
-        if (result.success) {
+      // If not in database, delete
+      if (!validPathsSet.has(fullPath)) {
+        try {
+          await fs.unlink(fullPath);
           deletedCount++;
-        } else {
-          errors.push(`${entry.name}: ${result.error}`);
+          logger.info('Deleted orphaned recycle bin file', { path: fullPath });
+        } catch (error: any) {
+          errors.push(`${entry.name}: ${error.message}`);
         }
       }
     }
 
-    logger.info('Cleaned up old recycle bins', {
-      olderThanDays,
+    logger.info('Cleaned up orphaned recycle bin files', {
       deletedCount,
       errorCount: errors.length,
     });
 
     return { deletedCount, errors };
   } catch (error: any) {
-    logger.error('Failed to cleanup old recycle bins', {
+    logger.error('Failed to cleanup orphaned recycle bin files', {
       error: error.message,
     });
     return { deletedCount: 0, errors: [error.message] };
-  }
-}
-
-/**
- * Helper: Parse timestamp from recycle bin directory name
- */
-function parseRecycleBinTimestamp(timestamp: string): Date | null {
-  try {
-    // Format: 2025-10-23_143022
-    const [datePart, timePart] = timestamp.split('_');
-    const [year, month, day] = datePart.split('-').map(Number);
-    const hour = parseInt(timePart.slice(0, 2), 10);
-    const minute = parseInt(timePart.slice(2, 4), 10);
-    const second = parseInt(timePart.slice(4, 6), 10);
-
-    return new Date(year, month - 1, day, hour, minute, second);
-  } catch {
-    return null;
   }
 }
