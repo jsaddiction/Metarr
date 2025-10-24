@@ -1084,6 +1084,85 @@ CREATE INDEX idx_webhook_events_processed ON webhook_events(processed);
 CREATE INDEX idx_webhook_events_created ON webhook_events(created_at);
 ```
 
+## Provider Cache Tables
+
+### Provider Cache - Movies
+
+```sql
+CREATE TABLE provider_cache_movies (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  entity_id INTEGER NOT NULL UNIQUE,
+
+  -- Identification
+  tmdb_id TEXT,
+  imdb_id TEXT,
+
+  -- Basic metadata (all fields from all providers)
+  title TEXT,
+  original_title TEXT,
+  overview TEXT,
+  tagline TEXT,
+  release_date TEXT,
+  runtime INTEGER,
+  status TEXT,
+  budget INTEGER,
+  revenue INTEGER,
+
+  -- Complex metadata (JSON arrays)
+  genres TEXT,              -- JSON array of genre names
+  production_companies TEXT, -- JSON array of company names
+  production_countries TEXT, -- JSON array of country codes
+  spoken_languages TEXT,     -- JSON array of language codes
+  cast TEXT,                -- JSON array of cast members
+  crew TEXT,                -- JSON array of crew members
+  keywords TEXT,            -- JSON array of keywords
+
+  -- Ratings
+  vote_average REAL,
+  vote_count INTEGER,
+  popularity REAL,
+
+  -- Media details
+  homepage TEXT,
+  trailer_key TEXT,
+
+  -- Cache management
+  fetched_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+
+  INDEX idx_entity_id (entity_id),
+  INDEX idx_fetched_at (fetched_at)
+);
+```
+
+### Provider Cache - Assets
+
+```sql
+CREATE TABLE provider_cache_assets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  entity_id INTEGER NOT NULL,
+  entity_type TEXT NOT NULL CHECK(entity_type IN ('movie', 'tv', 'music')),
+
+  -- Asset details
+  asset_type TEXT NOT NULL,      -- poster, fanart, banner, clearlogo, etc
+  url TEXT NOT NULL,
+  width INTEGER,
+  height INTEGER,
+  language TEXT,
+
+  -- Provider information
+  provider_name TEXT NOT NULL,   -- tmdb, fanart.tv, tvdb
+  provider_score INTEGER,         -- Normalized 0-100 score
+  provider_metadata TEXT,         -- Small JSON: votes, likes, etc
+
+  -- Cache management
+  fetched_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+
+  INDEX idx_entity (entity_id, entity_type),
+  INDEX idx_type_score (asset_type, provider_score DESC),
+  INDEX idx_fetched_at (fetched_at)
+);
+```
+
 ## Configuration Tables
 
 ### Provider Configuration

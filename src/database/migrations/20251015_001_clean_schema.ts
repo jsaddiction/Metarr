@@ -363,6 +363,25 @@ export class CleanSchemaMigration {
     await db.execute('CREATE INDEX idx_unknown_files_category ON unknown_files(category)');
 
     console.log('✅ unknown_files table created');
+
+    // Recycle Bin (flat file storage with UUID naming)
+    await db.execute(`
+      CREATE TABLE recycle_bin (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        entity_type TEXT NOT NULL CHECK(entity_type IN ('movie', 'episode', 'series', 'season')),
+        entity_id INTEGER NOT NULL,
+        original_path TEXT NOT NULL,
+        recycle_path TEXT NULL,
+        file_name TEXT NOT NULL,
+        file_size INTEGER,
+        recycled_at TIMESTAMP NULL
+      )
+    `);
+
+    await db.execute('CREATE INDEX idx_recycle_bin_entity ON recycle_bin(entity_type, entity_id)');
+    await db.execute('CREATE INDEX idx_recycle_bin_pending ON recycle_bin(recycled_at) WHERE recycled_at IS NULL');
+
+    console.log('✅ recycle_bin table created');
     console.log('✅ Unified file system tables created');
 
     // ============================================================
@@ -405,6 +424,7 @@ export class CleanSchemaMigration {
         discart_id INTEGER,
         keyart_id INTEGER,
         landscape_id INTEGER,
+        nfo_cache_id INTEGER,
         title_locked BOOLEAN DEFAULT 0,
         plot_locked BOOLEAN DEFAULT 0,
         poster_locked BOOLEAN DEFAULT 0,
@@ -420,6 +440,7 @@ export class CleanSchemaMigration {
         monitored BOOLEAN NOT NULL DEFAULT 1,
         identification_status TEXT DEFAULT 'unidentified' CHECK(identification_status IN ('unidentified', 'identified', 'enriched')),
         enrichment_priority INTEGER DEFAULT 5,
+        enriched_at TIMESTAMP,
         deleted_at TIMESTAMP,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -433,7 +454,8 @@ export class CleanSchemaMigration {
         FOREIGN KEY (thumb_id) REFERENCES cache_image_files(id),
         FOREIGN KEY (discart_id) REFERENCES cache_image_files(id),
         FOREIGN KEY (keyart_id) REFERENCES cache_image_files(id),
-        FOREIGN KEY (landscape_id) REFERENCES cache_image_files(id)
+        FOREIGN KEY (landscape_id) REFERENCES cache_image_files(id),
+        FOREIGN KEY (nfo_cache_id) REFERENCES cache_text_files(id)
       )
     `);
 
@@ -1243,6 +1265,89 @@ export class CleanSchemaMigration {
     await db.execute('CREATE INDEX idx_activity_log_created ON activity_log(created_at DESC)');
 
     console.log('✅ Activity log table created');
+
+    // ============================================================
+    // PROVIDER CACHE TABLES
+    // ============================================================
+
+    // Provider Cache - Movies
+    await db.execute(`
+      CREATE TABLE provider_cache_movies (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        entity_id INTEGER NOT NULL UNIQUE,
+
+        -- Identification
+        tmdb_id TEXT,
+        imdb_id TEXT,
+
+        -- Basic metadata (all fields from all providers)
+        title TEXT,
+        original_title TEXT,
+        overview TEXT,
+        tagline TEXT,
+        release_date TEXT,
+        runtime INTEGER,
+        status TEXT,
+        budget INTEGER,
+        revenue INTEGER,
+
+        -- Complex metadata (JSON arrays)
+        genres TEXT,              -- JSON array of genre names
+        production_companies TEXT, -- JSON array of company names
+        production_countries TEXT, -- JSON array of country codes
+        spoken_languages TEXT,     -- JSON array of language codes
+        cast TEXT,                -- JSON array of cast members
+        crew TEXT,                -- JSON array of crew members
+        keywords TEXT,            -- JSON array of keywords
+
+        -- Ratings
+        vote_average REAL,
+        vote_count INTEGER,
+        popularity REAL,
+
+        -- Media details
+        homepage TEXT,
+        trailer_key TEXT,
+
+        -- Cache management
+        fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await db.execute('CREATE INDEX idx_provider_cache_movies_entity ON provider_cache_movies(entity_id)');
+    await db.execute('CREATE INDEX idx_provider_cache_movies_fetched ON provider_cache_movies(fetched_at)');
+
+    console.log('✅ Provider cache movies table created');
+
+    // Provider Cache - Assets
+    await db.execute(`
+      CREATE TABLE provider_cache_assets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        entity_id INTEGER NOT NULL,
+        entity_type TEXT NOT NULL CHECK(entity_type IN ('movie', 'tv', 'music')),
+
+        -- Asset details
+        asset_type TEXT NOT NULL,      -- poster, fanart, banner, clearlogo, etc
+        url TEXT NOT NULL,
+        width INTEGER,
+        height INTEGER,
+        language TEXT,
+
+        -- Provider information
+        provider_name TEXT NOT NULL,   -- tmdb, fanart.tv, tvdb
+        provider_score INTEGER,         -- Normalized 0-100 score
+        provider_metadata TEXT,         -- Small JSON: votes, likes, etc
+
+        -- Cache management
+        fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await db.execute('CREATE INDEX idx_provider_cache_assets_entity ON provider_cache_assets(entity_id, entity_type)');
+    await db.execute('CREATE INDEX idx_provider_cache_assets_type_score ON provider_cache_assets(asset_type, provider_score DESC)');
+    await db.execute('CREATE INDEX idx_provider_cache_assets_fetched ON provider_cache_assets(fetched_at)');
+
+    console.log('✅ Provider cache assets table created');
 
     // ============================================================
     // CONFIGURATION TABLES
