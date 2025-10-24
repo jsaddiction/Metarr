@@ -305,8 +305,35 @@ export async function scanMovieDirectory(
         };
         result.unknownFilesFound = classificationResult.totalUnknown;
 
-        // TODO: Store classification result for publish service
-        // TODO: If decision.canProcess is false, flag for manual classification
+        // Store classification results in cache and database
+        const { storeClassificationResults, updateMovieAssetLinks, markUnknownFilesForRecycling } =
+          await import('./storageIntegrationService.js');
+
+        const storedAssets = await storeClassificationResults(db, {
+          classificationResult,
+          movieId,
+          entityType: 'movie',
+        });
+
+        // Update movie asset references (poster_id, fanart_id, etc.)
+        await updateMovieAssetLinks(db, movieId, storedAssets);
+
+        // Mark unknown files in recycle_bin for later recycling
+        await markUnknownFilesForRecycling(db, {
+          classificationResult,
+          movieId,
+          entityType: 'movie',
+        });
+
+        // If cannot process automatically, flag for manual classification
+        if (!decision.canProcess) {
+          logger.warn('Movie requires manual classification', {
+            movieId,
+            movieDir,
+            reason: decision.reason,
+          });
+          // TODO: Set flag in movies table for UI to show "needs manual classification"
+        }
 
       } catch (error: any) {
         result.errors.push(`File classification failed: ${error.message}`);
