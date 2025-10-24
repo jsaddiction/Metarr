@@ -45,6 +45,8 @@ import { updateSchedulerConfigSchema } from '../validation/schedulerSchemas.js';
 import { logger } from '../middleware/logging.js';
 // Import provider index to trigger provider registrations
 import '../services/providers/index.js';
+// Import recycle bin routes factory
+import { createRecycleBinRouter } from './recycleBin.js';
 
 // Initialize router factory function
 export const createApiRouter = (
@@ -717,6 +719,12 @@ export const createApiRouter = (
       (req, res, next) => schedulerController.triggerProviderUpdate(req, res, next)
     );
   }
+
+  // Recycle Bin Routes
+  // ========================================
+  logger.debug('[API Router] Registering recycle bin routes');
+  const recycleBinRouter = createRecycleBinRouter(dbManager);
+  router.use(recycleBinRouter);
 
   return router;
 };
