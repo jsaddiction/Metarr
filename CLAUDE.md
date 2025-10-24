@@ -58,7 +58,10 @@ Metarr operates through independent, idempotent phases that form an automated ch
 | **[Enrichment](docs/phases/ENRICHMENT.md)** | Fetch metadata & select assets | Post-scan, manual, refresh | No |
 | **[Publishing](docs/phases/PUBLISHING.md)** | Deploy assets to library | Post-selection, manual | No |
 | **[Player Sync](docs/phases/PLAYER_SYNC.md)** | Update media players | Post-publish, manual | No |
-| **[Verification](docs/phases/VERIFICATION.md)** | Ensure cache↔library consistency | Manual, schedule | No |
+| **[Notification](docs/phases/NOTIFICATION.md)** | Send filtered notifications | Phase events, workflow completion | No* |
+| **[Verification](docs/phases/VERIFICATION.md)** | Ensure cache↔library consistency | Manual, schedule | No* |
+
+\* Notification and Verification phases run independently and are not part of the sequential automation chain
 
 ### Job-Driven Automation
 
@@ -68,9 +71,11 @@ User Action / Webhook → Job Created → Worker Processes → Next Phase Job
                             Phase Disabled?
                                    ↓
                             Skip to Next Phase
+                                   ↓
+                       (Optionally create notification job)
 ```
 
-Each phase completion triggers the next phase via job creation. Workers check phase configuration and either process or skip to the next phase.
+Each phase completion triggers the next phase via job creation. Workers check phase configuration and either process or skip to the next phase. Phases may also create independent notification jobs for significant events.
 
 ## Technology Stack
 

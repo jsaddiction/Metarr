@@ -15,7 +15,7 @@ The player sync phase ensures media players are aware of Metarr's changes. Rathe
 3. **Fault-tolerant**: Failed players don't block others
 4. **Configurable**: Per-player enable/disable
 5. **Observable**: Reports sync status per player
-6. **Terminal**: Final phase in automation chain
+6. **Chainable**: Always triggers next phase, even when disabled
 
 ## Triggers
 
@@ -292,4 +292,6 @@ interface PlayerSyncConfig {
 
 ## Next Phase
 
-Player sync is the final phase in the automation chain. The [Verification Phase](VERIFICATION.md) runs independently on schedule and is not part of the standard phase chain.
+Player sync is the terminal phase in the automation chain. It may optionally create a [Notification](NOTIFICATION.md) job to report workflow completion, but this runs independently and does not block chain completion.
+
+The [Verification Phase](VERIFICATION.md) runs independently on schedule and is not part of the standard automation chain.
