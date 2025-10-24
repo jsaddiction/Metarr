@@ -46,9 +46,7 @@ The player sync phase ensures media players are aware of Metarr's changes. Rathe
 
 4. STATE UPDATE
    ├── Update last sync timestamp
-   └── Clear sync job
-
-5. NOTIFICATIONS
+   ├── Clear sync job
    └── Report sync results to UI
 ```
 
@@ -80,14 +78,6 @@ class KodiPlayer implements IMediaPlayer {
         showdialogs: false,
       });
     }
-  }
-
-  async sendNotification(message: string): Promise<void> {
-    await this.rpc('GUI.ShowNotification', {
-      title: 'Metarr',
-      message: message,
-      displaytime: 5000,
-    });
   }
 
   private async rpc(method: string, params: any): Promise<any> {
@@ -138,19 +128,6 @@ class JellyfinPlayer implements IMediaPlayer {
           MetadataRefreshMode: 'Default',
         });
       }
-    }
-  }
-
-  async sendNotification(message: string): Promise<void> {
-    // Send to all active sessions
-    const sessions = await this.api.get('/Sessions');
-
-    for (const session of sessions) {
-      await this.api.post('/Sessions/' + session.Id + '/Message', {
-        Header: 'Metarr Update',
-        Text: message,
-        TimeoutMs: 5000,
-      });
     }
   }
 }
@@ -254,9 +231,6 @@ interface PlayerSyncConfig {
   // Global settings
   enabled: boolean; // Master sync toggle
   autoSync: boolean; // Sync after publishing
-
-  // Behavior
-  sendNotifications: boolean; // Show player notifications
 
   // Player-specific
   players: {
