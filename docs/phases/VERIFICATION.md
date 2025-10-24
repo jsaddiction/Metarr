@@ -18,7 +18,7 @@ The verification phase is a maintenance operation that ensures Metarr's desired 
 
 ## Triggers
 
-- **Manual**: User clicks "Verify Library"
+- **Manual**: User clicks "Verify Library" or "Verify Movie"
 - **Scheduled**: Daily/weekly maintenance (configurable)
 - **Post-incident**: After crash or unexpected shutdown
 - **Selective**: Verify specific items or directories
@@ -36,7 +36,6 @@ The verification phase is a maintenance operation that ensures Metarr's desired 
    ├── Verify file sizes match
    ├── Check SHA256 hashes (optional)
    ├── Validate NFO structure
-   └── Test media file playability
 
 3. DISCREPANCY DETECTION
    ├── Missing from library (in cache, not library)
@@ -51,53 +50,37 @@ The verification phase is a maintenance operation that ensures Metarr's desired 
    └── Re-download corrupted assets
 
 5. REPORTING
-   ├── Generate verification report
    ├── Log all actions taken
    ├── Notify user of issues
    └── Update verification timestamp
 ```
 
-## Verification Types
+## Verification Process
 
-### Quick Verification (Default)
-- Check file existence only
-- Compare file sizes
 - Verify expected files present
-- Fast, suitable for routine checks
-
-### Deep Verification
-- All quick checks plus:
 - SHA256 hash validation
 - NFO structure parsing
 - Image dimension validation
-- Slow, for suspected corruption
-
-### Smart Verification
-- Quick check for most files
-- Deep check for recently modified
-- Adaptive based on history
-- Balance of speed and thoroughness
 
 ## Discrepancy Types & Actions
 
 ```typescript
 enum DiscrepancyType {
-  MISSING_IN_LIBRARY,      // File in cache but not library
-  MISSING_IN_CACHE,        // File in library but not cache
-  SIZE_MISMATCH,          // Different file sizes
-  HASH_MISMATCH,          // Different content (deep check)
-  UNAUTHORIZED_CHANGE,    // Modified outside Metarr
-  ORPHANED_FILE,          // Unknown file in library
-  CORRUPTED_FILE,         // Cannot read/parse file
-  WRONG_NAMING            // Incorrect Kodi naming
+  MISSING_IN_LIBRARY, // File in cache but not library
+  MISSING_IN_CACHE, // File in library but not cache
+  HASH_MISMATCH, // Different content (deep check)
+  UNAUTHORIZED_CHANGE, // Modified outside Metarr
+  ORPHANED_FILE, // Unknown file in library
+  CORRUPTED_FILE, // Cannot read/parse file
+  WRONG_NAMING, // Incorrect Kodi naming
 }
 
 interface RepairAction {
   type: DiscrepancyType;
   action: 'restore' | 'update' | 'remove' | 'recycle' | 'ignore';
-  source?: string;        // Where to restore from
-  target?: string;        // Where to restore to
-  reason: string;         // Human-readable explanation
+  source?: string; // Where to restore from
+  target?: string; // Where to restore to
+  reason: string; // Human-readable explanation
 }
 
 async function planRepair(discrepancy: Discrepancy): Promise<RepairAction> {
@@ -108,7 +91,7 @@ async function planRepair(discrepancy: Discrepancy): Promise<RepairAction> {
         action: 'restore',
         source: discrepancy.cache_path,
         target: discrepancy.expected_library_path,
-        reason: 'Restoring missing file from cache'
+        reason: 'Restoring missing file from cache',
       };
 
     case DiscrepancyType.ORPHANED_FILE:
@@ -118,7 +101,7 @@ async function planRepair(discrepancy: Discrepancy): Promise<RepairAction> {
       return {
         action: 'recycle',
         target: discrepancy.path,
-        reason: 'Moving orphaned file to recycle bin'
+        reason: 'Moving orphaned file to recycle bin',
       };
 
     case DiscrepancyType.HASH_MISMATCH:
@@ -126,7 +109,7 @@ async function planRepair(discrepancy: Discrepancy): Promise<RepairAction> {
         action: 'restore',
         source: discrepancy.cache_path,
         target: discrepancy.library_path,
-        reason: 'File corrupted, restoring from cache'
+        reason: 'File corrupted, restoring from cache',
       };
   }
 }
@@ -139,11 +122,11 @@ async function verifyFileIntegrity(file: LibraryFile): Promise<IntegrityResult> 
   const result: IntegrityResult = {
     path: file.path,
     valid: true,
-    issues: []
+    issues: [],
   };
 
   // Check existence
-  if (!await fs.exists(file.path)) {
+  if (!(await fs.exists(file.path))) {
     result.valid = false;
     result.issues.push('File not found');
     return result;
@@ -156,8 +139,8 @@ async function verifyFileIntegrity(file: LibraryFile): Promise<IntegrityResult> 
     result.issues.push(`Size mismatch: ${stats.size} != ${file.expected_size}`);
   }
 
-  // Check hash (deep verification only)
-  if (config.deepVerification && file.content_hash) {
+  // Check hash
+  if (file.content_hash) {
     const hash = await calculateSHA256(file.path);
     if (hash !== file.content_hash) {
       result.valid = false;
@@ -207,22 +190,20 @@ async function verifyLibrary(options: VerifyOptions): Promise<VerifyReport> {
     issues_found: 0,
     repairs_completed: 0,
     repairs_failed: 0,
-    details: []
+    details: [],
   };
 
   // Get all items to verify
   const items = await db.movies.findAll({
     where: options.filter || {},
-    limit: options.limit
+    limit: options.limit,
   });
 
   // Process in batches for performance
   const batches = chunk(items, options.batchSize || 100);
 
   for (const batch of batches) {
-    const results = await Promise.allSettled(
-      batch.map(item => verifyItem(item))
-    );
+    const results = await Promise.allSettled(batch.map(item => verifyItem(item)));
 
     for (const result of results) {
       report.items_checked++;
@@ -240,7 +221,7 @@ async function verifyLibrary(options: VerifyOptions): Promise<VerifyReport> {
               report.repairs_failed++;
               report.details.push({
                 item: issue.item_id,
-                error: error.message
+                error: error.message,
               });
             }
           }
@@ -253,7 +234,7 @@ async function verifyLibrary(options: VerifyOptions): Promise<VerifyReport> {
       options.onProgress({
         current: report.items_checked,
         total: items.length,
-        percent: (report.items_checked / items.length) * 100
+        percent: (report.items_checked / items.length) * 100,
       });
     }
   }
@@ -270,89 +251,19 @@ async function verifyLibrary(options: VerifyOptions): Promise<VerifyReport> {
 ```typescript
 interface VerificationConfig {
   // Schedule
-  enabled: boolean;             // Enable verification
-  schedule: string;             // Cron expression ('0 3 * * *')
-
-  // Scope
-  verifyMovies: boolean;        // Check movies
-  verifyShows: boolean;         // Check TV shows
-  verifyMusic: boolean;         // Check music
-
-  // Depth
-  quickCheck: boolean;          // Existence only (fast)
-  deepCheck: boolean;           // Hash verification (slow)
-  smartCheck: boolean;          // Adaptive checking
+  enabled: boolean; // Enable verification
+  schedule: string; // Cron expression ('0 3 * * *')
 
   // Repair
-  autoRepair: boolean;          // Fix issues automatically
-  preserveUserFiles: boolean;   // Don't touch non-Metarr files
-  requireConfirmation: boolean; // Ask before repairs
-
-  // Performance
-  batchSize: number;            // Items per batch (100)
-  parallelChecks: number;       // Concurrent verifications (10)
-  hashingThreads: number;       // Threads for SHA256 (4)
-
-  // Reporting
-  emailReport: boolean;         // Send results via email
-  keepReports: number;          // Days to keep reports (30)
+  autoRepair: boolean; // Fix issues automatically
 }
 ```
 
 ## Performance Optimizations
 
-- **Incremental checks**: Skip recently verified items
 - **Parallel processing**: Verify multiple files simultaneously
-- **Smart hashing**: Cache hashes, only recalculate on size change
 - **Batch database queries**: Reduce round trips
 - **Progress streaming**: Real-time updates via WebSocket
-
-## Reporting
-
-```typescript
-interface VerificationReport {
-  id: string;
-  started_at: Date;
-  completed_at: Date;
-  duration_seconds: number;
-
-  // Summary
-  items_checked: number;
-  items_healthy: number;
-  items_repaired: number;
-  items_failed: number;
-
-  // Details by type
-  issues: {
-    missing_files: number;
-    corrupted_files: number;
-    orphaned_files: number;
-    naming_issues: number;
-    permission_issues: number;
-  };
-
-  // Actions taken
-  repairs: {
-    files_restored: number;
-    files_recycled: number;
-    metadata_updated: number;
-    cache_refreshed: number;
-  };
-
-  // Detailed log
-  log: VerificationLogEntry[];
-}
-
-interface VerificationLogEntry {
-  timestamp: Date;
-  item_id: number;
-  item_title: string;
-  issue_type: DiscrepancyType;
-  action_taken: string;
-  success: boolean;
-  error?: string;
-}
-```
 
 ## Monitoring
 
@@ -364,7 +275,7 @@ socket.emit('verification:progress', {
   total: 1000,
   currentItem: 'The Matrix (1999)',
   issuesFound: 5,
-  repairsCompleted: 3
+  repairsCompleted: 3,
 });
 
 // Summary notification
@@ -374,7 +285,7 @@ socket.emit('verification:complete', {
   issuesFound: 23,
   issuesRepaired: 20,
   issuesFailed: 3,
-  reportId: 'verify_20250124_140523'
+  reportId: 'verify_20250124_140523',
 });
 ```
 

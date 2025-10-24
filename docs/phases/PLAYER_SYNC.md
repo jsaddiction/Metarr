@@ -20,14 +20,13 @@ The player sync phase ensures media players are aware of Metarr's changes. Rathe
 
 - **Post-publish**: After successful publishing
 - **Manual**: User clicks "Sync Players"
-- **Scheduled**: Periodic sync (hourly/daily)
-- **Bulk**: After multiple items published
+- **Bulk**: User-driven bulk selection
 
 ## Process Flow
 
 ```
 1. CHANGE COLLECTION
-   ├── Identify changed items since last sync
+   ├── Identify changed items flag in job
    ├── Group by media type (movie/tv)
    ├── Apply path mappings per player
    └── Build sync commands
@@ -36,18 +35,17 @@ The player sync phase ensures media players are aware of Metarr's changes. Rathe
    ├── Check player availability
    ├── Test connectivity
    ├── Verify API credentials
+   ├── Wait for active playback to stop before scanning
    └── Skip offline players
 
 3. SYNC EXECUTION
    ├── Send update commands
-   ├── Monitor completion
    ├── Handle errors gracefully
    └── Log results
 
 4. STATE UPDATE
-   ├── Mark items as synced
    ├── Update last sync timestamp
-   └── Clear sync queue
+   └── Clear sync job
 
 5. NOTIFICATIONS
    └── Report sync results to UI
@@ -69,7 +67,7 @@ class KodiPlayer implements IMediaPlayer {
       const paths = movies.map(m => this.mapPath(m.library_path));
       await this.rpc('VideoLibrary.Scan', {
         directory: paths,
-        showdialogs: false
+        showdialogs: false,
       });
     }
 
@@ -78,7 +76,7 @@ class KodiPlayer implements IMediaPlayer {
     if (removed.length > 0) {
       await this.rpc('VideoLibrary.Clean', {
         content: 'movies',
-        showdialogs: false
+        showdialogs: false,
       });
     }
   }
@@ -87,7 +85,7 @@ class KodiPlayer implements IMediaPlayer {
     await this.rpc('GUI.ShowNotification', {
       title: 'Metarr',
       message: message,
-      displaytime: 5000
+      displaytime: 5000,
     });
   }
 
@@ -96,14 +94,14 @@ class KodiPlayer implements IMediaPlayer {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Basic ${this.auth}`
+        Authorization: `Basic ${this.auth}`,
       },
       body: JSON.stringify({
         jsonrpc: '2.0',
         method: method,
         params: params,
-        id: 1
-      })
+        id: 1,
+      }),
     });
 
     return response.json();
@@ -121,10 +119,12 @@ class JellyfinPlayer implements IMediaPlayer {
 
     for (const folder of folders) {
       await this.api.post('/Library/Media/Updated', {
-        Updates: [{
-          Path: this.mapPath(folder),
-          UpdateType: 'Modified'
-        }]
+        Updates: [
+          {
+            Path: this.mapPath(folder),
+            UpdateType: 'Modified',
+          },
+        ],
       });
     }
 
@@ -134,7 +134,7 @@ class JellyfinPlayer implements IMediaPlayer {
         await this.api.post(`/Items/${item.jellyfin_id}/Refresh`, {
           Recursive: false,
           ImageRefreshMode: 'Default',
-          MetadataRefreshMode: 'Default'
+          MetadataRefreshMode: 'Default',
         });
       }
     }
@@ -148,7 +148,7 @@ class JellyfinPlayer implements IMediaPlayer {
       await this.api.post('/Sessions/' + session.Id + '/Message', {
         Header: 'Metarr Update',
         Text: message,
-        TimeoutMs: 5000
+        TimeoutMs: 5000,
       });
     }
   }
@@ -172,7 +172,7 @@ class PlexPlayer implements IMediaPlayer {
       const section = item.type === 'movie' ? movieSection : showSection;
       if (section) {
         await this.api.put(`/library/sections/${section.key}/refresh`, {
-          path: this.mapPath(item.library_path)
+          path: this.mapPath(item.library_path),
         });
       }
     }
@@ -193,22 +193,22 @@ class PlexPlayer implements IMediaPlayer {
 
 ```typescript
 interface PathMapping {
-  metarr_path: string;      // Path as Metarr sees it
-  player_path: string;      // Path as player sees it
-  player_id: number;        // Which player this applies to
+  metarr_path: string; // Path as Metarr sees it
+  player_path: string; // Path as player sees it
+  player_id: number; // Which player this applies to
 }
 
 function mapPath(localPath: string, player: MediaPlayer): string {
   const mapping = db.path_mappings.findOne({
     player_id: player.id,
-    metarr_path: { $startsWith: localPath }
+    metarr_path: { $startsWith: localPath },
   });
 
   if (mapping) {
     return localPath.replace(mapping.metarr_path, mapping.player_path);
   }
 
-  return localPath;  // No mapping, use as-is
+  return localPath; // No mapping, use as-is
 }
 
 // Examples:
@@ -222,8 +222,8 @@ function mapPath(localPath: string, player: MediaPlayer): string {
 ```typescript
 interface PlayerGroup {
   id: number;
-  name: string;              // "Living Room Kodis"
-  players: MediaPlayer[];     // Array of players in group
+  name: string; // "Living Room Kodis"
+  players: MediaPlayer[]; // Array of players in group
   sync_mode: 'parallel' | 'sequential';
   continue_on_error: boolean;
 }
@@ -231,9 +231,7 @@ interface PlayerGroup {
 async function syncPlayerGroup(group: PlayerGroup, items: MediaItem[]): Promise<void> {
   if (group.sync_mode === 'parallel') {
     // Sync all players simultaneously
-    await Promise.allSettled(
-      group.players.map(player => syncPlayer(player, items))
-    );
+    await Promise.allSettled(group.players.map(player => syncPlayer(player, items)));
   } else {
     // Sync one by one
     for (const player of group.players) {
@@ -253,27 +251,19 @@ async function syncPlayerGroup(group: PlayerGroup, items: MediaItem[]): Promise<
 ```typescript
 interface PlayerSyncConfig {
   // Global settings
-  enabled: boolean;           // Master sync toggle
-  autoSync: boolean;          // Sync after publishing
-  syncInterval: number;       // Minutes between syncs (0=disabled)
+  enabled: boolean; // Master sync toggle
+  autoSync: boolean; // Sync after publishing
 
   // Behavior
-  targetedUpdates: boolean;   // Use path-specific updates
-  cleanDeleted: boolean;      // Remove deleted items
   sendNotifications: boolean; // Show player notifications
-
-  // Performance
-  batchSize: number;          // Items per sync batch (100)
-  timeout: number;            // Player timeout in ms (30000)
-  retryAttempts: number;      // Retry failed syncs (3)
 
   // Player-specific
   players: {
     [id: number]: {
       enabled: boolean;
-      priority: number;       // Sync order
+      priority: number; // Sync order
       pathMapping?: PathMapping;
-    }
+    };
   };
 }
 ```
@@ -288,59 +278,8 @@ interface PlayerSyncConfig {
 
 ## Performance Optimizations
 
-- **Batch updates**: Group multiple items per API call
-- **Incremental sync**: Track last sync time per player
-- **Smart detection**: Only sync actual changes
 - **Parallel groups**: Sync independent players simultaneously
 - **Connection pooling**: Reuse HTTP connections
-
-## Sync State Tracking
-
-```sql
--- Track sync status per player
-CREATE TABLE player_sync_status (
-  id INTEGER PRIMARY KEY,
-  player_id INTEGER NOT NULL,
-  item_id INTEGER NOT NULL,
-  item_type TEXT NOT NULL,     -- 'movie', 'show', 'episode'
-  last_synced TIMESTAMP,
-  sync_status TEXT,             -- 'pending', 'synced', 'failed'
-  error_message TEXT,
-  retry_count INTEGER DEFAULT 0,
-  UNIQUE(player_id, item_id, item_type)
-);
-
--- Sync queue for batch processing
-CREATE TABLE sync_queue (
-  id INTEGER PRIMARY KEY,
-  player_group_id INTEGER,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  processed_at TIMESTAMP,
-  item_ids TEXT,               -- JSON array of items
-  status TEXT                  -- 'pending', 'processing', 'completed'
-);
-```
-
-## Monitoring & Metrics
-
-```typescript
-interface SyncMetrics {
-  total_syncs: number;
-  successful_syncs: number;
-  failed_syncs: number;
-  average_sync_time: number;
-  last_sync_timestamp: Date;
-  items_per_second: number;
-
-  by_player: {
-    [player_id: number]: {
-      success_rate: number;
-      average_response_time: number;
-      last_error?: string;
-    }
-  };
-}
-```
 
 ## Related Documentation
 

@@ -14,7 +14,6 @@ The publishing phase is responsible for materializing Metarr's curated metadata 
 2. **Transactional**: All-or-nothing per media item
 3. **Recoverable**: Deleted files go to recycle bin
 4. **Atomic**: Uses temp files + rename for safety
-5. **Observable**: Reports per-file and overall progress
 
 ## Triggers
 
@@ -37,10 +36,10 @@ The publishing phase is responsible for materializing Metarr's curated metadata 
    ├── Move unwanted files to recycle
    ├── Remove old versions
    ├── Clean extra/duplicate assets
-   └── Preserve user-added files (if configured)
+   └── Preserve user-added files and asset type locks (if configured)
 
 3. ASSET DEPLOYMENT
-   ├── Copy from cache to temp location
+   ├── Copy from cache to library location
    ├── Apply Kodi naming convention
    ├── Atomic rename to final location
    └── Set file permissions
@@ -48,11 +47,10 @@ The publishing phase is responsible for materializing Metarr's curated metadata 
 4. NFO GENERATION
    ├── Combine all metadata
    ├── Include stream information
-   ├── Add asset references
    └── Write with proper encoding
 
 5. NEXT PHASE TRIGGER
-   └── Create player sync job (if configured)
+   └── Create player sync job
 ```
 
 ## File Organization
@@ -62,29 +60,36 @@ The publishing phase is responsible for materializing Metarr's curated metadata 
 ```
 /media/movies/The Matrix (1999)/
 ├── The Matrix (1999).mkv           # Media file
-├── The Matrix (1999)-poster.jpg    # Main poster
+├── The Matrix (1999)-poster.jpg    # Poster
+├── The Matrix (1999)-poster1.jpg   # Additional poster
+├── The Matrix (1999)-poster2.jpg   # Additional poster
 ├── The Matrix (1999)-fanart.jpg    # Background art
+├── The Matrix (1999)-fanart1.jpg   # Additional fanart
+├── The Matrix (1999)-fanart2.jpg   # Additional fanart
 ├── The Matrix (1999)-logo.png      # Clear logo
 ├── The Matrix (1999)-disc.png      # Disc art
 ├── The Matrix (1999)-trailer.mp4   # Trailer
 ├── The Matrix (1999).nfo           # Metadata
 ├── The Matrix (1999).en.srt        # English subtitles
-└── extrafanart/                    # Additional fanart
-    ├── fanart1.jpg
-    └── fanart2.jpg
+└── .actors/                        # Actor images
+    ├── Nicole_Kidman.jpg
+    └── Jackie_Chan.jpg
 ```
 
 ### TV Show Structure
 
 ```
 /media/tv/Breaking Bad/
-├── poster.jpg                      # Series poster
-├── fanart.jpg                      # Series fanart
-├── logo.png                        # Series logo
-├── tvshow.nfo                      # Series metadata
+├── poster.jpg                        # Series poster
+├── fanart.jpg                        # Series fanart
+├── logo.png                          # Series logo
+├── tvshow.nfo                        # Series metadata
+├── season01-poster.jpg               # Season poster
+├── season02-poster.jpg               # Season poster
 └── Season 01/
-    ├── season01-poster.jpg         # Season poster
-    └── Breaking Bad S01E01.mkv     # Episode file
+    ├── Breaking Bad S01E01-thumb.nfo # Season poster
+    ├── Breaking Bad S01E01.nfo       # Episode metadata
+    └── Breaking Bad S01E01.mkv       # Episode file
 ```
 
 ## Transactional Publishing
@@ -136,14 +141,13 @@ async function publishMovie(movieId: number): Promise<void> {
     // Stage 4: Update database
     await db.movies.update(movieId, {
       publish_status: 'published',
-      last_published: new Date()
+      last_published: new Date(),
     });
 
     await transaction.commit();
 
     // Cleanup temp directory
     await fs.rm(tempDir, { recursive: true });
-
   } catch (error) {
     await transaction.rollback();
     throw error;
@@ -155,9 +159,9 @@ async function publishMovie(movieId: number): Promise<void> {
 
 ```typescript
 interface RecycleConfig {
-  enabled: boolean;           // Use recycle bin (true)
-  retention: number;          // Days to keep files (30)
-  maxSize: number;           // Max size in GB (10)
+  enabled: boolean; // Use recycle bin (true)
+  retention: number; // Days to keep files (30)
+  maxSize: number; // Max size in GB (10)
   preserveUserFiles: boolean; // Keep non-Metarr files
 }
 
@@ -170,7 +174,7 @@ async function recycleFile(filePath: string): Promise<void> {
     original_path: filePath,
     recycle_path: `${recycleDir}/${fileName}`,
     deleted_at: new Date(),
-    expires_at: addDays(new Date(), config.retention)
+    expires_at: addDays(new Date(), config.retention),
   });
 
   // Move file
@@ -210,20 +214,32 @@ function generateNFO(movie: Movie): string {
   <uniqueid type="imdb">${movie.imdb_id}</uniqueid>
 
   <!-- Actors -->
-  ${movie.actors.map(actor => `
+  ${movie.actors
+    .map(
+      actor => `
   <actor>
     <name>${escapeXml(actor.name)}</name>
     <role>${escapeXml(actor.character)}</role>
     <thumb>${actor.image_url}</thumb>
-  </actor>`).join('')}
+  </actor>`
+    )
+    .join('')}
 
   <!-- Directors -->
-  ${movie.directors.map(director => `
-  <director>${escapeXml(director.name)}</director>`).join('')}
+  ${movie.directors
+    .map(
+      director => `
+  <director>${escapeXml(director.name)}</director>`
+    )
+    .join('')}
 
   <!-- Genres -->
-  ${movie.genres.map(genre => `
-  <genre>${escapeXml(genre)}</genre>`).join('')}
+  ${movie.genres
+    .map(
+      genre => `
+  <genre>${escapeXml(genre)}</genre>`
+    )
+    .join('')}
 
   <!-- File info -->
   <fileinfo>
@@ -244,18 +260,7 @@ function generateNFO(movie: Movie): string {
 ```typescript
 interface PublishingConfig {
   // Behavior
-  autoPublish: boolean;         // Publish after enrichment
-  cleanUnknown: boolean;        // Remove unrecognized files
-  preserveUserFiles: boolean;   // Keep manual additions
-
-  // Naming
-  useKodiNaming: boolean;       // Apply Kodi conventions
-  includeSubs: boolean;         // Copy subtitle files
-  includeTrailers: boolean;     // Copy trailers
-
-  // Performance
-  atomicWrites: boolean;        // Use temp+rename (safer)
-  concurrentItems: number;      // Parallel publishing (3)
+  autoPublish: boolean; // Publish after enrichment
 
   // Recycle bin
   recycleBin: RecycleConfig;
@@ -264,16 +269,13 @@ interface PublishingConfig {
 
 ## Error Handling
 
-- **Permission denied**: Queue for retry with elevation
-- **Disk full**: Pause publishing, alert user
-- **Source missing**: Restore from cache or flag
-- **Write failed**: Rollback transaction, keep temp files
-- **NFO invalid**: Log error, skip NFO generation
+- **Permission denied**: Queue for retry
+- **Disk full**: Queue for retry, alert user
+- **Source missing**: Attempt download
+- **Write failed**: Queue for retry, alert user
 
 ## Performance Considerations
 
-- **Large files**: Stream copy instead of loading to memory
-- **Network drives**: Increase timeouts, reduce parallelism
 - **Atomic writes**: Use .tmp suffix + rename for safety
 - **Batch operations**: Process multiple files per transaction
 
@@ -287,7 +289,7 @@ async function validatePublishing(movie: Movie): Promise<ValidationResult> {
   // Check cache assets exist
   if (movie.poster_id) {
     const poster = await db.cache_assets.findById(movie.poster_id);
-    if (!await fs.exists(poster.file_path)) {
+    if (!(await fs.exists(poster.file_path))) {
       errors.push('Poster missing from cache');
     }
   }
@@ -301,7 +303,8 @@ async function validatePublishing(movie: Movie): Promise<ValidationResult> {
 
   // Check disk space
   const stats = await fs.statfs(movie.library_path);
-  if (stats.available < 100 * 1024 * 1024) { // 100MB
+  if (stats.available < 100 * 1024 * 1024) {
+    // 100MB
     warnings.push('Low disk space');
   }
 

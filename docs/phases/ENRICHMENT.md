@@ -21,7 +21,7 @@ The enrichment phase enhances discovered media with high-quality metadata and ar
 - **Post-scan**: Automatically after scanning phase (if enabled)
 - **Manual**: User clicks "Enrich" on specific items
 - **Scheduled**: Weekly metadata refresh (configurable)
-- **Webhook**: Radarr/Sonarr import triggers immediate enrichment
+- **Webhook**: Radarr/Sonarr download triggers immediate enrichment
 - **Bulk**: User selects multiple items for enrichment
 
 ## Process Flow
@@ -35,12 +35,12 @@ The enrichment phase enhances discovered media with high-quality metadata and ar
 
 2. METADATA FETCHING
    ├── Search providers by ID (TMDB, IMDB, TVDB)
-   ├── Fetch core metadata (plot, cast, ratings)
+   ├── Fetch metadata (plot, cast, ratings, etc.)
    ├── Collect asset URLs (posters, fanart, logos)
    └── Handle 404s and provider errors
 
 3. ASSET CANDIDATE COLLECTION
-   ├── Store provider URLs with metadata
+   ├── Store provider URLs with metadata of the asset
    ├── Calculate asset scores
    ├── Mark user preferences
    └── Preserve locked selections
@@ -52,12 +52,13 @@ The enrichment phase enhances discovered media with high-quality metadata and ar
    └── Update cache references
 
 5. NEXT PHASE TRIGGER
-   └── Create publishing job (if auto-publish enabled)
+   └── Create publishing job
 ```
 
 ## Provider Integration
 
 ### Priority Order
+
 1. **TMDB**: Primary for movies and TV
 2. **TVDB**: Secondary for TV, primary for anime
 3. **Fanart.tv**: High-quality artwork overlay
@@ -68,17 +69,14 @@ The enrichment phase enhances discovered media with high-quality metadata and ar
 ```typescript
 interface RateLimitConfig {
   provider: string;
-  requestsPerSecond: number;
-  burstLimit: number;
-  backoffMultiplier: number;  // For 429 responses
-  reservedCapacity: 0.2;       // 20% reserved for webhooks
+  backoffMultiplier: number; // For 429 responses
 }
 
-// Adaptive backoff on 429
+// Adaptive backoff on 429 - only rate limit on provider response
 if (response.status === 429) {
   const retryAfter = response.headers['retry-after'] || 60;
   await sleep(retryAfter * 1000 * backoffMultiplier);
-  backoffMultiplier *= 2;  // Exponential backoff
+  backoffMultiplier *= 2; // Exponential backoff
 }
 ```
 
@@ -88,10 +86,10 @@ if (response.status === 429) {
 
 ```typescript
 interface AssetScore {
-  resolution: number;     // Higher is better (0-40 points)
-  aspectRatio: number;    // Closer to ideal (0-30 points)
-  voteAverage: number;    // Community rating (0-20 points)
-  language: number;       // Preferred language (0-10 points)
+  resolution: number; // Higher is better (0-40 points)
+  aspectRatio: number; // Closer to ideal (0-30 points)
+  voteAverage: number; // Community rating (0-20 points)
+  language: number; // Preferred language (0-10 points)
 }
 
 // Poster selection (ideal: 2:3 ratio, 2000x3000px)
@@ -104,9 +102,9 @@ function scorePoster(asset: AssetCandidate): number {
 
   // Aspect ratio (30 points max)
   const ratio = asset.width / asset.height;
-  const idealRatio = 2/3;
+  const idealRatio = 2 / 3;
   const ratioDiff = Math.abs(ratio - idealRatio);
-  score += Math.max(0, 30 - (ratioDiff * 100));
+  score += Math.max(0, 30 - ratioDiff * 100);
 
   // Community votes (20 points max)
   score += Math.min(20, asset.voteAverage * 2);
@@ -122,8 +120,6 @@ function scorePoster(asset: AssetCandidate): number {
 
 1. **User-selected**: Always use if locked
 2. **Auto-select**: Highest scoring unlocked asset
-3. **Fallback**: Use first available if no high scores
-4. **Missing**: Flag for manual selection
 
 ## Field Locking
 
@@ -175,7 +171,7 @@ async function downloadAsset(url: string, type: AssetType): Promise<CacheAsset> 
   const dimensions = await sharp(tempPath).metadata();
 
   // Move to cache with content addressing
-  const cachePath = `/data/cache/${type}/${sha256.substr(0,2)}/${sha256}.jpg`;
+  const cachePath = `/data/cache/${type}/${sha256.substr(0, 2)}/${sha256}.jpg`;
   await fs.move(tempPath, cachePath);
 
   // Store in database
@@ -186,7 +182,7 @@ async function downloadAsset(url: string, type: AssetType): Promise<CacheAsset> 
     file_size: stats.size,
     width: dimensions.width,
     height: dimensions.height,
-    mime_type: 'image/jpeg'
+    mime_type: 'image/jpeg',
   });
 }
 ```
@@ -196,25 +192,17 @@ async function downloadAsset(url: string, type: AssetType): Promise<CacheAsset> 
 ```typescript
 interface EnrichmentConfig {
   // Behavior
-  enabled: boolean;             // Global enrichment toggle
-  autoSelect: boolean;          // Auto-select best assets
-  autoPublish: boolean;         // Publish after enrichment
-  respectMonitored: boolean;    // Only enrich monitored items
+  enabled: boolean; // Global enrichment toggle
 
   // Providers
   providers: {
-    tmdb: { enabled: boolean; apiKey?: string; };
-    tvdb: { enabled: boolean; apiKey?: string; };
-    fanart: { enabled: boolean; apiKey?: string; };
+    tmdb: { enabled: boolean; apiKey?: string };
+    tvdb: { enabled: boolean; apiKey?: string };
+    fanart: { enabled: boolean; apiKey?: string };
   };
 
-  // Performance
-  concurrentItems: number;       // Parallel enrichment (3)
-  concurrentAssets: number;      // Parallel downloads (10)
-
   // Refresh
-  refreshInterval: number;       // Days before re-enrichment (7)
-  forceRefreshAge: number;      // Force refresh if older (30 days)
+  refreshInterval: number; // Days before re-enrichment (7)
 }
 ```
 
@@ -228,11 +216,10 @@ interface EnrichmentConfig {
 
 ## Performance Optimizations
 
-- **Batch requests**: Group multiple items per API call
+- **Full requests**: Get all info per API call
 - **Caching**: Store provider responses for 24 hours
 - **Deduplication**: SHA256 prevents duplicate downloads
 - **Parallel downloads**: 10 concurrent asset downloads
-- **Lazy loading**: Fetch assets only when selected
 
 ## Database Updates
 
@@ -266,4 +253,4 @@ WHERE id = ?;
 
 ## Next Phase
 
-Upon completion, enrichment triggers the [Publishing Phase](PUBLISHING.md) if auto-publish is enabled or selection changed.
+Upon completion, enrichment triggers the [Publishing Phase](PUBLISHING.md) if asset selection identifies changes that differ from currently published assets.
