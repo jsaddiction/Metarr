@@ -15,6 +15,7 @@ The enrichment phase enhances discovered media with high-quality metadata and ar
 3. **Rate-limited**: Respects provider API limits with backoff
 4. **Selective**: Only enriches monitored items unless forced
 5. **Observable**: Reports progress per item and overall
+6. **Chainable**: Always triggers next phase, even when disabled
 
 ## Triggers
 
@@ -253,4 +254,4 @@ WHERE id = ?;
 
 ## Next Phase
 
-Upon completion, enrichment triggers the [Publishing Phase](PUBLISHING.md) if asset selection identifies changes that differ from currently published assets.
+Upon completion, enrichment **always** triggers the [Publishing Phase](PUBLISHING.md) via job creation. If publishing is disabled, the job passes through to the next phase without processing.

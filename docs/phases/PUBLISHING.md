@@ -14,6 +14,7 @@ The publishing phase is responsible for materializing Metarr's curated metadata 
 2. **Transactional**: All-or-nothing per media item
 3. **Recoverable**: Deleted files go to recycle bin
 4. **Atomic**: Uses temp files + rename for safety
+5. **Chainable**: Always triggers next phase, even when disabled
 
 ## Triggers
 
@@ -321,4 +322,4 @@ async function validatePublishing(movie: Movie): Promise<ValidationResult> {
 
 ## Next Phase
 
-Upon completion, publishing triggers the [Player Sync Phase](PLAYER_SYNC.md) to notify media players of changes.
+Upon completion, publishing **always** triggers the [Player Sync Phase](PLAYER_SYNC.md) via job creation. If player sync is disabled, the job completes the chain without processing.

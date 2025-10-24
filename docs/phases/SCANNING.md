@@ -14,6 +14,8 @@ The scanning phase is the foundational element of Metarr - it discovers what exi
 2. **Non-destructive**: Never deletes or modifies files
 3. **Incremental**: Can scan single directories or entire libraries
 4. **Observable**: Emits progress events for UI tracking
+5. **Required**: Only mandatory phase in the chain
+6. **Chainable**: Always triggers next phase
 
 ## Triggers
 
@@ -181,4 +183,4 @@ interface ScanningConfig {
 
 ## Next Phase
 
-Upon completion, scanning triggers the [Enrichment Phase](ENRICHMENT.md) via job queue.
+Upon completion, scanning **always** triggers the [Enrichment Phase](ENRICHMENT.md) via job creation. If enrichment is disabled, the job passes through to the next phase without processing.
