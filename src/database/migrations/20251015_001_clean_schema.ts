@@ -384,21 +384,44 @@ export class CleanSchemaMigration {
     console.log('✅ unknown_files table created');
 
     // Recycle Bin (flat file storage with UUID naming)
+    // Unified table for all recyclable items: unknown files, unselected assets, deleted movies
     await db.execute(`
       CREATE TABLE recycle_bin (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+        -- What & Where
         entity_type TEXT NOT NULL CHECK(entity_type IN ('movie', 'episode', 'series', 'season')),
         entity_id INTEGER NOT NULL,
         original_path TEXT NOT NULL,
         recycle_path TEXT NULL,
         file_name TEXT NOT NULL,
         file_size INTEGER,
-        recycled_at TIMESTAMP NULL
+        file_hash TEXT,
+
+        -- Why & When
+        reason TEXT NOT NULL DEFAULT 'unknown' CHECK(reason IN (
+          'unknown',        -- Files we don't recognize (pdf, exe, txt)
+          'unselected',     -- Assets not selected during selection phase
+          'replaced',       -- Assets replaced with new versions
+          'movie_deleted',  -- Movie deleted by user/webhook
+          'user_cleanup'    -- User manually recycled
+        )),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        recycled_at TIMESTAMP NULL,      -- When moved to /data/recycle/
+        expires_at TIMESTAMP NULL,        -- When to permanently delete
+
+        -- User Control
+        ignored BOOLEAN DEFAULT 0,        -- User marked "keep forever"
+
+        -- Optional metadata
+        notes TEXT
       )
     `);
 
     await db.execute('CREATE INDEX idx_recycle_bin_entity ON recycle_bin(entity_type, entity_id)');
     await db.execute('CREATE INDEX idx_recycle_bin_pending ON recycle_bin(recycled_at) WHERE recycled_at IS NULL');
+    await db.execute('CREATE INDEX idx_recycle_bin_expires ON recycle_bin(expires_at) WHERE expires_at IS NOT NULL AND ignored = 0');
+    await db.execute('CREATE INDEX idx_recycle_bin_ignored ON recycle_bin(ignored) WHERE ignored = 1');
 
     console.log('✅ recycle_bin table created');
     console.log('✅ Unified file system tables created');
@@ -1417,7 +1440,9 @@ export class CleanSchemaMigration {
         ('workflow.scanning', 'false'),
         ('workflow.identification', 'false'),
         ('workflow.enrichment', 'false'),
-        ('workflow.publishing', 'false')
+        ('workflow.publishing', 'false'),
+        ('recycle_bin.retention_days', '30'),
+        ('recycle_bin.unknown_files_auto_recycle', 'false')
     `);
 
     // Ignore Patterns (for unknown file detection)
@@ -1442,13 +1467,17 @@ export class CleanSchemaMigration {
       { pattern: '.DS_Store', type: 'exact', description: 'macOS metadata file' },
       { pattern: 'Thumbs.db', type: 'exact', description: 'Windows thumbnail cache' },
       { pattern: 'desktop.ini', type: 'exact', description: 'Windows folder config' },
+      { pattern: '@eaDir', type: 'exact', description: 'Synology metadata folder' },
+      { pattern: '*.tmp', type: 'glob', description: 'Temporary files' },
+      { pattern: '*.!ut', type: 'glob', description: 'uTorrent partial downloads' },
+      { pattern: '*.crdownload', type: 'glob', description: 'Chrome partial downloads' },
+      { pattern: '*.part', type: 'glob', description: 'Partial downloads' },
       { pattern: '*.sample.*', type: 'glob', description: 'Sample video files' },
       { pattern: '*-sample.*', type: 'glob', description: 'Sample video files' },
       { pattern: '*.proof.*', type: 'glob', description: 'Proof video files' },
       { pattern: '*-proof.*', type: 'glob', description: 'Proof video files' },
       { pattern: 'RARBG*', type: 'glob', description: 'RARBG release info files' },
       { pattern: '*ETRG*', type: 'glob', description: 'ETRG release info files' },
-      { pattern: '*.nfo', type: 'glob', description: 'NFO metadata files (handled separately)' },
       { pattern: '*.torrent', type: 'glob', description: 'Torrent files' },
       { pattern: '*.nzb', type: 'glob', description: 'NZB files' },
     ];

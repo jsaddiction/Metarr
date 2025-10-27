@@ -155,6 +155,12 @@ async function processRecycleBin(
   entityId: number,
   mainMovieFile: string
 ): Promise<number> {
+  // Get retention period from settings (default 30 days)
+  const retentionResult = await db.query<{ value: string }>(
+    `SELECT value FROM app_settings WHERE key = 'recycle_bin.retention_days'`
+  );
+  const retentionDays = retentionResult.length > 0 ? parseInt(retentionResult[0].value) : 30;
+
   // Find pending files (recycled_at IS NULL)
   const pending = await db.query<{
     id: number;
@@ -177,7 +183,9 @@ async function processRecycleBin(
     if (result.success && result.recyclePath) {
       await db.execute(
         `UPDATE recycle_bin
-         SET recycle_path = ?, recycled_at = CURRENT_TIMESTAMP
+         SET recycle_path = ?,
+             recycled_at = CURRENT_TIMESTAMP,
+             expires_at = datetime(CURRENT_TIMESTAMP, '+${retentionDays} days')
          WHERE id = ?`,
         [result.recyclePath, record.id]
       );
@@ -189,6 +197,7 @@ async function processRecycleBin(
     entityType,
     entityId,
     recycled,
+    retentionDays,
   });
 
   return recycled;

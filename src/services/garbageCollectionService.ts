@@ -88,22 +88,26 @@ export class GarbageCollectionService {
       startTime: new Date().toISOString(),
       moviesDeleted: 0,
       seriesDeleted: 0,
+      recycleBinFilesDeleted: 0,
       cacheFilesDeleted: 0,
       emptyDirectoriesRemoved: 0,
       errors: [],
     };
 
     try {
-      // Delete expired movies (30-day recycle bin)
+      // 1. Delete expired recycle bin files (respects user's retention setting)
+      result.recycleBinFilesDeleted = await this.deleteExpiredRecycleBinFiles(db);
+
+      // 2. Delete expired movies (soft-deleted with retention period)
       result.moviesDeleted = await this.deleteExpiredMovies(db);
 
-      // Delete expired series (for future implementation)
+      // 3. Delete expired series (for future implementation)
       // result.seriesDeleted = await this.deleteExpiredSeries(db);
 
-      // Clean up orphaned cache files (not referenced in database)
+      // 4. Clean up orphaned cache files (not referenced in database)
       result.cacheFilesDeleted = await this.cleanupOrphanedCacheFiles(db);
 
-      // Remove empty cache directories
+      // 5. Remove empty cache directories
       result.emptyDirectoriesRemoved = await this.cleanupEmptyDirectories();
 
       logger.info('Garbage collection complete', result);
@@ -119,7 +123,107 @@ export class GarbageCollectionService {
   }
 
   /**
-   * Delete movies where deleted_at has expired (30-day recycle bin)
+   * Delete expired recycle bin files
+   * Only deletes files where expires_at < NOW() and ignored = 0
+   */
+  private async deleteExpiredRecycleBinFiles(db: DatabaseConnection): Promise<number> {
+    const fs = await import('fs/promises');
+
+    try {
+      // Find expired recycle bin files (not ignored)
+      const expiredFiles = (await db.query(
+        `SELECT id, recycle_path, file_name, reason, expires_at
+         FROM recycle_bin
+         WHERE expires_at < datetime('now')
+           AND ignored = 0
+           AND recycle_path IS NOT NULL`,
+        []
+      )) as Array<{
+        id: number;
+        recycle_path: string;
+        file_name: string;
+        reason: string;
+        expires_at: string;
+      }>;
+
+      if (expiredFiles.length === 0) {
+        logger.debug('No expired recycle bin files to delete');
+        return 0;
+      }
+
+      logger.info(`Found ${expiredFiles.length} expired recycle bin files to permanently delete`);
+
+      let deletedCount = 0;
+
+      for (const file of expiredFiles) {
+        try {
+          // Delete physical file
+          await fs.unlink(file.recycle_path);
+
+          // Delete database record
+          await db.execute(`DELETE FROM recycle_bin WHERE id = ?`, [file.id]);
+
+          deletedCount++;
+
+          logger.info('Permanently deleted expired file from recycle bin', {
+            id: file.id,
+            fileName: file.file_name,
+            reason: file.reason,
+            expiredAt: file.expires_at,
+          });
+
+          // Log to activity_log
+          await db.execute(
+            `INSERT INTO activity_log (
+              event_type,
+              source,
+              description,
+              metadata,
+              created_at
+            ) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+            [
+              'garbage_collection',
+              'system',
+              `Permanently deleted expired file from recycle bin: ${file.file_name}`,
+              JSON.stringify({
+                recycleBinId: file.id,
+                fileName: file.file_name,
+                reason: file.reason,
+                expiredOn: file.expires_at,
+              }),
+            ]
+          );
+        } catch (error) {
+          const errorCode = getErrorCode(error);
+          if (errorCode === 'ENOENT') {
+            // File already deleted, just remove DB record
+            await db.execute(`DELETE FROM recycle_bin WHERE id = ?`, [file.id]);
+            deletedCount++;
+            logger.warn('Recycle bin file already deleted, removed DB record', {
+              id: file.id,
+              fileName: file.file_name,
+            });
+          } else {
+            logger.error('Failed to delete expired recycle bin file', {
+              id: file.id,
+              fileName: file.file_name,
+              error: getErrorMessage(error),
+            });
+          }
+        }
+      }
+
+      return deletedCount;
+    } catch (error) {
+      logger.error('Failed to delete expired recycle bin files', {
+        error: getErrorMessage(error),
+      });
+      return 0;
+    }
+  }
+
+  /**
+   * Delete movies where deleted_at has expired (soft-delete retention period)
    */
   private async deleteExpiredMovies(db: DatabaseConnection): Promise<number> {
     try {
@@ -396,6 +500,7 @@ export class GarbageCollectionService {
 export interface GarbageCollectionResult {
   startTime: string;
   endTime?: string;
+  recycleBinFilesDeleted: number;
   moviesDeleted: number;
   seriesDeleted: number;
   cacheFilesDeleted: number;
