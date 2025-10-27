@@ -8,6 +8,7 @@ import {
   QueueStats,
 } from '../types.js';
 import { logger } from '../../../middleware/logging.js';
+import { SqlParam } from '../../../types/database.js';
 
 /**
  * SQLite-based job queue storage
@@ -252,7 +253,7 @@ export class SQLiteJobQueueStorage implements IJobQueueStorage {
 
   async listJobs(filters?: JobFilters): Promise<Job[]> {
     let query = 'SELECT * FROM job_queue WHERE 1=1';
-    const params: any[] = [];
+    const params: SqlParam[] = [];
 
     if (filters?.type) {
       query += ' AND type = ?';
@@ -290,7 +291,7 @@ export class SQLiteJobQueueStorage implements IJobQueueStorage {
 
   async getJobHistory(filters?: JobHistoryFilters): Promise<JobHistoryRecord[]> {
     let query = 'SELECT * FROM job_history WHERE 1=1';
-    const params: any[] = [];
+    const params: SqlParam[] = [];
 
     if (filters?.type) {
       query += ' AND type = ?';

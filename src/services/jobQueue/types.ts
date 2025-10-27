@@ -58,7 +58,7 @@ export interface Job {
   id: number;
   type: JobType;
   priority: number;
-  payload: any;
+  payload: unknown;
   status: 'pending' | 'processing';
   error?: string | null;
   retry_count: number;
@@ -78,7 +78,7 @@ export interface JobHistoryRecord {
   job_id: number; // Original job ID from queue
   type: JobType;
   priority: number;
-  payload: any;
+  payload: unknown;
   status: 'completed' | 'failed';
   error?: string | null;
   retry_count: number;

@@ -1,6 +1,7 @@
-import { IJobQueueStorage, Job, JobType, JobProgress, QueueStats } from './types.js';
+import { IJobQueueStorage, Job, JobType, JobProgress, QueueStats, JobFilters, JobHistoryFilters, JobHistoryRecord } from './types.js';
 import { logger } from '../../middleware/logging.js';
 import { websocketBroadcaster } from '../websocketBroadcaster.js';
+import { getErrorMessage } from '../../utils/errorHandling.js';
 
 /**
  * Job Queue Service
@@ -130,7 +131,7 @@ export class JobQueueService {
         logger.error('[JobQueueService] Error in job processing loop', {
           service: 'JobQueueService',
           operation: 'processNextJob',
-          error: error.message,
+          error: getErrorMessage(error),
         });
         this.handleProcessingLoopError(error);
       });
@@ -231,7 +232,7 @@ export class JobQueueService {
 
       // Reset circuit breaker on success
       this.consecutiveFailures = 0;
-    } catch (error: any) {
+    } catch (error) {
       const duration = Date.now() - startTime;
 
       logger.error('[JobQueueService] Job failed', {
@@ -239,19 +240,19 @@ export class JobQueueService {
         operation: 'processNextJob',
         jobId: job.id,
         type: job.type,
-        error: error.message,
+        error: getErrorMessage(error),
         retryCount: job.retry_count,
         maxRetries: job.max_retries,
       });
 
       // Mark as failed (retries if possible, archives if not)
-      await this.storage.failJob(job.id, error.message);
+      await this.storage.failJob(job.id, getErrorMessage(error));
 
       // Broadcast job failed
       websocketBroadcaster.broadcast('job:failed', {
         jobId: job.id,
         type: job.type,
-        error: error.message,
+        error: getErrorMessage(error),
         willRetry: job.retry_count + 1 < job.max_retries,
         duration,
       });
@@ -271,7 +272,7 @@ export class JobQueueService {
   /**
    * Get active jobs (pending or processing)
    */
-  async getActiveJobs(filters?: any): Promise<Job[]> {
+  async getActiveJobs(filters?: JobFilters): Promise<Job[]> {
     return await this.storage.listJobs(filters);
   }
 
@@ -297,7 +298,7 @@ export class JobQueueService {
   /**
    * Get job history
    */
-  async getJobHistory(filters?: any): Promise<any[]> {
+  async getJobHistory(filters?: JobHistoryFilters): Promise<JobHistoryRecord[]> {
     return await this.storage.getJobHistory(filters);
   }
 
@@ -353,11 +354,11 @@ export class JobQueueService {
     try {
       const stats = await this.getStats();
       websocketBroadcaster.broadcast('queue:stats', stats);
-    } catch (error: any) {
+    } catch (error) {
       logger.error('[JobQueueService] Failed to broadcast queue stats', {
         service: 'JobQueueService',
         operation: 'broadcastQueueStats',
-        error: error.message,
+        error: getErrorMessage(error),
       });
     }
   }
@@ -373,7 +374,7 @@ export class JobQueueService {
       operation: 'handleProcessingLoopError',
       consecutiveFailures: this.consecutiveFailures,
       maxConsecutiveFailures: this.MAX_CONSECUTIVE_FAILURES,
-      error: error.message,
+      error: getErrorMessage(error),
     });
 
     // Open circuit breaker if threshold reached

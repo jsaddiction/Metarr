@@ -11,13 +11,13 @@ export type JobStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'ret
 export interface JobData {
   type: JobType;
   priority: number;
-  payload: Record<string, any>;
+  payload: Record<string, unknown>;
   maxAttempts?: number;
 }
 
 export interface JobResult {
   success: boolean;
-  data?: any;
+  data?: unknown;
   error?: string;
   processingTime?: number;
 }
@@ -25,7 +25,7 @@ export interface JobResult {
 export interface CreateJobRequest {
   type: JobType;
   priority?: number;
-  payload: Record<string, any>;
+  payload: Record<string, unknown>;
   maxAttempts?: number;
 }
 
