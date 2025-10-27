@@ -16,17 +16,21 @@ import {
   MetadataResponse,
   AssetRequest,
   AssetCandidate,
-  AssetType,
+  // AssetType, // Commented out - unused until getAssets is re-implemented
 } from '../../../types/providers/index.js';
 import { ProviderConfig } from '../../../types/provider.js';
 import { parseMovieNfos } from '../../nfo/nfoParser.js';
-import { discoverAssets } from '../../media/assetDiscovery.js';
+// TODO: Replace with new assetDiscoveryService.ts when integrating local provider
+// import { discoverAssets } from '../../media/assetDiscovery.js';
+// Commented out until getAssets is re-implemented
+/*
 import {
   computePerceptualHash,
   computeContentHash,
   getImageDimensions,
   getFileSize,
 } from '../../../utils/imageHash.js';
+*/
 import { logger } from '../../../middleware/logging.js';
 import path from 'path';
 import { promises as fs } from 'fs';
@@ -240,10 +244,13 @@ export class LocalProvider extends BaseProvider {
 
   /**
    * Get asset candidates from local filesystem
+   *
+   * TODO: Re-implement using AssetDiscoveryService after removing legacy assetDiscovery.ts
    */
   async getAssets(request: AssetRequest): Promise<AssetCandidate[]> {
     const localRequest = request as LocalAssetRequest;
-    const { entityId, entityType, assetTypes, directoryPath } = localRequest;
+    const { entityId, directoryPath } = localRequest;
+    // entityType and assetTypes unused until re-implementation
 
     if (!directoryPath) {
       throw new Error('Local provider requires directoryPath for asset discovery');
@@ -253,6 +260,10 @@ export class LocalProvider extends BaseProvider {
       throw new Error('Local provider requires entityId for asset discovery');
     }
 
+    // TODO: Replace with new AssetDiscoveryService.scanDirectory()
+    throw new Error('LocalProvider.getAssets() temporarily disabled - needs migration to new AssetDiscoveryService');
+
+    /* LEGACY CODE - Remove after migration
     try {
       const discovered = await discoverAssets(directoryPath);
       const candidates: AssetCandidate[] = [];
@@ -319,6 +330,7 @@ export class LocalProvider extends BaseProvider {
       });
       return [];
     }
+    */
   }
 
   /**
