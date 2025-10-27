@@ -1098,6 +1098,7 @@ export class CleanSchemaMigration {
         error TEXT,
         retry_count INTEGER DEFAULT 0,
         max_retries INTEGER DEFAULT 3,
+        manual INTEGER DEFAULT 0,
         next_retry_at TIMESTAMP,
         started_at TIMESTAMP,
         completed_at TIMESTAMP,
@@ -1110,6 +1111,7 @@ export class CleanSchemaMigration {
     await db.execute('CREATE INDEX idx_jobs_type ON job_queue(type)');
     await db.execute('CREATE INDEX idx_jobs_retry ON job_queue(status, next_retry_at)');
     await db.execute('CREATE INDEX idx_jobs_created ON job_queue(created_at)');
+    await db.execute('CREATE INDEX idx_jobs_manual ON job_queue(manual, type, created_at DESC)');
 
     // Job Dependencies
     await db.execute(`
@@ -1137,6 +1139,7 @@ export class CleanSchemaMigration {
         status TEXT NOT NULL CHECK (status IN ('completed', 'failed')),
         error TEXT,
         retry_count INTEGER NOT NULL DEFAULT 0,
+        manual INTEGER DEFAULT 0,
         created_at DATETIME NOT NULL,
         started_at DATETIME NOT NULL,
         completed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -1146,6 +1149,7 @@ export class CleanSchemaMigration {
 
     await db.execute('CREATE INDEX idx_job_history_type_date ON job_history(type, completed_at DESC)');
     await db.execute('CREATE INDEX idx_job_history_cleanup ON job_history(status, completed_at)');
+    await db.execute('CREATE INDEX idx_job_history_manual ON job_history(manual, type, completed_at DESC)');
 
     // Job queue pickup indexes - optimized for worker polling
     // Covers: WHERE status IN ('pending', 'retrying') AND (status = 'pending' OR next_retry_at <= ?) ORDER BY priority, created_at

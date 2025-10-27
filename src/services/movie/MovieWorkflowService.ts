@@ -261,6 +261,7 @@ export class MovieWorkflowService {
         },
         retry_count: 0,
         max_retries: 3,
+        manual: true, // User-initiated - always allowed (maintenance operation)
       });
 
       logger.info('Verify job queued', {
@@ -286,6 +287,10 @@ export class MovieWorkflowService {
    * Trigger enrichment job for movie
    * Queues fetch-provider-assets job using ProviderOrchestrator with priority 3
    *
+   * User-initiated action: ALWAYS runs regardless of workflow phase settings.
+   * When enrichment phase is disabled, the system is in "manual mode" - the user
+   * retains full control to trigger actions manually.
+   *
    * @param movieId - Movie ID
    * @returns Job details
    */
@@ -293,14 +298,6 @@ export class MovieWorkflowService {
     const conn = this.db.getConnection();
 
     try {
-      // Check workflow control
-      const workflowControl = new WorkflowControlService(conn);
-      const enrichmentEnabled = await workflowControl.isEnabled('enrichment');
-
-      if (!enrichmentEnabled) {
-        throw new Error('Enrichment workflow is disabled. Enable it in Settings > Workflow Control.');
-      }
-
       // Get movie details
       const movies = await conn.query(
         'SELECT id, tmdb_id FROM movies WHERE id = ?',
@@ -334,12 +331,14 @@ export class MovieWorkflowService {
         },
         retry_count: 0,
         max_retries: 3,
+        manual: true, // User-initiated - bypasses workflow phase checks
       });
 
-      logger.info('Enrichment job queued', {
+      logger.info('Enrichment job queued (user-initiated)', {
         movieId,
         jobId,
         tmdbId: movie.tmdb_id,
+        manual: true,
       });
 
       return {
@@ -359,6 +358,10 @@ export class MovieWorkflowService {
    * Trigger publish job for movie
    * Queues publish job with priority 3 and player notifications
    *
+   * User-initiated action: ALWAYS runs regardless of workflow phase settings.
+   * When publishing phase is disabled, the system is in "manual mode" - the user
+   * retains full control to trigger actions manually.
+   *
    * @param movieId - Movie ID
    * @returns Job details
    */
@@ -366,14 +369,6 @@ export class MovieWorkflowService {
     const conn = this.db.getConnection();
 
     try {
-      // Check workflow control
-      const workflowControl = new WorkflowControlService(conn);
-      const publishingEnabled = await workflowControl.isEnabled('publishing');
-
-      if (!publishingEnabled) {
-        throw new Error('Publishing workflow is disabled. Enable it in Settings > Workflow Control.');
-      }
-
       // Get movie details
       const movies = await conn.query(
         'SELECT id, file_path, title, library_id FROM movies WHERE id = ?',
@@ -409,12 +404,14 @@ export class MovieWorkflowService {
         },
         retry_count: 0,
         max_retries: 3,
+        manual: true, // User-initiated - bypasses workflow phase checks
       });
 
-      logger.info('Publish job queued', {
+      logger.info('Publish job queued (user-initiated)', {
         movieId,
         jobId,
         libraryPath: directoryPath,
+        manual: true,
       });
 
       return {

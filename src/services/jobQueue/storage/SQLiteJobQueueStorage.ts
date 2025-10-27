@@ -28,13 +28,14 @@ export class SQLiteJobQueueStorage implements IJobQueueStorage {
       operation: 'addJob',
       type: job.type,
       priority: job.priority,
+      manual: job.manual || false,
     });
 
     const result = await this.db.execute(
       `INSERT INTO job_queue (
-        type, priority, payload, status, retry_count, max_retries, created_at, updated_at
-      ) VALUES (?, ?, ?, 'pending', 0, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-      [job.type, job.priority, JSON.stringify(job.payload), job.max_retries || 3]
+        type, priority, payload, status, retry_count, max_retries, manual, created_at, updated_at
+      ) VALUES (?, ?, ?, 'pending', 0, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+      [job.type, job.priority, JSON.stringify(job.payload), job.max_retries || 3, job.manual ? 1 : 0]
     );
 
     const jobId = result.insertId!;
@@ -45,6 +46,7 @@ export class SQLiteJobQueueStorage implements IJobQueueStorage {
       jobId,
       type: job.type,
       priority: job.priority,
+      manual: job.manual || false,
     });
 
     return jobId;
@@ -96,6 +98,7 @@ export class SQLiteJobQueueStorage implements IJobQueueStorage {
       created_at: job.created_at,
       started_at: job.started_at,
       updated_at: job.updated_at,
+      manual: job.manual === 1,
     };
   }
 
@@ -122,10 +125,10 @@ export class SQLiteJobQueueStorage implements IJobQueueStorage {
     // Archive to history - let SQLite calculate duration using its own datetime functions
     await this.db.execute(
       `INSERT INTO job_history (
-        job_id, type, priority, payload, status, error, retry_count,
+        job_id, type, priority, payload, status, error, retry_count, manual,
         created_at, started_at, completed_at, duration_ms
       ) VALUES (
-        ?, ?, ?, ?, 'completed', NULL, ?,
+        ?, ?, ?, ?, 'completed', NULL, ?, ?,
         ?, ?,
         CURRENT_TIMESTAMP,
         CAST((julianday(CURRENT_TIMESTAMP) - julianday(?)) * 86400000 AS INTEGER)
@@ -136,6 +139,7 @@ export class SQLiteJobQueueStorage implements IJobQueueStorage {
         job.priority,
         job.payload,
         job.retry_count,
+        job.manual || 0,
         job.created_at,
         job.started_at,
         job.started_at, // Used for duration calculation
@@ -194,10 +198,10 @@ export class SQLiteJobQueueStorage implements IJobQueueStorage {
 
       await this.db.execute(
         `INSERT INTO job_history (
-          job_id, type, priority, payload, status, error, retry_count,
+          job_id, type, priority, payload, status, error, retry_count, manual,
           created_at, started_at, completed_at, duration_ms
         ) VALUES (
-          ?, ?, ?, ?, 'failed', ?, ?,
+          ?, ?, ?, ?, 'failed', ?, ?, ?,
           ?, ?,
           CURRENT_TIMESTAMP,
           CAST((julianday(CURRENT_TIMESTAMP) - julianday(?)) * 86400000 AS INTEGER)
@@ -209,6 +213,7 @@ export class SQLiteJobQueueStorage implements IJobQueueStorage {
           job.payload,
           error,
           newRetryCount,
+          job.manual || 0,
           job.created_at,
           startedAtValue,
           startedAtValue, // Used for duration calculation
@@ -248,6 +253,7 @@ export class SQLiteJobQueueStorage implements IJobQueueStorage {
       created_at: job.created_at,
       started_at: job.started_at,
       updated_at: job.updated_at,
+      manual: job.manual === 1,
     };
   }
 
@@ -286,6 +292,7 @@ export class SQLiteJobQueueStorage implements IJobQueueStorage {
       created_at: job.created_at,
       started_at: job.started_at,
       updated_at: job.updated_at,
+      manual: job.manual === 1,
     }));
   }
 
@@ -325,6 +332,7 @@ export class SQLiteJobQueueStorage implements IJobQueueStorage {
       started_at: record.started_at,
       completed_at: record.completed_at,
       duration_ms: record.duration_ms,
+      manual: record.manual === 1,
     }));
   }
 

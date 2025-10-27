@@ -103,17 +103,19 @@ export class AssetJobHandlers {
       ...result
     });
 
-    // 2. Check if identification workflow is enabled
-    const identificationEnabled = await this.workflowControl.isEnabled('identification');
-    if (!identificationEnabled) {
-      logger.info('[AssetJobHandlers] Identification workflow disabled, stopping chain', {
-        service: 'AssetJobHandlers',
-        handler: 'handleDiscoverAssets',
-        jobId: job.id,
-        entityType,
-        entityId
-      });
-      return;
+    // 2. Check if identification workflow is enabled (unless user-initiated)
+    if (!job.manual) {
+      const identificationEnabled = await this.workflowControl.isEnabled('identification');
+      if (!identificationEnabled) {
+        logger.info('[AssetJobHandlers] Identification workflow disabled, stopping chain', {
+          service: 'AssetJobHandlers',
+          handler: 'handleDiscoverAssets',
+          jobId: job.id,
+          entityType,
+          entityId
+        });
+        return;
+      }
     }
 
     // 3. Check if we have provider ID to fetch from
@@ -247,23 +249,25 @@ export class AssetJobHandlers {
       return;
     }
 
-    // 2. Check if enrichment workflow is enabled
-    const enrichmentEnabled = await this.workflowControl.isEnabled('enrichment');
-    if (!enrichmentEnabled) {
-      logger.info('[AssetJobHandlers] Enrichment workflow disabled, stopping chain', {
-        service: 'AssetJobHandlers',
-        handler: 'handleFetchProviderAssets',
-        jobId: job.id,
-        entityType,
-        entityId
-      });
-      return;
+    // 2. Check if enrichment workflow is enabled (unless user-initiated)
+    if (!job.manual) {
+      const enrichmentEnabled = await this.workflowControl.isEnabled('enrichment');
+      if (!enrichmentEnabled) {
+        logger.info('[AssetJobHandlers] Enrichment workflow disabled, stopping chain', {
+          service: 'AssetJobHandlers',
+          handler: 'handleFetchProviderAssets',
+          jobId: job.id,
+          entityType,
+          entityId
+        });
+        return;
+      }
     }
 
-    // 3. Chain to select-assets job
+    // 3. Chain to select-assets job (preserve manual flag)
     const selectJobId = await this.jobQueue.addJob({
       type: 'select-assets',
-      priority: 5, // NORMAL priority
+      priority: job.manual ? 3 : 5, // HIGH priority if user-initiated, NORMAL otherwise
       payload: {
         entityType,
         entityId,
@@ -271,6 +275,7 @@ export class AssetJobHandlers {
       },
       retry_count: 0,
       max_retries: 3,
+      manual: job.manual, // Propagate manual flag through chain
     });
 
     logger.info('[AssetJobHandlers] Provider assets fetched, chained to select-assets', {
@@ -462,21 +467,23 @@ export class AssetJobHandlers {
       totalTypes: types.length
     });
 
-    // 2. Check if publishing workflow is enabled
-    const publishingEnabled = await this.workflowControl.isEnabled('publishing');
-    if (!publishingEnabled) {
-      logger.info('[AssetJobHandlers] Publishing workflow disabled, stopping chain', {
-        service: 'AssetJobHandlers',
-        handler: 'handleSelectAssets',
-        jobId: job.id,
-        entityType,
-        entityId
-      });
-      return;
+    // 2. Check if publishing workflow is enabled (unless user-initiated)
+    if (!job.manual) {
+      const publishingEnabled = await this.workflowControl.isEnabled('publishing');
+      if (!publishingEnabled) {
+        logger.info('[AssetJobHandlers] Publishing workflow disabled, stopping chain', {
+          service: 'AssetJobHandlers',
+          handler: 'handleSelectAssets',
+          jobId: job.id,
+          entityType,
+          entityId
+        });
+        return;
+      }
     }
 
-    // 3. Only publish in YOLO mode (hybrid requires user approval)
-    if (selectionMode !== 'yolo') {
+    // 3. Only publish in YOLO mode (hybrid requires user approval, unless user-initiated)
+    if (!job.manual && selectionMode !== 'yolo') {
       logger.info('[AssetJobHandlers] Not in YOLO mode, skipping publish', {
         service: 'AssetJobHandlers',
         handler: 'handleSelectAssets',
@@ -501,10 +508,10 @@ export class AssetJobHandlers {
       return;
     }
 
-    // 5. Chain to publish job
+    // 5. Chain to publish job (preserve manual flag)
     const publishJobId = await this.jobQueue.addJob({
       type: 'publish',
-      priority: 5, // NORMAL priority
+      priority: job.manual ? 3 : 5, // HIGH priority if user-initiated, NORMAL otherwise
       payload: {
         entityType,
         entityId,
@@ -512,6 +519,7 @@ export class AssetJobHandlers {
         mediaFilename: entity.title,
         chainContext
       },
+      manual: job.manual, // Propagate manual flag through chain
       retry_count: 0,
       max_retries: 3,
     });

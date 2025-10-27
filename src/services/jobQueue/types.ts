@@ -67,6 +67,7 @@ export interface Job {
   started_at?: string | null;
   updated_at?: string;
   progress?: JobProgress; // Optional progress tracking (not stored in DB)
+  manual?: boolean; // True if user-initiated (bypasses workflow phase disable checks)
 }
 
 /**
@@ -86,6 +87,7 @@ export interface JobHistoryRecord {
   started_at: string; // When job started processing
   completed_at: string; // When job finished (completed or failed)
   duration_ms: number; // completed_at - started_at
+  manual?: boolean; // True if user-initiated (for audit trail)
 }
 
 /**
