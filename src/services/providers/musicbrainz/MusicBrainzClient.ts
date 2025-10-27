@@ -183,7 +183,7 @@ export class MusicBrainzClient {
         name: rg.title,
         score: rg.score || 0,
         type: rg['primary-type'],
-        disambiguation: rg.disambiguation,
+        disambiguation: (rg as { [key: string]: unknown }).disambiguation,
       }));
     } catch (error: any) {
       logger.error('MusicBrainz release group search failed', {
@@ -246,9 +246,9 @@ export class MusicBrainzClient {
       const recordings = response.data.recordings || [];
       return recordings.map((recording: any) => ({
         id: recording.id,
-        name: recording.title,
+        name: (recording as { [key: string]: unknown }).title,
         score: recording.score || 0,
-        disambiguation: recording.disambiguation,
+        disambiguation: (recording as { [key: string]: unknown }).disambiguation,
       }));
     } catch (error: any) {
       logger.error('MusicBrainz recording search failed', {

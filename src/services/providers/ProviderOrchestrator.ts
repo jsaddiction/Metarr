@@ -21,6 +21,7 @@ import {
   ProviderId,
 } from '../../types/providers/index.js';
 import { logger } from '../../middleware/logging.js';
+import { getErrorMessage } from '../../utils/errorHandling.js';
 
 /**
  * Orchestration strategies
@@ -65,9 +66,9 @@ export class ProviderOrchestrator {
         try {
           const provider = await this.registry.createProvider(config);
           return await provider.search(request);
-        } catch (error: any) {
+        } catch (error) {
           logger.warn(`Search failed for ${config.providerName}`, {
-            error: error.message,
+            error: getErrorMessage(error),
             query: request.query,
           });
           return [];
@@ -99,7 +100,7 @@ export class ProviderOrchestrator {
    */
   async fetchMetadata(
     entityType: EntityType,
-    externalIds: Record<string, any>,
+    externalIds: Record<string, unknown>,
     strategy: OrchestrationConfig
   ): Promise<MetadataResponse> {
     if (strategy.strategy === 'field_mapping' && strategy.fieldMapping) {
@@ -131,9 +132,9 @@ export class ProviderOrchestrator {
             providerResultId: providerId,
             entityType,
           });
-        } catch (error: any) {
+        } catch (error) {
           logger.warn(`Metadata fetch failed for ${config.providerName}`, {
-            error: error.message,
+            error: getErrorMessage(error),
           });
           return null;
         }
@@ -163,7 +164,7 @@ export class ProviderOrchestrator {
    */
   async fetchAssetCandidates(
     entityType: EntityType,
-    externalIds: Record<string, any>,
+    externalIds: Record<string, unknown>,
     assetTypes: AssetType[]
   ): Promise<AssetCandidate[]> {
     const enabledConfigs = await this.getEnabledProviders();
@@ -202,9 +203,9 @@ export class ProviderOrchestrator {
             entityType,
             assetTypes: requestTypes,
           });
-        } catch (error: any) {
+        } catch (error) {
           logger.warn(`Asset fetch failed for ${config.providerName}`, {
-            error: error.message,
+            error: getErrorMessage(error),
           });
           return [];
         }
@@ -255,7 +256,7 @@ export class ProviderOrchestrator {
    */
   private async resolveProviderId(
     provider: BaseProvider,
-    externalIds: Record<string, any>
+    externalIds: Record<string, unknown>
   ): Promise<string | null> {
     const caps = provider.getCapabilities();
 
@@ -279,7 +280,7 @@ export class ProviderOrchestrator {
    */
   private async fetchMetadataWithFieldMapping(
     entityType: EntityType,
-    externalIds: Record<string, any>,
+    externalIds: Record<string, unknown>,
     fieldMapping: Partial<Record<MetadataField, ProviderId>>
   ): Promise<MetadataResponse> {
     const response: MetadataResponse = {
@@ -315,9 +316,9 @@ export class ProviderOrchestrator {
         if (metadata.fields[field as MetadataField]) {
           response.fields[field as MetadataField] = metadata.fields[field as MetadataField];
         }
-      } catch (error: any) {
+      } catch (error) {
         logger.warn(`Field mapping failed for ${field} from ${providerId}`, {
-          error: error.message,
+          error: getErrorMessage(error),
         });
       }
     }

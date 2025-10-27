@@ -5,6 +5,7 @@
 
 import axios, { AxiosInstance, AxiosError } from 'axios';
 import { logger } from '../../../middleware/logging.js';
+import { getErrorMessage } from '../../../utils/errorHandling.js';
 import {
   TVDBClientOptions,
   TVDBLoginResponse,
@@ -64,9 +65,9 @@ export class TVDBClient {
       logger.info('TVDB authentication successful', {
         expiresAt: new Date(this.tokenExpiry),
       });
-    } catch (error: any) {
-      logger.error('TVDB login failed', { error: error.message });
-      throw new Error(`TVDB authentication failed: ${error.message}`);
+    } catch (error) {
+      logger.error('TVDB login failed', { error: getErrorMessage(error) });
+      throw new Error(`TVDB authentication failed: ${getErrorMessage(error)}`);
     }
   }
 
@@ -93,7 +94,7 @@ export class TVDBClient {
   private async request<T>(
     method: 'get' | 'post',
     endpoint: string,
-    data?: any,
+    data?: unknown,
     retries = 3
   ): Promise<T> {
     await this.ensureValidToken();
@@ -189,7 +190,7 @@ export class TVDBClient {
       return this.request(method as 'get' | 'post', endpoint, data, retriesLeft - 1);
     }
 
-    throw new Error(`TVDB network error: ${error.message}`);
+    throw new Error(`TVDB network error: ${getErrorMessage(error)}`);
   }
 
   // ============================================

@@ -439,7 +439,7 @@ export class TVDBProvider extends BaseProvider {
     if (shouldInclude('actors') && series.characters) {
       fields.actors = series.characters.slice(0, 20).map((char: any) => ({
         name: char.personName || char.name,
-        role: char.name,
+        role: (char as { [key: string]: unknown }).name,
         thumb: char.personImgURL,
       }));
     }
@@ -508,7 +508,7 @@ export class TVDBProvider extends BaseProvider {
     if (shouldInclude('actors') && episode.characters) {
       fields.actors = episode.characters.map((char: any) => ({
         name: char.personName || char.name,
-        role: char.name,
+        role: (char as { [key: string]: unknown }).name,
         thumb: char.personImgURL,
       }));
     }

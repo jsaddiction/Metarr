@@ -30,6 +30,7 @@ import {
 import { logger } from '../../../middleware/logging.js';
 import path from 'path';
 import { promises as fs } from 'fs';
+import { getErrorMessage } from '../../../utils/errorHandling.js';
 
 // Extended request types for LocalProvider
 export interface LocalSearchRequest extends SearchRequest {
@@ -218,10 +219,10 @@ export class LocalProvider extends BaseProvider {
       // TODO: Add support for series/episode NFO parsing
       logger.warn(`Local provider does not yet support ${entityType} NFO parsing`);
       return [];
-    } catch (error: any) {
+    } catch (error) {
       logger.error(`Local provider search failed`, {
         directoryPath,
-        error: error.message,
+        error: getErrorMessage(error),
       });
       return [];
     }
@@ -298,9 +299,9 @@ export class LocalProvider extends BaseProvider {
               isAlreadyDownloaded: true,
             },
           });
-        } catch (error: any) {
+        } catch (error) {
           logger.warn(`Failed to process local asset ${image.filePath}`, {
-            error: error.message,
+            error: getErrorMessage(error),
           });
         }
       }
@@ -311,10 +312,10 @@ export class LocalProvider extends BaseProvider {
       );
 
       return candidates;
-    } catch (error: any) {
+    } catch (error) {
       logger.error(`Local asset discovery failed`, {
         directoryPath,
-        error: error.message,
+        error: getErrorMessage(error),
       });
       return [];
     }
@@ -334,9 +335,9 @@ export class LocalProvider extends BaseProvider {
           nfoFiles.push(path.join(dirPath, file));
         }
       }
-    } catch (error: any) {
+    } catch (error) {
       logger.warn(`Failed to read directory ${dirPath}`, {
-        error: error.message,
+        error: getErrorMessage(error),
       });
     }
 

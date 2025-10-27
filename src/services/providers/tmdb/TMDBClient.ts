@@ -6,6 +6,7 @@
 import axios, { AxiosInstance, AxiosError } from 'axios';
 import { logger } from '../../../middleware/logging.js';
 import { RateLimiter } from './RateLimiter.js';
+import { getErrorMessage } from '../../../utils/errorHandling.js';
 import {
   TMDBClientOptions,
   TMDBMovie,
@@ -66,7 +67,7 @@ export class TMDBClient {
    * Search for movies by title and optional year
    */
   async searchMovies(options: TMDBSearchOptions): Promise<TMDBMovieSearchResponse> {
-    const params: any = {
+    const params: Record<string, unknown> = {
       query: options.query,
       language: options.language || this.language,
       include_adult: options.includeAdult ?? this.includeAdult,
@@ -91,7 +92,7 @@ export class TMDBClient {
     movieId: number,
     options: TMDBMovieDetailsOptions = {}
   ): Promise<TMDBMovie> {
-    const params: any = {
+    const params: Record<string, unknown> = {
       language: options.language || this.language,
     };
 
@@ -142,7 +143,7 @@ export class TMDBClient {
     posters: TMDBImage[];
     logos: TMDBImage[];
   }> {
-    const params: any = {};
+    const params: Record<string, unknown> = {};
     if (language) {
       params.language = language;
     }
@@ -220,11 +221,11 @@ export class TMDBClient {
       }
 
       return result;
-    } catch (error: any) {
+    } catch (error) {
       // If the movie doesn't exist or changes endpoint fails, assume we should re-scrape
       logger.warn('TMDB changes check failed, assuming changes exist', {
         tmdbId,
-        error: error.message,
+        error: getErrorMessage(error),
       });
 
       return {
@@ -303,7 +304,7 @@ export class TMDBClient {
    */
   private async request<T>(
     endpoint: string,
-    config: any = {},
+    config: Record<string, unknown> = {},
     retries: number = 3
   ): Promise<T> {
     // Check circuit breaker
@@ -404,7 +405,7 @@ export class TMDBClient {
     }
 
     this.incrementCircuitBreaker();
-    throw new Error(`TMDB network error: ${error.message}`);
+    throw new Error(`TMDB network error: ${getErrorMessage(error)}`);
   }
 
   /**

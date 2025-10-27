@@ -20,6 +20,7 @@ import {
 } from '../../types/providers/index.js';
 import { RateLimiter, CircuitBreaker } from './utils/index.js';
 import { logger } from '../../middleware/logging.js';
+import { getErrorMessage, isError } from '../../utils/errorHandling.js';
 import {
   RateLimitError,
   NotFoundError,
@@ -317,7 +318,7 @@ export abstract class BaseProvider {
    * @param resourceId - Optional resource identifier for context
    * @returns Standardized ProviderError subclass
    */
-  protected parseHttpError(error: any, resourceId?: string | number): ProviderError {
+  protected parseHttpError(error: unknown, resourceId?: string | number): ProviderError {
     const providerName = this.capabilities.id;
 
     // Check if it's already a ProviderError
@@ -326,15 +327,16 @@ export abstract class BaseProvider {
     }
 
     // Handle axios-style errors
-    if (error.response) {
-      const status = error.response.status;
-      const message = error.response.data?.message || error.response.data?.status_message || error.message;
+    const err = error as { response?: { status: number; data?: { message?: string; status_message?: string }; headers: Record<string, string> } };
+    if (err.response) {
+      const status = err.response.status;
+      const message = err.response.data?.message || err.response.data?.status_message || getErrorMessage(error);
 
       switch (status) {
         case 429: {
           // Rate limit exceeded
           // Try to extract Retry-After header (can be in seconds or HTTP date)
-          const retryAfter = error.response.headers['retry-after'];
+          const retryAfter = err.response.headers['retry-after'];
           let retryAfterSeconds: number | undefined;
 
           if (retryAfter) {
@@ -376,13 +378,13 @@ export abstract class BaseProvider {
     }
 
     // Handle network errors (no response received)
-    if (error.request) {
-      return new NetworkError(providerName, error);
+    if ((error as { request?: unknown }).request) {
+      return new NetworkError(providerName, error as Error);
     }
 
     // Generic error
     return new ProviderError(
-      error.message || 'Unknown error',
+      getErrorMessage(error) || 'Unknown error',
       providerName
     );
   }
@@ -407,15 +409,15 @@ export abstract class BaseProvider {
       // Success - reset rate limit backoff
       this.resetRateLimitBackoff();
       return result;
-    } catch (error: any) {
+    } catch (error) {
       // Handle rate limit errors specially
       if (error instanceof RateLimitError) {
         this.handleRateLimitResponse(error.retryAfter);
       }
 
       logger.error(`Provider request failed: ${this.capabilities.id} - ${operation}`, {
-        error: error.message,
-        errorType: error.name,
+        error: getErrorMessage(error),
+        errorType: isError(error) ? error.name : 'Unknown',
         priority,
       });
       throw error;
@@ -439,7 +441,7 @@ export abstract class BaseProvider {
   /**
    * Log provider activity
    */
-  protected log(level: 'debug' | 'info' | 'warn' | 'error', message: string, metadata?: any): void {
+  protected log(level: 'debug' | 'info' | 'warn' | 'error', message: string, metadata?: unknown): void {
     logger[level](`[${this.capabilities.id}] ${message}`, metadata);
   }
 }

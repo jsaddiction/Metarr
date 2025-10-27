@@ -20,6 +20,7 @@ import {
 } from '../../../types/providers/index.js';
 import { ProviderConfig } from '../../../types/provider.js';
 import { logger } from '../../../middleware/logging.js';
+import { getErrorMessage } from '../../../utils/errorHandling.js';
 
 export class MusicBrainzProvider extends BaseProvider {
   private mbClient: MusicBrainzClient;
@@ -194,11 +195,11 @@ export class MusicBrainzProvider extends BaseProvider {
 
       logger.info(`MusicBrainz search for "${query}" returned ${results.length} results`);
       return results;
-    } catch (error: any) {
+    } catch (error) {
       logger.error('MusicBrainz search failed', {
         query,
         entityType,
-        error: error.message,
+        error: getErrorMessage(error),
       });
       throw error;
     }
@@ -216,7 +217,7 @@ export class MusicBrainzProvider extends BaseProvider {
     }
 
     try {
-      const fields: Partial<Record<string, any>> = {};
+      const fields: Partial<Record<string, unknown>> = {};
 
       if (entityType === 'artist') {
         const artist = await this.mbClient.getArtist(mbid);
@@ -258,11 +259,11 @@ export class MusicBrainzProvider extends BaseProvider {
         title: fields.title,
       });
       return metadata;
-    } catch (error: any) {
+    } catch (error) {
       logger.error('MusicBrainz metadata retrieval failed', {
         mbid,
         entityType,
-        error: error.message,
+        error: getErrorMessage(error),
       });
       throw error;
     }
@@ -287,11 +288,11 @@ export class MusicBrainzProvider extends BaseProvider {
         success: true,
         message: 'MusicBrainz API is accessible',
       };
-    } catch (error: any) {
+    } catch (error) {
       return {
         success: false,
-        message: `MusicBrainz access failed: ${error.message}`,
-        error: error.message,
+        message: `MusicBrainz access failed: ${getErrorMessage(error)}`,
+        error: getErrorMessage(error),
       };
     }
   }

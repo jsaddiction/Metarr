@@ -20,6 +20,7 @@ import {
 } from '../../../types/providers/index.js';
 import { ProviderConfig } from '../../../types/provider.js';
 import { logger } from '../../../middleware/logging.js';
+import { getErrorMessage } from '../../../utils/errorHandling.js';
 import {
   FanArtImage,
   FanArtSeasonImage,
@@ -355,11 +356,11 @@ export class FanArtProvider extends BaseProvider {
       });
 
       return candidates;
-    } catch (error: any) {
+    } catch (error) {
       logger.error('FanArt.tv asset fetch failed', {
         providerResultId,
         entityType,
-        error: error.message,
+        error: getErrorMessage(error),
       });
       // Don't throw - just return empty array (FanArt.tv doesn't have all content)
       return [];

@@ -440,9 +440,9 @@ export class TMDBProvider extends BaseProvider {
     if (shouldInclude('actors') && movie.credits?.cast) {
       fields.actors = movie.credits.cast.slice(0, 20).map((actor: any) => ({
         name: actor.name,
-        role: actor.character,
-        thumb: actor.profile_path
-          ? this.tmdbClient.getImageUrl(actor.profile_path, 'w185')
+        role: (actor as { [key: string]: unknown }).character,
+        thumb: (actor as { [key: string]: unknown }).profile_path
+          ? this.tmdbClient.getImageUrl((actor as { [key: string]: unknown }).profile_path as string, 'w185')
           : undefined,
       }));
     }

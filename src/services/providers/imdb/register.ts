@@ -25,8 +25,8 @@ registry.registerProvider(
       id: 0,
       providerName: 'imdb',
       enabled: false, // Disabled by default due to ToS concerns
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      created_at: new Date(),
+      updated_at: new Date(),
     },
     {}
   ).getCapabilities()

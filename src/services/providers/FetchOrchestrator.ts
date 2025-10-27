@@ -30,6 +30,7 @@ import {
 } from '../../errors/providerErrors.js';
 import { logger } from '../../middleware/logging.js';
 import type { Movie, Series } from '../../types/models.js';
+import { getErrorMessage } from '../../utils/errorHandling.js';
 
 /**
  * Priority level for fetch operations
@@ -304,17 +305,17 @@ export class FetchOrchestrator {
       config.progressCallback?.onProviderComplete?.(providerName, true);
 
       return assets;
-    } catch (error: any) {
+    } catch (error) {
       state.endTime = Date.now();
-      state.error = error.message;
+      state.error = getErrorMessage(error);
       state.retryable = this.isRetryableError(error);
 
       // Only log as error if it's truly unexpected (not missing IDs or incompatibility)
-      if (error.message?.includes('No compatible external ID')) {
-        logger.debug(`Provider ${providerName} skipped: ${error.message}`);
+      if (getErrorMessage(error)?.includes('No compatible external ID')) {
+        logger.debug(`Provider ${providerName} skipped: ${getErrorMessage(error)}`);
       } else {
         logger.error(`Provider fetch failed: ${providerName}`, {
-          error: error.message,
+          error: getErrorMessage(error),
           retryable: state.retryable,
         });
       }
@@ -336,7 +337,7 @@ export class FetchOrchestrator {
     maxRetries: number,
     providerName: string
   ): Promise<ProviderAssets | null> {
-    let lastError: Error | null = null;
+    let lastError: unknown = null;
     let attempt = 0;
 
     while (attempt <= maxRetries) {
@@ -344,7 +345,7 @@ export class FetchOrchestrator {
         // Attempt fetch
         const assets = await this.performFetch(provider, media, entityType, config);
         return assets;
-      } catch (error: any) {
+      } catch (error) {
         lastError = error;
         attempt++;
 
@@ -362,7 +363,7 @@ export class FetchOrchestrator {
           attempt,
           maxRetries,
           delayMs: delay,
-          error: error.message,
+          error: getErrorMessage(error),
         });
 
         config.progressCallback?.onProviderRetry?.(providerName, attempt, maxRetries);
@@ -410,12 +411,12 @@ export class FetchOrchestrator {
 
         const metadataResponse = await provider.getMetadata(metadataRequest);
         assets.metadata = metadataResponse.fields;
-      } catch (error: any) {
+      } catch (error) {
         // Expected failures (not implemented, not supported) are debug level
-        if (error.message?.includes('not yet implemented') || error.message?.includes('not supported')) {
-          logger.debug(`Metadata not available from ${caps.id}: ${error.message}`);
+        if (getErrorMessage(error)?.includes('not yet implemented') || getErrorMessage(error)?.includes('not supported')) {
+          logger.debug(`Metadata not available from ${caps.id}: ${getErrorMessage(error)}`);
         } else {
-          logger.warn(`Metadata fetch failed for ${caps.id}`, { error: error.message });
+          logger.warn(`Metadata fetch failed for ${caps.id}`, { error: getErrorMessage(error) });
         }
         // Continue to try assets even if metadata fails
       }
@@ -477,12 +478,12 @@ export class FetchOrchestrator {
               assets.videos[category].push(candidate);
             }
           }
-        } catch (error: any) {
+        } catch (error) {
           // Expected failures are debug level
-          if (error.message?.includes('requires directoryPath') || error.message?.includes('not yet implemented')) {
-            logger.debug(`Assets not available from ${caps.id}: ${error.message}`);
+          if (getErrorMessage(error)?.includes('requires directoryPath') || getErrorMessage(error)?.includes('not yet implemented')) {
+            logger.debug(`Assets not available from ${caps.id}: ${getErrorMessage(error)}`);
           } else {
-            logger.warn(`Asset fetch failed for ${caps.id}`, { error: error.message });
+            logger.warn(`Asset fetch failed for ${caps.id}`, { error: getErrorMessage(error) });
           }
           // Continue even if asset fetch fails
         }
@@ -495,7 +496,7 @@ export class FetchOrchestrator {
   /**
    * Determine if error should trigger retry
    */
-  private shouldRetryError(error: any, attempt: number, maxRetries: number): boolean {
+  private shouldRetryError(error: unknown, attempt: number, maxRetries: number): boolean {
     if (attempt > maxRetries) {
       return false;
     }
@@ -532,7 +533,7 @@ export class FetchOrchestrator {
   /**
    * Check if error is retryable
    */
-  private isRetryableError(error: any): boolean {
+  private isRetryableError(error: unknown): boolean {
     return (
       error instanceof RateLimitError ||
       error instanceof ServerError ||
@@ -543,7 +544,7 @@ export class FetchOrchestrator {
   /**
    * Calculate backoff delay for retry
    */
-  private calculateBackoff(error: any, attempt: number): number {
+  private calculateBackoff(error: unknown, attempt: number): number {
     // If rate limit error has retryAfter, use that
     if (error instanceof RateLimitError && error.retryAfter) {
       return error.retryAfter * 1000; // Convert to ms
@@ -572,11 +573,11 @@ export class FetchOrchestrator {
 
     switch (providerId) {
       case 'tmdb':
-        return media.tmdbId ? String(media.tmdbId) : null;
+        return media.tmdb_id ? String(media.tmdb_id) : null;
       case 'tvdb':
-        return 'tvdbId' in media && media.tvdbId ? String(media.tvdbId) : null;
+        return 'tvdb_id' in media && media.tvdb_id ? String(media.tvdb_id) : null;
       case 'imdb':
-        return media.imdbId ? String(media.imdbId) : null;
+        return media.imdb_id ? String(media.imdb_id) : null;
     }
 
     // For other providers, check their externalIdLookup capability
@@ -586,15 +587,15 @@ export class FetchOrchestrator {
       switch (idType) {
         case 'tmdb_id':
         case 'tmdb':
-          if (media.tmdbId) return String(media.tmdbId);
+          if (media.tmdb_id) return String(media.tmdb_id);
           break;
         case 'tvdb_id':
         case 'tvdb':
-          if ('tvdbId' in media && media.tvdbId) return String(media.tvdbId);
+          if ('tvdb_id' in media && media.tvdb_id) return String(media.tvdb_id);
           break;
         case 'imdb_id':
         case 'imdb':
-          if (media.imdbId) return String(media.imdbId);
+          if (media.imdb_id) return String(media.imdb_id);
           break;
       }
     }

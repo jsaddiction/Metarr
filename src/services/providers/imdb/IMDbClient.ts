@@ -23,6 +23,7 @@
 import axios, { AxiosInstance } from 'axios';
 import * as cheerio from 'cheerio';
 import { logger } from '../../../middleware/logging.js';
+import { getErrorMessage, getStatusCode } from '../../../utils/errorHandling.js';
 
 export interface IMDbSearchResult {
   imdbId: string;
@@ -150,13 +151,13 @@ export class IMDbClient {
 
       logger.debug(`IMDb search for "${query}" returned ${results.length} results`);
       return results;
-    } catch (error: any) {
+    } catch (error) {
       logger.error('IMDb search failed', {
         query,
-        error: error.message,
-        status: error.response?.status,
+        error: getErrorMessage(error),
+        status: getStatusCode(error),
       });
-      throw new Error(`IMDb search failed: ${error.message}`);
+      throw new Error(`IMDb search failed: ${getErrorMessage(error)}`);
     }
   }
 
@@ -335,13 +336,13 @@ export class IMDbClient {
 
       logger.debug(`Scraped IMDb details for ${imdbId}`, { title });
       return details;
-    } catch (error: any) {
+    } catch (error) {
       logger.error('IMDb details scraping failed', {
         imdbId,
-        error: error.message,
-        status: error.response?.status,
+        error: getErrorMessage(error),
+        status: getStatusCode(error),
       });
-      throw new Error(`Failed to scrape IMDb details for ${imdbId}: ${error.message}`);
+      throw new Error(`Failed to scrape IMDb details for ${imdbId}: ${getErrorMessage(error)}`);
     }
   }
 
@@ -382,10 +383,10 @@ export class IMDbClient {
         ...(movieDetails.releaseDate && { premiered: movieDetails.releaseDate }),
         ...(status && { status }),
       };
-    } catch (error: any) {
+    } catch (error) {
       logger.warn('Failed to extract series-specific details, returning movie details', {
         imdbId,
-        error: error.message,
+        error: getErrorMessage(error),
       });
       return {
         ...movieDetails,

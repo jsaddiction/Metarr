@@ -24,6 +24,7 @@ import {
 } from '../../../types/providers/index.js';
 import { ProviderConfig } from '../../../types/provider.js';
 import { logger } from '../../../middleware/logging.js';
+import { getErrorMessage } from '../../../utils/errorHandling.js';
 
 export class IMDbProvider extends BaseProvider {
   private imdbClient: IMDbClient;
@@ -221,10 +222,10 @@ export class IMDbProvider extends BaseProvider {
 
       logger.info(`IMDb search for "${query}" returned ${results.length} results`);
       return results;
-    } catch (error: any) {
+    } catch (error) {
       logger.error('IMDb search failed', {
         query,
-        error: error.message,
+        error: getErrorMessage(error),
       });
       throw error;
     }
@@ -251,7 +252,7 @@ export class IMDbProvider extends BaseProvider {
       }
 
       // Build metadata response using fields structure
-      const fields: Partial<Record<string, any>> = {
+      const fields: Partial<Record<string, unknown>> = {
         title: details.title,
       };
 
@@ -308,10 +309,10 @@ export class IMDbProvider extends BaseProvider {
 
       logger.info(`Retrieved IMDb metadata for ${imdbId}`, { title: details.title });
       return metadata;
-    } catch (error: any) {
+    } catch (error) {
       logger.error('IMDb metadata retrieval failed', {
         imdbId,
-        error: error.message,
+        error: getErrorMessage(error),
       });
       throw error;
     }
@@ -336,11 +337,11 @@ export class IMDbProvider extends BaseProvider {
         success: true,
         message: 'IMDb is accessible (WARNING: Web scraping violates IMDb ToS)',
       };
-    } catch (error: any) {
+    } catch (error) {
       return {
         success: false,
-        message: `IMDb access failed: ${error.message}`,
-        error: error.message,
+        message: `IMDb access failed: ${getErrorMessage(error)}`,
+        error: getErrorMessage(error),
       };
     }
   }

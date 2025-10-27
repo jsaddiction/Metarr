@@ -6,6 +6,7 @@
 import { TMDBClient } from './tmdb/TMDBClient.js';
 import { ConfigManager } from '../../config/ConfigManager.js';
 import { logger } from '../../middleware/logging.js';
+import { getErrorMessage } from '../../utils/errorHandling.js';
 
 class TMDBService {
   private client: TMDBClient | null = null;
@@ -48,8 +49,8 @@ class TMDBService {
       } else {
         logger.info('TMDB provider initialized with user-provided API key');
       }
-    } catch (error: any) {
-      logger.error('Failed to initialize TMDB provider', { error: error.message });
+    } catch (error) {
+      logger.error('Failed to initialize TMDB provider', { error: getErrorMessage(error) });
       this.enabled = false;
     }
   }

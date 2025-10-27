@@ -20,6 +20,7 @@ import {
 } from '../../../types/providers/index.js';
 import { ProviderConfig } from '../../../types/provider.js';
 import { logger } from '../../../middleware/logging.js';
+import { getErrorMessage } from '../../../utils/errorHandling.js';
 
 export class TheAudioDBProvider extends BaseProvider {
   private audioDbClient: TheAudioDBClient;
@@ -188,11 +189,11 @@ export class TheAudioDBProvider extends BaseProvider {
       }
 
       return [];
-    } catch (error: any) {
+    } catch (error) {
       logger.error('TheAudioDB search failed', {
         query,
         entityType,
-        error: error.message,
+        error: getErrorMessage(error),
       });
       throw error;
     }
@@ -308,11 +309,11 @@ export class TheAudioDBProvider extends BaseProvider {
       });
 
       return candidates;
-    } catch (error: any) {
+    } catch (error) {
       logger.error('TheAudioDB asset retrieval failed', {
         providerResultId,
         entityType,
-        error: error.message,
+        error: getErrorMessage(error),
       });
       return [];
     }
@@ -329,11 +330,11 @@ export class TheAudioDBProvider extends BaseProvider {
         success: true,
         message: 'TheAudioDB API is accessible',
       };
-    } catch (error: any) {
+    } catch (error) {
       return {
         success: false,
-        message: `TheAudioDB access failed: ${error.message}`,
-        error: error.message,
+        message: `TheAudioDB access failed: ${getErrorMessage(error)}`,
+        error: getErrorMessage(error),
       };
     }
   }

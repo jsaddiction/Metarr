@@ -15,6 +15,8 @@ import {
 import { logger } from '../../../middleware/logging.js';
 import path from 'path';
 import { promises as fs } from 'fs';
+import { getErrorMessage } from '../../../utils/errorHandling.js';
+import { SqlParam } from '../../../types/database.js';
 
 export interface BackupAsset {
   id: number;
@@ -126,9 +128,9 @@ export class BackupService {
           if (backup) {
             backedUp.push(backup);
           }
-        } catch (error: any) {
+        } catch (error) {
           logger.error(`Failed to backup asset ${assetPath}`, {
-            error: error.message,
+            error: getErrorMessage(error),
           });
         }
       }
@@ -181,9 +183,9 @@ export class BackupService {
           }
         }
       }
-    } catch (error: any) {
+    } catch (error) {
       logger.warn(`Failed to scan directory for assets: ${directory}`, {
-        error: error.message,
+        error: getErrorMessage(error),
       });
     }
 
@@ -227,9 +229,9 @@ export class BackupService {
           width = dims.width;
           height = dims.height;
           phash = await computePerceptualHash(originalPath);
-        } catch (error: any) {
+        } catch (error) {
           logger.warn(`Failed to process image metadata: ${originalPath}`, {
-            error: error.message,
+            error: getErrorMessage(error),
           });
         }
       }
@@ -301,9 +303,9 @@ export class BackupService {
         restored: false,
         restoredAt: null,
       };
-    } catch (error: any) {
+    } catch (error) {
       logger.error(`Failed to backup asset: ${originalPath}`, {
-        error: error.message,
+        error: getErrorMessage(error),
       });
       return null;
     }
@@ -318,7 +320,7 @@ export class BackupService {
     episodeId?: number;
   }): Promise<BackupAsset[]> {
     const whereClauses: string[] = [];
-    const params: any[] = [];
+    const params: SqlParam[] = [];
 
     if (entity.movieId) {
       whereClauses.push('movie_id = ?');
@@ -377,9 +379,9 @@ export class BackupService {
       );
 
       logger.info(`Restored backup ${backupId}: ${asset.backupPath} → ${cachePath}`);
-    } catch (error: any) {
+    } catch (error) {
       logger.error(`Failed to restore backup ${backupId}`, {
-        error: error.message,
+        error: getErrorMessage(error),
       });
       throw error;
     }
@@ -413,9 +415,9 @@ export class BackupService {
         ]);
 
         deletedCount++;
-      } catch (error: any) {
+      } catch (error) {
         logger.warn(`Failed to delete backup ${backup.id}`, {
-          error: error.message,
+          error: getErrorMessage(error),
         });
       }
     }

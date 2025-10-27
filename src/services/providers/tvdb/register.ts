@@ -21,8 +21,8 @@ registry.registerProvider(
       providerName: 'tvdb',
       enabled: true,
       apiKey: '',
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      created_at: new Date(),
+      updated_at: new Date(),
     },
     {}
   ).getCapabilities()

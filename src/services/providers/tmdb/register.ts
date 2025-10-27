@@ -22,8 +22,8 @@ registry.registerProvider(
       providerName: 'tmdb',
       enabled: true,
       apiKey: '', // Temporary for capabilities only
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      created_at: new Date(),
+      updated_at: new Date(),
     },
     {}
   ).getCapabilities()

@@ -7,6 +7,7 @@
 
 import axios, { AxiosInstance } from 'axios';
 import { logger } from '../../../middleware/logging.js';
+import { getErrorMessage } from '../../../utils/errorHandling.js';
 
 export interface TheAudioDBArtist {
   idArtist: string;
@@ -86,12 +87,12 @@ export class TheAudioDBClient {
 
       const artists = response.data.artists || [];
       return artists;
-    } catch (error: any) {
+    } catch (error) {
       logger.error('TheAudioDB artist search failed', {
         artistName,
-        error: error.message,
+        error: getErrorMessage(error),
       });
-      throw new Error(`TheAudioDB artist search failed: ${error.message}`);
+      throw new Error(`TheAudioDB artist search failed: ${getErrorMessage(error)}`);
     }
   }
 
@@ -108,12 +109,12 @@ export class TheAudioDBClient {
 
       const artists = response.data.artists || [];
       return artists[0] || null;
-    } catch (error: any) {
+    } catch (error) {
       logger.error('TheAudioDB artist lookup by MBID failed', {
         mbid,
-        error: error.message,
+        error: getErrorMessage(error),
       });
-      throw new Error(`TheAudioDB artist lookup failed: ${error.message}`);
+      throw new Error(`TheAudioDB artist lookup failed: ${getErrorMessage(error)}`);
     }
   }
 
@@ -122,7 +123,7 @@ export class TheAudioDBClient {
    */
   async searchAlbum(artistName: string, albumName?: string): Promise<TheAudioDBAlbum[]> {
     try {
-      const params: any = { s: artistName };
+      const params: Record<string, unknown> = { s: artistName };
       if (albumName) {
         params.a = albumName;
       }
@@ -131,13 +132,13 @@ export class TheAudioDBClient {
 
       const albums = response.data.album || [];
       return albums;
-    } catch (error: any) {
+    } catch (error) {
       logger.error('TheAudioDB album search failed', {
         artistName,
         albumName,
-        error: error.message,
+        error: getErrorMessage(error),
       });
-      throw new Error(`TheAudioDB album search failed: ${error.message}`);
+      throw new Error(`TheAudioDB album search failed: ${getErrorMessage(error)}`);
     }
   }
 
@@ -154,12 +155,12 @@ export class TheAudioDBClient {
 
       const albums = response.data.album || [];
       return albums[0] || null;
-    } catch (error: any) {
+    } catch (error) {
       logger.error('TheAudioDB album lookup by MBID failed', {
         mbid,
-        error: error.message,
+        error: getErrorMessage(error),
       });
-      throw new Error(`TheAudioDB album lookup failed: ${error.message}`);
+      throw new Error(`TheAudioDB album lookup failed: ${getErrorMessage(error)}`);
     }
   }
 }

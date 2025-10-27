@@ -85,7 +85,7 @@ export class FanArtClient {
   /**
    * Handle API errors with retry logic
    */
-  private async handleError(error: any, endpoint: string, retriesLeft: number): Promise<any> {
+  private async handleError(error: unknown, endpoint: string, retriesLeft: number): Promise<any> {
     const axiosError = error as AxiosError<FanArtError>;
 
     logger.error('FanArt.tv API request failed', {
@@ -145,7 +145,7 @@ export class FanArtClient {
       return this.request(endpoint, retriesLeft - 1);
     }
 
-    throw new Error(`FanArt.tv network error: ${error.message}`);
+    throw new Error(`FanArt.tv network error: ${(error as { message?: string }).message}`);
   }
 
   // ============================================

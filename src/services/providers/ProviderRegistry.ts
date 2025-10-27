@@ -61,7 +61,7 @@ export class ProviderRegistry {
    * Create provider instance from configuration
    * Returns cached instance if available
    */
-  async createProvider(config: ProviderConfig, options?: any): Promise<BaseProvider> {
+  async createProvider(config: ProviderConfig, options?: unknown): Promise<BaseProvider> {
     // For default configs (id=0), use a special cache key to avoid confusion
     const cacheKey = config.id === 0
       ? `${config.providerName}_default`
@@ -85,7 +85,7 @@ export class ProviderRegistry {
 
     // Create instance of concrete provider class
     // ProviderClass is guaranteed to be constructable (not abstract) via ProviderConstructor type
-    const instance = new ProviderClass(config, options);
+    const instance = new ProviderClass(config, options as ProviderOptions | undefined);
     this.instances.set(cacheKey, instance);
 
     // Cache capabilities if not already cached

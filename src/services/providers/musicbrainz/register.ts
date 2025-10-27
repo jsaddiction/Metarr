@@ -21,8 +21,8 @@ registry.registerProvider(
       id: 0,
       providerName: 'musicbrainz',
       enabled: true,
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      created_at: new Date(),
+      updated_at: new Date(),
     },
     {
       contact: 'https://github.com/metarr',
