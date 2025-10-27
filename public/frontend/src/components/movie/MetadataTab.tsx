@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faExternalLinkAlt, faExclamationTriangle, faChevronDown, faChevronUp } from '@fortawesome/free-solid-svg-icons';
 import { useMovie, useToggleLockField } from '../../hooks/useMovies';
@@ -7,6 +7,7 @@ import { GridField } from './GridField';
 import { TextAreaField } from './TextAreaField';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
+import { cleanMovieTitle, getFolderNameFromPath } from '@/utils/titleCleaning';
 
 interface MetadataTabProps {
   movieId: number;
@@ -51,12 +52,19 @@ interface MovieMetadata {
 }
 
 interface SearchResult {
-  tmdbId: number;
+  providerId: string;
+  providerResultId: string;
+  externalIds?: {
+    imdb?: string;
+    tmdb?: number;
+    tvdb?: number;
+  };
   title: string;
-  year?: number;
-  plot?: string;
+  originalTitle?: string;
+  releaseDate?: string | Date;
+  overview?: string;
   posterUrl?: string;
-  imdbId?: string;
+  confidence: number;
 }
 
 export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
@@ -76,6 +84,8 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [searching, setSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [hasAutoSearched, setHasAutoSearched] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Update local state when movie data changes (from TanStack Query cache)
   useEffect(() => {
@@ -99,6 +109,104 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
       setOriginalMetadata(structuredClone(normalizedData));
     }
   }, [movieData]);
+
+  // Auto-search on load for unidentified movies
+  useEffect(() => {
+    if (movieData?.identification_status === 'unidentified' && !hasAutoSearched) {
+      const performAutoSearch = async () => {
+        setSearching(true);
+        setHasAutoSearched(true);
+
+        try {
+          let query = '';
+          let results: SearchResult[] = [];
+
+          // Helper function to perform a single search
+          const performSearch = async (searchQuery: string): Promise<SearchResult[]> => {
+            const response = await fetch(`/api/movies/${movieId}/search-tmdb`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ query: searchQuery, year: movieData.year }),
+            });
+
+            if (!response.ok) {
+              const error = await response.json();
+              throw new Error(error.error || 'Failed to search TMDB');
+            }
+
+            const data = await response.json();
+            return data.results || [];
+          };
+
+          // Collect all possible search queries (NFO title, filename, folder name)
+          const searchQueries: string[] = [];
+
+          // Source 1: Title from database
+          // If NFO was parsed with <title>, this is the NFO title (BEST)
+          // Otherwise, this is the main video filename without extension (from backend)
+          if (movieData.title && movieData.title !== 'Unknown') {
+            const cleanedTitle = cleanMovieTitle(movieData.title);
+            if (cleanedTitle) {
+              searchQueries.push(cleanedTitle);
+            }
+          }
+
+          // Source 2: Folder name from file_path
+          // This is the directory name like "The Matrix (1999)"
+          if (movieData.file_path) {
+            const folderName = getFolderNameFromPath(movieData.file_path);
+            const cleanedFolder = cleanMovieTitle(folderName);
+            if (cleanedFolder && !searchQueries.includes(cleanedFolder)) {
+              searchQueries.push(cleanedFolder);
+            }
+          }
+
+          // Strategy: Try first query, if 0 results try second query
+          // This covers all 3 sources (NFO, filename, folder) with only 2 API calls max
+          if (searchQueries.length > 0) {
+            // First search attempt
+            query = searchQueries[0];
+            results = await performSearch(query);
+
+            // If no results and we have a second option, try it
+            if (results.length === 0 && searchQueries.length > 1) {
+              query = searchQueries[1];
+              results = await performSearch(query);
+            }
+          }
+
+          // Set final state
+          setSearchQuery(query);
+          setSearchResults(results);
+
+          // If still no results, focus the input for manual entry
+          if (results.length === 0) {
+            setSearchQuery(''); // Clear the field
+            setTimeout(() => {
+              searchInputRef.current?.focus();
+            }, 100);
+
+            toast.info('No results found', {
+              description: 'Please enter the movie title manually',
+            });
+          }
+        } catch (error: any) {
+          console.error('Auto-search failed:', error);
+          toast.error('Auto-search failed', {
+            description: error.message,
+          });
+          // Focus input on error too
+          setTimeout(() => {
+            searchInputRef.current?.focus();
+          }, 100);
+        } finally {
+          setSearching(false);
+        }
+      };
+
+      performAutoSearch();
+    }
+  }, [movieData, movieId, hasAutoSearched]);
 
   // Deep comparison to detect actual changes
   const hasChanges = React.useMemo(() => {
@@ -214,14 +322,17 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
 
   const handleIdentify = async (result: SearchResult) => {
     try {
+      // Extract year from releaseDate if available
+      const year = result.releaseDate ? new Date(result.releaseDate).getFullYear() : undefined;
+
       const response = await fetch(`/api/movies/${movieId}/identify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          tmdbId: result.tmdbId,
+          tmdbId: result.externalIds?.tmdb,
           title: result.title,
-          year: result.year,
-          imdbId: result.imdbId,
+          year,
+          imdbId: result.externalIds?.imdb,
         }),
       });
 
@@ -321,6 +432,141 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
     );
   };
 
+  // If movie is unidentified, show only the search UI
+  if (movieData?.identification_status === 'unidentified') {
+    return (
+      <div className="space-y-3">
+        <div className="border border-neutral-700 bg-neutral-800 rounded-lg overflow-hidden">
+          <div className="p-6">
+            <div className="flex items-start gap-4 mb-6">
+              <FontAwesomeIcon
+                icon={faExclamationTriangle}
+                className="text-yellow-500 text-2xl mt-1 flex-shrink-0"
+              />
+              <div className="flex-1 min-w-0">
+                <h3 className="text-xl font-semibold text-yellow-500 mb-2">Movie Unidentified</h3>
+                <p className="text-base text-neutral-300">
+                  Search TMDB to identify this movie and enable metadata enrichment.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              {/* Search Input */}
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyPress={handleSearchKeyPress}
+                  placeholder="Search title..."
+                  className="flex-1 h-10 px-4 py-2 text-base bg-neutral-900 border border-neutral-700 rounded-md text-white placeholder-neutral-500 focus:outline-none focus:border-primary-500"
+                  disabled={searching}
+                  ref={searchInputRef}
+                />
+                <button
+                  onClick={handleSearch}
+                  disabled={searching || !searchQuery.trim()}
+                  className="btn btn-primary px-6 h-10 text-base disabled:opacity-50"
+                >
+                  {searching ? 'Searching...' : 'Search TMDB'}
+                </button>
+              </div>
+
+              {/* Search Results */}
+              {searchResults.length > 0 && (
+                <div className="relative">
+                  {/* Results count header */}
+                  <div className="flex items-center justify-between px-4 py-2 bg-neutral-700 border border-neutral-700 border-b-0 rounded-t-md">
+                    <span className="text-sm text-neutral-400">
+                      {searchResults.length} result{searchResults.length !== 1 ? 's' : ''} found
+                    </span>
+                    <span className="text-xs text-neutral-500">
+                      Scroll for more
+                    </span>
+                  </div>
+
+                  {/* Scrollable results area with visible scrollbar */}
+                  <div
+                    className="scrollable-results max-h-[60vh] overflow-y-scroll border border-neutral-700 rounded-b-md bg-neutral-800"
+                    style={{
+                      scrollbarWidth: 'thin',
+                      scrollbarColor: '#6b7280 #1f2937'
+                    }}
+                  >
+                      {searchResults.map((result) => {
+                        const year = result.releaseDate ? new Date(result.releaseDate).getFullYear() : undefined;
+                        const tmdbId = result.externalIds?.tmdb;
+                        const tmdbUrl = tmdbId ? `https://www.themoviedb.org/movie/${tmdbId}` : null;
+
+                        return (
+                          <div
+                            key={`${result.providerId}-${result.providerResultId}`}
+                            className="flex items-center gap-4 p-3 hover:bg-neutral-700 transition-colors border-b border-neutral-700 last:border-b-0"
+                          >
+                            {/* Poster Thumbnail - Left */}
+                            {result.posterUrl ? (
+                              <img
+                                src={result.posterUrl}
+                                alt={result.title}
+                                className="w-20 h-28 object-cover rounded flex-shrink-0"
+                              />
+                            ) : (
+                              <div className="w-20 h-28 bg-neutral-800 rounded flex items-center justify-center flex-shrink-0">
+                                <FontAwesomeIcon icon={faExternalLinkAlt} className="text-neutral-600" />
+                              </div>
+                            )}
+
+                            {/* Movie Info - Middle */}
+                            <div className="flex-1 min-w-0 flex flex-col justify-center">
+                              {/* Title and Year - Top */}
+                              <div className="mb-2">
+                                {tmdbUrl ? (
+                                  <a
+                                    href={tmdbUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="font-semibold text-white text-base hover:text-primary-400 transition-colors inline-flex items-center gap-1.5"
+                                  >
+                                    {result.title} {year && `(${year})`}
+                                    <FontAwesomeIcon icon={faExternalLinkAlt} className="text-xs text-neutral-500" />
+                                  </a>
+                                ) : (
+                                  <h4 className="font-semibold text-white text-base">
+                                    {result.title} {year && `(${year})`}
+                                  </h4>
+                                )}
+                              </div>
+
+                              {/* Overview - Bottom */}
+                              {result.overview && (
+                                <p className="text-sm text-neutral-400 line-clamp-2">
+                                  {result.overview}
+                                </p>
+                              )}
+                            </div>
+
+                            {/* Select Button - Right */}
+                            <button
+                              onClick={() => handleIdentify(result)}
+                              className="btn btn-secondary px-5 py-2 text-sm flex-shrink-0 self-center"
+                            >
+                              Select
+                            </button>
+                          </div>
+                        );
+                      })}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Show full metadata editor when identified
   return (
     <>
       {/* Portal-based save bar - renders outside component tree */}
@@ -332,106 +578,6 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
       />
 
       <div className="space-y-3">
-        {/* Identification Banner - Only show if unidentified */}
-        {movieData?.identification_status === 'unidentified' && (
-          <div className="border border-yellow-600/50 bg-yellow-500/10 rounded-lg overflow-hidden">
-            <div className="p-4">
-              <div className="flex items-start gap-3">
-                <FontAwesomeIcon
-                  icon={faExclamationTriangle}
-                  className="text-yellow-500 text-xl mt-0.5 flex-shrink-0"
-                />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between mb-2">
-                    <h3 className="text-lg font-semibold text-yellow-500">Movie Unidentified</h3>
-                    <button
-                      onClick={() => setBannerExpanded(!bannerExpanded)}
-                      className="text-yellow-500 hover:text-yellow-400 transition-colors"
-                    >
-                      <FontAwesomeIcon icon={bannerExpanded ? faChevronUp : faChevronDown} />
-                    </button>
-                  </div>
-                  <p className="text-sm text-neutral-300 mb-3">
-                    Search TMDB to identify this movie and enable metadata enrichment.
-                  </p>
-
-                  {bannerExpanded && (
-                    <div className="space-y-3">
-                      {/* Search Input */}
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          value={searchQuery}
-                          onChange={(e) => setSearchQuery(e.target.value)}
-                          onKeyPress={handleSearchKeyPress}
-                          placeholder="Search title..."
-                          className="flex-1 h-9 px-3 py-2 text-sm bg-neutral-900 border border-neutral-700 rounded-md text-white placeholder-neutral-500 focus:outline-none focus:border-primary-500"
-                          disabled={searching}
-                        />
-                        <button
-                          onClick={handleSearch}
-                          disabled={searching || !searchQuery.trim()}
-                          className="btn btn-primary px-4 h-9 text-sm disabled:opacity-50"
-                        >
-                          {searching ? 'Searching...' : 'Search TMDB'}
-                        </button>
-                      </div>
-
-                      {/* Search Results */}
-                      {searchResults.length > 0 && (
-                        <div className="space-y-2 max-h-64 overflow-y-auto border border-neutral-700 rounded-md bg-neutral-900/50">
-                          {searchResults.map((result) => (
-                            <div
-                              key={result.tmdbId}
-                              className="flex items-start gap-3 p-3 hover:bg-neutral-800/50 transition-colors border-b border-neutral-700 last:border-b-0"
-                            >
-                              {/* Poster Thumbnail */}
-                              {result.posterUrl ? (
-                                <img
-                                  src={result.posterUrl}
-                                  alt={result.title}
-                                  className="w-12 h-18 object-cover rounded flex-shrink-0"
-                                />
-                              ) : (
-                                <div className="w-12 h-18 bg-neutral-800 rounded flex items-center justify-center flex-shrink-0">
-                                  <FontAwesomeIcon icon={faExternalLinkAlt} className="text-neutral-600" />
-                                </div>
-                              )}
-
-                              {/* Movie Info */}
-                              <div className="flex-1 min-w-0">
-                                <h4 className="font-semibold text-white">
-                                  {result.title} {result.year && `(${result.year})`}
-                                </h4>
-                                {result.plot && (
-                                  <p className="text-sm text-neutral-400 line-clamp-1 mt-1">
-                                    {result.plot}
-                                  </p>
-                                )}
-                                <p className="text-xs text-neutral-500 mt-1">
-                                  TMDB ID: {result.tmdbId}
-                                </p>
-                              </div>
-
-                              {/* Select Button */}
-                              <button
-                                onClick={() => handleIdentify(result)}
-                                className="btn btn-secondary btn-sm px-3 h-8 text-sm flex-shrink-0"
-                              >
-                                Select
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
       {/* Grid layout */}
       <div className="card">
         <div className="card-body p-3 space-y-2.5">

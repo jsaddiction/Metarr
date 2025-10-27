@@ -164,13 +164,15 @@ export class TMDBProvider extends BaseProvider {
         return findResult.movie_results.slice(0, limit).map((movie) => ({
           providerId: 'tmdb',
           providerResultId: movie.id.toString(),
-          entityType: 'movie',
+          externalIds: {
+            tmdb: movie.id,
+          },
           title: movie.title,
           originalTitle: movie.original_title,
-          year: movie.release_date ? new Date(movie.release_date).getFullYear() : undefined,
-          plot: movie.overview,
-          confidence: 100, // Exact match via IMDB ID
-          matchedBy: 'imdb_id',
+          releaseDate: movie.release_date ? new Date(movie.release_date) : undefined,
+          overview: movie.overview,
+          posterUrl: movie.poster_path ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` : undefined,
+          confidence: 1.0, // Exact match via IMDB ID
         }));
       }
 
@@ -184,13 +186,15 @@ export class TMDBProvider extends BaseProvider {
         return searchResult.results.slice(0, limit).map((movie) => ({
           providerId: 'tmdb',
           providerResultId: movie.id.toString(),
-          entityType: 'movie',
+          externalIds: {
+            tmdb: movie.id,
+          },
           title: movie.title,
           originalTitle: movie.original_title,
-          year: movie.release_date ? new Date(movie.release_date).getFullYear() : undefined,
-          plot: movie.overview,
+          releaseDate: movie.release_date ? new Date(movie.release_date) : undefined,
+          overview: movie.overview,
+          posterUrl: movie.poster_path ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` : undefined,
           confidence: this.calculateSearchConfidence(movie, query, year),
-          matchedBy: 'title',
         }));
       }
 

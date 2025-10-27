@@ -68,6 +68,9 @@ export const MovieEdit: React.FC = () => {
     );
   }
 
+  // Check if movie is unidentified
+  const isUnidentified = movie.identification_status === 'unidentified';
+
   return (
     <div className="content-spacing">
       {/* Header */}
@@ -80,50 +83,56 @@ export const MovieEdit: React.FC = () => {
           <FontAwesomeIcon icon={faArrowLeft} />
         </button>
         <h1 className="text-2xl font-bold text-white ml-4">
-          Edit Movie: {movie.title} {movie.year ? `(${movie.year})` : ''}
+          {isUnidentified ? 'Identify Movie: ' : 'Edit Movie: '}
+          {movie.title} {movie.year ? `(${movie.year})` : ''}
         </h1>
       </div>
 
-      {/* Animated Tabs */}
-      <AnimatedTabs
-        value={activeTab}
-        onValueChange={(value) => setActiveTab(value as TabType)}
-        tabs={[
-          { value: 'metadata', label: 'Metadata' },
-          { value: 'images', label: 'Images' },
-          { value: 'cast', label: 'Cast' },
-          { value: 'extras', label: 'Extras' },
-          {
-            value: 'recycle-bin',
-            label: 'Recycle Bin',
-            badge: (recycleBinFiles && recycleBinFiles.length > 0) ? (
-              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-warning/20 text-warning">
-                {recycleBinFiles.length}
-              </span>
-            ) : undefined,
-          },
-        ]}
-      >
-        <AnimatedTabsContent value="metadata">
-          {id && <MetadataTab movieId={parseInt(id)} />}
-        </AnimatedTabsContent>
+      {/* Show only identification UI when unidentified */}
+      {isUnidentified ? (
+        id && <MetadataTab movieId={parseInt(id)} />
+      ) : (
+        /* Show full tab interface when identified */
+        <AnimatedTabs
+          value={activeTab}
+          onValueChange={(value) => setActiveTab(value as TabType)}
+          tabs={[
+            { value: 'metadata', label: 'Metadata' },
+            { value: 'images', label: 'Images' },
+            { value: 'cast', label: 'Cast' },
+            { value: 'extras', label: 'Extras' },
+            {
+              value: 'recycle-bin',
+              label: 'Recycle Bin',
+              badge: (recycleBinFiles && recycleBinFiles.length > 0) ? (
+                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-warning/20 text-warning">
+                  {recycleBinFiles.length}
+                </span>
+              ) : undefined,
+            },
+          ]}
+        >
+          <AnimatedTabsContent value="metadata">
+            {id && <MetadataTab movieId={parseInt(id)} />}
+          </AnimatedTabsContent>
 
-        <AnimatedTabsContent value="images">
-          {id && <ImagesTab movieId={parseInt(id)} movieTitle={movie?.title} />}
-        </AnimatedTabsContent>
+          <AnimatedTabsContent value="images">
+            {id && <ImagesTab movieId={parseInt(id)} movieTitle={movie?.title} />}
+          </AnimatedTabsContent>
 
-        <AnimatedTabsContent value="cast">
-          {id && <CastTab movieId={parseInt(id)} />}
-        </AnimatedTabsContent>
+          <AnimatedTabsContent value="cast">
+            {id && <CastTab movieId={parseInt(id)} />}
+          </AnimatedTabsContent>
 
-        <AnimatedTabsContent value="extras">
-          {id && <ExtrasTab movieId={parseInt(id)} />}
-        </AnimatedTabsContent>
+          <AnimatedTabsContent value="extras">
+            {id && <ExtrasTab movieId={parseInt(id)} />}
+          </AnimatedTabsContent>
 
-        <AnimatedTabsContent value="recycle-bin">
-          {id && <RecycleBinTab movieId={parseInt(id)} />}
-        </AnimatedTabsContent>
-      </AnimatedTabs>
+          <AnimatedTabsContent value="recycle-bin">
+            {id && <RecycleBinTab movieId={parseInt(id)} />}
+          </AnimatedTabsContent>
+        </AnimatedTabs>
+      )}
     </div>
   );
 };

@@ -872,3 +872,38 @@
 .animate-fadeOut {
   animation: fadeOut 150ms ease-in;
 }
+
+/* Custom Scrollbar Styles */
+/* Webkit browsers (Chrome, Safari, Edge) */
+.scrollable-results::-webkit-scrollbar {
+  width: 16px;
+}
+
+.scrollable-results::-webkit-scrollbar-track {
+  background: #1f2937; /* neutral-800 */
+  border-radius: 0 0 0.375rem 0; /* rounded-b-md on right side */
+}
+
+.scrollable-results::-webkit-scrollbar-thumb {
+  background: #6b7280; /* neutral-500 */
+  border-radius: 6px;
+  border: 2px solid #1f2937; /* Creates padding effect */
+}
+
+.scrollable-results::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af; /* neutral-400 - lighter on hover */
+}
+
+/* Light mode scrollbar */
+.light .scrollable-results::-webkit-scrollbar-track {
+  background: #f3f4f6; /* neutral-100 */
+}
+
+.light .scrollable-results::-webkit-scrollbar-thumb {
+  background: #9ca3af; /* neutral-400 */
+  border-color: #f3f4f6;
+}
+
+.light .scrollable-results::-webkit-scrollbar-thumb:hover {
+  background: #6b7280; /* neutral-500 */
+}

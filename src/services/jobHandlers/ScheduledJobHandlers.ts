@@ -86,25 +86,38 @@ export class ScheduledJobHandlers {
           // Look for media files in directory
           const files = await fs.readdir(fullPath);
           const videoExtensions = ['.mkv', '.mp4', '.avi', '.mov', '.m4v'];
-          const hasVideo = files.some(f => videoExtensions.includes(path.extname(f).toLowerCase()));
+          const videoFiles = files.filter(f => videoExtensions.includes(path.extname(f).toLowerCase()));
 
-          if (!hasVideo) {
+          if (videoFiles.length === 0) {
             logger.debug(`No video files found in ${fullPath}, skipping`);
             continue;
           }
 
           // For movies: create entity and schedule discovery
           if (libraryType === 'movie') {
-            // Parse directory name for title and year
-            const match = dir.name.match(/^(.+?)\s*\((\d{4})\)$/);
-            const title = match ? match[1].trim() : dir.name;
-            const year = match ? parseInt(match[2]) : null;
+            // Use the main video file name as the initial title
+            // Sort to get the largest file (main movie file, not extras/samples)
+            const videoFileStats = await Promise.all(
+              videoFiles.map(async (file) => ({
+                name: file,
+                size: (await fs.stat(path.join(fullPath, file))).size
+              }))
+            );
+            videoFileStats.sort((a, b) => b.size - a.size);
+            const mainVideoFile = videoFileStats[0].name;
 
-            // Insert movie into database
+            // Remove extension and use as title
+            const titleWithoutExt = path.basename(mainVideoFile, path.extname(mainVideoFile));
+
+            // Try to extract year from filename
+            const yearMatch = titleWithoutExt.match(/[\(\[]?(\d{4})[\)\]]?/);
+            const year = yearMatch ? parseInt(yearMatch[1]) : null;
+
+            // Insert movie into database with filename as title
             const result = await this.db.execute(
               `INSERT INTO movies (title, year, file_path, library_id, state)
                VALUES (?, ?, ?, ?, 'discovered')`,
-              [title, year, fullPath, libraryId]
+              [titleWithoutExt, year, fullPath, libraryId]
             );
 
             const movieId = result.insertId!;

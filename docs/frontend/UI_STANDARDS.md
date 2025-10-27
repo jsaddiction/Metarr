@@ -178,6 +178,52 @@ import { AnimatedTabs, AnimatedTabsContent } from '@/components/ui/AnimatedTabs'
 </span>
 ```
 
+### Warning Boxes / Alert Panels
+**Standard**: Neutral background with colored icon/title only (no tinted backgrounds)
+
+```tsx
+// Using shadcn/ui Alert component
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faExclamationTriangle } from '@fortawesome/free-solid-svg-icons';
+
+<Alert variant="warning">
+  <FontAwesomeIcon icon={faExclamationTriangle} />
+  <AlertTitle>Warning Title</AlertTitle>
+  <AlertDescription>
+    Description of the warning condition.
+  </AlertDescription>
+</Alert>
+
+// Manual implementation
+<div className="border border-neutral-700 bg-neutral-800 rounded-lg p-6">
+  <div className="flex items-start gap-4">
+    <FontAwesomeIcon
+      icon={faExclamationTriangle}
+      className="text-yellow-500 text-2xl flex-shrink-0"
+    />
+    <div>
+      <h3 className="text-xl font-semibold text-yellow-500 mb-2">
+        Warning Title
+      </h3>
+      <p className="text-base text-neutral-300">
+        Warning description text.
+      </p>
+    </div>
+  </div>
+</div>
+```
+
+**Key Principles**:
+- ✅ Background: `bg-neutral-800` (dark mode) / `bg-neutral-50` (light mode)
+- ✅ Border: `border-neutral-700` (neutral, not warning color)
+- ✅ Icon: `text-yellow-500` (orange warning color)
+- ✅ Title: `text-yellow-500` (matches icon)
+- ✅ Body text: `text-neutral-300` (standard text color)
+- ❌ Avoid: Tinted backgrounds like `bg-yellow-500/10` or `bg-orange-50`
+
+**Rationale**: Colored backgrounds can be visually overwhelming, especially in light mode. Using neutral backgrounds with colored text/icons provides sufficient warning indication without dominating the interface.
+
 ---
 
 ## Responsive Design
