@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { DatabaseManager } from '../database/DatabaseManager.js';
 import { logger } from '../middleware/logging.js';
+import { SqlParam } from '../types/database.js';
 
 /**
  * Webhook Events Controller
@@ -32,7 +33,7 @@ export class WebhookEventsController {
 
       // Build WHERE clause
       const whereClauses: string[] = [];
-      const params: any[] = [];
+      const params: SqlParam[] = [];
 
       if (source) {
         whereClauses.push('source = ?');
@@ -73,16 +74,28 @@ export class WebhookEventsController {
       );
 
       // Parse JSON payload for response
-      const parsedEvents = events.map((event: any) => ({
-        id: event.id,
-        source: event.source,
-        eventType: event.event_type,
-        payload: JSON.parse(event.payload),
-        processed: Boolean(event.processed),
-        jobId: event.job_id,
-        createdAt: event.created_at,
-        processedAt: event.processed_at,
-      }));
+      const parsedEvents = events.map((event: unknown) => {
+        const e = event as {
+          id: number;
+          source: string;
+          event_type: string;
+          payload: string;
+          processed: number;
+          job_id: number | null;
+          created_at: string;
+          processed_at: string | null;
+        };
+        return {
+          id: e.id,
+          source: e.source,
+          eventType: e.event_type,
+          payload: JSON.parse(e.payload),
+          processed: Boolean(e.processed),
+          jobId: e.job_id,
+          created_at: e.created_at,
+          processedAt: e.processed_at,
+        };
+      });
 
       res.json({
         events: parsedEvents,
@@ -93,7 +106,7 @@ export class WebhookEventsController {
           hasMore: offset + limit < total,
         },
       });
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Error getting webhook events:', error);
       next(error);
     }
@@ -141,12 +154,12 @@ export class WebhookEventsController {
         payload: JSON.parse(event.payload),
         processed: Boolean(event.processed),
         jobId: event.job_id,
-        createdAt: event.created_at,
+        created_at: event.created_at,
         processedAt: event.processed_at,
       };
 
       res.json({ event: parsedEvent });
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Error getting webhook event:', error);
       next(error);
     }

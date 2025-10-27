@@ -6,6 +6,7 @@ import {
   UpdateMetadataFieldPriorityRequest
 } from '../types/provider.js';
 import { logger } from '../middleware/logging.js';
+import { getErrorMessage } from '../utils/errorHandling.js';
 
 /**
  * Priority Configuration Controller
@@ -23,7 +24,7 @@ export class PriorityConfigController {
     try {
       const presets = this.priorityConfigService.getAvailablePresets();
       res.json({ presets });
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Error getting available presets:', error);
       res.status(500).json({ error: 'Failed to retrieve presets' });
     }
@@ -37,7 +38,7 @@ export class PriorityConfigController {
     try {
       const activePreset = await this.priorityConfigService.getActivePreset();
       res.json({ activePreset });
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Error getting active preset:', error);
       res.status(500).json({ error: 'Failed to retrieve active preset' });
     }
@@ -62,9 +63,9 @@ export class PriorityConfigController {
         success: true,
         message: `Successfully applied preset: ${data.presetId}`
       });
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Error applying preset:', error);
-      res.status(500).json({ error: error.message || 'Failed to apply preset' });
+      res.status(500).json({ error: getErrorMessage(error) || 'Failed to apply preset' });
     }
   };
 
@@ -76,7 +77,7 @@ export class PriorityConfigController {
     try {
       const priorities = await this.priorityConfigService.getAllAssetTypePriorities();
       res.json({ priorities });
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Error getting asset type priorities:', error);
       res.status(500).json({ error: 'Failed to retrieve asset type priorities' });
     }
@@ -97,7 +98,7 @@ export class PriorityConfigController {
       }
 
       res.json({ priority });
-    } catch (error: any) {
+    } catch (error) {
       logger.error(`Error getting asset type priority for ${req.params.type}:`, error);
       res.status(500).json({ error: 'Failed to retrieve asset type priority' });
     }
@@ -128,9 +129,9 @@ export class PriorityConfigController {
         success: true,
         priority: updated
       });
-    } catch (error: any) {
+    } catch (error) {
       logger.error(`Error updating asset type priority for ${req.params.type}:`, error);
-      res.status(500).json({ error: error.message || 'Failed to update asset type priority' });
+      res.status(500).json({ error: getErrorMessage(error) || 'Failed to update asset type priority' });
     }
   };
 
@@ -142,7 +143,7 @@ export class PriorityConfigController {
     try {
       const priorities = await this.priorityConfigService.getAllMetadataFieldPriorities();
       res.json({ priorities });
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Error getting metadata field priorities:', error);
       res.status(500).json({ error: 'Failed to retrieve metadata field priorities' });
     }
@@ -163,7 +164,7 @@ export class PriorityConfigController {
       }
 
       res.json({ priority });
-    } catch (error: any) {
+    } catch (error) {
       logger.error(`Error getting metadata field priority for ${req.params.field}:`, error);
       res.status(500).json({ error: 'Failed to retrieve metadata field priority' });
     }
@@ -194,9 +195,9 @@ export class PriorityConfigController {
         success: true,
         priority: updated
       });
-    } catch (error: any) {
+    } catch (error) {
       logger.error(`Error updating metadata field priority for ${req.params.field}:`, error);
-      res.status(500).json({ error: error.message || 'Failed to update metadata field priority' });
+      res.status(500).json({ error: getErrorMessage(error) || 'Failed to update metadata field priority' });
     }
   };
 }

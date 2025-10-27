@@ -26,6 +26,32 @@ export class MediaPlayerController {
   }
 
   /**
+   * GET /api/media-player-groups
+   * Get all media player groups
+   */
+  async getGroups(_req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const groups = await this.service.getAllGroups();
+      res.json(groups);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/media-player-groups/with-members
+   * Get all groups with their member players
+   */
+  async getGroupsWithMembers(_req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const groups = await this.service.getAllGroupsWithMembers();
+      res.json(groups);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * GET /api/media-players/:id
    * Get a media player by ID
    */
@@ -59,19 +85,20 @@ export class MediaPlayerController {
         name,
         type,
         host,
-        port,
+        httpPort,
         username,
         password,
         enabled,
         libraryGroup,
-        useWebsocket,
         libraryPaths,
         config,
+        groupName,
+        isSharedMysql,
       } = req.body;
 
       // Validation
-      if (!name || !type || !host || !port) {
-        res.status(400).json({ error: 'Missing required fields: name, type, host, port' });
+      if (!name || !type || !host) {
+        res.status(400).json({ error: 'Missing required fields: name, type, host' });
         return;
       }
 
@@ -84,14 +111,15 @@ export class MediaPlayerController {
         name,
         type,
         host,
-        port: parseInt(port),
+        http_port: httpPort ? parseInt(httpPort) : 8080,
         username,
         password,
         enabled: enabled !== false,
         libraryGroup,
-        useWebsocket: useWebsocket !== false,
         libraryPaths,
         config,
+        groupName,
+        isSharedMysql,
       });
 
       logger.info(`Created media player: ${player.name} (${player.id})`);
@@ -123,12 +151,11 @@ export class MediaPlayerController {
         name,
         type,
         host,
-        port,
+        httpPort,
         username,
         password,
         enabled,
         libraryGroup,
-        useWebsocket,
         libraryPaths,
         config,
       } = req.body;
@@ -138,12 +165,11 @@ export class MediaPlayerController {
         name,
         type,
         host,
-        ...(port !== undefined && { port: parseInt(port) }),
+        ...(httpPort !== undefined && { http_port: parseInt(httpPort) }),
         username,
         password,
         enabled,
         libraryGroup,
-        useWebsocket,
         libraryPaths,
         config,
       });
@@ -206,10 +232,10 @@ export class MediaPlayerController {
    */
   async testConnectionUnsaved(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const { host, port, username, password, useWebsocket, type } = req.body;
+      const { host, httpPort, username, password, type } = req.body;
 
-      if (!host || !port) {
-        res.status(400).json({ error: 'Missing required fields: host, port' });
+      if (!host) {
+        res.status(400).json({ error: 'Missing required field: host' });
         return;
       }
 
@@ -219,16 +245,15 @@ export class MediaPlayerController {
         name: 'Test',
         type: type || 'kodi',
         host,
-        port: parseInt(port),
+        http_port: httpPort ? parseInt(httpPort) : 8080,
         username,
         password,
         enabled: true,
-        useWebsocket: useWebsocket !== false,
-        libraryPaths: [],
-        connectionStatus: 'disconnected' as const,
+        library_paths: [],
+        connection_status: 'disconnected' as const,
         config: {},
-        createdAt: new Date(),
-        updatedAt: new Date(),
+        created_at: new Date(),
+        updated_at: new Date(),
       };
 
       const result = await this.connectionManager.testConnection(tempPlayer);
@@ -272,6 +297,41 @@ export class MediaPlayerController {
       await this.service.disconnect(id);
       res.json({ success: true, message: 'Disconnection initiated' });
     } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/media-players/activity
+   * Get all player activity states
+   */
+  async getAllActivityStates(_req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const states = this.connectionManager.getAllActivityStates();
+      res.json(states);
+    } catch (error) {
+      logger.error('Failed to get player activity states', { error });
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/media-players/:id/activity
+   * Get activity state for a specific player
+   */
+  async getActivityState(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const playerId = parseInt(req.params.id, 10);
+      const state = this.connectionManager.getActivityState(playerId);
+
+      if (!state) {
+        res.status(404).json({ error: 'Player not found or no activity state' });
+        return;
+      }
+
+      res.json(state);
+    } catch (error) {
+      logger.error('Failed to get player activity state', { error });
       next(error);
     }
   }

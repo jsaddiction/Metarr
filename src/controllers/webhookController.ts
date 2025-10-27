@@ -37,7 +37,7 @@ export class WebhookController {
   private async logWebhookEvent(
     source: 'radarr' | 'sonarr' | 'lidarr',
     eventType: string,
-    payload: any,
+    payload: unknown,
     jobId?: number
   ): Promise<number> {
     const conn = this.db.getConnection();

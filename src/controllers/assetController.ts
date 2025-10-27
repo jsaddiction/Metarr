@@ -3,6 +3,7 @@ import { AssetSelectionService } from '../services/assetSelectionService.js';
 import { PublishingService } from '../services/publishingService.js';
 import { DatabaseConnection } from '../types/database.js';
 import { logger } from '../middleware/logging.js';
+import { getErrorMessage } from '../utils/errorHandling.js';
 
 /**
  * Asset Controller
@@ -41,9 +42,9 @@ export class AssetController {
       );
 
       res.json({ candidates });
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Error getting asset candidates:', error);
-      res.status(500).json({ error: error.message });
+      res.status(500).json({ error: getErrorMessage(error) });
     }
   };
 
@@ -61,9 +62,9 @@ export class AssetController {
       );
 
       res.json({ selected });
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Error getting selected assets:', error);
-      res.status(500).json({ error: error.message });
+      res.status(500).json({ error: getErrorMessage(error) });
     }
   };
 
@@ -91,9 +92,9 @@ export class AssetController {
       } else {
         res.status(400).json({ success: false, reason: result.reason });
       }
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Error selecting asset manually:', error);
-      res.status(500).json({ error: error.message });
+      res.status(500).json({ error: getErrorMessage(error) });
     }
   };
 
@@ -124,9 +125,9 @@ export class AssetController {
       } else {
         res.status(400).json({ success: false, reason: result.reason });
       }
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Error selecting asset (YOLO):', error);
-      res.status(500).json({ error: error.message });
+      res.status(500).json({ error: getErrorMessage(error) });
     }
   };
 
@@ -157,9 +158,9 @@ export class AssetController {
       } else {
         res.status(400).json({ success: false, reason: result.reason });
       }
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Error selecting asset (Hybrid):', error);
-      res.status(500).json({ error: error.message });
+      res.status(500).json({ error: getErrorMessage(error) });
     }
   };
 
@@ -187,9 +188,9 @@ export class AssetController {
       } else {
         res.status(400).json({ success: false, reason: result.reason });
       }
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Error approving hybrid selection:', error);
-      res.status(500).json({ error: error.message });
+      res.status(500).json({ error: getErrorMessage(error) });
     }
   };
 
@@ -213,9 +214,9 @@ export class AssetController {
       );
 
       res.json({ success });
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Error rejecting hybrid selection:', error);
-      res.status(500).json({ error: error.message });
+      res.status(500).json({ error: getErrorMessage(error) });
     }
   };
 
@@ -240,9 +241,9 @@ export class AssetController {
       );
 
       res.json({ success });
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Error rejecting asset:', error);
-      res.status(500).json({ error: error.message });
+      res.status(500).json({ error: getErrorMessage(error) });
     }
   };
 
@@ -267,9 +268,9 @@ export class AssetController {
       );
 
       res.json({ success });
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Error unlocking asset type:', error);
-      res.status(500).json({ error: error.message });
+      res.status(500).json({ error: getErrorMessage(error) });
     }
   };
 
@@ -295,9 +296,9 @@ export class AssetController {
       });
 
       res.json(result);
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Error publishing entity:', error);
-      res.status(500).json({ error: error.message });
+      res.status(500).json({ error: getErrorMessage(error) });
     }
   };
 

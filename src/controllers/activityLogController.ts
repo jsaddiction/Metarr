@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { DatabaseManager } from '../database/DatabaseManager.js';
+import { SqlParam } from '../types/database.js';
 import { logger } from '../middleware/logging.js';
 
 /**
@@ -34,7 +35,7 @@ export class ActivityLogController {
 
       // Build WHERE clause
       const whereClauses: string[] = [];
-      const params: any[] = [];
+      const params: SqlParam[] = [];
 
       if (source) {
         whereClauses.push('source = ?');
@@ -78,15 +79,26 @@ export class ActivityLogController {
       );
 
       // Parse JSON metadata for response
-      const parsedActivities = activities.map((activity: any) => ({
-        id: activity.id,
-        eventType: activity.event_type,
-        source: activity.source,
-        description: activity.description,
-        metadata: activity.metadata ? JSON.parse(activity.metadata) : null,
-        severity: activity.severity,
-        createdAt: activity.created_at,
-      }));
+      const parsedActivities = activities.map((activity: unknown) => {
+        const a = activity as {
+          id: number;
+          event_type: string;
+          source: string;
+          description: string;
+          metadata: string | null;
+          severity: string;
+          created_at: string;
+        };
+        return {
+          id: a.id,
+          eventType: a.event_type,
+          source: a.source,
+          description: a.description,
+          metadata: a.metadata ? JSON.parse(a.metadata) : null,
+          severity: a.severity,
+          created_at: a.created_at,
+        };
+      });
 
       res.json({
         activities: parsedActivities,
@@ -97,7 +109,7 @@ export class ActivityLogController {
           hasMore: offset + limit < total,
         },
       });
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Error getting activity log:', error);
       next(error);
     }
@@ -144,11 +156,11 @@ export class ActivityLogController {
         description: activity.description,
         metadata: activity.metadata ? JSON.parse(activity.metadata) : null,
         severity: activity.severity,
-        createdAt: activity.created_at,
+        created_at: activity.created_at,
       };
 
       res.json({ activity: parsedActivity });
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Error getting activity log entry:', error);
       next(error);
     }

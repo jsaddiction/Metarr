@@ -11,6 +11,7 @@ import { TheAudioDBClient } from '../services/providers/theaudiodb/TheAudioDBCli
 import { logger } from '../middleware/logging.js';
 import { tmdbService } from '../services/providers/TMDBService.js';
 import fs from 'fs/promises';
+import { getErrorMessage, getStatusCode } from '../utils/errorHandling.js';
 
 /**
  * Provider Configuration Controller
@@ -53,8 +54,8 @@ export class ProviderConfigController {
               providerName: metadata.name,
               enabled: false,
               lastTestStatus: 'never_tested',
-              createdAt: new Date(),
-              updatedAt: new Date()
+              created_at: new Date(),
+              updated_at: new Date()
             },
             metadata
           };
@@ -62,7 +63,7 @@ export class ProviderConfigController {
       });
 
       res.json({ providers });
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Error getting providers:', error);
       res.status(500).json({ error: 'Failed to retrieve providers' });
     }
@@ -102,13 +103,13 @@ export class ProviderConfigController {
             providerName: name,
             enabled: false,
             lastTestStatus: 'never_tested',
-            createdAt: new Date(),
-            updatedAt: new Date()
+            created_at: new Date(),
+            updated_at: new Date()
           },
           metadata
         });
       }
-    } catch (error: any) {
+    } catch (error) {
       logger.error(`Error getting provider ${req.params.name}:`, error);
       res.status(500).json({ error: 'Failed to retrieve provider' });
     }
@@ -164,7 +165,7 @@ export class ProviderConfigController {
         success: true,
         provider: maskedConfig
       });
-    } catch (error: any) {
+    } catch (error) {
       logger.error(`Error updating provider ${req.params.name}:`, error);
       res.status(500).json({ error: 'Failed to update provider' });
     }
@@ -240,16 +241,16 @@ export class ProviderConfigController {
         success: true,
         message
       });
-    } catch (error: any) {
+    } catch (error) {
       logger.error(`Error testing provider ${req.params.name}:`, error);
       await this.providerConfigService.updateTestStatus(
         req.params.name,
         'error',
-        error.message
+        getErrorMessage(error)
       );
       res.json({
         success: false,
-        error: error.message || 'Connection test failed'
+        error: getErrorMessage(error) || 'Connection test failed'
       });
     }
   };
@@ -274,7 +275,7 @@ export class ProviderConfigController {
         success: true,
         message: `Provider '${metadata.displayName}' disabled successfully`
       });
-    } catch (error: any) {
+    } catch (error) {
       logger.error(`Error disabling provider ${req.params.name}:`, error);
       res.status(500).json({ error: 'Failed to disable provider' });
     }
@@ -311,12 +312,13 @@ export class ProviderConfigController {
       console.log('[TMDB Test] Attempting API call to TMDB...');
       await testClient.getConfiguration();
       console.log('[TMDB Test] API call successful!');
-    } catch (error: any) {
-      console.error('[TMDB Test] API call failed:', error.response?.status, error.message);
-      if (error.response?.status === 401) {
+    } catch (error) {
+      const status = getStatusCode(error);
+      console.error('[TMDB Test] API call failed:', status, getErrorMessage(error));
+      if (status === 401) {
         throw new Error('Invalid TMDB API key. Please check your credentials.');
       }
-      throw new Error(`TMDB API test failed: ${error.message}`);
+      throw new Error(`TMDB API test failed: ${getErrorMessage(error)}`);
     }
   }
 
@@ -343,11 +345,11 @@ export class ProviderConfigController {
     // Test API call - login to get JWT token
     try {
       await testClient.login();
-    } catch (error: any) {
-      if (error.response?.status === 401) {
+    } catch (error) {
+      if (getStatusCode(error) === 401) {
         throw new Error('Invalid TVDB API key. Please check your credentials.');
       }
-      throw new Error(`TVDB API test failed: ${error.message}`);
+      throw new Error(`TVDB API test failed: ${getErrorMessage(error)}`);
     }
   }
 
@@ -372,15 +374,16 @@ export class ProviderConfigController {
     // Test API call - get movie images for a known ID (The Matrix)
     try {
       await testClient.getMovieImages(603); // tmdbId for The Matrix (number, not string)
-    } catch (error: any) {
-      if (error.response?.status === 401 || error.response?.status === 403) {
+    } catch (error) {
+      const status = getStatusCode(error);
+      if (status === 401 || status === 403) {
         throw new Error('Invalid FanArt.tv API key. Please check your credentials.');
       }
-      if (error.response?.status === 404) {
+      if (status === 404) {
         // 404 is acceptable - means API is accessible but no images found
         return;
       }
-      throw new Error(`FanArt.tv API test failed: ${error.message}`);
+      throw new Error(`FanArt.tv API test failed: ${getErrorMessage(error)}`);
     }
   }
 
@@ -394,11 +397,12 @@ export class ProviderConfigController {
     // Test scraping - get movie details for a known ID (The Matrix)
     try {
       await testClient.getMovieDetails('tt0133093'); // IMDb ID for The Matrix
-    } catch (error: any) {
-      if (error.response?.status === 403 || error.response?.status === 429) {
+    } catch (error) {
+      const status = getStatusCode(error);
+      if (status === 403 || status === 429) {
         throw new Error('IMDb blocked the request. You may be rate-limited or your IP may be banned.');
       }
-      throw new Error(`IMDb connection test failed: ${error.message}`);
+      throw new Error(`IMDb connection test failed: ${getErrorMessage(error)}`);
     }
   }
 
@@ -416,11 +420,11 @@ export class ProviderConfigController {
     // Test API call - search for a known artist (The Beatles)
     try {
       await testClient.searchArtists('The Beatles', 1); // Method is searchArtists, not searchArtist
-    } catch (error: any) {
-      if (error.response?.status === 503) {
+    } catch (error) {
+      if (getStatusCode(error) === 503) {
         throw new Error('MusicBrainz rate limit exceeded. Please wait before testing again.');
       }
-      throw new Error(`MusicBrainz API test failed: ${error.message}`);
+      throw new Error(`MusicBrainz API test failed: ${getErrorMessage(error)}`);
     }
   }
 
@@ -437,14 +441,15 @@ export class ProviderConfigController {
     // Test API call - search for a known artist (The Beatles)
     try {
       await testClient.searchArtist('The Beatles');
-    } catch (error: any) {
-      if (error.response?.status === 401 || error.response?.status === 403) {
+    } catch (error) {
+      const status = getStatusCode(error);
+      if (status === 401 || status === 403) {
         throw new Error('Invalid TheAudioDB API key. Please check your credentials.');
       }
-      if (error.response?.status === 429) {
+      if (status === 429) {
         throw new Error('TheAudioDB rate limit exceeded. Free tier allows 30 requests per minute.');
       }
-      throw new Error(`TheAudioDB API test failed: ${error.message}`);
+      throw new Error(`TheAudioDB API test failed: ${getErrorMessage(error)}`);
     }
   }
 
@@ -463,8 +468,8 @@ export class ProviderConfigController {
       for (const testPath of testPaths) {
         await fs.access(testPath);
       }
-    } catch (error: any) {
-      throw new Error(`Local filesystem access test failed: ${error.message}. Ensure data directories exist.`);
+    } catch (error) {
+      throw new Error(`Local filesystem access test failed: ${getErrorMessage(error)}. Ensure data directories exist.`);
     }
   }
 }

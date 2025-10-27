@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { DatabaseManager } from '../database/DatabaseManager.js';
 import { logger } from '../middleware/logging.js';
+import { SqlParam } from '../types/database.js';
 
 /**
  * Webhook Configuration Controller
@@ -26,20 +27,33 @@ export class WebhookConfigController {
       );
 
       // Don't send password to frontend
-      const sanitized = configs.map((config: any) => ({
-        id: config.id,
-        service: config.service,
-        enabled: Boolean(config.enabled),
-        authEnabled: Boolean(config.auth_enabled),
-        authUsername: config.auth_username || '',
-        autoPublish: Boolean(config.auto_publish),
-        priority: config.priority,
-        createdAt: config.created_at,
-        updatedAt: config.updated_at
-      }));
+      const sanitized = configs.map((config: unknown) => {
+        const c = config as {
+          id: number;
+          service: string;
+          enabled: number;
+          auth_enabled: number;
+          auth_username: string | null;
+          auto_publish: number;
+          priority: number;
+          created_at: string;
+          updated_at: string;
+        };
+        return {
+          id: c.id,
+          service: c.service,
+          enabled: Boolean(c.enabled),
+          authEnabled: Boolean(c.auth_enabled),
+          authUsername: c.auth_username || '',
+          autoPublish: Boolean(c.auto_publish),
+          priority: c.priority,
+          created_at: c.created_at,
+          updated_at: c.updated_at
+        };
+      });
 
       res.json({ webhooks: sanitized });
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Error getting webhook configurations:', error);
       next(error);
     }
@@ -75,7 +89,17 @@ export class WebhookConfigController {
         return;
       }
 
-      const config = configs[0] as any;
+      const config = configs[0] as {
+        id: number;
+        service: string;
+        enabled: number;
+        auth_enabled: number;
+        auth_username: string | null;
+        auto_publish: number;
+        priority: number;
+        created_at: string;
+        updated_at: string;
+      };
 
       // Don't send password to frontend
       res.json({
@@ -87,11 +111,11 @@ export class WebhookConfigController {
           authUsername: config.auth_username || '',
           autoPublish: Boolean(config.auto_publish),
           priority: config.priority,
-          createdAt: config.created_at,
-          updatedAt: config.updated_at
+          created_at: config.created_at,
+          updated_at: config.updated_at
         }
       });
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Error getting webhook configuration:', error);
       next(error);
     }
@@ -148,7 +172,7 @@ export class WebhookConfigController {
 
       // Build dynamic update query
       const updates: string[] = [];
-      const values: any[] = [];
+      const values: SqlParam[] = [];
 
       if (enabled !== undefined) {
         updates.push('enabled = ?');
@@ -220,7 +244,17 @@ export class WebhookConfigController {
         [service]
       );
 
-      const config = configs[0] as any;
+      const config = configs[0] as {
+        id: number;
+        service: string;
+        enabled: number;
+        auth_enabled: number;
+        auth_username: string | null;
+        auto_publish: number;
+        priority: number;
+        created_at: string;
+        updated_at: string;
+      };
 
       res.json({
         webhook: {
@@ -231,11 +265,11 @@ export class WebhookConfigController {
           authUsername: config.auth_username || '',
           autoPublish: Boolean(config.auto_publish),
           priority: config.priority,
-          createdAt: config.created_at,
-          updatedAt: config.updated_at
+          created_at: config.created_at,
+          updated_at: config.updated_at
         }
       });
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Error updating webhook configuration:', error);
       next(error);
     }

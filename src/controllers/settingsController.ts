@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { WorkflowControlService, WorkflowStage } from '../services/workflowControlService.js';
 import { logger } from '../middleware/logging.js';
+import { getErrorMessage } from '../utils/errorHandling.js';
 
 /**
  * Settings Controller
@@ -23,11 +24,11 @@ export class SettingsController {
       const settings = await this.workflowControl.getAll();
 
       res.json(settings);
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Error fetching workflow settings:', error);
       res.status(500).json({
         error: 'Failed to fetch workflow settings',
-        message: error.message
+        message: getErrorMessage(error)
       });
     }
   }
@@ -54,11 +55,11 @@ export class SettingsController {
       });
 
       res.json(settings);
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Error updating workflow settings:', error);
       res.status(500).json({
         error: 'Failed to update workflow settings',
-        message: error.message
+        message: getErrorMessage(error)
       });
     }
   }
@@ -96,11 +97,11 @@ export class SettingsController {
         stage,
         enabled
       });
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Error updating workflow stage:', error);
       res.status(500).json({
         error: 'Failed to update workflow stage',
-        message: error.message
+        message: getErrorMessage(error)
       });
     }
   }
@@ -119,11 +120,11 @@ export class SettingsController {
       });
 
       res.json(settings);
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Error enabling all workflows:', error);
       res.status(500).json({
         error: 'Failed to enable all workflows',
-        message: error.message
+        message: getErrorMessage(error)
       });
     }
   }
@@ -142,11 +143,11 @@ export class SettingsController {
       });
 
       res.json(settings);
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Error disabling all workflows:', error);
       res.status(500).json({
         error: 'Failed to disable all workflows',
-        message: error.message
+        message: getErrorMessage(error)
       });
     }
   }

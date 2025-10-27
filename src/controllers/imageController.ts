@@ -24,13 +24,20 @@ export class ImageController {
   constructor(private imageService: ImageService) {}
 
   /**
-   * Convert image hash to static cache URL
-   * Cache structure: /cache/images/{first2chars}/{next2chars}/{fullhash}.{ext}
+   * Convert file path to cache URL
+   * Extracts the path after 'cache/' directory and converts to URL format
    */
-  private getCacheUrl(hash: string, format: string): string {
-    const first2 = hash.substring(0, 2);
-    const next2 = hash.substring(2, 4);
-    return `/cache/images/${first2}/${next2}/${hash}.${format}`;
+  private getCacheUrlFromPath(filePath: string | null): string | null {
+    if (!filePath) return null;
+
+    // Extract path after 'cache/' or 'cache\'
+    const pathParts = filePath.split(/[\\/]cache[\\/]/i);
+    if (pathParts.length > 1) {
+      // Convert backslashes to forward slashes and prepend /cache
+      return `/cache/${pathParts[1].replace(/\\/g, '/')}`;
+    }
+
+    return null;
   }
 
   /**
@@ -53,8 +60,8 @@ export class ImageController {
         success: true,
         images: images.map(img => ({
           ...img,
-          // Use static cache URL instead of API endpoint
-          cache_url: img.file_hash ? this.getCacheUrl(img.file_hash, img.format || 'jpg') : null,
+          // Use static cache URL based on actual file path
+          cache_url: this.getCacheUrlFromPath(img.file_path),
         })),
       });
     } catch (error) {
@@ -102,7 +109,7 @@ export class ImageController {
         message: 'Image uploaded successfully',
         image: {
           id: cacheFileId,
-          cache_url: uploadedImage?.file_hash ? this.getCacheUrl(uploadedImage.file_hash, uploadedImage.format || 'jpg') : null,
+          cache_url: this.getCacheUrlFromPath(uploadedImage?.file_path),
         },
       });
     } catch (error) {

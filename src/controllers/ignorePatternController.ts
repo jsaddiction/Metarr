@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { IgnorePatternService } from '../services/ignorePatternService.js';
+import { getErrorMessage } from '../utils/errorHandling.js';
 
 export class IgnorePatternController {
   constructor(private ignorePatternService: IgnorePatternService) {}
@@ -74,13 +75,13 @@ export class IgnorePatternController {
 
       await this.ignorePatternService.deletePattern(id);
       res.json({ success: true });
-    } catch (error: any) {
-      if (error.message.includes('Cannot delete system patterns')) {
-        res.status(403).json({ error: error.message });
+    } catch (error) {
+      if (getErrorMessage(error).includes('Cannot delete system patterns')) {
+        res.status(403).json({ error: getErrorMessage(error) });
         return;
       }
-      if (error.message.includes('Pattern not found')) {
-        res.status(404).json({ error: error.message });
+      if (getErrorMessage(error).includes('Pattern not found')) {
+        res.status(404).json({ error: getErrorMessage(error) });
         return;
       }
       next(error);

@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { AutomationConfigService } from '../services/automationConfigService.js';
 import { logger } from '../middleware/logging.js';
+import { getErrorMessage } from '../utils/errorHandling.js';
 
 /**
  * Automation Config Controller
@@ -31,9 +32,9 @@ export class AutomationConfigController {
       }
 
       res.json(config);
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Error getting automation config:', error);
-      res.status(500).json({ error: error.message });
+      res.status(500).json({ error: getErrorMessage(error) });
     }
   };
 
@@ -52,9 +53,9 @@ export class AutomationConfigController {
       await this.configService.setAutomationConfig(config);
 
       res.json({ success: true });
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Error setting automation config:', error);
-      res.status(500).json({ error: error.message });
+      res.status(500).json({ error: getErrorMessage(error) });
     }
   };
 
@@ -69,9 +70,9 @@ export class AutomationConfigController {
       const configs = await this.configService.getAssetSelectionConfig(parseInt(libraryId));
 
       res.json({ configs });
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Error getting asset selection config:', error);
-      res.status(500).json({ error: error.message });
+      res.status(500).json({ error: getErrorMessage(error) });
     }
   };
 
@@ -91,9 +92,9 @@ export class AutomationConfigController {
       await this.configService.setAssetSelectionConfig(config);
 
       res.json({ success: true });
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Error setting asset selection config:', error);
-      res.status(500).json({ error: error.message });
+      res.status(500).json({ error: getErrorMessage(error) });
     }
   };
 
@@ -108,9 +109,9 @@ export class AutomationConfigController {
       const configs = await this.configService.getCompletenessConfig(parseInt(libraryId));
 
       res.json({ configs });
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Error getting completeness config:', error);
-      res.status(500).json({ error: error.message });
+      res.status(500).json({ error: getErrorMessage(error) });
     }
   };
 
@@ -130,9 +131,9 @@ export class AutomationConfigController {
       await this.configService.setCompletenessConfig(config);
 
       res.json({ success: true });
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Error setting completeness config:', error);
-      res.status(500).json({ error: error.message });
+      res.status(500).json({ error: getErrorMessage(error) });
     }
   };
 
@@ -147,9 +148,9 @@ export class AutomationConfigController {
       await this.configService.initializeLibraryDefaults(parseInt(libraryId));
 
       res.json({ success: true, message: 'Default configs initialized' });
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Error initializing default configs:', error);
-      res.status(500).json({ error: error.message });
+      res.status(500).json({ error: getErrorMessage(error) });
     }
   };
 
@@ -166,9 +167,9 @@ export class AutomationConfigController {
       await this.configService.deleteCompletenessConfig(parseInt(libraryId));
 
       res.json({ success: true });
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Error deleting automation config:', error);
-      res.status(500).json({ error: error.message });
+      res.status(500).json({ error: getErrorMessage(error) });
     }
   };
 }

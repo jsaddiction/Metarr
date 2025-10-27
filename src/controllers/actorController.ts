@@ -18,7 +18,12 @@ export class ActorController {
    */
   async getAll(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const filters: any = {};
+      const filters: {
+        search?: string;
+        movieId?: number;
+        limit?: number;
+        offset?: number;
+      } = {};
 
       if (req.query.search) {
         filters.search = req.query.search as string;

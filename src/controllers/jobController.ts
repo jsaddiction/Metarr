@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { JobQueueService } from '../services/jobQueue/JobQueueService.js';
 import { logger } from '../middleware/logging.js';
+import { getErrorMessage } from '../utils/errorHandling.js';
 
 /**
  * Job Controller
@@ -34,9 +35,9 @@ export class JobController {
       }
 
       res.json(job);
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Error getting job:', error);
-      res.status(500).json({ error: error.message });
+      res.status(500).json({ error: getErrorMessage(error) });
     }
   };
 
@@ -57,9 +58,9 @@ export class JobController {
       };
 
       res.json(response);
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Error getting job stats:', error);
-      res.status(500).json({ error: error.message });
+      res.status(500).json({ error: getErrorMessage(error) });
     }
   };
 
@@ -90,9 +91,9 @@ export class JobController {
 
       // Return jobs array directly (frontend expects array, not { jobs: [...] })
       res.json({ jobs });
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Error getting jobs:', error);
-      res.status(500).json({ error: error.message });
+      res.status(500).json({ error: getErrorMessage(error) });
     }
   };
 
@@ -113,9 +114,9 @@ export class JobController {
       });
 
       res.json({ history });
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Error getting job history:', error);
-      res.status(500).json({ error: error.message });
+      res.status(500).json({ error: getErrorMessage(error) });
     }
   };
 
@@ -131,9 +132,9 @@ export class JobController {
   //     const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
   //     const jobs = await this.jobQueue.getRecentJobs(limit);
   //     res.json({ jobs });
-  //   } catch (error: any) {
+  //   } catch (error) {
   //     logger.error('Error getting recent jobs:', error);
-  //     res.status(500).json({ error: error.message });
+  //     res.status(500).json({ error: getErrorMessage(error) });
   //   }
   // };
 
@@ -153,9 +154,9 @@ export class JobController {
   //     );
 
   //     res.json({ jobs });
-  //   } catch (error: any) {
+  //   } catch (error) {
   //     logger.error('Error getting jobs by type:', error);
-  //     res.status(500).json({ error: error.message });
+  //     res.status(500).json({ error: getErrorMessage(error) });
   //   }
   // };
 
@@ -174,9 +175,9 @@ export class JobController {
   //     } else {
   //       res.status(400).json({ success: false, message: 'Job not found or not failed' });
   //     }
-  //   } catch (error: any) {
+  //   } catch (error) {
   //     logger.error('Error retrying job:', error);
-  //     res.status(500).json({ error: error.message });
+  //     res.status(500).json({ error: getErrorMessage(error) });
   //   }
   // };
 
@@ -195,9 +196,9 @@ export class JobController {
   //     } else {
   //       res.status(400).json({ success: false, message: 'Job not found or not pending' });
   //     }
-  //   } catch (error: any) {
+  //   } catch (error) {
   //     logger.error('Error cancelling job:', error);
-  //     res.status(500).json({ error: error.message });
+  //     res.status(500).json({ error: getErrorMessage(error) });
   //     }
   // };
 
@@ -214,9 +215,9 @@ export class JobController {
   //     const cleared = await this.jobQueue.clearOldJobs(days);
 
   //     res.json({ success: true, cleared });
-  //   } catch (error: any) {
+  //   } catch (error) {
   //     logger.error('Error clearing old jobs:', error);
-  //     res.status(500).json({ error: error.message });
+  //     res.status(500).json({ error: getErrorMessage(error) });
   //   }
   // };
 }

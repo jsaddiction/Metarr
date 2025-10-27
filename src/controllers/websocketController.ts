@@ -137,7 +137,7 @@ export class WebSocketController {
     logger.info(`Handling resync request from ${clientId}`, { clientId, scope });
 
     try {
-      const data: any = {};
+      const data: Record<string, unknown> = {};
 
       if (scope === 'all' || scope === 'movies') {
         const moviesResult = await this.movieService.getAll({ limit: 10000 });

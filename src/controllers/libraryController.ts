@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { LibraryService } from '../services/libraryService.js';
 import { LibraryScanService } from '../services/libraryScanService.js';
 import { logger } from '../middleware/logging.js';
+import { getErrorMessage } from '../utils/errorHandling.js';
 
 export class LibraryController {
   constructor(
@@ -65,9 +66,9 @@ export class LibraryController {
       });
 
       res.status(201).json(library);
-    } catch (error: any) {
-      if (error.message.includes('not exist') || error.message.includes('not accessible')) {
-        res.status(400).json({ error: error.message });
+    } catch (error) {
+      if (getErrorMessage(error).includes('not exist') || getErrorMessage(error).includes('not accessible')) {
+        res.status(400).json({ error: getErrorMessage(error) });
         return;
       }
       next(error);
@@ -95,13 +96,13 @@ export class LibraryController {
       });
 
       res.json(library);
-    } catch (error: any) {
-      if (error.message.includes('not found')) {
+    } catch (error) {
+      if (getErrorMessage(error).includes('not found')) {
         res.status(404).json({ error: 'Library not found' });
         return;
       }
-      if (error.message.includes('not exist') || error.message.includes('not accessible')) {
-        res.status(400).json({ error: error.message });
+      if (getErrorMessage(error).includes('not exist') || getErrorMessage(error).includes('not accessible')) {
+        res.status(400).json({ error: getErrorMessage(error) });
         return;
       }
       next(error);
@@ -154,8 +155,8 @@ export class LibraryController {
       await this.libraryService.delete(id);
 
       res.status(204).send();
-    } catch (error: any) {
-      if (error.message.includes('not found')) {
+    } catch (error) {
+      if (getErrorMessage(error).includes('not found')) {
         res.status(404).json({ error: 'Library not found' });
         return;
       }
@@ -198,9 +199,9 @@ export class LibraryController {
       const directories = await this.libraryService.browsePath(path);
 
       res.json(directories);
-    } catch (error: any) {
-      if (error.message.includes('Cannot read directory')) {
-        res.status(400).json({ error: error.message });
+    } catch (error) {
+      if (getErrorMessage(error).includes('Cannot read directory')) {
+        res.status(400).json({ error: getErrorMessage(error) });
         return;
       }
       next(error);
@@ -222,17 +223,17 @@ export class LibraryController {
       const scanJob = await this.scanService.startScan(id);
 
       res.status(201).json(scanJob);
-    } catch (error: any) {
-      if (error.message.includes('not found')) {
+    } catch (error) {
+      if (getErrorMessage(error).includes('not found')) {
         res.status(404).json({ error: 'Library not found' });
         return;
       }
-      if (error.message.includes('already running')) {
-        res.status(409).json({ error: error.message });
+      if (getErrorMessage(error).includes('already running')) {
+        res.status(409).json({ error: getErrorMessage(error) });
         return;
       }
-      if (error.message.includes('disabled')) {
-        res.status(400).json({ error: error.message });
+      if (getErrorMessage(error).includes('disabled')) {
+        res.status(400).json({ error: getErrorMessage(error) });
         return;
       }
       next(error);
@@ -271,15 +272,15 @@ export class LibraryController {
         this.sendSSE(res, 'activeScans', activeScans);
       })
       .catch(error => {
-        logger.error('Failed to get active scans for SSE', { error: error.message });
+        logger.error('Failed to get active scans for SSE', { error: getErrorMessage(error) });
       });
 
     // Setup heartbeat to keep connection alive
     const heartbeatInterval = setInterval(() => {
       try {
         res.write(':heartbeat\n\n');
-      } catch (error: any) {
-        logger.error('Failed to send heartbeat', { error: error.message });
+      } catch (error) {
+        logger.error('Failed to send heartbeat', { error: getErrorMessage(error) });
         clearInterval(heartbeatInterval);
         this.heartbeatIntervals.delete(res);
         this.sseClients.delete(res);
@@ -305,28 +306,28 @@ export class LibraryController {
   /**
    * Handle scan progress events
    */
-  private handleScanProgress(payload: any): void {
+  private handleScanProgress(payload: unknown): void {
     this.broadcastSSE('scanProgress', payload);
   }
 
   /**
    * Handle scan completed events
    */
-  private handleScanCompleted(payload: any): void {
+  private handleScanCompleted(payload: unknown): void {
     this.broadcastSSE('scanCompleted', payload);
   }
 
   /**
    * Handle scan failed events
    */
-  private handleScanFailed(payload: any): void {
+  private handleScanFailed(payload: unknown): void {
     this.broadcastSSE('scanFailed', payload);
   }
 
   /**
    * Broadcast SSE event to all connected clients
    */
-  private broadcastSSE(event: string, data: any): void {
+  private broadcastSSE(event: string, data: unknown): void {
     this.sseClients.forEach(client => {
       this.sendSSE(client, event, data);
     });
@@ -335,12 +336,12 @@ export class LibraryController {
   /**
    * Send SSE message to a specific client
    */
-  private sendSSE(res: Response, event: string, data: any): void {
+  private sendSSE(res: Response, event: string, data: unknown): void {
     try {
       res.write(`event: ${event}\n`);
       res.write(`data: ${JSON.stringify(data)}\n\n`);
-    } catch (error: any) {
-      logger.error('Failed to send SSE message', { error: error.message });
+    } catch (error) {
+      logger.error('Failed to send SSE message', { error: getErrorMessage(error) });
     }
   }
 }
