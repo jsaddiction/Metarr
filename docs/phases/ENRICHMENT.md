@@ -40,19 +40,26 @@ The enrichment phase enhances discovered media with high-quality metadata and ar
    ├── Collect asset URLs (posters, fanart, logos)
    └── Handle 404s and provider errors
 
-3. ASSET CANDIDATE COLLECTION
+3. ACTOR PROCESSING
+   ├── Get cast from TMDB with tmdb_id (unique identifier)
+   ├── For each actor: Find existing by tmdb_id OR create new
+   ├── Download headshot if missing (gap-filling)
+   ├── Link actor to movie with role and order
+   └── Skip if image exists or is locked
+
+4. ASSET CANDIDATE COLLECTION
    ├── Store provider URLs with metadata of the asset
    ├── Calculate asset scores
    ├── Mark user preferences
    └── Preserve locked selections
 
-4. INTELLIGENT SELECTION
+5. INTELLIGENT SELECTION
    ├── Apply selection algorithm
    ├── Respect locked fields/assets
    ├── Download selected assets
    └── Update cache references
 
-5. NEXT PHASE TRIGGER
+6. NEXT PHASE TRIGGER
    └── Create publishing job
 ```
 
@@ -148,6 +155,46 @@ if (!movie.poster_locked) {
   movie.poster_id = await selectBestPoster(candidates);
 }
 ```
+
+## Actor Management
+
+### Enrichment-Only Strategy
+
+**Actors are ONLY created during enrichment phase** to avoid ambiguity from filesystem naming.
+
+**Rationale:**
+- TMDB ID is unique identifier (eliminates name collisions like "Michael Jordan")
+- `.actors/` folders in library are ignored during scan
+- No orphaned actors from misnamed files
+- One image per actor, deduplicated across entire library
+
+**Workflow:**
+```typescript
+// For each movie during enrichment
+1. Get TMDB cast (authoritative source with tmdb_id)
+2. For each TMDB actor:
+   - Find existing actor by tmdb_id
+   - If NOT exists: Create new actor record
+   - If exists AND no image: Download headshot
+   - If exists AND has image: Skip (gap already filled)
+   - Link actor to movie with role and order
+
+// Result after all movies enriched
+- actors table: Complete cast list with tmdb_id
+- One cached image per actor (deduplicated by SHA256)
+- movie_actors: All links with authoritative roles
+```
+
+**Benefits:**
+- No ambiguity (TMDB ID = unique identity)
+- No orphaned actors (only created from TMDB cast)
+- No duplicates (one actor per tmdb_id)
+- Idempotent (safe to re-run enrichment)
+
+**Publishing (Optional):**
+- Copy cached images to `.actors/` folders in library
+- Use TMDB name for filenames (authoritative)
+- Kodi-compatible structure for media players
 
 ## Asset Download & Caching
 

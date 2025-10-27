@@ -78,6 +78,10 @@ The scanning phase is the foundational element of Metarr - it discovers what exi
 - NFO files (Kodi XML format)
 - Subtitles (.srt, .ass, .vtt)
 
+**Ignored During Scan**
+
+- `.actors/` directories - Actor processing deferred to enrichment phase (see [Enrichment Phase](ENRICHMENT.md#actor-management))
+
 ## Implementation Details
 
 ### Fact Gathering (Phase 1)

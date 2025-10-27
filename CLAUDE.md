@@ -126,7 +126,15 @@ CACHE (Protected)              LIBRARY (Working)
 ### System Design
 - **[Database Schema](docs/DATABASE.md)** - Complete data model
 - **[API Architecture](docs/API.md)** - REST + WebSocket patterns
-- **[UI Standards](docs/UI_STANDARDS.md)** - Frontend components and theme
+
+### Frontend
+- **[Frontend Architecture](docs/frontend/README.md)** - Overview and quick start
+- **[Components](docs/frontend/COMPONENTS.md)** - File organization and composition
+- **[Types](docs/frontend/TYPES.md)** - TypeScript conventions and patterns
+- **[Hooks Layer](docs/frontend/HOOKS_LAYER.md)** - State management with TanStack Query
+- **[API Layer](docs/frontend/API_LAYER.md)** - Network communication patterns
+- **[Error Handling](docs/frontend/ERROR_HANDLING.md)** - Error strategy and user feedback
+- **[UI Standards](docs/frontend/UI_STANDARDS.md)** - Design system and styling
 
 ### Development
 - **[Git Workflow](docs/technical/GIT_WORKFLOW.md)** - Commit conventions
