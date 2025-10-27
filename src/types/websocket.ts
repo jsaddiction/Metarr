@@ -3,6 +3,8 @@
  * Defines all client-to-server and server-to-client WebSocket messages
  */
 
+import { PlayerActivityState } from './models.js';
+
 // ============================================================================
 // Base Message Types
 // ============================================================================
@@ -309,7 +311,7 @@ export interface JobStatusMessage extends BaseServerMessage {
     message?: string;
   };
   error?: string;
-  payload?: any;
+  payload?: unknown;
 }
 
 /**
@@ -325,12 +327,21 @@ export interface JobQueueStatsMessage extends BaseServerMessage {
 }
 
 /**
+ * Player Activity - Server broadcasts media player activity state changes
+ */
+export interface PlayerActivityMessage extends BaseServerMessage {
+  type: 'player:activity';
+  payload: PlayerActivityState;
+}
+
+/**
  * Union type of all server messages
  */
 export type ServerMessage =
   | PongMessage
   | ResyncDataMessage
   | PlayerStatusMessage
+  | PlayerActivityMessage
   | ScanStatusMessage
   | MoviesChangedMessage
   | LibraryChangedMessage

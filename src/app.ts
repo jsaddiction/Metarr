@@ -15,9 +15,11 @@ import { cacheService } from './services/cacheService.js';
 import { JobQueueService } from './services/jobQueue/JobQueueService.js';
 import { SQLiteJobQueueStorage } from './services/jobQueue/storage/SQLiteJobQueueStorage.js';
 import { NotificationConfigService } from './services/notificationConfigService.js';
-import { JobHandlers } from './services/jobHandlers.js';
+import { registerAllJobHandlers } from './services/jobHandlers/index.js';
 import { FileScannerScheduler } from './services/schedulers/FileScannerScheduler.js';
 import { ProviderUpdaterScheduler } from './services/schedulers/ProviderUpdaterScheduler.js';
+import { HealthCheckService } from './services/HealthCheckService.js';
+import { ProviderRegistry } from './services/providers/ProviderRegistry.js';
 import { securityMiddleware, rateLimitByIp } from './middleware/security.js';
 import { requestLoggingMiddleware, errorLoggingMiddleware, logger } from './middleware/logging.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
@@ -41,6 +43,7 @@ export class App {
   private jobQueueService?: JobQueueService;
   private fileScannerScheduler?: FileScannerScheduler;
   private providerUpdaterScheduler?: ProviderUpdaterScheduler;
+  private healthCheckService?: HealthCheckService;
 
   constructor() {
     this.express = express();
@@ -142,6 +145,10 @@ export class App {
       throw new Error('JobQueueService not initialized. Must call start() before initializing API routes.');
     }
 
+    if (!this.healthCheckService) {
+      throw new Error('HealthCheckService not initialized. Must call start() before initializing API routes.');
+    }
+
     const apiRoutes = createApiRouter(
       this.dbManager,
       this.connectionManager,
@@ -213,18 +220,16 @@ export class App {
       const notificationConfig = new NotificationConfigService(this.dbManager.getConnection());
       logger.info('Notification config service initialized');
 
-      // Initialize job handlers with all dependencies
-      const jobHandlers = new JobHandlers(
-        this.dbManager.getConnection(),
-        this.dbManager, // Pass dbManager for scanMovieDirectory
-        this.jobQueueService,
-        path.join(process.cwd(), 'data', 'cache'), // Use default cache directory
-        notificationConfig,
-        this.connectionManager // Use existing MediaPlayerConnectionManager
-      );
-
       // Register all job handlers with job queue
-      jobHandlers.registerHandlers(this.jobQueueService);
+      registerAllJobHandlers(this.jobQueueService, {
+        db: this.dbManager.getConnection(),
+        dbManager: this.dbManager,
+        jobQueue: this.jobQueueService,
+        cacheDir: path.join(process.cwd(), 'data', 'cache'),
+        notificationConfig,
+        mediaPlayerManager: this.connectionManager,
+        tmdbClient: undefined, // Will be initialized by AssetJobHandlers if needed
+      });
       logger.info('Job handlers registered');
 
       // Start job queue processing
@@ -248,6 +253,12 @@ export class App {
       this.providerUpdaterScheduler.start();
       logger.info('Provider updater scheduler started');
 
+      // Initialize health check service for providers
+      const providerRegistry = ProviderRegistry.getInstance();
+      this.healthCheckService = new HealthCheckService(providerRegistry);
+      this.healthCheckService.start();
+      logger.info('Provider health check service started');
+
       // Initialize API routes (now that DB is connected and schedulers are ready)
       this.initializeApiRoutes();
       logger.info('API routes initialized');
@@ -255,6 +266,16 @@ export class App {
       // Initialize error handling (MUST be after all routes)
       this.initializeErrorHandling();
       logger.info('Error handlers initialized');
+
+      // Set up media player activity state broadcasting
+      this.connectionManager.on('activityStateChanged', (state) => {
+        this.wsServer.broadcastToAll({
+          type: 'player:activity',
+          payload: state,
+          timestamp: new Date().toISOString(),
+        });
+      });
+      logger.info('Media player activity broadcasting configured');
 
       // Reconnect all enabled media players
       await this.connectionManager.reconnectAll();

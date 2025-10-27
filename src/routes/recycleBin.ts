@@ -2,15 +2,21 @@
  * Recycle Bin API Routes
  *
  * Endpoints for managing recycled files:
- * - GET /api/movies/:id/recycle-bin - List recycled files for a movie
- * - POST /api/recycle-bin/:id/restore - Restore a file from recycle bin
- * - DELETE /api/recycle-bin/:id - Permanently delete a recycled file
+ * - GET /movies/:id/recycle-bin - List recycled files for a movie
+ * - GET /episodes/:id/recycle-bin - List recycled files for an episode
+ * - POST /recycle-bin/:id/restore - Restore a file from recycle bin
+ * - DELETE /recycle-bin/:id - Permanently delete a recycled file
+ * - GET /recycle-bin/stats - Get recycle bin statistics
+ * - POST /recycle-bin/cleanup/expired - Cleanup expired items
+ * - POST /recycle-bin/cleanup/pending - Cleanup pending items
+ * - POST /recycle-bin/empty - Empty entire recycle bin
  */
 
 import { Router } from 'express';
 import { DatabaseManager } from '../database/DatabaseManager.js';
-import { restoreFromRecycleBin, permanentlyDeleteFromRecycleBin } from '../services/files/recyclingService.js';
+import { RecycleBinService } from '../services/recycleBinService.js';
 import { logger } from '../middleware/logging.js';
+import { getErrorMessage } from '../utils/errorHandling.js';
 
 interface RecycleBinRecord {
   id: number;
@@ -28,10 +34,10 @@ export function createRecycleBinRouter(dbManager: DatabaseManager): Router {
   const db = dbManager.getConnection();
 
   /**
-   * GET /api/movies/:id/recycle-bin
+   * GET /movies/:id/recycle-bin
    * Get all recycle bin files for a movie
    */
-  router.get('/api/movies/:id/recycle-bin', async (req, res) => {
+  router.get('/movies/:id/recycle-bin', async (req, res) => {
     try {
       const { id } = req.params;
       const movieId = parseInt(id, 10);
@@ -64,20 +70,20 @@ export function createRecycleBinRouter(dbManager: DatabaseManager): Router {
       });
 
       return res.json(formatted);
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Failed to retrieve recycle bin files', {
         movieId: req.params.id,
-        error: error.message,
+        error: getErrorMessage(error),
       });
       return res.status(500).json({ error: 'Failed to retrieve recycle bin files' });
     }
   });
 
   /**
-   * GET /api/episodes/:id/recycle-bin
+   * GET /episodes/:id/recycle-bin
    * Get all recycle bin files for an episode
    */
-  router.get('/api/episodes/:id/recycle-bin', async (req, res) => {
+  router.get('/episodes/:id/recycle-bin', async (req, res) => {
     try {
       const { id } = req.params;
       const episodeId = parseInt(id, 10);
@@ -109,20 +115,20 @@ export function createRecycleBinRouter(dbManager: DatabaseManager): Router {
       });
 
       return res.json(formatted);
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Failed to retrieve recycle bin files', {
         episodeId: req.params.id,
-        error: error.message,
+        error: getErrorMessage(error),
       });
       return res.status(500).json({ error: 'Failed to retrieve recycle bin files' });
     }
   });
 
   /**
-   * POST /api/recycle-bin/:id/restore
+   * POST /recycle-bin/:id/restore
    * Restore a file from recycle bin to its original location
    */
-  router.post('/api/recycle-bin/:id/restore', async (req, res) => {
+  router.post('/recycle-bin/:id/restore', async (req, res) => {
     try {
       const { id } = req.params;
       const recycleBinId = parseInt(id, 10);
@@ -131,79 +137,34 @@ export function createRecycleBinRouter(dbManager: DatabaseManager): Router {
         return res.status(400).json({ error: 'Invalid recycle bin ID' });
       }
 
-      // Get recycle bin record
-      const record = await db.get<RecycleBinRecord>(
-        'SELECT * FROM recycle_bin WHERE id = ?',
-        [recycleBinId]
-      );
+      const recycleBin = new RecycleBinService(db);
+      await recycleBin.restoreFile(recycleBinId);
 
-      if (!record) {
-        return res.status(404).json({ error: 'Recycle bin record not found' });
-      }
+      logger.info('Restored file from recycle bin', {
+        recycleBinId,
+      });
 
-      // Case 1: Pending (not yet physically moved)
-      if (!record.recycled_at) {
-        // Just remove from recycle_bin table
-        await db.execute('DELETE FROM recycle_bin WHERE id = ?', [recycleBinId]);
-
-        logger.info('Restored file (removed from pending recycle)', {
-          recycleBinId,
-          originalPath: record.original_path,
-        });
-
-        return res.json({
-          success: true,
-          message: 'File restored (removed from recycle queue)',
-          originalPath: record.original_path,
-        });
-      }
-
-      // Case 2: Already recycled (physically moved)
-      if (!record.recycle_path) {
-        return res.status(400).json({
-          error: 'File is recycled but recycle path is missing',
-        });
-      }
-
-      const result = await restoreFromRecycleBin(
-        record.recycle_path,
-        record.original_path
-      );
-
-      if (result.success) {
-        // Remove from database
-        await db.execute('DELETE FROM recycle_bin WHERE id = ?', [recycleBinId]);
-
-        logger.info('Restored file from recycle bin', {
-          recycleBinId,
-          recyclePath: record.recycle_path,
-          originalPath: record.original_path,
-        });
-
-        return res.json({
-          success: true,
-          message: 'File restored to original location',
-          originalPath: record.original_path,
-        });
-      } else {
-        return res.status(500).json({
-          error: result.error || 'Failed to restore file',
-        });
-      }
-    } catch (error: any) {
+      return res.json({
+        success: true,
+        message: 'File restored successfully',
+      });
+    } catch (error) {
       logger.error('Failed to restore from recycle bin', {
         recycleBinId: req.params.id,
-        error: error.message,
+        error: getErrorMessage(error),
       });
-      return res.status(500).json({ error: 'Failed to restore file' });
+      return res.status(500).json({
+        success: false,
+        error: getErrorMessage(error)
+      });
     }
   });
 
   /**
-   * DELETE /api/recycle-bin/:id
+   * DELETE /recycle-bin/:id
    * Permanently delete a file from recycle bin
    */
-  router.delete('/api/recycle-bin/:id', async (req, res) => {
+  router.delete('/recycle-bin/:id', async (req, res) => {
     try {
       const { id } = req.params;
       const recycleBinId = parseInt(id, 10);
@@ -212,84 +173,146 @@ export function createRecycleBinRouter(dbManager: DatabaseManager): Router {
         return res.status(400).json({ error: 'Invalid recycle bin ID' });
       }
 
-      // Get recycle bin record
-      const record = await db.get<RecycleBinRecord>(
-        'SELECT * FROM recycle_bin WHERE id = ?',
-        [recycleBinId]
-      );
-
-      if (!record) {
-        return res.status(404).json({ error: 'Recycle bin record not found' });
-      }
-
-      // If physically recycled, delete the file
-      if (record.recycle_path) {
-        const result = await permanentlyDeleteFromRecycleBin(record.recycle_path);
-
-        if (!result.success) {
-          logger.warn('Could not delete recycled file (may already be deleted)', {
-            recycleBinId,
-            recyclePath: record.recycle_path,
-            error: result.error,
-          });
-          // Continue to remove database record anyway
-        }
-      }
-
-      // Remove from database
-      await db.execute('DELETE FROM recycle_bin WHERE id = ?', [recycleBinId]);
+      const recycleBin = new RecycleBinService(db);
+      await recycleBin.permanentlyDelete(recycleBinId);
 
       logger.info('Permanently deleted from recycle bin', {
         recycleBinId,
-        originalPath: record.original_path,
-        recyclePath: record.recycle_path,
       });
 
       return res.json({
         success: true,
         message: 'File permanently deleted',
       });
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Failed to delete from recycle bin', {
         recycleBinId: req.params.id,
-        error: error.message,
+        error: getErrorMessage(error),
       });
-      return res.status(500).json({ error: 'Failed to delete file' });
+      return res.status(500).json({
+        success: false,
+        error: getErrorMessage(error)
+      });
     }
   });
 
   /**
-   * GET /api/recycle-bin/stats
+   * GET /recycle-bin/stats
    * Get recycle bin statistics (total files, total size)
    */
-  router.get('/api/recycle-bin/stats', async (_req, res) => {
+  router.get('/recycle-bin/stats', async (_req, res) => {
     try {
-      // Get total count
-      const countResult = await db.get<{ total: number }>(
-        'SELECT COUNT(*) as total FROM recycle_bin'
-      );
-
-      // Get pending count
-      const pendingResult = await db.get<{ pending: number }>(
-        'SELECT COUNT(*) as pending FROM recycle_bin WHERE recycled_at IS NULL'
-      );
-
-      // Get total size (only recycled files)
-      const sizeResult = await db.get<{ total_size: number }>(
-        'SELECT SUM(file_size) as total_size FROM recycle_bin WHERE recycled_at IS NOT NULL'
-      );
+      const recycleBin = new RecycleBinService(db);
+      const stats = await recycleBin.getStats();
 
       return res.json({
-        totalFiles: countResult?.total || 0,
-        pendingFiles: pendingResult?.pending || 0,
-        recycledFiles: (countResult?.total || 0) - (pendingResult?.pending || 0),
-        totalSizeBytes: sizeResult?.total_size || 0,
+        success: true,
+        data: {
+          totalFiles: stats.totalFiles,
+          totalSizeBytes: stats.totalSizeBytes,
+          totalSizeGB: (stats.totalSizeBytes / (1024 * 1024 * 1024)).toFixed(2),
+          oldestEntry: stats.oldestEntry,
+          pendingDeletion: stats.pendingDeletion,
+        },
       });
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Failed to retrieve recycle bin stats', {
-        error: error.message,
+        error: getErrorMessage(error),
       });
-      return res.status(500).json({ error: 'Failed to retrieve stats' });
+      return res.status(500).json({
+        success: false,
+        error: getErrorMessage(error)
+      });
+    }
+  });
+
+  /**
+   * POST /recycle-bin/cleanup/expired
+   * Manually trigger cleanup of expired items
+   */
+  router.post('/recycle-bin/cleanup/expired', async (_req, res) => {
+    try {
+      const recycleBin = new RecycleBinService(db);
+      const deletedCount = await recycleBin.cleanupExpired();
+
+      logger.info('Expired recycle bin items cleaned up', {
+        deletedCount,
+      });
+
+      return res.json({
+        success: true,
+        data: {
+          deletedCount,
+        },
+      });
+    } catch (error) {
+      logger.error('Failed to cleanup expired items', {
+        error: getErrorMessage(error),
+      });
+      return res.status(500).json({
+        success: false,
+        error: getErrorMessage(error)
+      });
+    }
+  });
+
+  /**
+   * POST /recycle-bin/cleanup/pending
+   * Manually trigger cleanup of pending items (failed moves)
+   */
+  router.post('/recycle-bin/cleanup/pending', async (_req, res) => {
+    try {
+      const recycleBin = new RecycleBinService(db);
+      const cleanedCount = await recycleBin.cleanupPending();
+
+      logger.info('Pending recycle bin items cleaned up', {
+        cleanedCount,
+      });
+
+      return res.json({
+        success: true,
+        data: {
+          cleanedCount,
+        },
+      });
+    } catch (error) {
+      logger.error('Failed to cleanup pending items', {
+        error: getErrorMessage(error),
+      });
+      return res.status(500).json({
+        success: false,
+        error: getErrorMessage(error)
+      });
+    }
+  });
+
+  /**
+   * POST /recycle-bin/empty
+   * Empty entire recycle bin (permanent deletion of all files)
+   */
+  router.post('/recycle-bin/empty', async (_req, res) => {
+    try {
+      const recycleBin = new RecycleBinService(db);
+      const deletedCount = await recycleBin.emptyRecycleBin();
+
+      logger.warn('Recycle bin emptied', {
+        deletedCount,
+      });
+
+      return res.json({
+        success: true,
+        data: {
+          deletedCount,
+        },
+      });
+    } catch (error) {
+      logger.error('Failed to empty recycle bin', {
+        error: getErrorMessage(error),
+      });
+      return res.status(500).json({
+        success: false,
+        error: getErrorMessage(error)
+      });
     }
   });
 

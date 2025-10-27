@@ -1,7 +1,7 @@
 import sqlite3 from 'sqlite3';
 import path from 'path';
 import fs from 'fs';
-import { DatabaseConfig, DatabaseConnection } from '../../types/database.js';
+import { DatabaseConfig, DatabaseConnection, SqlParam } from '../../types/database.js';
 
 export class SqliteConnection implements DatabaseConnection {
   private db: sqlite3.Database | null = null;
@@ -33,7 +33,7 @@ export class SqliteConnection implements DatabaseConnection {
     });
   }
 
-  async query<T = any>(sql: string, params: any[] = []): Promise<T[]> {
+  async query<T = any>(sql: string, params: SqlParam[] = []): Promise<T[]> {
     if (!this.db) {
       throw new Error('Database not connected');
     }
@@ -49,7 +49,7 @@ export class SqliteConnection implements DatabaseConnection {
     });
   }
 
-  async get<T = any>(sql: string, params: any[] = []): Promise<T | undefined> {
+  async get<T = any>(sql: string, params: SqlParam[] = []): Promise<T | undefined> {
     if (!this.db) {
       throw new Error('Database not connected');
     }
@@ -67,7 +67,7 @@ export class SqliteConnection implements DatabaseConnection {
 
   async execute(
     sql: string,
-    params: any[] = []
+    params: SqlParam[] = []
   ): Promise<{ affectedRows: number; insertId?: number }> {
     if (!this.db) {
       throw new Error('Database not connected');

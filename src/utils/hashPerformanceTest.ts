@@ -3,6 +3,7 @@ import path from 'path';
 import crypto from 'crypto';
 import { getSubdirectories } from '../services/nfo/nfoDiscovery.js';
 import { logger } from '../middleware/logging.js';
+import { getErrorMessage } from './errorHandling.js';
 
 interface HashResult {
   dir: string;
@@ -446,8 +447,8 @@ export async function runHashPerformanceTest(
         const time1 = Date.now() - t1;
         results.directoryFingerprint.push({ dir, hash: hash1, timeMs: time1 });
         console.log(`  ✓ Dir Fingerprint:      ${time1}ms`);
-      } catch (error: any) {
-        logger.error(`Failed to hash directory fingerprint: ${error.message}`);
+      } catch (error) {
+        logger.error(`Failed to hash directory fingerprint: ${getErrorMessage(error)}`);
         results.directoryFingerprint.push({ dir, hash: 'ERROR', timeMs: 0 });
         console.log(`  ✗ Dir Fingerprint:      FAILED`);
       }
@@ -489,8 +490,8 @@ export async function runHashPerformanceTest(
             (i > 0 ? testDirs.slice(0, i).reduce((count, _) => count, 0) : 0);
           console.log(`  ✓ Small Files (Full):   ${recentCount} files hashed`);
         }
-      } catch (error: any) {
-        logger.error(`Failed to hash small files: ${error.message}`);
+      } catch (error) {
+        logger.error(`Failed to hash small files: ${getErrorMessage(error)}`);
       }
 
       // Test 3: Video Partial Hash (trailers)
@@ -521,8 +522,8 @@ export async function runHashPerformanceTest(
             }
           }
         }
-      } catch (error: any) {
-        logger.error(`Failed to hash trailer: ${error.message}`);
+      } catch (error) {
+        logger.error(`Failed to hash trailer: ${getErrorMessage(error)}`);
       }
 
       // Test 4: Video Optimized Hash (large movie files)
@@ -557,8 +558,8 @@ export async function runHashPerformanceTest(
             }
           }
         }
-      } catch (error: any) {
-        logger.error(`Failed to hash movie file: ${error.message}`);
+      } catch (error) {
+        logger.error(`Failed to hash movie file: ${getErrorMessage(error)}`);
       }
     }
 
@@ -566,8 +567,8 @@ export async function runHashPerformanceTest(
     await printPerformanceReport(results);
 
     logger.info('Hash performance test completed successfully!');
-  } catch (error: any) {
-    logger.error(`Hash performance test failed: ${error.message}`);
+  } catch (error) {
+    logger.error(`Hash performance test failed: ${getErrorMessage(error)}`);
     throw error;
   }
 }

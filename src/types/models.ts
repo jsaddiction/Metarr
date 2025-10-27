@@ -2,81 +2,81 @@ export interface Movie {
   id: number;
   title: string;
   year: number;
-  tmdbId?: number;
-  imdbId?: string;
+  tmdb_id?: number;
+  imdb_id?: string;
   overview?: string;
-  posterPath?: string;
-  backdropPath?: string;
-  filePath: string;
-  fileSize?: number;
+  poster_path?: string;
+  backdrop_path?: string;
+  file_path: string;
+  file_size?: number;
   quality?: string;
-  releaseDate?: Date;
+  release_date?: Date;
   runtime?: number;
   genres?: string[];
   rating?: number;
-  voteCount?: number;
+  vote_count?: number;
   status: 'pending' | 'processing' | 'completed' | 'failed' | 'needs_identification';
-  libraryId?: number;
-  createdAt: Date;
-  updatedAt: Date;
+  library_id?: number;
+  created_at: Date;
+  updated_at: Date;
 }
 
 export interface Series {
   id: number;
   title: string;
   year?: number;
-  tmdbId?: number;
-  tvdbId?: number;
-  imdbId?: string;
+  tmdb_id?: number;
+  tvdb_id?: number;
+  imdb_id?: string;
   overview?: string;
-  posterPath?: string;
-  backdropPath?: string;
-  folderPath: string;
+  poster_path?: string;
+  backdrop_path?: string;
+  folder_path: string;
   status: 'continuing' | 'ended' | 'pending' | 'processing' | 'needs_identification';
-  firstAirDate?: Date;
-  lastAirDate?: Date;
-  episodeCount?: number;
-  seasonCount?: number;
+  first_air_date?: Date;
+  last_air_date?: Date;
+  episode_count?: number;
+  season_count?: number;
   network?: string;
   genres?: string[];
   rating?: number;
-  voteCount?: number;
-  libraryId?: number;
-  createdAt: Date;
-  updatedAt: Date;
+  vote_count?: number;
+  library_id?: number;
+  created_at: Date;
+  updated_at: Date;
 }
 
 export interface Episode {
   id: number;
-  seriesId: number;
-  seasonNumber: number;
-  episodeNumber: number;
+  series_id: number;
+  season_number: number;
+  episode_number: number;
   title: string;
   overview?: string;
-  airDate?: Date;
+  air_date?: Date;
   runtime?: number;
-  stillPath?: string;
-  filePath?: string;
-  fileSize?: number;
+  still_path?: string;
+  file_path?: string;
+  file_size?: number;
   quality?: string;
   status: 'missing' | 'downloading' | 'downloaded' | 'processed';
-  createdAt: Date;
-  updatedAt: Date;
+  created_at: Date;
+  updated_at: Date;
 }
 
 export interface Provider {
   id: number;
   name: string;
   type: 'metadata' | 'images' | 'trailers' | 'music';
-  apiKey?: string;
-  baseUrl: string;
-  rateLimit: number;
-  rateLimitWindow: number; // in seconds
+  api_key?: string;
+  base_url: string;
+  rate_limit: number;
+  rate_limit_window: number; // in seconds
   enabled: boolean;
   priority: number;
-  config: Record<string, any>;
-  createdAt: Date;
-  updatedAt: Date;
+  config: Record<string, unknown>;
+  created_at: Date;
+  updated_at: Date;
 }
 
 export interface MediaPlayer {
@@ -84,22 +84,44 @@ export interface MediaPlayer {
   name: string;
   type: 'kodi' | 'jellyfin' | 'plex';
   host: string;
-  port: number;
+  http_port: number; // HTTP JSON-RPC port (default 8080), WebSocket is always 9090
   username?: string;
   password?: string;
-  apiKey?: string;
+  api_key?: string;
   enabled: boolean;
-  libraryPaths: string[];
-  libraryGroup?: string; // Group name for Kodi instances sharing a library
-  connectionStatus: 'connected' | 'disconnected' | 'error';
-  jsonRpcVersion?: string; // e.g., "v12", "v13", "v13.5"
-  useWebsocket: boolean;
-  lastConnected?: Date | undefined;
-  lastError?: string | undefined;
-  config: Record<string, any>;
-  lastSync?: Date;
-  createdAt: Date;
-  updatedAt: Date;
+  library_paths: string[];
+  library_group?: string; // Group name for Kodi instances sharing a library
+  connection_status: 'connected' | 'disconnected' | 'error';
+  json_rpc_version?: string; // e.g., "v12", "v13", "v13.5"
+  last_connected?: Date | undefined;
+  last_error?: string | undefined;
+  config: Record<string, unknown>;
+  last_sync?: Date;
+  created_at: Date;
+  updated_at: Date;
+}
+
+/**
+ * Live activity state for a media player
+ * Tracks connection mode and current activity (playing, scanning, etc.)
+ */
+export interface PlayerActivityState {
+  player_id: number;
+  player_name: string;
+  connection_mode: 'websocket' | 'http' | 'disconnected';
+  activity: {
+    type: 'idle' | 'playing' | 'paused' | 'scanning';
+    details?: string; // e.g., "Inception (2010)" or "Video Library"
+    progress?: {
+      // Playback progress (Kodi supports via polling)
+      percentage?: number; // 0-100
+      currentSeconds?: number; // Current position
+      totalSeconds?: number; // Total duration
+    };
+    filepath?: string; // Currently playing file path (useful for scan coordination)
+    kodiPlayerId?: number; // Kodi's internal player ID (0=video, 1=music, 2=pictures)
+  };
+  lastUpdated: Date;
 }
 
 export interface Job {
@@ -107,16 +129,16 @@ export interface Job {
   type: 'movie_metadata' | 'series_metadata' | 'library_update' | 'asset_download';
   status: 'pending' | 'processing' | 'completed' | 'failed' | 'retrying';
   priority: number;
-  payload: Record<string, any>;
-  result?: Record<string, any>;
+  payload: Record<string, unknown>;
+  result?: Record<string, unknown>;
   error?: string;
   attempts: number;
   maxAttempts: number;
   nextAttempt?: Date;
   processingStarted?: Date;
   processingCompleted?: Date;
-  createdAt: Date;
-  updatedAt: Date;
+  created_at: Date;
+  updated_at: Date;
 }
 
 export interface Asset {
@@ -132,8 +154,8 @@ export interface Asset {
   language?: string;
   providerId?: number;
   downloaded: boolean;
-  createdAt: Date;
-  updatedAt: Date;
+  created_at: Date;
+  updated_at: Date;
 }
 
 export type MediaLibraryType = 'movie' | 'tv' | 'music';
@@ -143,8 +165,8 @@ export interface Library {
   name: string;
   type: MediaLibraryType;
   path: string;
-  createdAt: Date;
-  updatedAt: Date;
+  created_at: Date;
+  updated_at: Date;
   stats?: {
     total: number;
     unidentified: number;

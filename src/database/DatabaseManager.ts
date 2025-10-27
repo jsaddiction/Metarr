@@ -1,4 +1,4 @@
-import { DatabaseConfig, DatabaseConnection, DatabaseType } from '../types/database.js';
+import { DatabaseConfig, DatabaseConnection, DatabaseType, SqlParam } from '../types/database.js';
 import { SqliteConnection } from './connections/SqliteConnection.js';
 import { PostgresConnection } from './connections/PostgresConnection.js';
 import { MySqlConnection } from './connections/MySqlConnection.js';
@@ -194,12 +194,12 @@ export class DatabaseManager {
     return this.getConnection();
   }
 
-  async query<T = any>(sql: string, params?: any[]): Promise<T[]> {
+  async query<T = any>(sql: string, params?: SqlParam[]): Promise<T[]> {
     const connection = this.getConnection();
     return connection.query<T>(sql, params);
   }
 
-  async execute(sql: string, params?: any[]): Promise<{ affectedRows: number; insertId?: number }> {
+  async execute(sql: string, params?: SqlParam[]): Promise<{ affectedRows: number; insertId?: number }> {
     const connection = this.getConnection();
     return connection.execute(sql, params);
   }

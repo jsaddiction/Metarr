@@ -30,7 +30,7 @@ export interface FilesystemFacts {
   /** File modified timestamp */
   modifiedAt: Date;
   /** File created timestamp */
-  createdAt: Date;
+  created_at: Date;
 }
 
 /**

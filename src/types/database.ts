@@ -1,5 +1,11 @@
 export type DatabaseType = 'sqlite3' | 'postgres' | 'mysql';
 
+/**
+ * Valid SQL parameter types
+ * Includes undefined for optional parameters
+ */
+export type SqlParam = string | number | boolean | null | undefined | Buffer;
+
 export interface DatabaseConfig {
   type: DatabaseType;
   host?: string;
@@ -17,9 +23,9 @@ export interface DatabaseConfig {
 
 export interface DatabaseConnection {
   connect?(): Promise<void>;
-  query<T = any>(sql: string, params?: any[]): Promise<T[]>;
-  get<T = any>(sql: string, params?: any[]): Promise<T | undefined>;
-  execute(sql: string, params?: any[]): Promise<{ affectedRows: number; insertId?: number }>;
+  query<T = any>(sql: string, params?: SqlParam[]): Promise<T[]>;
+  get<T = any>(sql: string, params?: SqlParam[]): Promise<T | undefined>;
+  execute(sql: string, params?: SqlParam[]): Promise<{ affectedRows: number; insertId?: number }>;
   close(): Promise<void>;
   beginTransaction(): Promise<void>;
   commit(): Promise<void>;

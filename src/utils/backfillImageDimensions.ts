@@ -3,6 +3,7 @@ import { ConfigManager } from '../config/ConfigManager.js';
 import sharp from 'sharp';
 import { logger } from '../middleware/logging.js';
 import * as fs from 'fs-extra';
+import { getErrorMessage, getErrorStack } from './errorHandling.js';
 
 /**
  * Backfill missing image dimensions for all images in the database
@@ -69,10 +70,10 @@ export async function backfillImageDimensions(): Promise<void> {
 
         logger.debug(`Updated dimensions for image ${image.id}: ${width}×${height}`);
         updated++;
-      } catch (error: any) {
+      } catch (error) {
         logger.error(`Failed to process image ${image.id}`, {
-          error: error.message,
-          stack: error.stack,
+          error: getErrorMessage(error),
+          stack: getErrorStack(error),
         });
         failed++;
       }
@@ -83,10 +84,10 @@ export async function backfillImageDimensions(): Promise<void> {
       updated,
       failed,
     });
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Backfill failed', {
-      error: error.message,
-      stack: error.stack,
+      error: getErrorMessage(error),
+      stack: getErrorStack(error),
     });
     throw error;
   }

@@ -1,7 +1,12 @@
 import { Router } from 'express';
 import { MediaPlayerController } from '../controllers/mediaPlayerController.js';
 import { LibraryController } from '../controllers/libraryController.js';
-import { MovieController } from '../controllers/movieController.js';
+import { MovieCrudController } from '../controllers/movie/MovieCrudController.js';
+import { MovieAssetController } from '../controllers/movie/MovieAssetController.js';
+import { MovieProviderController } from '../controllers/movie/MovieProviderController.js';
+import { MovieJobController } from '../controllers/movie/MovieJobController.js';
+import { MovieFieldLockController } from '../controllers/movie/MovieFieldLockController.js';
+import { MovieUnknownFilesController } from '../controllers/movie/MovieUnknownFilesController.js';
 import { IgnorePatternController } from '../controllers/ignorePatternController.js';
 import { ImageController } from '../controllers/imageController.js';
 import { AssetController } from '../controllers/assetController.js';
@@ -18,7 +23,7 @@ import { ImageService } from '../services/imageService.js';
 import { JobQueueService } from '../services/jobQueue/JobQueueService.js';
 import { AutomationConfigService } from '../services/automationConfigService.js';
 import { AssetSelectionService } from '../services/assetSelectionService.js';
-import { AssetCandidateService } from '../services/assetCandidateService.js';
+import { ProviderCacheService } from '../services/providerCacheService.js';
 import { ActorController } from '../controllers/actorController.js';
 // import { tmdbService } from '../services/providers/TMDBService.js'; // TODO: Re-enable if needed
 import { ProviderConfigService } from '../services/providerConfigService.js';
@@ -34,7 +39,6 @@ import { SettingsController } from '../controllers/settingsController.js';
 import { WorkflowControlService } from '../services/workflowControlService.js';
 import { ProviderRegistry } from '../services/providers/ProviderRegistry.js';
 import { FetchOrchestrator } from '../services/providers/FetchOrchestrator.js';
-import { ProviderOrchestrator } from '../services/providers/ProviderOrchestrator.js';
 import { SchedulerController } from '../controllers/schedulerController.js';
 import { FileScannerScheduler } from '../services/schedulers/FileScannerScheduler.js';
 import { ProviderUpdaterScheduler } from '../services/schedulers/ProviderUpdaterScheduler.js';
@@ -77,24 +81,28 @@ export const createApiRouter = (
   // Initialize provider registry and fetch orchestrator
   const providerRegistry = ProviderRegistry.getInstance();
   const fetchOrchestrator = new FetchOrchestrator(providerRegistry, providerConfigService);
-  const providerOrchestrator = new ProviderOrchestrator(providerRegistry, providerConfigService);
 
-  // Initialize asset selection service
+  // Initialize asset selection service (used by MovieProviderController for recommendations)
   const assetSelectionService = new AssetSelectionService(db);
 
-  // Initialize asset candidate service
-  const assetCandidateService = new AssetCandidateService(dbManager);
+  // Initialize provider cache service
+  const providerCacheService = new ProviderCacheService(dbManager);
 
-  // Initialize movie service and controller
+  // Initialize movie service and controllers (refactored into focused controllers)
   const movieService = new MovieService(dbManager, jobQueueService);
-  const movieController = new MovieController(
+
+  // New focused controllers following Single Responsibility Principle
+  const movieCrudController = new MovieCrudController(movieService);
+  const movieAssetController = new MovieAssetController(movieService, providerCacheService);
+  const movieProviderController = new MovieProviderController(
     movieService,
-    libraryScanService,
     fetchOrchestrator,
-    assetSelectionService,
-    assetCandidateService,
-    providerOrchestrator
+    providerCacheService,
+    assetSelectionService
   );
+  const movieJobController = new MovieJobController(movieService);
+  const movieFieldLockController = new MovieFieldLockController(movieService);
+  const movieUnknownFilesController = new MovieUnknownFilesController(movieService);
 
   // Initialize ignore pattern service and controller
   const ignorePatternService = new IgnorePatternService(dbManager);
@@ -204,7 +212,7 @@ export const createApiRouter = (
           lastSync: stat.last_sync,
         })),
       });
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Error getting system info:', error);
       next(error);
     }
@@ -302,49 +310,43 @@ export const createApiRouter = (
   // Movie Routes (order matters - specific routes before parameterized routes)
   logger.debug('[API Router] Registering movie routes');
 
-  // SSE route for movie updates
-  router.get('/movies/updates', (req, res) => {
-    logger.debug('[Route Hit] /movies/updates');
-    movieController.streamMovieUpdates(req, res);
-  });
-
-  // List all movies
+  // List all movies (WebSocket is used for real-time updates, not SSE)
   router.get('/movies', (req, res, next) => {
     logger.debug('[Route Hit] /movies');
-    movieController.getAll(req, res, next);
+    movieCrudController.getAll(req, res, next);
   });
 
   // Movie detail sub-routes (MUST come before /movies/:id)
   router.get('/movies/:id/provider-results', (req, res, next) => {
     logger.debug('[Route Hit] /movies/:id/provider-results with id:', req.params.id);
-    movieController.getProviderResults(req, res, next);
+    movieProviderController.getProviderResults(req, res, next);
   });
 
   router.post('/movies/:id/assets', (req, res, next) => {
     logger.debug('[Route Hit] /movies/:id/assets with id:', req.params.id);
-    movieController.saveAssets(req, res, next);
+    movieProviderController.saveAssets(req, res, next);
   });
 
   // Multi-asset selection routes
   // PUT replaces all assets of a specific type (atomic replace operation)
   router.put('/movies/:id/assets/:assetType', (req, res, next) => {
     logger.debug('[Route Hit] PUT /movies/:id/assets/:assetType with id:', req.params.id, 'assetType:', req.params.assetType);
-    movieController.replaceAssets(req, res, next);
+    movieAssetController.replaceAssets(req, res, next);
   });
 
   router.post('/movies/:id/assets/:assetType/add', (req, res, next) => {
     logger.debug('[Route Hit] /movies/:id/assets/:assetType/add with id:', req.params.id, 'assetType:', req.params.assetType);
-    movieController.addAsset(req, res, next);
+    movieAssetController.addAsset(req, res, next);
   });
 
   router.delete('/movies/:id/assets/:imageFileId', (req, res, next) => {
     logger.debug('[Route Hit] DELETE /movies/:id/assets/:imageFileId with id:', req.params.id, 'imageFileId:', req.params.imageFileId);
-    movieController.removeAsset(req, res, next);
+    movieAssetController.removeAsset(req, res, next);
   });
 
   router.patch('/movies/:id/assets/:assetType/lock', (req, res, next) => {
     logger.debug('[Route Hit] PATCH /movies/:id/assets/:assetType/lock with id:', req.params.id, 'assetType:', req.params.assetType);
-    movieController.toggleAssetLock(req, res, next);
+    movieAssetController.toggleAssetLock(req, res, next);
   });
 
   // REMOVED: /movies/:id/unknown-files
@@ -352,17 +354,17 @@ export const createApiRouter = (
 
   router.post('/movies/:id/unknown-files/:fileId/assign', (req, res, next) => {
     logger.debug('[Route Hit] /movies/:id/unknown-files/:fileId/assign with id:', req.params.id, 'fileId:', req.params.fileId);
-    movieController.assignUnknownFile(req, res, next);
+    movieUnknownFilesController.assignUnknownFile(req, res, next);
   });
 
   router.post('/movies/:id/unknown-files/:fileId/ignore', (req, res, next) => {
     logger.debug('[Route Hit] /movies/:id/unknown-files/:fileId/ignore with id:', req.params.id, 'fileId:', req.params.fileId);
-    movieController.ignoreUnknownFile(req, res, next);
+    movieUnknownFilesController.ignoreUnknownFile(req, res, next);
   });
 
   router.delete('/movies/:id/unknown-files/:fileId', (req, res, next) => {
     logger.debug('[Route Hit] DELETE /movies/:id/unknown-files/:fileId with id:', req.params.id, 'fileId:', req.params.fileId);
-    movieController.deleteUnknownFile(req, res, next);
+    movieUnknownFilesController.deleteUnknownFile(req, res, next);
   });
 
   // REMOVED: /movies/:id/rebuild-assets, /movies/:id/verify-assets
@@ -374,106 +376,106 @@ export const createApiRouter = (
   // Refresh movie metadata (user-initiated)
   router.post('/movies/:id/refresh', (req, res, next) => {
     logger.debug('[Route Hit] /movies/:id/refresh with id:', req.params.id);
-    movieController.refreshMovie(req, res, next);
+    movieCrudController.refreshMovie(req, res, next);
   });
 
   // Update movie metadata
   router.patch('/movies/:id/metadata', (req, res, next) => {
     logger.debug('[Route Hit] /movies/:id/metadata with id:', req.params.id);
-    movieController.updateMetadata(req, res, next);
+    movieCrudController.updateMetadata(req, res, next);
   });
 
   // Toggle monitored status
   router.post('/movies/:id/toggle-monitored', (req, res, next) => {
     logger.debug('[Route Hit] /movies/:id/toggle-monitored with id:', req.params.id);
-    movieController.toggleMonitored(req, res, next);
+    movieJobController.toggleMonitored(req, res, next);
   });
 
   // Lock/unlock field endpoints
   router.post('/movies/:id/lock-field', (req, res, next) => {
     logger.debug('[Route Hit] /movies/:id/lock-field with id:', req.params.id);
-    movieController.lockField(req, res, next);
+    movieFieldLockController.lockField(req, res, next);
   });
 
   router.post('/movies/:id/unlock-field', (req, res, next) => {
     logger.debug('[Route Hit] /movies/:id/unlock-field with id:', req.params.id);
-    movieController.unlockField(req, res, next);
+    movieFieldLockController.unlockField(req, res, next);
   });
 
   router.post('/movies/:id/reset-metadata', (req, res, next) => {
     logger.debug('[Route Hit] /movies/:id/reset-metadata with id:', req.params.id);
-    movieController.resetMetadata(req, res, next);
+    movieFieldLockController.resetMetadata(req, res, next);
   });
 
   // Asset candidate routes
   router.get('/movies/:id/asset-candidates', (req, res, next) => {
     logger.debug('[Route Hit] /movies/:id/asset-candidates with id:', req.params.id);
-    movieController.getAssetCandidates(req, res, next);
+    movieAssetController.getAssetCandidates(req, res, next);
   });
 
   router.post('/asset-candidates/:id/select', (req, res, next) => {
     logger.debug('[Route Hit] /asset-candidates/:id/select with id:', req.params.id);
-    movieController.selectAssetCandidate(req, res, next);
+    movieAssetController.selectAssetCandidate(req, res, next);
   });
 
   router.post('/asset-candidates/:id/block', (req, res, next) => {
     logger.debug('[Route Hit] /asset-candidates/:id/block with id:', req.params.id);
-    movieController.blockAssetCandidate(req, res, next);
+    movieAssetController.blockAssetCandidate(req, res, next);
   });
 
   router.post('/asset-candidates/:id/unblock', (req, res, next) => {
     logger.debug('[Route Hit] /asset-candidates/:id/unblock with id:', req.params.id);
-    movieController.unblockAssetCandidate(req, res, next);
+    movieAssetController.unblockAssetCandidate(req, res, next);
   });
 
   router.post('/movies/:id/reset-asset', (req, res, next) => {
     logger.debug('[Route Hit] /movies/:id/reset-asset with id:', req.params.id);
-    movieController.resetAssetSelection(req, res, next);
+    movieAssetController.resetAssetSelection(req, res, next);
   });
 
   // Soft delete (move to recycle bin)
   router.delete('/movies/:id', (req, res, next) => {
     logger.debug('[Route Hit] DELETE /movies/:id with id:', req.params.id);
-    movieController.deleteMovie(req, res, next);
+    movieCrudController.deleteMovie(req, res, next);
   });
 
   // Restore from recycle bin
   router.post('/movies/:id/restore', (req, res, next) => {
     logger.debug('[Route Hit] /movies/:id/restore with id:', req.params.id);
-    movieController.restoreMovie(req, res, next);
+    movieCrudController.restoreMovie(req, res, next);
   });
 
   // Identification routes
   router.post('/movies/:id/search-tmdb', (req, res, next) => {
     logger.debug('[Route Hit] /movies/:id/search-tmdb with id:', req.params.id);
-    movieController.searchForIdentification(req, res, next);
+    movieProviderController.searchForIdentification(req, res, next);
   });
 
   router.post('/movies/:id/identify', (req, res, next) => {
     logger.debug('[Route Hit] /movies/:id/identify with id:', req.params.id);
-    movieController.identifyMovie(req, res, next);
+    movieProviderController.identifyMovie(req, res, next);
   });
 
   // Manual job trigger routes
   router.post('/movies/:id/jobs/verify', (req, res, next) => {
     logger.debug('[Route Hit] /movies/:id/jobs/verify with id:', req.params.id);
-    movieController.triggerVerify(req, res, next);
+    movieJobController.triggerVerify(req, res, next);
   });
 
   router.post('/movies/:id/jobs/enrich', (req, res, next) => {
     logger.debug('[Route Hit] /movies/:id/jobs/enrich with id:', req.params.id);
-    movieController.triggerEnrich(req, res, next);
+    movieJobController.triggerEnrich(req, res, next);
   });
 
   router.post('/movies/:id/jobs/publish', (req, res, next) => {
     logger.debug('[Route Hit] /movies/:id/jobs/publish with id:', req.params.id);
-    movieController.triggerPublish(req, res, next);
+    movieJobController.triggerPublish(req, res, next);
   });
 
   // Movie detail (MUST come last among movie routes)
   router.get('/movies/:id', (req, res, next) => {
     logger.debug('[Route Hit] /movies/:id with id:', req.params.id);
-    movieController.getById(req, res, next);
+    movieCrudController.getById(req, res, next);
   });
 
   // Image Routes

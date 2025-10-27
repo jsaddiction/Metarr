@@ -75,7 +75,7 @@ export interface SearchResult {
   confidence: number; // 0-1
 
   // Additional Context
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 /**
@@ -100,7 +100,7 @@ export interface MetadataResponse {
   fields: Partial<Record<MetadataField, any>>;
 
   // Cross-references
-  externalIds?: Record<string, any>;
+  externalIds?: Record<string, unknown>;
 
   // Quality indicators
   completeness: number; // 0-1
@@ -155,7 +155,7 @@ export interface AssetCandidate {
   perceptualHash?: string;
 
   // Additional Context
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 /**
@@ -171,7 +171,7 @@ export interface TestConnectionResponse {
  * Provider fetch results for orchestration
  */
 export interface ProviderAssets {
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
   images?: {
     [key: string]: AssetCandidate[]; // Dynamic keys for asset types (poster, fanart, etc.)
   };

@@ -8,6 +8,7 @@
 import sharp from 'sharp';
 import crypto from 'crypto';
 import { promises as fs } from 'fs';
+import { getErrorMessage } from './errorHandling.js';
 
 /**
  * Compute perceptual hash (average hash) for an image
@@ -47,8 +48,8 @@ export async function computePerceptualHash(imagePath: string): Promise<string> 
 
     // Convert to hex string (16 characters for 64 bits)
     return hash.toString(16).padStart(16, '0');
-  } catch (error: any) {
-    throw new Error(`Failed to compute perceptual hash for ${imagePath}: ${error.message}`);
+  } catch (error) {
+    throw new Error(`Failed to compute perceptual hash for ${imagePath}: ${getErrorMessage(error)}`);
   }
 }
 
@@ -62,8 +63,8 @@ export async function computeContentHash(filePath: string): Promise<string> {
   try {
     const fileBuffer = await fs.readFile(filePath);
     return crypto.createHash('sha256').update(fileBuffer).digest('hex');
-  } catch (error: any) {
-    throw new Error(`Failed to compute content hash for ${filePath}: ${error.message}`);
+  } catch (error) {
+    throw new Error(`Failed to compute content hash for ${filePath}: ${getErrorMessage(error)}`);
   }
 }
 
@@ -134,8 +135,8 @@ export async function getImageDimensions(
       width: metadata.width || 0,
       height: metadata.height || 0,
     };
-  } catch (error: any) {
-    throw new Error(`Failed to get image dimensions for ${imagePath}: ${error.message}`);
+  } catch (error) {
+    throw new Error(`Failed to get image dimensions for ${imagePath}: ${getErrorMessage(error)}`);
   }
 }
 
@@ -149,7 +150,7 @@ export async function getFileSize(filePath: string): Promise<number> {
   try {
     const stats = await fs.stat(filePath);
     return stats.size;
-  } catch (error: any) {
-    throw new Error(`Failed to get file size for ${filePath}: ${error.message}`);
+  } catch (error) {
+    throw new Error(`Failed to get file size for ${filePath}: ${getErrorMessage(error)}`);
   }
 }

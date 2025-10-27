@@ -1,5 +1,5 @@
 import { Pool, PoolClient } from 'pg';
-import { DatabaseConfig, DatabaseConnection } from '../../types/database.js';
+import { DatabaseConfig, DatabaseConnection, SqlParam } from '../../types/database.js';
 
 export class PostgresConnection implements DatabaseConnection {
   private pool: Pool | null = null;
@@ -31,7 +31,7 @@ export class PostgresConnection implements DatabaseConnection {
     }
   }
 
-  async query<T = any>(sql: string, params: any[] = []): Promise<T[]> {
+  async query<T = any>(sql: string, params: SqlParam[] = []): Promise<T[]> {
     if (!this.pool) {
       throw new Error('Database not connected');
     }
@@ -44,7 +44,7 @@ export class PostgresConnection implements DatabaseConnection {
     }
   }
 
-  async get<T = any>(sql: string, params: any[] = []): Promise<T | undefined> {
+  async get<T = any>(sql: string, params: SqlParam[] = []): Promise<T | undefined> {
     if (!this.pool) {
       throw new Error('Database not connected');
     }
@@ -59,7 +59,7 @@ export class PostgresConnection implements DatabaseConnection {
 
   async execute(
     sql: string,
-    params: any[] = []
+    params: SqlParam[] = []
   ): Promise<{ affectedRows: number; insertId?: number }> {
     if (!this.pool) {
       throw new Error('Database not connected');

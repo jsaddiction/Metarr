@@ -10,11 +10,11 @@
 export interface JsonRpcRequest {
   jsonrpc: '2.0';
   method: string;
-  params?: Record<string, any> | any[];
+  params?: unknown;
   id: string | number;
 }
 
-export interface JsonRpcResponse<T = any> {
+export interface JsonRpcResponse<T = unknown> {
   jsonrpc: '2.0';
   result?: T;
   error?: JsonRpcError;
@@ -24,13 +24,13 @@ export interface JsonRpcResponse<T = any> {
 export interface JsonRpcError {
   code: number;
   message: string;
-  data?: any;
+  data?: unknown;
 }
 
 export interface JsonRpcNotification {
   jsonrpc: '2.0';
   method: string;
-  params?: Record<string, any>;
+  params?: unknown;
 }
 
 // Kodi-Specific Types
@@ -90,6 +90,12 @@ export namespace Player {
     type: string;
     label: string;
     title?: string;
+    showtitle?: string;
+    season?: number;
+    episode?: number;
+    year?: number;
+    artist?: string;
+    file?: string;
   }
 
   export interface GetItemParams {
@@ -216,7 +222,7 @@ export namespace VideoLibrary {
       method: string;
       order: 'ascending' | 'descending';
     };
-    filter?: Record<string, any>;
+    filter?: Record<string, unknown>;
   }
 
   export interface GetMovieDetailsParams {
@@ -452,6 +458,7 @@ export type KodiNotificationMethod =
   | 'Player.OnPlay'
   | 'Player.OnPause'
   | 'Player.OnStop'
+  | 'Player.OnResume'
   | 'Player.OnSeek'
   | 'Player.OnSpeedChanged'
   | 'Player.OnPropertyChanged'
@@ -507,4 +514,27 @@ export interface DetectedVersion {
   minor: number;
   patch?: number;
   supported: boolean;
+}
+
+// Notification Params
+export interface KodiPlayerNotificationParams {
+  data: {
+    player?: {
+      playerid: number;
+      speed?: number;
+    };
+    item: {
+      type: string;
+      title?: string;
+      label?: string;
+      showtitle?: string;
+      year?: number;
+    };
+  };
+}
+
+export interface KodiNotification {
+  jsonrpc: '2.0';
+  method: KodiNotificationMethod;
+  params?: KodiPlayerNotificationParams;
 }

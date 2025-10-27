@@ -12,12 +12,12 @@ export interface ProviderConfig {
   personalApiKey?: string;         // Upgraded API key for better rates (e.g., FanArt.tv)
   language?: string;                // 'en', 'es', 'fr', etc.
   region?: string;                  // 'US', 'GB', 'FR', etc.
-  options?: Record<string, any>;    // Provider-specific options
+  options?: Record<string, unknown>;    // Provider-specific options
   lastTestAt?: Date;
   lastTestStatus?: 'success' | 'error' | 'never_tested';
   lastTestError?: string;
-  createdAt: Date;
-  updatedAt: Date;
+  created_at: Date;
+  updated_at: Date;
 }
 
 export interface ProviderAssetType {
@@ -63,7 +63,7 @@ export interface UpdateProviderRequest {
   personalApiKey?: string;
   language?: string;
   region?: string;
-  options?: Record<string, any>;
+  options?: Record<string, unknown>;
 }
 
 /**
@@ -75,8 +75,8 @@ export interface AssetTypePriority {
   id: number;
   assetType: string;           // 'poster', 'fanart', 'clearlogo', etc.
   providerOrder: string[];     // ['fanart_tv', 'tmdb', 'tvdb', 'local']
-  createdAt: Date;
-  updatedAt: Date;
+  created_at: Date;
+  updated_at: Date;
 }
 
 /**
@@ -89,8 +89,8 @@ export interface MetadataFieldPriority {
   fieldName: string;           // 'rating', 'plot', 'runtime', etc.
   providerOrder: string[];     // ['imdb', 'tmdb', 'tvdb']
   forcedProvider?: string;     // 'local' for runtime/codecs (non-overrideable)
-  createdAt: Date;
-  updatedAt: Date;
+  created_at: Date;
+  updated_at: Date;
 }
 
 /**
@@ -102,8 +102,8 @@ export interface PriorityPresetSelection {
   id: number;
   presetId: string;            // 'quality_first', 'speed_first', 'custom', etc.
   isActive: boolean;           // Only one can be active at a time
-  createdAt: Date;
-  updatedAt: Date;
+  created_at: Date;
+  updated_at: Date;
 }
 
 /**
@@ -139,8 +139,8 @@ export interface DataSelectionConfig {
   mode: 'balanced' | 'custom';
   customMetadataPriorities: Record<string, FieldPriorityConfig>;
   customImagePriorities: Record<string, FieldPriorityConfig>;
-  createdAt: Date;
-  updatedAt: Date;
+  created_at: Date;
+  updated_at: Date;
 }
 
 /**

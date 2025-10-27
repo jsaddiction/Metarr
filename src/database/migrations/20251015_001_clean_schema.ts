@@ -84,20 +84,31 @@ export class CleanSchemaMigration {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         group_id INTEGER NOT NULL,
         name TEXT NOT NULL,
+        type TEXT DEFAULT 'kodi',
         host TEXT NOT NULL,
-        port INTEGER NOT NULL,
+        http_port INTEGER NOT NULL DEFAULT 8080,
         username TEXT,
         password TEXT,
         api_key TEXT,
         enabled BOOLEAN DEFAULT 1,
+        library_group TEXT,
+        library_paths TEXT DEFAULT '[]',
+        config TEXT DEFAULT '{}',
+        connection_status TEXT DEFAULT 'disconnected',
+        json_rpc_version TEXT,
+        last_connected TIMESTAMP,
+        last_error TEXT,
         last_ping_at TIMESTAMP,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (group_id) REFERENCES media_player_groups(id) ON DELETE CASCADE
       )
     `);
 
     await db.execute('CREATE INDEX idx_media_players_group ON media_players(group_id)');
     await db.execute('CREATE INDEX idx_media_players_enabled ON media_players(enabled)');
+    await db.execute('CREATE INDEX idx_media_players_type ON media_players(type)');
+    await db.execute('CREATE INDEX idx_media_players_connection_status ON media_players(connection_status)');
 
     // Media Player Libraries (Group-Library Junction)
     await db.execute(`
@@ -168,8 +179,9 @@ export class CleanSchemaMigration {
       )
     `);
 
-    await db.execute('CREATE INDEX idx_cache_videos_entity ON cache_video_files(entity_type, entity_id)');
-    await db.execute('CREATE INDEX idx_cache_videos_type ON cache_video_files(video_type)');
+    // Composite index for polymorphic entity lookups (covers entity_type + entity_id + video_type)
+    // Optimizes: WHERE entity_type = ? AND entity_id = ? [AND video_type = ?]
+    await db.execute('CREATE INDEX idx_cache_videos_entity_composite ON cache_video_files(entity_type, entity_id, video_type)');
     await db.execute('CREATE INDEX idx_cache_videos_hash ON cache_video_files(file_hash)');
     await db.execute('CREATE INDEX idx_cache_videos_locked ON cache_video_files(is_locked)');
 
@@ -223,8 +235,10 @@ export class CleanSchemaMigration {
       )
     `);
 
-    await db.execute('CREATE INDEX idx_cache_images_entity ON cache_image_files(entity_type, entity_id)');
-    await db.execute('CREATE INDEX idx_cache_images_type ON cache_image_files(image_type)');
+    // Composite index for polymorphic entity lookups (covers entity_type + entity_id + image_type)
+    // Optimizes: WHERE entity_type = ? AND entity_id = ? [AND image_type = ?]
+    // Used in: movieService movie list query (13+ subqueries), imageService, assetDiscovery
+    await db.execute('CREATE INDEX idx_cache_images_entity_composite ON cache_image_files(entity_type, entity_id, image_type)');
     await db.execute('CREATE INDEX idx_cache_images_hash ON cache_image_files(file_hash)');
     await db.execute('CREATE INDEX idx_cache_images_locked ON cache_image_files(is_locked)');
 
@@ -273,8 +287,9 @@ export class CleanSchemaMigration {
       )
     `);
 
-    await db.execute('CREATE INDEX idx_cache_audio_entity ON cache_audio_files(entity_type, entity_id)');
-    await db.execute('CREATE INDEX idx_cache_audio_type ON cache_audio_files(audio_type)');
+    // Composite index for polymorphic entity lookups (covers entity_type + entity_id + audio_type)
+    // Optimizes: WHERE entity_type = ? AND entity_id = ? [AND audio_type = ?]
+    await db.execute('CREATE INDEX idx_cache_audio_entity_composite ON cache_audio_files(entity_type, entity_id, audio_type)');
     await db.execute('CREATE INDEX idx_cache_audio_locked ON cache_audio_files(is_locked)');
 
     console.log('✅ cache_audio_files table created');
@@ -321,8 +336,10 @@ export class CleanSchemaMigration {
       )
     `);
 
-    await db.execute('CREATE INDEX idx_cache_text_entity ON cache_text_files(entity_type, entity_id)');
-    await db.execute('CREATE INDEX idx_cache_text_type ON cache_text_files(text_type)');
+    // Composite index for polymorphic entity lookups (covers entity_type + entity_id + text_type)
+    // Optimizes: WHERE entity_type = ? AND entity_id = ? [AND text_type = ?]
+    // Critical for: SELECT MAX(discovered_at) FROM cache_text_files WHERE entity_type = 'movie' AND entity_id = ? AND text_type = 'nfo'
+    await db.execute('CREATE INDEX idx_cache_text_entity_composite ON cache_text_files(entity_type, entity_id, text_type)');
     await db.execute('CREATE INDEX idx_cache_text_locked ON cache_text_files(is_locked)');
 
     console.log('✅ cache_text_files table created');
@@ -358,7 +375,9 @@ export class CleanSchemaMigration {
       )
     `);
 
-    await db.execute('CREATE INDEX idx_unknown_files_entity ON unknown_files(entity_type, entity_id)');
+    // Composite index for polymorphic entity lookups (covers entity_type + entity_id)
+    // Optimizes: SELECT * FROM unknown_files WHERE entity_type = ? AND entity_id = ?
+    await db.execute('CREATE INDEX idx_unknown_files_entity_composite ON unknown_files(entity_type, entity_id)');
     await db.execute('CREATE INDEX idx_unknown_files_extension ON unknown_files(extension)');
     await db.execute('CREATE INDEX idx_unknown_files_category ON unknown_files(category)');
 
@@ -414,16 +433,6 @@ export class CleanSchemaMigration {
         imdb_rating REAL,
         imdb_votes INTEGER,
         user_rating REAL CHECK(user_rating >= 0 AND user_rating <= 10),
-        poster_id INTEGER,
-        fanart_id INTEGER,
-        logo_id INTEGER,
-        clearlogo_id INTEGER,
-        clearart_id INTEGER,
-        banner_id INTEGER,
-        thumb_id INTEGER,
-        discart_id INTEGER,
-        keyart_id INTEGER,
-        landscape_id INTEGER,
         nfo_cache_id INTEGER,
         title_locked BOOLEAN DEFAULT 0,
         plot_locked BOOLEAN DEFAULT 0,
@@ -445,17 +454,7 @@ export class CleanSchemaMigration {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (library_id) REFERENCES libraries(id) ON DELETE CASCADE,
-        FOREIGN KEY (poster_id) REFERENCES cache_image_files(id),
-        FOREIGN KEY (fanart_id) REFERENCES cache_image_files(id),
-        FOREIGN KEY (logo_id) REFERENCES cache_image_files(id),
-        FOREIGN KEY (clearlogo_id) REFERENCES cache_image_files(id),
-        FOREIGN KEY (clearart_id) REFERENCES cache_image_files(id),
-        FOREIGN KEY (banner_id) REFERENCES cache_image_files(id),
-        FOREIGN KEY (thumb_id) REFERENCES cache_image_files(id),
-        FOREIGN KEY (discart_id) REFERENCES cache_image_files(id),
-        FOREIGN KEY (keyart_id) REFERENCES cache_image_files(id),
-        FOREIGN KEY (landscape_id) REFERENCES cache_image_files(id),
-        FOREIGN KEY (nfo_cache_id) REFERENCES cache_text_files(id)
+        FOREIGN KEY (nfo_cache_id) REFERENCES cache_text_files(id) ON DELETE SET NULL
       )
     `);
 
@@ -474,11 +473,7 @@ export class CleanSchemaMigration {
         tmdb_collection_id INTEGER UNIQUE,
         name TEXT NOT NULL,
         plot TEXT,
-        poster_id INTEGER,
-        fanart_id INTEGER,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (poster_id) REFERENCES cache_image_files(id),
-        FOREIGN KEY (fanart_id) REFERENCES cache_image_files(id)
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
 
@@ -1151,7 +1146,11 @@ export class CleanSchemaMigration {
 
     await db.execute('CREATE INDEX idx_job_history_type_date ON job_history(type, completed_at DESC)');
     await db.execute('CREATE INDEX idx_job_history_cleanup ON job_history(status, completed_at)');
+
+    // Job queue pickup indexes - optimized for worker polling
+    // Covers: WHERE status IN ('pending', 'retrying') AND (status = 'pending' OR next_retry_at <= ?) ORDER BY priority, created_at
     await db.execute('CREATE INDEX idx_job_queue_pickup ON job_queue(status, priority ASC, created_at ASC) WHERE status = \'pending\'');
+    await db.execute('CREATE INDEX idx_job_queue_pickup_retry ON job_queue(status, next_retry_at, priority ASC, created_at ASC) WHERE status = \'retrying\'');
     await db.execute('CREATE INDEX idx_job_queue_processing ON job_queue(status) WHERE status = \'processing\'');
 
     // Library Scheduler Configuration
