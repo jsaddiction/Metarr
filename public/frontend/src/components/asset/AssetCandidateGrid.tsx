@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { AssetCandidate } from '../../hooks/useAssetCandidates';
+import { AssetCandidate } from '../../types/asset';
 import { AssetThumbnail } from './AssetThumbnail';
 
 interface AssetCandidateGridProps {

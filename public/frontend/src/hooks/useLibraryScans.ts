@@ -142,13 +142,13 @@ export const useDeleteLibrary = () => {
   return useMutation<void, Error, number>({
     mutationFn: (id: number) => libraryApi.delete(id),
     onSuccess: () => {
-      // Invalidate libraries list
-      queryClient.invalidateQueries({ queryKey: ['libraries'] });
+      // Refetch libraries list immediately
+      queryClient.refetchQueries({ queryKey: ['libraries'] });
 
-      // Invalidate all media queries since library deletion removes associated media
-      queryClient.invalidateQueries({ queryKey: ['movies'] });
-      queryClient.invalidateQueries({ queryKey: ['series'] });
-      queryClient.invalidateQueries({ queryKey: ['episodes'] });
+      // Refetch all media queries since library deletion removes associated media
+      queryClient.refetchQueries({ queryKey: ['movies'] });
+      queryClient.refetchQueries({ queryKey: ['series'] });
+      queryClient.refetchQueries({ queryKey: ['episodes'] });
 
       // Clear any individual movie/series queries
       queryClient.removeQueries({ queryKey: ['movie'] });

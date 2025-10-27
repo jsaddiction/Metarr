@@ -53,6 +53,9 @@ export interface AssetCandidate {
 
   // Additional Context
   metadata?: Record<string, any>;
+
+  // File upload (for staged uploads)
+  uploadFile?: File;
 }
 
 /**
@@ -147,7 +150,7 @@ export interface AssetSelectionDialogProps {
   selectedAssets?: CurrentAsset[]; // Already selected assets to filter out
   providerResults?: ProviderResultsResponse;
   isLoading?: boolean;
-  error?: Error | null;
+  error?: Error;
 }
 
 /**

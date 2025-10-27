@@ -17,9 +17,9 @@ import { Search, CheckCircle, Sparkles, Upload, MoreVertical } from 'lucide-reac
 import { MovieListItem } from '../../types/movie';
 import { AssetIndicator } from './AssetIndicator';
 import { BookmarkToggle } from '../ui/BookmarkToggle';
-import { useToggleMonitored } from '../../hooks/useToggleMonitored';
+import { useToggleMonitored } from '../../hooks/useMovies';
 import { EnrichmentStatusBadge } from './EnrichmentStatusBadge';
-import { useTriggerJob } from '../../hooks/useTriggerJob';
+import { useTriggerJob } from '../../hooks/useJobs';
 import { useNavigate } from 'react-router-dom';
 import {
   DropdownMenu,
@@ -194,7 +194,7 @@ export const MovieRow = React.memo<MovieRowProps>(({ movie, onClick, onRefresh }
                 <DropdownMenuItem
                   onClick={(e) => {
                     e.stopPropagation();
-                    navigate(`/metadata/movies/${movie.id}/edit`);
+                    navigate(`/media/movies/${movie.id}/edit`);
                   }}
                 >
                   <Search className="w-4 h-4" />

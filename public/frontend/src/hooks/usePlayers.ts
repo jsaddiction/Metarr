@@ -61,6 +61,7 @@ export const useCreatePlayer = () => {
     mutationFn: (data: MediaPlayerFormData) => mediaPlayerApi.create(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['players'] });
+      queryClient.invalidateQueries({ queryKey: ['mediaPlayerGroups'] });
       showSuccessToast('Media player created successfully');
     },
     onError: (error) => {
@@ -95,6 +96,7 @@ export const useUpdatePlayer = () => {
     onSuccess: (data, { id }) => {
       queryClient.invalidateQueries({ queryKey: ['players'] });
       queryClient.invalidateQueries({ queryKey: ['player', id] });
+      queryClient.invalidateQueries({ queryKey: ['mediaPlayerGroups'] });
       showSuccessToast('Media player updated successfully');
     },
     onError: (error) => {
@@ -113,6 +115,7 @@ export const useDeletePlayer = () => {
     mutationFn: (id: number) => mediaPlayerApi.delete(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['players'] });
+      queryClient.invalidateQueries({ queryKey: ['mediaPlayerGroups'] });
       showSuccessToast('Media player deleted successfully');
     },
     onError: (error) => {
@@ -150,6 +153,7 @@ export const useConnectPlayer = () => {
     onSuccess: (data, id) => {
       queryClient.invalidateQueries({ queryKey: ['players'] });
       queryClient.invalidateQueries({ queryKey: ['player', id] });
+      queryClient.invalidateQueries({ queryKey: ['mediaPlayerGroups'] });
     },
   });
 };
@@ -165,6 +169,7 @@ export const useDisconnectPlayer = () => {
     onSuccess: (data, id) => {
       queryClient.invalidateQueries({ queryKey: ['players'] });
       queryClient.invalidateQueries({ queryKey: ['player', id] });
+      queryClient.invalidateQueries({ queryKey: ['mediaPlayerGroups'] });
     },
   });
 };

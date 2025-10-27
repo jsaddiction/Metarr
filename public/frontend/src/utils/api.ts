@@ -3,6 +3,7 @@ import {
   MediaPlayerFormData,
   TestConnectionResult,
   MediaPlayerStatus,
+  PlayerActivityState,
 } from '../types/mediaPlayer';
 import {
   Library,
@@ -14,7 +15,14 @@ import {
   ScanCompletedEvent,
   ScanFailedEvent,
 } from '../types/library';
-import { MovieListItem, MovieDetail, MovieListResult } from '../types/movie';
+import {
+  MovieListItem,
+  MovieDetail,
+  MovieListResult,
+  ToggleMonitoredResponse,
+  LockFieldResponse,
+  ResetMetadataResponse,
+} from '../types/movie';
 import {
   ProviderWithMetadata,
   UpdateProviderRequest,
@@ -34,6 +42,16 @@ import {
   GetProviderOrderResponse,
 } from '../types/provider';
 import { ProviderResultsResponse } from '../types/asset';
+import {
+  Job,
+  JobStats,
+  JobHistoryRecord,
+  JobHistoryFilters,
+  JobHistoryResponse,
+  TriggerJobRequest,
+  TriggerJobResponse,
+  JobsResponse,
+} from '../types/job';
 
 const API_BASE_URL = '/api';
 
@@ -117,6 +135,34 @@ export const mediaPlayerApi = {
     return fetchApi<void>(`/media-players/${id}`, {
       method: 'DELETE',
     });
+  },
+
+  /**
+   * Get all media player groups
+   */
+  async getGroups(): Promise<Array<{ id: number; name: string; type: string; max_members: number | null }>> {
+    return fetchApi('/media-player-groups');
+  },
+
+  /**
+   * Get all media player groups with their members
+   */
+  async getGroupsWithMembers(): Promise<import('../types/mediaPlayer').MediaPlayerGroup[]> {
+    return fetchApi('/media-player-groups/with-members');
+  },
+
+  /**
+   * Get all player activity states
+   */
+  async getAllActivityStates(): Promise<PlayerActivityState[]> {
+    return fetchApi<PlayerActivityState[]>('/media-players/activity');
+  },
+
+  /**
+   * Get activity state for a specific player
+   */
+  async getActivityState(id: number): Promise<PlayerActivityState> {
+    return fetchApi<PlayerActivityState>(`/media-players/${id}/activity`);
   },
 
   /**
@@ -422,6 +468,72 @@ export const movieApi = {
       eventSource.close();
     };
   },
+
+  /**
+   * Get a single movie by ID with optional includes
+   * GET /api/movies/:id?include=files,candidates,locks
+   */
+  async getById(id: number, include?: string[]): Promise<MovieDetail> {
+    const params = new URLSearchParams();
+    if (include && include.length > 0) {
+      params.set('include', include.join(','));
+    }
+
+    const endpoint = `/movies/${id}${params.toString() ? `?${params}` : ''}`;
+    return fetchApi<MovieDetail>(endpoint);
+  },
+
+  /**
+   * Delete a movie
+   * DELETE /api/movies/:id
+   */
+  async delete(id: number): Promise<void> {
+    return fetchApi<void>(`/movies/${id}`, {
+      method: 'DELETE',
+    });
+  },
+
+  /**
+   * Toggle monitored status for a movie
+   * POST /api/movies/:id/toggle-monitored
+   */
+  async toggleMonitored(id: number): Promise<ToggleMonitoredResponse> {
+    return fetchApi<ToggleMonitoredResponse>(`/movies/${id}/toggle-monitored`, {
+      method: 'POST',
+    });
+  },
+
+  /**
+   * Lock a field to prevent automation from modifying it
+   * POST /api/movies/:id/lock-field
+   */
+  async lockField(id: number, fieldName: string): Promise<LockFieldResponse> {
+    return fetchApi<LockFieldResponse>(`/movies/${id}/lock-field`, {
+      method: 'POST',
+      body: JSON.stringify({ fieldName }),
+    });
+  },
+
+  /**
+   * Unlock a field to allow automation to modify it
+   * POST /api/movies/:id/unlock-field
+   */
+  async unlockField(id: number, fieldName: string): Promise<LockFieldResponse> {
+    return fetchApi<LockFieldResponse>(`/movies/${id}/unlock-field`, {
+      method: 'POST',
+      body: JSON.stringify({ fieldName }),
+    });
+  },
+
+  /**
+   * Reset all metadata locks
+   * POST /api/movies/:id/reset-metadata
+   */
+  async resetMetadata(id: number): Promise<ResetMetadataResponse> {
+    return fetchApi<ResetMetadataResponse>(`/movies/${id}/reset-metadata`, {
+      method: 'POST',
+    });
+  },
 };
 
 export const providerApi = {
@@ -691,6 +803,145 @@ export const assetApi = {
     // Note: This would need to be implemented based on your SSE architecture
     // For now, returning a no-op cleanup function
     return () => {};
+  },
+
+  /**
+   * Get asset candidates for an entity
+   * GET /api/movies/:id/asset-candidates?type=poster&includeBlocked=false
+   */
+  async getCandidates(
+    entityId: number,
+    assetType: string,
+    includeBlocked: boolean = false
+  ): Promise<any[]> {
+    const params = new URLSearchParams({ type: assetType });
+    if (includeBlocked) params.append('includeBlocked', 'true');
+
+    const response = await fetchApi<{ candidates: any[] }>(
+      `/movies/${entityId}/asset-candidates?${params}`
+    );
+    return response.candidates;
+  },
+
+  // REMOVED: selectCandidate, blockCandidate, unblockCandidate, resetSelection
+  // These API methods are no longer available with the cache-aside pattern.
+  // Asset selection now happens via the replaceAssets endpoint.
+};
+
+/**
+ * Recycle Bin API
+ */
+export const recycleBinApi = {
+  /**
+   * Get recycled files for a movie
+   */
+  async getForMovie(movieId: number): Promise<any[]> {
+    return fetchApi<any[]>(`/movies/${movieId}/recycle-bin`);
+  },
+
+  /**
+   * Get recycled files for an episode
+   */
+  async getForEpisode(episodeId: number): Promise<any[]> {
+    return fetchApi<any[]>(`/episodes/${episodeId}/recycle-bin`);
+  },
+
+  /**
+   * Get recycle bin statistics
+   */
+  async getStats(): Promise<{ success: boolean; data: any }> {
+    return fetchApi<{ success: boolean; data: any }>('/recycle-bin/stats');
+  },
+
+  /**
+   * Restore a file from recycle bin
+   */
+  async restore(recycleId: number): Promise<any> {
+    return fetchApi<any>(`/recycle-bin/${recycleId}/restore`, {
+      method: 'POST',
+    });
+  },
+
+  /**
+   * Permanently delete a file from recycle bin
+   */
+  async permanentlyDelete(recycleId: number): Promise<any> {
+    return fetchApi<any>(`/recycle-bin/${recycleId}`, {
+      method: 'DELETE',
+    });
+  },
+
+  /**
+   * Cleanup expired recycle bin items
+   */
+  async cleanupExpired(): Promise<any> {
+    return fetchApi<any>('/recycle-bin/cleanup/expired', {
+      method: 'POST',
+    });
+  },
+
+  /**
+   * Cleanup pending recycle bin items
+   */
+  async cleanupPending(): Promise<any> {
+    return fetchApi<any>('/recycle-bin/cleanup/pending', {
+      method: 'POST',
+    });
+  },
+
+  /**
+   * Empty entire recycle bin
+   */
+  async empty(): Promise<any> {
+    return fetchApi<any>('/recycle-bin/empty', {
+      method: 'POST',
+    });
+  },
+};
+
+/**
+ * Job API module - Job queue and history management
+ */
+export const jobApi = {
+  /**
+   * Get active and recent jobs
+   * GET /api/jobs
+   */
+  async getAll(): Promise<Job[]> {
+    const response = await fetchApi<JobsResponse>('/jobs');
+    return response.jobs || [];
+  },
+
+  /**
+   * Get job statistics aggregated by status
+   * GET /api/jobs/stats
+   */
+  async getStats(): Promise<JobStats> {
+    return fetchApi<JobStats>('/jobs/stats');
+  },
+
+  /**
+   * Get job history with optional filters
+   * GET /api/jobs/history?limit=50&type=movie_metadata&status=completed
+   */
+  async getHistory(filters?: JobHistoryFilters): Promise<JobHistoryResponse> {
+    const params = new URLSearchParams();
+    if (filters?.limit) params.set('limit', filters.limit.toString());
+    if (filters?.type) params.set('type', filters.type);
+    if (filters?.status) params.set('status', filters.status);
+
+    const queryString = params.toString();
+    return fetchApi<JobHistoryResponse>(`/jobs/history${queryString ? `?${queryString}` : ''}`);
+  },
+
+  /**
+   * Trigger a manual job for a movie
+   * POST /api/movies/:movieId/jobs/:jobType
+   */
+  async triggerJob(movieId: number, jobType: 'verify' | 'enrich' | 'publish'): Promise<TriggerJobResponse> {
+    return fetchApi<TriggerJobResponse>(`/movies/${movieId}/jobs/${jobType}`, {
+      method: 'POST',
+    });
   },
 };
 

@@ -235,3 +235,40 @@ export interface MovieListResult {
  * @deprecated Use MovieListItem instead
  */
 export type Movie = MovieListItem;
+
+/**
+ * Toggle monitored status response
+ * POST /api/movies/:id/toggle-monitored
+ */
+export interface ToggleMonitoredResponse {
+  id: number;
+  monitored: boolean;
+}
+
+/**
+ * Lock/unlock field request
+ * POST /api/movies/:id/lock-field
+ * POST /api/movies/:id/unlock-field
+ */
+export interface LockFieldRequest {
+  movieId: number;
+  fieldName: string;
+}
+
+/**
+ * Lock/unlock field response
+ */
+export interface LockFieldResponse {
+  success: boolean;
+  fieldName: string;
+  locked: boolean;
+}
+
+/**
+ * Reset metadata response
+ * POST /api/movies/:id/reset-metadata
+ */
+export interface ResetMetadataResponse {
+  success: boolean;
+  unlockedFields: string[];
+}

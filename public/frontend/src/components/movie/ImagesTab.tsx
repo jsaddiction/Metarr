@@ -18,13 +18,15 @@ import {
   useToggleImageLock,
   useDeleteImage,
 } from '../../hooks/useMovieAssets';
+import { useMovie } from '../../hooks/useMovies';
 import { AssetCard } from '../asset/AssetCard';
-import { AssetBrowserModal } from '../ui/AssetBrowserModal';
+import { AssetBrowserModal } from '../asset/AssetBrowserModal';
 import { CurrentAssetCard } from './CurrentAssetCard';
 import { EmptySlotCard } from './EmptySlotCard';
-import { AssetSelectionModal } from './AssetSelectionModal';
+import { AssetSelectionModalV2 } from './AssetSelectionModal_v2';
 import { assetApi } from '../../utils/api';
 import type { AssetType, AssetCandidate } from '../../types/asset';
+import { useConfirm } from '../../hooks/useConfirm';
 
 interface ImagesTabProps {
   movieId: number;
@@ -64,9 +66,13 @@ const ASSET_TYPE_INFO: Record<string, { label: string; aspectRatio: string; grid
 };
 
 export const ImagesTab: React.FC<ImagesTabProps> = ({ movieId, movieTitle = 'Unknown Movie' }) => {
+  // Accessible confirmation dialog
+  const { confirm, ConfirmDialog } = useConfirm();
+
   // Use TanStack Query hooks
   const queryClient = useQueryClient();
   const { data: images = {}, isLoading: loading } = useMovieImages(movieId);
+  const { data: movie } = useMovie(movieId);
   const uploadImageMutation = useUploadImage(movieId);
   const toggleLockMutation = useToggleImageLock(movieId);
   const deleteImageMutation = useDeleteImage(movieId);
@@ -140,16 +146,26 @@ export const ImagesTab: React.FC<ImagesTabProps> = ({ movieId, movieTitle = 'Unk
     votes: undefined, // Explicitly set to undefined to prevent rendering issues
   });
 
-  // Fetch provider results when dialog is open
+  // Fetch ALL asset types at once (efficient - TMDB returns everything in one call)
+  // This populates the cache for all asset types, so subsequent "Edit" clicks are instant
   const {
     data: providerResults,
     isLoading: isLoadingProviders,
     error: providerError,
   } = useQuery({
-    queryKey: ['provider-results', 'movie', movieId, selectedAssetType],
-    queryFn: () => assetApi.getEntityProviderResults('movie', movieId, selectedAssetType ? [selectedAssetType] : []),
-    enabled: assetDialogOpen && selectedAssetType !== null,
-    staleTime: 1000 * 60 * 60, // 1 hour cache
+    queryKey: ['provider-results', 'movie', movieId], // Remove selectedAssetType from key
+    queryFn: () => assetApi.getEntityProviderResults('movie', movieId, [
+      'poster',
+      'fanart',
+      'clearlogo',
+      'clearart',
+      'banner',
+      'landscape',
+      'keyart',
+      'discart',
+    ]),
+    enabled: assetDialogOpen, // Fetch when ANY edit button is clicked
+    staleTime: 1000 * 60 * 60, // 1 hour cache - reuse for all asset types
   });
 
   const handleToggleLock = async (imageId: number, currentLocked: boolean) => {
@@ -163,7 +179,15 @@ export const ImagesTab: React.FC<ImagesTabProps> = ({ movieId, movieTitle = 'Unk
   };
 
   const handleDeleteImage = async (imageId: number) => {
-    if (!confirm('Are you sure you want to delete this image?')) return;
+    const confirmed = await confirm({
+      title: 'Delete Image',
+      description: 'Are you sure you want to delete this image? This action cannot be undone.',
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      variant: 'destructive',
+    });
+
+    if (!confirmed) return;
 
     try {
       await deleteImageMutation.mutateAsync(imageId);
@@ -237,7 +261,9 @@ export const ImagesTab: React.FC<ImagesTabProps> = ({ movieId, movieTitle = 'Unk
         const typeImages = images[assetType] || [];
         const maxLimit = assetLimits[assetType] ?? 1; // Default to 1 if not configured
         const canUpload = typeImages.length < maxLimit;
-        const isGroupLocked = typeImages.some(img => img.locked);
+        // Check field lock from movie record (e.g., poster_locked)
+        const lockFieldName = `${assetType}_locked` as keyof typeof movie;
+        const isGroupLocked = movie?.[lockFieldName] === true || movie?.[lockFieldName] === 1;
 
         // Skip disabled asset types (limit = 0)
         if (maxLimit === 0) return null;
@@ -262,13 +288,15 @@ export const ImagesTab: React.FC<ImagesTabProps> = ({ movieId, movieTitle = 'Unk
                           body: JSON.stringify({ locked: newLockedState }),
                         });
                         if (!response.ok) throw new Error('Failed to toggle lock');
-                        // TanStack Query will auto-refetch
+
+                        // Force refetch movie data to update lock state immediately
+                        await queryClient.refetchQueries({ queryKey: ['movie', movieId] });
                       } catch (error) {
                         console.error('Failed to toggle group lock:', error);
                         alert('Failed to toggle lock');
                       }
                     }}
-                    className={`btn btn-sm btn-ghost ${isGroupLocked ? 'text-warning' : 'text-neutral-500'}`}
+                    className={`btn btn-sm btn-ghost ${isGroupLocked ? 'text-primary-500' : 'text-neutral-400'}`}
                     title={isGroupLocked ? 'Locked - click to unlock' : 'Unlocked - click to lock'}
                     aria-label={isGroupLocked ? 'Unlock all images' : 'Lock all images'}
                   >
@@ -360,7 +388,7 @@ export const ImagesTab: React.FC<ImagesTabProps> = ({ movieId, movieTitle = 'Unk
           <div className="flex-1 flex items-center justify-center p-4 overflow-auto">
             <img
               src={fullscreenImage.cache_url}
-              alt="Fullscreen view"
+              alt={`${ASSET_TYPE_INFO[fullscreenImage.image_type]?.label || fullscreenImage.image_type} for ${movieTitle}`}
               className="max-w-full max-h-full object-contain"
             />
           </div>
@@ -396,7 +424,13 @@ export const ImagesTab: React.FC<ImagesTabProps> = ({ movieId, movieTitle = 'Unk
                   </button>
                   <button
                     onClick={async () => {
-                      if (confirm('Delete this image?')) {
+                      const confirmed = await confirm({
+                        title: 'Delete Image',
+                        description: 'Are you sure you want to delete this image? This action cannot be undone.',
+                        confirmText: 'Delete',
+                        variant: 'destructive',
+                      });
+                      if (confirmed) {
                         await handleDeleteImage(fullscreenImage.id);
                         setFullscreenImage(null);
                       }
@@ -413,21 +447,79 @@ export const ImagesTab: React.FC<ImagesTabProps> = ({ movieId, movieTitle = 'Unk
         </div>
       )}
 
-      {/* Asset Selection Modal - New Full-Viewport Design */}
+      {/* Asset Selection Modal V2 - Multi-asset support */}
       {assetDialogOpen && selectedAssetType && (
-        <AssetSelectionModal
+        <AssetSelectionModalV2
           isOpen={assetDialogOpen}
           onClose={() => setAssetDialogOpen(false)}
           assetType={selectedAssetType}
           assetTypeLabel={ASSET_TYPE_INFO[selectedAssetType]?.label || selectedAssetType}
           movieTitle={movieTitle}
           movieId={movieId}
-          currentAssetUrl={
-            images[selectedAssetType]?.[0]?.cache_url
-          }
-          currentAssetId={
-            images[selectedAssetType]?.[0]?.id
-          }
+          currentAssets={images[selectedAssetType] || []}
+          maxLimit={assetLimits[selectedAssetType] || 10}
+          providerResults={providerResults}
+          isLoadingProviders={isLoadingProviders}
+          providerError={providerError}
+          onApply={async (selectedAssets) => {
+            /**
+             * Process selected assets into format backend expects:
+             * 1. Upload new files first (get their IDs)
+             * 2. Build asset list with:
+             *    - Existing assets: {imageFileId: X} (to keep)
+             *    - New provider assets: {url: 'https://...'} (to download)
+             *    - Uploaded files: {imageFileId: Y} (to keep)
+             */
+            const finalAssets: any[] = [];
+            const uploadPromises: Promise<any>[] = [];
+
+            // Categorize assets by type
+            for (const asset of selectedAssets) {
+              if ((asset as any).uploadFile) {
+                // Upload file (process later)
+                uploadPromises.push(uploadImageMutation.mutateAsync({
+                  file: (asset as any).uploadFile,
+                  type: selectedAssetType
+                }));
+              } else if (asset.url?.startsWith('/cache/')) {
+                // Existing asset - keep it
+                finalAssets.push({
+                  imageFileId: parseInt((asset as any).providerResultId),
+                  provider: 'existing'
+                });
+              } else {
+                // New provider asset - download it
+                finalAssets.push({
+                  url: asset.url,
+                  provider: (asset as any).providerId || 'unknown',
+                  width: asset.width,
+                  height: asset.height,
+                  perceptualHash: asset.perceptualHash,
+                });
+              }
+            }
+
+            // Process uploads first, then add their IDs to finalAssets
+            if (uploadPromises.length > 0) {
+              const uploadResults = await Promise.all(uploadPromises);
+              uploadResults.forEach((result: any) => {
+                finalAssets.push({
+                  imageFileId: result.image.id,
+                  provider: 'user'
+                });
+              });
+            }
+
+            // Atomically replace all assets
+            await replaceAssetsMutation.mutateAsync({
+              assetType: selectedAssetType,
+              assets: finalAssets,
+            });
+          }}
+          onUpload={async () => {
+            // Upload is handled in the modal's handleFileSelect
+            // This prop is just to enable the upload button
+          }}
         />
       )}
 
@@ -441,6 +533,9 @@ export const ImagesTab: React.FC<ImagesTabProps> = ({ movieId, movieTitle = 'Unk
           assetTypeLabel={ASSET_TYPE_INFO[selectedAssetType]?.label}
         />
       )}
+
+      {/* Accessible Confirmation Dialog */}
+      <ConfirmDialog />
     </div>
   );
 };

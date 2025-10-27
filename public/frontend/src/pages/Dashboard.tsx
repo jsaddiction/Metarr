@@ -4,7 +4,7 @@ import { MediaPlayerStatusCard } from '../components/dashboard/MediaPlayerStatus
 import { RecentActivityList } from '../components/dashboard/RecentActivityList';
 import { useLibraries } from '../hooks/useLibraryScans';
 import { usePlayers } from '../hooks/usePlayers';
-import { useJobHistory } from '../hooks/useJobHistory';
+import { useJobHistory } from '../hooks/useJobs';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 
 export const Dashboard: React.FC = () => {

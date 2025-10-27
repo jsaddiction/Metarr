@@ -13,6 +13,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useConfirm } from '../../hooks/useConfirm';
 
 interface ProviderConfigModalProps {
   isOpen: boolean;
@@ -53,6 +54,9 @@ export const ProviderConfigModal: React.FC<ProviderConfigModalProps> = ({
   onClose,
   provider,
 }) => {
+  // Accessible confirmation dialog
+  const { confirm, ConfirmDialog } = useConfirm();
+
   const { config, metadata } = provider;
 
   const [apiKey, setApiKey] = useState(config.apiKey || '');
@@ -108,14 +112,22 @@ export const ProviderConfigModal: React.FC<ProviderConfigModalProps> = ({
   };
 
   const handleDelete = async () => {
-    if (confirm(`Are you sure you want to delete ${metadata.displayName}? This will remove all configuration and disable this provider.`)) {
-      try {
-        await disableProvider.mutateAsync(metadata.name);
-        onClose();
-      } catch (error: any) {
-        console.error('Failed to delete provider:', error);
-        alert(`Failed to delete provider: ${error.message}`);
-      }
+    const confirmed = await confirm({
+      title: 'Delete Provider',
+      description: `Are you sure you want to delete ${metadata.displayName}? This will remove all configuration and disable this provider.`,
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      variant: 'destructive',
+    });
+
+    if (!confirmed) return;
+
+    try {
+      await disableProvider.mutateAsync(metadata.name);
+      onClose();
+    } catch (error: any) {
+      console.error('Failed to delete provider:', error);
+      alert(`Failed to delete provider: ${error.message}`);
     }
   };
 
@@ -340,6 +352,9 @@ export const ProviderConfigModal: React.FC<ProviderConfigModalProps> = ({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Accessible Confirmation Dialog */}
+      <ConfirmDialog />
     </>
   );
 };

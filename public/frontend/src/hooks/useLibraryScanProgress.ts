@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useWebSocket } from '../contexts/WebSocketContext';
-import { toast } from 'sonner';
+import { showErrorToast, showSuccessToast } from '../utils/errorHandling';
 
 export interface JobProgress {
   current: number;
@@ -26,18 +26,20 @@ export function useLibraryScanProgress(libraryId: number) {
     const handleScanCompleted = (data: any) => {
       if (data.libraryId === libraryId) {
         setScanProgress(null);
-        toast.success(`Library scan completed`, {
-          description: data.libraryName || 'Scan finished successfully',
-        });
+        showSuccessToast(
+          'Library scan completed',
+          data.libraryName || 'Scan finished successfully'
+        );
       }
     };
 
     const handleScanFailed = (data: any) => {
       if (data.libraryId === libraryId) {
         setScanProgress(null);
-        toast.error(`Library scan failed`, {
-          description: data.error || 'An error occurred during scanning',
-        });
+        showErrorToast(
+          new Error(data.error || 'An error occurred during scanning'),
+          'Library scan'
+        );
       }
     };
 

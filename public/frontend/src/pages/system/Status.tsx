@@ -1,6 +1,9 @@
 import React from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { useSystemInfo, useProviderStatus } from '@/hooks/useSystemStatus';
+import { useSystemInfo } from '@/hooks/useSystemStatus';
+import { usePlayerActivity } from '@/hooks/usePlayerActivity';
+import { ConnectionBadge } from '@/components/mediaPlayer/ConnectionBadge';
+import { ActivityDisplay } from '@/components/mediaPlayer/ActivityDisplay';
 import {
   CheckCircle2,
   XCircle,
@@ -14,7 +17,7 @@ import {
 
 export const Status: React.FC = () => {
   const { data: systemInfo, isLoading: loadingSystem } = useSystemInfo();
-  const { data: providers, isLoading: loadingProviders } = useProviderStatus();
+  const { data: activityStates } = usePlayerActivity();
 
   const formatUptime = (seconds: number): string => {
     const days = Math.floor(seconds / 86400);
@@ -33,7 +36,7 @@ export const Status: React.FC = () => {
     return `${mb.toFixed(2)} MB`;
   };
 
-  if (loadingSystem || loadingProviders) {
+  if (loadingSystem) {
     return (
       <div className="content-spacing">
         <div className="flex items-center justify-center py-32 text-neutral-400">
@@ -44,8 +47,15 @@ export const Status: React.FC = () => {
     );
   }
 
-  // Check if database is operational (we have system data)
-  const databaseConnected = !!systemInfo;
+  // Determine overall system status
+  const databaseHealthy = systemInfo?.health.database.healthy ?? false;
+  const jobQueueHealthy = systemInfo?.health.jobQueue.healthy ?? false;
+  const cacheAccessible = systemInfo?.health.cache.accessible ?? false;
+  const jobsStuck = systemInfo?.health.jobQueue.stuck ?? false;
+
+  // System is operational if all critical components are healthy
+  const systemOperational = databaseHealthy && jobQueueHealthy && cacheAccessible;
+  const systemDegraded = !systemOperational && (databaseHealthy || jobQueueHealthy);
 
   return (
     <div className="content-spacing">
@@ -59,9 +69,31 @@ export const Status: React.FC = () => {
               <Server className="w-8 h-8 text-primary-500" />
               <div>
                 <div className="text-sm text-neutral-400">System</div>
-                <div className="text-xl font-bold text-green-500 flex items-center gap-2">
-                  <CheckCircle2 className="w-5 h-5" />
-                  Operational
+                <div
+                  className={`text-xl font-bold flex items-center gap-2 ${
+                    systemOperational
+                      ? 'text-green-500'
+                      : systemDegraded
+                      ? 'text-yellow-500'
+                      : 'text-red-500'
+                  }`}
+                >
+                  {systemOperational ? (
+                    <>
+                      <CheckCircle2 className="w-5 h-5" />
+                      Operational
+                    </>
+                  ) : systemDegraded ? (
+                    <>
+                      <AlertTriangle className="w-5 h-5" />
+                      Degraded
+                    </>
+                  ) : (
+                    <>
+                      <XCircle className="w-5 h-5" />
+                      Down
+                    </>
+                  )}
                 </div>
               </div>
             </div>
@@ -76,21 +108,26 @@ export const Status: React.FC = () => {
                 <div className="text-sm text-neutral-400">Database</div>
                 <div
                   className={`text-xl font-bold flex items-center gap-2 ${
-                    databaseConnected ? 'text-green-500' : 'text-red-500'
+                    databaseHealthy ? 'text-green-500' : 'text-red-500'
                   }`}
                 >
-                  {databaseConnected ? (
+                  {databaseHealthy ? (
                     <>
                       <CheckCircle2 className="w-5 h-5" />
-                      Connected
+                      Healthy
                     </>
                   ) : (
                     <>
                       <XCircle className="w-5 h-5" />
-                      Disconnected
+                      Unhealthy
                     </>
                   )}
                 </div>
+                {systemInfo?.health.database.responseTime !== undefined && (
+                  <div className="text-xs text-neutral-500 mt-1">
+                    {systemInfo.health.database.responseTime}ms
+                  </div>
+                )}
               </div>
             </div>
           </CardContent>
@@ -138,146 +175,165 @@ export const Status: React.FC = () => {
             <div className="flex justify-between py-2 border-b border-neutral-700">
               <span className="text-neutral-400">Memory Used</span>
               <span className="text-white font-medium">
-                {systemInfo?.memory.used.heapUsed
-                  ? formatBytes(systemInfo.memory.used.heapUsed)
-                  : 'Unknown'}
+                {systemInfo?.memory.used.heapUsed ? (
+                  <>
+                    {formatBytes(systemInfo.memory.used.heapUsed)}
+                    <span className="text-neutral-500 ml-2">
+                      ({(systemInfo.memory.percentUsed * 100).toFixed(1)}%)
+                    </span>
+                  </>
+                ) : (
+                  'Unknown'
+                )}
               </span>
             </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Database Statistics */}
-      {systemInfo?.database && (
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle>Database Statistics</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              <div className="text-center">
-                <div className="text-2xl font-bold text-primary-500">
-                  {systemInfo.database.movies.toLocaleString()}
+      {/* Component Health */}
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>Component Health</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {/* Job Queue Health */}
+            <div className="flex items-center justify-between p-4 rounded-lg bg-neutral-800/50 border border-neutral-700">
+              <div className="flex items-center gap-3">
+                <div
+                  className={`w-3 h-3 rounded-full ${
+                    jobQueueHealthy && !jobsStuck ? 'bg-green-500' : 'bg-red-500'
+                  }`}
+                />
+                <div>
+                  <div className="font-medium text-white">Job Queue</div>
+                  {jobsStuck && (
+                    <div className="text-xs text-yellow-400 flex items-center gap-1 mt-1">
+                      <AlertTriangle className="w-3 h-3" />
+                      Jobs stuck for &gt;5 minutes
+                    </div>
+                  )}
                 </div>
-                <div className="text-sm text-neutral-500">Movies</div>
               </div>
-              <div className="text-center">
-                <div className="text-2xl font-bold text-primary-500">
-                  {systemInfo.database.libraries.toLocaleString()}
-                </div>
-                <div className="text-sm text-neutral-500">Libraries</div>
-              </div>
-              <div className="text-center">
-                <div className="text-2xl font-bold text-primary-500">
-                  {systemInfo.database.mediaPlayers.toLocaleString()}
-                </div>
-                <div className="text-sm text-neutral-500">Media Players</div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Job Queue Status */}
-      {systemInfo?.jobQueue && (
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle>Job Queue</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              <div className="text-center">
-                <div className="text-2xl font-bold text-neutral-400">
-                  {systemInfo.jobQueue.pending}
-                </div>
-                <div className="text-sm text-neutral-500">Pending</div>
-              </div>
-              <div className="text-center">
-                <div className="text-2xl font-bold text-primary-500">
-                  {systemInfo.jobQueue.processing}
-                </div>
-                <div className="text-sm text-neutral-500">Processing</div>
-              </div>
-              <div className="text-center">
-                <div className="text-2xl font-bold text-white">
-                  {systemInfo.jobQueue.total}
-                </div>
-                <div className="text-sm text-neutral-500">Total Active</div>
-              </div>
-            </div>
-            {systemInfo.jobQueue.oldestPendingAge !== null && systemInfo.jobQueue.oldestPendingAge > 0 && (
-              <div className="mt-4 pt-4 border-t border-neutral-700 text-center">
+              <div className="flex items-center gap-4">
                 <div className="text-sm text-neutral-400">
-                  Oldest pending job:{' '}
-                  <span className="text-white font-medium">
-                    {Math.round(systemInfo.jobQueue.oldestPendingAge / 1000)}s ago
-                  </span>
+                  {systemInfo?.health.jobQueue.pending || 0} pending
                 </div>
+                <div className="text-sm text-primary-500">
+                  {systemInfo?.health.jobQueue.processing || 0} processing
+                </div>
+              </div>
+            </div>
+
+            {/* Cache Health */}
+            <div className="flex items-center justify-between p-4 rounded-lg bg-neutral-800/50 border border-neutral-700">
+              <div className="flex items-center gap-3">
+                <div
+                  className={`w-3 h-3 rounded-full ${
+                    cacheAccessible ? 'bg-green-500' : 'bg-red-500'
+                  }`}
+                />
+                <div>
+                  <div className="font-medium text-white">Cache Storage</div>
+                  <div className="text-xs text-neutral-500 mt-1">
+                    {systemInfo?.health.cache.path || 'Unknown'}
+                  </div>
+                </div>
+              </div>
+              <div className="text-sm text-neutral-400">
+                {cacheAccessible ? 'Accessible' : 'Not Accessible'}
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Provider & Media Player Status */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Providers */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Metadata Providers</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {!systemInfo?.health.providers || systemInfo.health.providers.length === 0 ? (
+              <div className="text-center py-8 text-neutral-400">No providers available</div>
+            ) : (
+              <div className="space-y-3">
+                {systemInfo.health.providers.map((provider) => (
+                  <div
+                    key={provider.name}
+                    className="flex items-center justify-between p-3 rounded-lg bg-neutral-800/50 border border-neutral-700"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div
+                        className={`w-2 h-2 rounded-full ${
+                          provider.healthy ? 'bg-green-500' : 'bg-red-500'
+                        }`}
+                      />
+                      <div>
+                        <div className="font-medium text-white text-sm">{provider.displayName}</div>
+                        {provider.lastError && (
+                          <div className="text-xs text-red-400 flex items-center gap-1 mt-1">
+                            <AlertTriangle className="w-3 h-3" />
+                            {provider.lastError}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      {provider.responseTime !== null && (
+                        <div className="text-xs text-neutral-500">
+                          {provider.responseTime}ms
+                        </div>
+                      )}
+                      {provider.healthy ? (
+                        <CheckCircle2 className="w-4 h-4 text-green-500" />
+                      ) : (
+                        <XCircle className="w-4 h-4 text-red-500" />
+                      )}
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </CardContent>
         </Card>
-      )}
 
-      {/* Provider Status */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Provider Status</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {!providers || providers.length === 0 ? (
-            <div className="text-center py-8 text-neutral-400">No providers configured</div>
-          ) : (
-            <div className="space-y-3">
-              {providers.map((provider) => (
-                <div
-                  key={provider.name}
-                  className="flex items-center justify-between p-4 rounded-lg bg-neutral-800/50 border border-neutral-700"
-                >
-                  <div className="flex items-center gap-3">
-                    <Globe className="w-5 h-5 text-primary-500" />
-                    <div>
-                      <div className="font-medium text-white">{provider.displayName}</div>
-                      {provider.lastError && (
-                        <div className="text-xs text-red-400 flex items-center gap-1 mt-1">
-                          <AlertTriangle className="w-3 h-3" />
-                          {provider.lastError}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-4">
-                    {provider.rateLimit && (
-                      <div className="text-sm text-neutral-400">
-                        {provider.rateLimit.total} req/window
+        {/* Media Players - Live Activity */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Media Players</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {!activityStates || activityStates.length === 0 ? (
+              <div className="text-center py-8 text-neutral-400">No players configured</div>
+            ) : (
+              <div className="space-y-3">
+                {activityStates.map((state) => (
+                  <div
+                    key={state.playerId}
+                    className="p-3 rounded-lg bg-neutral-800/50 border border-neutral-700"
+                  >
+                    {/* Player Header */}
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-3">
+                        <div className="font-medium text-white text-sm">{state.playerName}</div>
                       </div>
-                    )}
-
-                    <div className="flex items-center gap-2">
-                      {provider.enabled ? (
-                        <span className="text-xs px-2 py-1 rounded bg-green-600/20 text-green-400">
-                          Enabled
-                        </span>
-                      ) : (
-                        <span className="text-xs px-2 py-1 rounded bg-neutral-600/20 text-neutral-400">
-                          Disabled
-                        </span>
-                      )}
-
-                      {provider.connected ? (
-                        <CheckCircle2 className="w-5 h-5 text-green-500" />
-                      ) : (
-                        <XCircle className="w-5 h-5 text-red-500" />
-                      )}
+                      <ConnectionBadge mode={state.connectionMode} />
                     </div>
+
+                    {/* Live Activity */}
+                    <ActivityDisplay activity={state.activity} compact />
                   </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 };

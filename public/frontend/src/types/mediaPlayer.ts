@@ -9,7 +9,7 @@ export interface MediaPlayer {
   name: string;
   type: MediaPlayerType;
   host: string;
-  port: number;
+  httpPort: number; // HTTP JSON-RPC port (default 8080), WebSocket is always 9090
   username?: string;
   password?: string;
   apiKey?: string;
@@ -18,7 +18,6 @@ export interface MediaPlayer {
   libraryGroup?: string;
   connectionStatus: ConnectionStatus;
   jsonRpcVersion?: string;
-  useWebsocket: boolean;
   lastConnected?: string;
   lastError?: string;
   config: Record<string, any>;
@@ -31,12 +30,13 @@ export interface MediaPlayerFormData {
   name: string;
   type: MediaPlayerType;
   host: string;
-  port: number;
+  httpPort: number; // HTTP JSON-RPC port (default 8080)
   username?: string;
   password?: string;
   enabled: boolean;
   libraryGroup?: string;
-  useWebsocket: boolean;
+  groupName?: string; // Group name for shared MySQL or new group
+  isSharedMysql?: boolean; // True if Kodi with shared MySQL backend
 }
 
 export interface TestConnectionResult {
@@ -53,4 +53,30 @@ export interface MediaPlayerStatus {
   jsonRpcVersion?: string;
   lastConnected?: string;
   lastError?: string;
+}
+
+export interface MediaPlayerGroup {
+  id: number;
+  name: string;
+  type: MediaPlayerType;
+  max_members: number | null;
+  members: MediaPlayer[];
+}
+
+export interface PlayerActivityState {
+  playerId: number;
+  playerName: string;
+  connectionMode: 'websocket' | 'http' | 'disconnected';
+  activity: {
+    type: 'idle' | 'playing' | 'paused' | 'scanning';
+    details?: string;
+    progress?: {
+      percentage?: number;
+      currentSeconds?: number;
+      totalSeconds?: number;
+    };
+    filepath?: string;
+    kodiPlayerId?: number;
+  };
+  lastUpdated: string;
 }

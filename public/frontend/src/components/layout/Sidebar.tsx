@@ -27,7 +27,8 @@ import {
   faSliders,
   faBook,
   faHome,
-  faNetworkWired
+  faNetworkWired,
+  faTrash
 } from '@fortawesome/free-solid-svg-icons';
 import { useTheme } from '../../contexts/ThemeContext';
 
@@ -110,8 +111,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isCollapsed = false, isMobileO
     let targetSection: string | null = null;
 
     // Determine which section should be expanded
-    if (currentPath.startsWith('/metadata/')) {
-      targetSection = 'metadata';
+    if (currentPath.startsWith('/media/')) {
+      targetSection = 'media';
     } else if (currentPath.startsWith('/activity/')) {
       targetSection = 'activity';
     } else if (currentPath.startsWith('/system/')) {
@@ -149,34 +150,34 @@ export const Sidebar: React.FC<SidebarProps> = ({ isCollapsed = false, isMobileO
     },
     {
       icon: faSquareBinary,
-      label: 'Metadata',
+      label: 'Media',
       children: [
         {
           icon: faFilm,
           label: 'Movies',
-          path: '/metadata/movies',
+          path: '/media/movies',
         },
         {
           icon: faTv,
-          label: 'Series',
-          path: '/metadata/series',
+          label: 'TV Shows',
+          path: '/media/tv-shows',
         },
         {
           icon: faMusic,
           label: 'Music',
-          path: '/metadata/music',
-        },
-        {
-          icon: faUserGroup,
-          label: 'Actors',
-          path: '/metadata/actors',
-        },
-        {
-          icon: faMicrophone,
-          label: 'Artists',
-          path: '/metadata/artists',
+          path: '/media/music',
         },
       ],
+    },
+    {
+      icon: faUserGroup,
+      label: 'Actors',
+      path: '/actors',
+    },
+    {
+      icon: faMicrophone,
+      label: 'Artists',
+      path: '/artists',
     },
     {
       icon: faClock,
@@ -279,6 +280,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ isCollapsed = false, isMobileO
           label: 'Log Files',
           path: '/system/logs',
         },
+        {
+          icon: faTrash,
+          label: 'Recycle Bin',
+          path: '/system/recycle-bin',
+        },
       ],
     },
   ];
@@ -312,6 +318,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ isCollapsed = false, isMobileO
                         : 'border-neutral-950 text-neutral-400 hover:text-white hover:bg-gradient-to-r hover:from-primary-500/30 hover:to-neutral-950 bg-neutral-950'
                     }`}
                     onClick={() => toggleSection(item.label.toLowerCase(), item)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        toggleSection(item.label.toLowerCase(), item);
+                      }
+                    }}
                     title={isCollapsed ? item.label : undefined}
                     aria-label={`${item.label} navigation section`}
                     aria-expanded={expandedSections.includes(item.label.toLowerCase())}
@@ -383,7 +395,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isCollapsed = false, isMobileO
                   className={({ isActive }) =>
                     `flex items-center px-4 py-3 text-sm font-medium border-l-2 transition-all duration-200 ${
                       isActive
-                        ? (isLight ? 'bg-gradient-to-r from-neutral-200 to-white text-neutral-900 border-white' : 'bg-gradient-to-r from-primary-500/30 to-neutral-950 text-white border-neutral-950')
+                        ? (isLight ? 'bg-gradient-to-r from-neutral-200 to-white text-neutral-900 border-primary-500' : 'bg-gradient-to-r from-primary-500/30 to-neutral-950 text-white border-primary-500')
                         : (isLight ? 'bg-white text-neutral-900 hover:bg-gradient-to-r hover:from-neutral-200 hover:to-white border-white' : 'bg-neutral-950 text-neutral-400 hover:text-white hover:bg-gradient-to-r hover:from-primary-500/30 hover:to-neutral-950 border-neutral-950')
                     }`
                   }

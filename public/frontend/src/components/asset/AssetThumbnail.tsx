@@ -1,5 +1,5 @@
 import React from 'react';
-import { AssetCandidate } from '../../hooks/useAssetCandidates';
+import { AssetCandidate } from '../../types/asset';
 
 interface AssetThumbnailProps {
   candidate: AssetCandidate;

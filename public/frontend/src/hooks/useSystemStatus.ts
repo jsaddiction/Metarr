@@ -2,13 +2,17 @@ import { useQuery } from '@tanstack/react-query';
 import { parseApiError } from '../utils/errorHandling';
 
 /**
- * System information from backend
+ * System information from backend - Health-focused status
  * Maps to GET /api/system/info response
  */
 export interface SystemInfo {
   name: string;
   version: string;
   description: string;
+  status: 'operational' | 'degraded' | 'down';
+  timestamp: string;
+
+  // Process health
   uptime: number; // seconds
   nodeVersion: string;
   platform: string;
@@ -21,23 +25,43 @@ export interface SystemInfo {
       external: number;
       arrayBuffers: number;
     };
-    free: number;
+    percentUsed: number;
   };
-  database: {
-    movies: number;
-    libraries: number;
-    mediaPlayers: number;
+
+  // Component health
+  health: {
+    database: {
+      healthy: boolean;
+      responseTime: number; // milliseconds
+    };
+    jobQueue: {
+      healthy: boolean;
+      pending: number;
+      processing: number;
+      stuck: boolean; // true if jobs are stuck for > 5 minutes
+    };
+    cache: {
+      accessible: boolean;
+      path: string;
+    };
+    providers: Array<{
+      name: string;
+      displayName: string;
+      healthy: boolean;
+      responseTime: number | null; // milliseconds
+      lastChecked: string;
+      lastError?: string;
+    }>;
+    mediaPlayers: Array<{
+      id: number;
+      name: string;
+      type: string;
+      healthy: boolean;
+      status: 'connected' | 'disconnected' | 'error';
+      lastConnected?: string;
+      lastError?: string;
+    }>;
   };
-  jobQueue: {
-    pending: number;
-    processing: number;
-    total: number;
-    oldestPendingAge: number | null;
-  };
-  providers: Array<{
-    name: string;
-    lastSync: string | null;
-  }>;
 }
 
 /**

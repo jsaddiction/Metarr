@@ -3,43 +3,59 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faTimes, faCheck, faX, faSpinner } from '@fortawesome/free-solid-svg-icons';
 import { MediaPlayer, MediaPlayerFormData, MediaPlayerType, TestConnectionStatus } from '../../types/mediaPlayer';
 import { mediaPlayerApi } from '../../utils/api';
+import { useMediaPlayerGroups } from '../../hooks/useMediaPlayerGroups';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { useConfirm } from '../../hooks/useConfirm';
 
 interface MediaPlayerConfigModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSave: (data: MediaPlayerFormData) => Promise<void>;
+  onDelete?: (id: number) => Promise<void>;
   player?: MediaPlayer;
   type?: MediaPlayerType;
+  preSelectedGroupName?: string; // Pre-fill group name for quick-add to group
 }
 
 export const MediaPlayerConfigModal: React.FC<MediaPlayerConfigModalProps> = ({
   isOpen,
   onClose,
   onSave,
+  onDelete,
   player,
   type,
+  preSelectedGroupName,
 }) => {
+  // Accessible confirmation dialog
+  const { confirm, ConfirmDialog } = useConfirm();
+
   const [formData, setFormData] = useState<MediaPlayerFormData>({
     name: '',
     type: type || 'kodi',
     host: '',
-    port: 9090,
+    httpPort: 8080,
     username: '',
     password: '',
     enabled: true,
     libraryGroup: '',
-    useWebsocket: true,
+    groupName: '',
+    isSharedMysql: false,
   });
 
   const [testStatus, setTestStatus] = useState<TestConnectionStatus>('idle');
   const [testMessage, setTestMessage] = useState<string>('');
   const [isSaving, setIsSaving] = useState(false);
+
+  // Fetch existing groups
+  const { data: groups = [] } = useMediaPlayerGroups();
+
+  // Filter groups for Kodi players only (type === 'kodi')
+  const kodiGroups = groups.filter(g => g.type === 'kodi');
 
   useEffect(() => {
     if (player) {
@@ -47,17 +63,28 @@ export const MediaPlayerConfigModal: React.FC<MediaPlayerConfigModalProps> = ({
         name: player.name,
         type: player.type,
         host: player.host,
-        port: player.port,
+        httpPort: player.httpPort,
         username: player.username || '',
         password: player.password || '',
         enabled: player.enabled,
         libraryGroup: player.libraryGroup || '',
-        useWebsocket: player.useWebsocket,
+        groupName: '', // Will be populated from API when we fetch groups
+        isSharedMysql: false,
       });
     } else if (type) {
-      setFormData((prev) => ({ ...prev, type }));
+      // Quick-add to group: pre-fill group name and enable shared MySQL
+      if (preSelectedGroupName) {
+        setFormData((prev) => ({
+          ...prev,
+          type,
+          groupName: preSelectedGroupName,
+          isSharedMysql: true,
+        }));
+      } else {
+        setFormData((prev) => ({ ...prev, type }));
+      }
     }
-  }, [player, type]);
+  }, [player, type, preSelectedGroupName]);
 
   if (!isOpen) return null;
 
@@ -72,7 +99,7 @@ export const MediaPlayerConfigModal: React.FC<MediaPlayerConfigModalProps> = ({
     try {
       const result = await mediaPlayerApi.testConnectionUnsaved({
         ...formData,
-        port: parseInt(formData.port.toString()),
+        httpPort: parseInt(formData.httpPort.toString()),
       });
 
       if (result.success) {
@@ -110,13 +137,34 @@ export const MediaPlayerConfigModal: React.FC<MediaPlayerConfigModalProps> = ({
     try {
       await onSave({
         ...formData,
-        port: parseInt(formData.port.toString()),
+        httpPort: parseInt(formData.httpPort.toString()),
       });
       onClose();
     } catch (error) {
       console.error('Failed to save media player:', error);
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!player || !onDelete) return;
+
+    const confirmed = await confirm({
+      title: 'Delete Media Player',
+      description: `Are you sure you want to delete ${player.name}? This action cannot be undone.`,
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      variant: 'destructive',
+    });
+
+    if (!confirmed) return;
+
+    try {
+      await onDelete(player.id);
+      onClose();
+    } catch (error) {
+      console.error('Failed to delete media player:', error);
     }
   };
 
@@ -188,21 +236,21 @@ export const MediaPlayerConfigModal: React.FC<MediaPlayerConfigModalProps> = ({
             />
           </div>
 
-          {/* Port */}
+          {/* HTTP Port */}
           <div>
-            <Label htmlFor="player-port" className="block text-sm font-medium text-neutral-300 mb-1">
-              Port <span className="text-error">*</span>
+            <Label htmlFor="player-httpPort" className="block text-sm font-medium text-neutral-300 mb-1">
+              HTTP Port <span className="text-error">*</span>
             </Label>
             <Input
-              id="player-port"
+              id="player-httpPort"
               type="number"
-              value={formData.port}
-              onChange={(e) => handleChange('port', parseInt(e.target.value))}
-              placeholder="9090"
+              value={formData.httpPort}
+              onChange={(e) => handleChange('httpPort', parseInt(e.target.value))}
+              placeholder="8080"
               required
             />
             <p className="text-xs text-neutral-500 mt-1">
-              Default: 9090 for WebSocket, 8080 for HTTP
+              Default: 8080. WebSocket (9090) will be tried first with automatic fallback.
             </p>
           </div>
 
@@ -234,37 +282,58 @@ export const MediaPlayerConfigModal: React.FC<MediaPlayerConfigModalProps> = ({
             />
           </div>
 
-          {/* Library Group */}
-          <div>
-            <Label htmlFor="library-group" className="block text-sm font-medium text-neutral-300 mb-1">
-              Library Group
-            </Label>
-            <Input
-              id="library-group"
-              type="text"
-              value={formData.libraryGroup}
-              onChange={(e) => handleChange('libraryGroup', e.target.value)}
-              placeholder="e.g., Home"
-            />
-            <p className="text-xs text-neutral-500 mt-1">
-              Group Kodi instances that share a library. Only one instance per group will perform library scans.
-            </p>
-          </div>
+          {/* Shared MySQL Backend (Kodi only) */}
+          {formData.type === 'kodi' && (
+            <div className="space-y-4 p-4 border border-neutral-700 rounded-lg bg-neutral-800/30">
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="isSharedMysql"
+                  checked={formData.isSharedMysql}
+                  onCheckedChange={(checked) => handleChange('isSharedMysql', checked as boolean)}
+                />
+                <Label htmlFor="isSharedMysql" className="text-sm text-neutral-300 cursor-pointer font-medium">
+                  Shared MySQL Backend
+                </Label>
+              </div>
+              <p className="text-xs text-neutral-500 -mt-2">
+                Enable if multiple Kodi instances share the same MySQL database. This allows them to be grouped together.
+              </p>
 
-          {/* Use WebSocket */}
-          <div className="flex items-center gap-2">
-            <Checkbox
-              id="useWebsocket"
-              checked={formData.useWebsocket}
-              onCheckedChange={(checked) => handleChange('useWebsocket', checked as boolean)}
-            />
-            <Label htmlFor="useWebsocket" className="text-sm text-neutral-300 cursor-pointer">
-              Use WebSocket Connection
-            </Label>
-          </div>
-          <p className="text-xs text-neutral-500 -mt-2">
-            WebSocket enables real-time state monitoring and notifications. HTTP fallback is available.
-          </p>
+              {/* Group Name Input (enabled only if shared MySQL is checked) */}
+              <div>
+                <Label
+                  htmlFor="group-name"
+                  className={`block text-sm font-medium mb-1 ${formData.isSharedMysql ? 'text-neutral-300' : 'text-neutral-600'}`}
+                >
+                  Group Name
+                </Label>
+                <Input
+                  id="group-name"
+                  type="text"
+                  value={formData.groupName}
+                  onChange={(e) => handleChange('groupName', e.target.value)}
+                  placeholder={formData.isSharedMysql ? "Select existing or type new group name" : "Disabled (standalone player)"}
+                  disabled={!formData.isSharedMysql}
+                  className={!formData.isSharedMysql ? 'opacity-50 cursor-not-allowed' : ''}
+                  list="group-names-datalist"
+                />
+                <datalist id="group-names-datalist">
+                  {kodiGroups.map(group => (
+                    <option key={group.id} value={group.name} />
+                  ))}
+                </datalist>
+                <p className="text-xs text-neutral-500 mt-1">
+                  {formData.isSharedMysql
+                    ? kodiGroups.length > 0
+                      ? 'Select an existing group or type a new name to create one. Players in the same group share library updates.'
+                      : 'Type a new group name. Players in the same group share library updates.'
+                    : 'This player will be created as a standalone instance with its own group.'
+                  }
+                </p>
+              </div>
+            </div>
+          )}
+
 
           {/* Test Result Message */}
           {testMessage && (
@@ -281,9 +350,23 @@ export const MediaPlayerConfigModal: React.FC<MediaPlayerConfigModalProps> = ({
         </div>
 
         <DialogFooter className="gap-2">
+          {/* Delete button (left side, only when editing) */}
+          {player && onDelete && (
+            <div className="mr-auto">
+              <Button
+                onClick={handleDelete}
+                variant="outline"
+                className="border-red-500 text-red-500 hover:bg-red-500 hover:text-white"
+              >
+                Delete
+              </Button>
+            </div>
+          )}
+
+          {/* Right side buttons */}
           <Button
             onClick={handleTest}
-            disabled={testStatus === 'testing' || !formData.host || !formData.port}
+            disabled={testStatus === 'testing' || !formData.host || !formData.httpPort}
             variant="outline"
           >
             {getTestButtonContent()}
@@ -293,12 +376,15 @@ export const MediaPlayerConfigModal: React.FC<MediaPlayerConfigModalProps> = ({
           </Button>
           <Button
             onClick={handleSave}
-            disabled={isSaving || !formData.name || !formData.host || !formData.port}
+            disabled={isSaving || !formData.name || !formData.host || !formData.httpPort}
           >
             {isSaving ? <FontAwesomeIcon icon={faSpinner} spin /> : 'Save'}
           </Button>
         </DialogFooter>
       </DialogContent>
+
+      {/* Accessible Confirmation Dialog */}
+      <ConfirmDialog />
     </Dialog>
   );
 };

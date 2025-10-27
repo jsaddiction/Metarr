@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faSpinner, faUndo, faInfoCircle } from '@fortawesome/free-solid-svg-icons';
+import { useConfirm } from '../../hooks/useConfirm';
 
 interface AssetLimitMetadata {
   assetType: string;
@@ -24,6 +25,9 @@ interface AssetLimitMetadata {
 }
 
 export const AssetLimits: React.FC = () => {
+  // Accessible confirmation dialog
+  const { confirm, ConfirmDialog } = useConfirm();
+
   const queryClient = useQueryClient();
   const [localLimits, setLocalLimits] = useState<Record<string, number>>({});
 
@@ -98,14 +102,29 @@ export const AssetLimits: React.FC = () => {
     updateLimitMutation.mutate({ assetType, limit });
   };
 
-  const handleReset = (assetType: string) => {
-    if (confirm(`Reset ${assetType} limit to default?`)) {
+  const handleReset = async (assetType: string) => {
+    const confirmed = await confirm({
+      title: 'Reset Asset Limit',
+      description: `Reset ${assetType} limit to default?`,
+      confirmText: 'Reset',
+      cancelText: 'Cancel',
+    });
+
+    if (confirmed) {
       resetLimitMutation.mutate(assetType);
     }
   };
 
-  const handleResetAll = () => {
-    if (confirm('Reset all asset limits to defaults? This will affect all asset types.')) {
+  const handleResetAll = async () => {
+    const confirmed = await confirm({
+      title: 'Reset All Asset Limits',
+      description: 'Reset all asset limits to defaults? This will affect all asset types.',
+      confirmText: 'Reset All',
+      cancelText: 'Cancel',
+      variant: 'destructive',
+    });
+
+    if (confirmed) {
       resetAllMutation.mutate();
     }
   };
@@ -240,6 +259,9 @@ export const AssetLimits: React.FC = () => {
           Reset All to Defaults
         </Button>
       </div>
+
+      {/* Accessible Confirmation Dialog */}
+      <ConfirmDialog />
     </div>
   );
 };

@@ -21,8 +21,10 @@ import {
   faSpinner,
   faExclamationTriangle,
 } from '@fortawesome/free-solid-svg-icons';
-import { useAssetCandidates, useSelectAsset, useBlockAsset, AssetCandidate } from '../../hooks/useAssetCandidates';
+import { useAssetCandidates } from '../../hooks/useAssetCandidates';
+import type { AssetCandidate } from '../../types/asset';
 import type { AssetType } from '../../types/asset';
+import { useConfirm } from '../../hooks/useConfirm';
 
 interface AssetSelectionModalProps {
   isOpen: boolean;
@@ -33,6 +35,9 @@ interface AssetSelectionModalProps {
   movieId: number;
   currentAssetUrl?: string;
   currentAssetId?: number;
+  providerResults?: any; // Provider results from parent
+  isLoadingProviders?: boolean;
+  providerError?: Error | null;
 }
 
 export const AssetSelectionModal: React.FC<AssetSelectionModalProps> = ({
@@ -44,20 +49,34 @@ export const AssetSelectionModal: React.FC<AssetSelectionModalProps> = ({
   movieId,
   currentAssetUrl,
   currentAssetId,
+  providerResults,
+  isLoadingProviders = false,
+  providerError,
 }) => {
+  // Accessible confirmation dialog
+  const { confirm, ConfirmDialog } = useConfirm();
+
   // State
   const [selectedCandidate, setSelectedCandidate] = useState<AssetCandidate | null>(null);
   const [providerFilter, setProviderFilter] = useState<string>('all');
   const [sortBy, setSortBy] = useState<string>('votes');
 
-  // Hooks
-  const { data: candidates = [], isLoading, error } = useAssetCandidates(
-    movieId,
-    assetType,
-    false // Don't include blocked candidates
-  );
-  const selectAssetMutation = useSelectAsset();
-  const blockAssetMutation = useBlockAsset();
+  // Extract candidates from provider results
+  const candidates: AssetCandidate[] = React.useMemo(() => {
+    if (!providerResults || !providerResults.providers) return [];
+
+    const allCandidates: AssetCandidate[] = [];
+
+    // Iterate through each provider's results
+    for (const [providerName, providerData] of Object.entries(providerResults.providers)) {
+      if (providerData && (providerData as any).images?.[assetType]) {
+        const assets = (providerData as any).images[assetType];
+        allCandidates.push(...assets);
+      }
+    }
+
+    return allCandidates;
+  }, [providerResults, assetType]);
 
   // Close modal on ESC key
   useEffect(() => {
@@ -82,25 +101,27 @@ export const AssetSelectionModal: React.FC<AssetSelectionModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Handle apply selection
-  const handleApply = async () => {
+  // Handle apply selection - just close modal
+  // Parent component (ImagesTab) will handle actual selection via replaceAssets API
+  const handleApply = () => {
     if (selectedCandidate) {
-      try {
-        await selectAssetMutation.mutateAsync({
-          candidateId: selectedCandidate.id,
-          selectedBy: 'user',
-        });
-        onClose();
-      } catch (error) {
-        console.error('Failed to select asset:', error);
-        alert('Failed to select asset. Please try again.');
-      }
+      // TODO: Pass selected candidate back to parent component
+      console.log('Selected candidate:', selectedCandidate);
+      onClose();
     }
   };
 
   // Handle remove current selection
   const handleRemove = async () => {
-    if (!confirm('Remove this asset? You can select a new one from the candidates.')) {
+    const confirmed = await confirm({
+      title: 'Remove Asset',
+      description: 'Remove this asset? You can select a new one from the candidates.',
+      confirmText: 'Remove',
+      cancelText: 'Cancel',
+      variant: 'destructive',
+    });
+
+    if (!confirmed) {
       return;
     }
 
@@ -256,19 +277,20 @@ export const AssetSelectionModal: React.FC<AssetSelectionModalProps> = ({
 
           {/* Candidates Grid */}
           <div className="flex-1 overflow-y-auto p-4">
-            {isLoading ? (
+            {isLoadingProviders ? (
               <div className="flex flex-col items-center justify-center h-64">
                 <FontAwesomeIcon icon={faSpinner} spin className="text-4xl text-primary-500 mb-4" />
-                <div className="text-neutral-400">Loading candidates...</div>
+                <div className="text-neutral-400">Fetching from providers...</div>
+                <div className="text-sm text-neutral-500 mt-2">This may take a few seconds</div>
               </div>
-            ) : error ? (
+            ) : providerError ? (
               <div className="bg-error/20 border border-error rounded-md p-4">
                 <div className="flex items-center gap-3">
                   <FontAwesomeIcon icon={faExclamationTriangle} className="text-error text-xl" />
                   <div>
-                    <h4 className="font-semibold text-white mb-1">Failed to fetch candidates</h4>
+                    <h4 className="font-semibold text-white mb-1">Failed to fetch from providers</h4>
                     <p className="text-sm text-neutral-300">
-                      {error instanceof Error ? error.message : 'Unknown error'}
+                      {providerError instanceof Error ? providerError.message : 'Unknown error'}
                     </p>
                   </div>
                 </div>
@@ -346,21 +368,17 @@ export const AssetSelectionModal: React.FC<AssetSelectionModalProps> = ({
             </button>
             <button
               onClick={handleApply}
-              disabled={!selectedCandidate || selectAssetMutation.isPending}
+              disabled={!selectedCandidate}
               className="px-4 py-2 rounded bg-primary-600 hover:bg-primary-700 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
-              {selectAssetMutation.isPending ? (
-                <>
-                  <FontAwesomeIcon icon={faSpinner} spin />
-                  Applying...
-                </>
-              ) : (
-                'Apply Selection'
-              )}
+              Apply Selection
             </button>
           </div>
         </div>
       </div>
+
+      {/* Accessible Confirmation Dialog */}
+      <ConfirmDialog />
     </div>
   );
 };

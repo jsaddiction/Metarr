@@ -131,7 +131,7 @@ export interface GetPresetsResponse {
 }
 
 export interface GetActivePresetResponse {
-  activePreset: PriorityPresetSelection | null;
+  activePreset?: PriorityPresetSelection;
 }
 
 export interface GetAssetTypePrioritiesResponse {

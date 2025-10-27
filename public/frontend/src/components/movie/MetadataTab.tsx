@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faExternalLinkAlt, faExclamationTriangle, faChevronDown, faChevronUp } from '@fortawesome/free-solid-svg-icons';
-import { useMovie } from '../../hooks/useMovies';
-import { useToggleLockField } from '../../hooks/useLockField';
-import { SaveBar } from '../common/SaveBar';
+import { useMovie, useToggleLockField } from '../../hooks/useMovies';
+import { SaveBar } from '../ui/SaveBar';
 import { GridField } from './GridField';
 import { TextAreaField } from './TextAreaField';
 import { toast } from 'sonner';

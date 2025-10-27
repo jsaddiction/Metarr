@@ -59,7 +59,7 @@ export const Movies: React.FC = () => {
   };
 
   const handleMovieClick = (movie: MovieListItem) => {
-    navigate(`/metadata/movies/${movie.id}/edit`);
+    navigate(`/media/movies/${movie.id}/edit`);
   };
 
   const handleRefreshClick = (movie: MovieListItem) => {

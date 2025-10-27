@@ -3,6 +3,10 @@
  * Mirrors backend types from src/types/websocket.ts
  */
 
+import { MovieListItem } from './movie';
+import { MediaPlayer } from './mediaPlayer';
+import { Library, ScanJob } from './library';
+
 // ============================================================================
 // Base Message Types
 // ============================================================================
@@ -39,7 +43,7 @@ export interface UpdateMovieMessage extends BaseClientMessage {
     year?: number;
     overview?: string;
     rating?: number;
-    [key: string]: any;
+    [key: string]: string | number | boolean | null | undefined;
   };
 }
 
@@ -58,7 +62,7 @@ export interface UpdatePlayerMessage extends BaseClientMessage {
     host?: string;
     port?: number;
     enabled?: boolean;
-    [key: string]: any;
+    [key: string]: string | number | boolean | null | undefined;
   };
 }
 
@@ -94,10 +98,10 @@ export interface ResyncDataMessage extends BaseServerMessage {
   type: 'resyncData';
   scope: 'all' | 'movies' | 'players' | 'libraries' | 'scans';
   data: {
-    movies?: any[];
-    players?: any[];
-    libraries?: any[];
-    scans?: any[];
+    movies?: MovieListItem[];
+    players?: MediaPlayer[];
+    libraries?: Library[];
+    scans?: ScanJob[];
   };
 }
 
@@ -132,14 +136,14 @@ export interface MoviesChangedMessage extends BaseServerMessage {
   type: 'moviesChanged';
   action: 'added' | 'updated' | 'deleted';
   movieIds: number[];
-  movies?: any[];
+  movies?: MovieListItem[];
 }
 
 export interface LibraryChangedMessage extends BaseServerMessage {
   type: 'libraryChanged';
   action: 'added' | 'updated' | 'deleted';
   libraryId: number;
-  library?: any;
+  library?: Library;
 }
 
 export interface AckMessage extends BaseServerMessage {
@@ -163,7 +167,7 @@ export interface ErrorMessage extends BaseServerMessage {
   originalType?: string;
   error: string;
   code?: string;
-  details?: any;
+  details?: Record<string, unknown>;
 }
 
 export interface WelcomeMessage extends BaseServerMessage {

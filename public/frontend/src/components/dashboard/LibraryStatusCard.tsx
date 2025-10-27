@@ -43,16 +43,16 @@ export const LibraryStatusCard: React.FC<LibraryStatusCardProps> = ({ library })
     // Navigate to the appropriate page based on library type
     switch (library.type) {
       case 'movie':
-        navigate('/metadata/movies');
+        navigate('/media/movies');
         break;
       case 'tv':
-        navigate('/metadata/series');
+        navigate('/media/tv-shows');
         break;
       case 'music':
-        navigate('/metadata/music');
+        navigate('/media/music');
         break;
       default:
-        navigate('/metadata/movies');
+        navigate('/media/movies');
     }
   };
 

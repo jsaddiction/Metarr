@@ -16,6 +16,7 @@ import {
   useDeleteSubtitle,
   useDeleteThemeSong,
 } from '../../hooks/useMovieAssets';
+import { useConfirm } from '../../hooks/useConfirm';
 
 interface ExtrasTabProps {
   movieId: number;
@@ -46,6 +47,9 @@ interface ThemeSong {
 }
 
 export const ExtrasTab: React.FC<ExtrasTabProps> = ({ movieId }) => {
+  // Accessible confirmation dialog
+  const { confirm, ConfirmDialog } = useConfirm();
+
   // Use TanStack Query hooks
   const { data: extras, isLoading: loading } = useMovieExtras(movieId);
   const deleteTrailerMutation = useDeleteTrailer(movieId);
@@ -73,7 +77,16 @@ export const ExtrasTab: React.FC<ExtrasTabProps> = ({ movieId }) => {
 
   const handleDeleteTrailer = async () => {
     if (!trailer) return;
-    if (!confirm('Are you sure you want to delete the trailer?')) return;
+
+    const confirmed = await confirm({
+      title: 'Delete Trailer',
+      description: 'Are you sure you want to delete the trailer? This action cannot be undone.',
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      variant: 'destructive',
+    });
+
+    if (!confirmed) return;
 
     try {
       await deleteTrailerMutation.mutateAsync();
@@ -84,7 +97,15 @@ export const ExtrasTab: React.FC<ExtrasTabProps> = ({ movieId }) => {
   };
 
   const handleDeleteSubtitle = async (subtitleId: number) => {
-    if (!confirm('Are you sure you want to delete this subtitle?')) return;
+    const confirmed = await confirm({
+      title: 'Delete Subtitle',
+      description: 'Are you sure you want to delete this subtitle? This action cannot be undone.',
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      variant: 'destructive',
+    });
+
+    if (!confirmed) return;
 
     try {
       await deleteSubtitleMutation.mutateAsync(subtitleId);
@@ -96,7 +117,16 @@ export const ExtrasTab: React.FC<ExtrasTabProps> = ({ movieId }) => {
 
   const handleDeleteThemeSong = async () => {
     if (!themeSong) return;
-    if (!confirm('Are you sure you want to delete the theme song?')) return;
+
+    const confirmed = await confirm({
+      title: 'Delete Theme Song',
+      description: 'Are you sure you want to delete the theme song? This action cannot be undone.',
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      variant: 'destructive',
+    });
+
+    if (!confirmed) return;
 
     try {
       await deleteThemeMutation.mutateAsync();
@@ -298,6 +328,9 @@ export const ExtrasTab: React.FC<ExtrasTabProps> = ({ movieId }) => {
           </div>
         </div>
       </div>
+
+      {/* Accessible Confirmation Dialog */}
+      <ConfirmDialog />
     </div>
   );
 };
