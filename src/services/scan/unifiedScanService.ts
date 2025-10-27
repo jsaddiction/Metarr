@@ -12,7 +12,7 @@ import { DatabaseManager } from '../../database/DatabaseManager.js';
 //   hashFile,
 // } from '../hash/hashService.js';
 import { parseFullMovieNfos } from '../nfo/nfoParser.js';
-import { trackNFOFile } from '../nfo/nfoFileTracking.js';
+import { cacheTextFile } from '../files/videoTextAudioCacheFunctions.js';
 import { extractAndStoreMediaInfo } from '../media/ffprobeService.js';
 // import { IgnorePatternService } from '../ignorePatternService.js';
 import { findOrCreateMovie, rehashMovieFile, MovieLookupContext } from './movieLookupService.js';
@@ -172,12 +172,12 @@ export async function scanMovieDirectory(
     let yearToUse = context?.year;
 
     if (!tmdbIdToUse) {
-      // Try to get TMDB ID from NFO files
-      const nfoFiles = await findMovieNfos(movieDir);
-      if (nfoFiles.length > 0) {
-        // Extract video basename (without extension) for exact NFO match priority
-        const videoBasename = path.basename(videoFilePath, path.extname(videoFilePath));
-        const nfoData = await parseFullMovieNfos(nfoFiles, videoBasename);
+      // Try to get TMDB ID from NFO files with priority-based merging
+      const videoBasename = path.basename(videoFilePath, path.extname(videoFilePath));
+      const nfoDiscovery = await findAndPrioritizeMovieNfos(movieDir, videoBasename);
+
+      if (nfoDiscovery.prioritized.length > 0) {
+        const nfoData = await parseFullMovieNfos(nfoDiscovery.prioritized, videoBasename);
         if (nfoData.valid && !nfoData.ambiguous) {
           tmdbIdToUse = nfoData.tmdbId;
           imdbIdToUse = imdbIdToUse || nfoData.imdbId;
@@ -217,16 +217,22 @@ export async function scanMovieDirectory(
         trigger: context?.trigger || 'unknown',
       });
 
-      // Find and parse NFO files
-      const nfoFiles = await findMovieNfos(movieDir);
-      logger.debug(`Found ${nfoFiles.length} NFO files`, { movieId, nfoFiles });
+      // Find and prioritize NFO files
+      const videoBasename = path.basename(videoFilePath, path.extname(videoFilePath));
+      const nfoDiscovery = await findAndPrioritizeMovieNfos(movieDir, videoBasename);
+
+      logger.debug('NFO discovery complete', {
+        movieId,
+        found: nfoDiscovery.prioritized.length,
+        highestPriority: nfoDiscovery.highestPriority ? path.basename(nfoDiscovery.highestPriority) : 'none'
+      });
 
       let metadataToStore: any = null;
 
-      if (nfoFiles.length > 0) {
-        // Extract video basename (without extension) for exact NFO match priority
-        const videoBasename = path.basename(videoFilePath, path.extname(videoFilePath));
-        const nfoData = await parseFullMovieNfos(nfoFiles, videoBasename);
+      if (nfoDiscovery.prioritized.length > 0) {
+        // Parse all NFOs with priority-based merging
+        // Highest priority NFO provides base data, lower priority NFOs fill gaps
+        const nfoData = await parseFullMovieNfos(nfoDiscovery.prioritized, videoBasename);
         logger.debug(`Parsed NFO data - valid: ${nfoData.valid}, tmdbId: ${nfoData.tmdbId}`, { movieId });
 
         if (nfoData.valid && !nfoData.ambiguous) {
@@ -234,7 +240,7 @@ export async function scanMovieDirectory(
           // Provider enrichment will happen in Phase 4 via separate enrichment jobs
           metadataToStore = nfoData;
 
-          logger.info(`NFO data ready for storage`, {
+          logger.info('NFO data ready for storage', {
             movieId,
             title: metadataToStore.title,
             year: metadataToStore.year,
@@ -242,16 +248,45 @@ export async function scanMovieDirectory(
           });
 
           // Store metadata in database
-          logger.info(`Storing metadata in database`, {
+          logger.info('Storing metadata in database', {
             movieId,
             title: metadataToStore.title,
             year: metadataToStore.year,
           });
           await storeMovieMetadata(db, movieId, metadataToStore);
 
-          // Track NFO file in text_files table (unified file system)
-          if (nfoFiles.length > 0) {
-            await trackNFOFile(db, nfoFiles[0], 'movie', movieId, nfoData);
+          // Cache ONLY the highest priority NFO file using unified cache system
+          if (nfoDiscovery.highestPriority) {
+            try {
+              const nfoCacheId = await cacheTextFile(
+                db,
+                null, // libraryFileId (null for discovered files)
+                nfoDiscovery.highestPriority,
+                'movie',
+                movieId,
+                'nfo',
+                'local'
+              );
+
+              // Update movie record with NFO cache reference
+              await db.execute(
+                `UPDATE movies SET nfo_cache_id = ? WHERE id = ?`,
+                [nfoCacheId, movieId]
+              );
+
+              logger.info('Cached highest priority NFO', {
+                movieId,
+                nfoCacheId,
+                nfoFile: path.basename(nfoDiscovery.highestPriority)
+              });
+            } catch (error) {
+              logger.error('Failed to cache NFO file', {
+                movieId,
+                nfoPath: nfoDiscovery.highestPriority,
+                error: getErrorMessage(error)
+              });
+              result.errors.push(`Failed to cache NFO: ${getErrorMessage(error)}`);
+            }
           }
 
           logger.info('Parsed and stored NFO metadata', {
@@ -641,27 +676,96 @@ async function storeMovieMetadata(
 }
 
 /**
- * Import missing function from nfoDiscovery
+ * Find and prioritize NFO files in a movie directory
+ *
+ * Priority order:
+ * 1. <moviefilename>.nfo - Highest priority (most specific)
+ * 2. movie.nfo - Second priority (standard Kodi)
+ * 3. movie.xml - Lowest priority (legacy format)
+ *
+ * @param movieDir Directory containing movie files
+ * @param videoFilename Name of the main video file (for matching <filename>.nfo)
+ * @returns Object containing prioritized NFO paths
  */
-async function findMovieNfos(movieDir: string): Promise<string[]> {
+async function findAndPrioritizeMovieNfos(
+  movieDir: string,
+  videoFilename: string
+): Promise<{
+  all: string[];
+  prioritized: string[];
+  highestPriority: string | null;
+}> {
   const fs = await import('fs/promises');
   const path = await import('path');
 
   try {
     const files = await fs.readdir(movieDir);
-    const nfoFiles: string[] = [];
+    const videoBasename = path.basename(videoFilename, path.extname(videoFilename));
+
+    // Find all NFO candidates
+    let matchingNfo: string | null = null;
+    let movieNfo: string | null = null;
+    let movieXml: string | null = null;
+    const allNfos: string[] = [];
 
     for (const file of files) {
       const lowerFile = file.toLowerCase();
-      // Scan for .nfo, .txt (Radarr URL files), and legacy movie.xml
-      if (lowerFile.endsWith('.nfo') || lowerFile.endsWith('.txt') || lowerFile === 'movie.xml') {
-        nfoFiles.push(path.join(movieDir, file));
+      const filePath = path.join(movieDir, file);
+
+      // Priority 1: <videofilename>.nfo
+      if (lowerFile === `${videoBasename.toLowerCase()}.nfo`) {
+        matchingNfo = filePath;
+        allNfos.push(filePath);
+      }
+      // Priority 2: movie.nfo
+      else if (lowerFile === 'movie.nfo') {
+        movieNfo = filePath;
+        allNfos.push(filePath);
+      }
+      // Priority 3: movie.xml
+      else if (lowerFile === 'movie.xml') {
+        movieXml = filePath;
+        allNfos.push(filePath);
+      }
+      // Other .nfo files (lowest priority, for gap filling only)
+      else if (lowerFile.endsWith('.nfo')) {
+        allNfos.push(filePath);
       }
     }
 
-    return nfoFiles;
+    // Build prioritized list
+    const prioritized: string[] = [];
+    if (matchingNfo) prioritized.push(matchingNfo);
+    if (movieNfo) prioritized.push(movieNfo);
+    if (movieXml) prioritized.push(movieXml);
+    // Add any other .nfo files found
+    for (const nfo of allNfos) {
+      if (!prioritized.includes(nfo)) {
+        prioritized.push(nfo);
+      }
+    }
+
+    const highestPriority = prioritized.length > 0 ? prioritized[0] : null;
+
+    logger.debug('NFO file discovery complete', {
+      movieDir,
+      videoBasename,
+      found: allNfos.length,
+      highestPriority: highestPriority ? path.basename(highestPriority) : 'none'
+    });
+
+    return {
+      all: allNfos,
+      prioritized,
+      highestPriority
+    };
   } catch (error) {
     logger.error(`Failed to find movie NFOs in ${movieDir}`, { error: getErrorMessage(error) });
-    return [];
+    return {
+      all: [],
+      prioritized: [],
+      highestPriority: null
+    };
   }
 }
+
