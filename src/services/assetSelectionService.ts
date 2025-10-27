@@ -101,6 +101,22 @@ export class AssetSelectionService {
    */
   async selectAssetYOLO(config: SelectionConfig): Promise<SelectionResult> {
     try {
+      // Check if asset type is locked (automated processes must respect locks)
+      const isLocked = await this.isAssetTypeLocked(
+        config.entityType,
+        config.entityId,
+        config.assetType
+      );
+
+      if (isLocked) {
+        logger.info(`Asset type ${config.assetType} is locked, skipping auto-selection`, {
+          entityType: config.entityType,
+          entityId: config.entityId,
+          assetType: config.assetType
+        });
+        return { selected: false, reason: 'Asset type locked by user' };
+      }
+
       // Find highest scored candidate
       const candidates = await this.db.query<{
         id: number;
@@ -382,6 +398,32 @@ export class AssetSelectionService {
        WHERE entity_type = ? AND entity_id = ? AND asset_type = ? AND is_selected = 1`,
       [entityType, entityId, assetType]
     );
+  }
+
+  /**
+   * Check if an asset type is locked on an entity
+   */
+  private async isAssetTypeLocked(
+    entityType: string,
+    entityId: number,
+    assetType: string
+  ): Promise<boolean> {
+    const lockColumn = this.getAssetLockColumn(assetType);
+    if (!lockColumn) {
+      return false; // No lock column means not lockable
+    }
+
+    const table = this.getTableName(entityType);
+    if (!table) {
+      return false; // No table means not lockable
+    }
+
+    const result = await this.db.query<{ locked: number }>(
+      `SELECT ${lockColumn} as locked FROM ${table} WHERE id = ?`,
+      [entityId]
+    );
+
+    return result.length > 0 && result[0].locked === 1;
   }
 
   /**

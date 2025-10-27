@@ -5,6 +5,7 @@ import { RadarrWebhookPayload } from '../types/webhooks.js';
 import { scanMovieDirectory, ScanContext } from './scan/unifiedScanService.js';
 import { applyManagerPathMapping } from './pathMappingService.js';
 import { MediaPlayerConnectionManager } from './mediaPlayerConnectionManager.js';
+import { getErrorMessage } from '../utils/errorHandling.js';
 
 /**
  * Find library by matching the longest path prefix
@@ -173,11 +174,11 @@ export class WebhookProcessingService {
 
         return undefined;
       }
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Failed to process Download webhook', {
         movieTitle: payload.movie.title,
         tmdbId: payload.movie.tmdbId,
-        error: error.message,
+        error: getErrorMessage(error),
       });
       throw error;
     }
@@ -268,11 +269,11 @@ export class WebhookProcessingService {
 
         return undefined;
       }
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Failed to process Rename webhook', {
         movieTitle: payload.movie.title,
         tmdbId: payload.movie.tmdbId,
-        error: error.message,
+        error: getErrorMessage(error),
       });
       throw error;
     }
@@ -327,11 +328,11 @@ export class WebhookProcessingService {
 
       // TODO: Emit notification event 'movie.file.deleted'
       return undefined; // No job created
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Failed to process MovieFileDelete webhook', {
         movieTitle: payload.movie.title,
         tmdbId: payload.movie.tmdbId,
-        error: error.message,
+        error: getErrorMessage(error),
       });
       throw error;
     }
@@ -344,7 +345,7 @@ export class WebhookProcessingService {
     db: DatabaseConnection,
     source: string,
     eventType: string,
-    payload: any
+    payload: unknown
   ): Promise<void> {
     try {
       await db.execute(
@@ -357,11 +358,11 @@ export class WebhookProcessingService {
         ) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)`,
         ['webhook', source, `${source} ${eventType} webhook received`, JSON.stringify(payload)]
       );
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Failed to log webhook activity', {
         source,
         eventType,
-        error: error.message,
+        error: getErrorMessage(error),
       });
       // Don't throw - logging failure shouldn't stop webhook processing
     }
@@ -409,8 +410,8 @@ export class WebhookProcessingService {
           severity,
         ]
       );
-    } catch (error: any) {
-      logger.error('Failed to log HealthIssue webhook', { error: error.message });
+    } catch (error) {
+      logger.error('Failed to log HealthIssue webhook', { error: getErrorMessage(error) });
     }
 
     // TODO: Emit notification event for user alerts (Stage 7+)
@@ -501,8 +502,8 @@ export class WebhookProcessingService {
           'warning',
         ]
       );
-    } catch (error: any) {
-      logger.error('Failed to log ManualInteractionRequired webhook', { error: error.message });
+    } catch (error) {
+      logger.error('Failed to log ManualInteractionRequired webhook', { error: getErrorMessage(error) });
     }
 
     // TODO: Emit notification event for user alerts (Stage 7+)
@@ -523,7 +524,7 @@ export class WebhookProcessingService {
   async handleGenericEvent(
     source: 'radarr' | 'sonarr' | 'lidarr',
     eventType: string,
-    payload: any
+    payload: unknown
   ): Promise<number | undefined> {
     const db = this.dbManager.getConnection();
 
@@ -585,19 +586,19 @@ export class WebhookProcessingService {
       for (const group of groups) {
         try {
           await this.triggerGroupScan(group.id, libraryPath);
-        } catch (error: any) {
+        } catch (error) {
           logger.error('Failed to trigger scan for group', {
             groupId: group.id,
             groupName: group.name,
-            error: error.message,
+            error: getErrorMessage(error),
           });
           // Continue with other groups even if one fails
         }
       }
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Failed to notify media players', {
         libraryId,
-        error: error.message,
+        error: getErrorMessage(error),
       });
       // Don't throw - notification failure shouldn't stop webhook processing
     }
@@ -638,11 +639,11 @@ export class WebhookProcessingService {
         metarrPath: libraryPath,
         mappedPath,
       });
-    } catch (error: any) {
+    } catch (error) {
       logger.warn('Group path mapping failed, using original path', {
         groupId,
         libraryPath,
-        error: error.message,
+        error: getErrorMessage(error),
       });
       mappedPath = libraryPath;
     }
@@ -677,12 +678,12 @@ export class WebhookProcessingService {
         });
 
         return; // Success - exit after first successful scan
-      } catch (error: any) {
+      } catch (error) {
         logger.warn('Failed to scan on player, trying next in group', {
           groupId,
           playerId: player.id,
           playerName: player.name,
-          error: error.message,
+          error: getErrorMessage(error),
         });
         // Continue to next player (fallback)
       }

@@ -6,6 +6,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { logger } from '../../middleware/logging.js';
+import { getErrorMessage, getErrorCode } from '../../utils/errorHandling.js';
 
 /**
  * Clean up all empty subdirectories in cache
@@ -27,9 +28,9 @@ export async function cleanupEmptyCacheDirectories(): Promise<void> {
       // Remove empty subdirectories
       const removed = await removeEmptyDirectoriesRecursive(typeRoot, typeRoot);
       totalRemoved += removed;
-    } catch (error: any) {
+    } catch (error) {
       logger.warn(`Failed to cleanup ${cacheType} cache directories`, {
-        error: error.message
+        error: getErrorMessage(error)
       });
     }
   }
@@ -73,11 +74,11 @@ async function removeEmptyDirectoriesRecursive(
         removedCount++;
       }
     }
-  } catch (error: any) {
+  } catch (error) {
     // Directory doesn't exist or can't be read - skip it
     logger.debug('Skipped directory during cleanup', {
       directory: dirPath,
-      reason: error.code || error.message
+      reason: getErrorCode(error) || getErrorMessage(error)
     });
   }
 

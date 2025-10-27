@@ -1,6 +1,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { logger } from '../../middleware/logging.js';
+import { getErrorMessage } from '../../utils/errorHandling.js';
 
 export interface NFOFile {
   path: string;
@@ -25,8 +26,8 @@ export async function findMovieNfos(movieDir: string): Promise<string[]> {
 
     logger.debug(`Found ${nfoFiles.length} NFO files in ${movieDir}`, { files: nfoFiles });
     return nfoFiles;
-  } catch (error: any) {
-    logger.error(`Failed to find movie NFOs in ${movieDir}`, { error: error.message });
+  } catch (error) {
+    logger.error(`Failed to find movie NFOs in ${movieDir}`, { error: getErrorMessage(error) });
     return [];
   }
 }
@@ -46,8 +47,8 @@ export async function findTVShowNfo(seriesDir: string): Promise<string | null> {
       logger.debug(`No tvshow.nfo found in ${seriesDir}`);
       return null;
     }
-  } catch (error: any) {
-    logger.error(`Failed to find tvshow.nfo in ${seriesDir}`, { error: error.message });
+  } catch (error) {
+    logger.error(`Failed to find tvshow.nfo in ${seriesDir}`, { error: getErrorMessage(error) });
     return null;
   }
 }
@@ -78,8 +79,8 @@ export async function findEpisodeNfos(seriesDir: string): Promise<string[]> {
 
     logger.debug(`Found ${episodeNfos.length} episode NFO files in ${seriesDir}`);
     return episodeNfos;
-  } catch (error: any) {
-    logger.error(`Failed to find episode NFOs in ${seriesDir}`, { error: error.message });
+  } catch (error) {
+    logger.error(`Failed to find episode NFOs in ${seriesDir}`, { error: getErrorMessage(error) });
     return [];
   }
 }
@@ -100,8 +101,8 @@ export async function getSubdirectories(dir: string): Promise<string[]> {
     }
 
     return subdirs;
-  } catch (error: any) {
-    logger.error(`Failed to get subdirectories in ${dir}`, { error: error.message });
+  } catch (error) {
+    logger.error(`Failed to get subdirectories in ${dir}`, { error: getErrorMessage(error) });
     return [];
   }
 }
@@ -149,14 +150,14 @@ export async function validateDirectory(dirPath: string): Promise<boolean> {
     try {
       await fs.writeFile(testFilePath, 'test', 'utf8');
       await fs.unlink(testFilePath);
-    } catch (writeError: any) {
-      logger.debug(`Directory write test failed for ${dirPath}`, { error: writeError.message });
+    } catch (writeError: unknown) {
+      logger.debug(`Directory write test failed for ${dirPath}`, { error: (writeError as { message?: string }).message });
       return false;
     }
 
     return true;
-  } catch (error: any) {
-    logger.debug(`Directory validation failed for ${dirPath}`, { error: error.message });
+  } catch (error) {
+    logger.debug(`Directory validation failed for ${dirPath}`, { error: getErrorMessage(error) });
     return false;
   }
 }
@@ -231,8 +232,8 @@ export async function browseDirectory(dirPath: string): Promise<{ name: string; 
     });
 
     return directories;
-  } catch (error: any) {
-    logger.error(`Failed to browse directory ${dirPath}`, { error: error.message });
-    throw new Error(`Cannot read directory: ${error.message}`);
+  } catch (error) {
+    logger.error(`Failed to browse directory ${dirPath}`, { error: getErrorMessage(error) });
+    throw new Error(`Cannot read directory: ${getErrorMessage(error)}`);
   }
 }

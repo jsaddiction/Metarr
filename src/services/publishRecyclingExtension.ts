@@ -10,13 +10,12 @@
 import { DatabaseConnection } from '../types/database.js';
 import { logger } from '../middleware/logging.js';
 import {
-  createRecycleBin,
+  ensureRecycleBinExists,
   recycleFile,
-  recycleDirectory,
-  validateBeforeRecycling,
 } from './files/recyclingService.js';
 import { gatherAllFacts } from './scan/factGatheringService.js';
 import { classifyDirectory } from './scan/classificationService.js';
+import { getErrorMessage } from '../utils/errorHandling.js';
 
 export interface RecyclingResult {
   filesRecycled: number;
@@ -78,58 +77,28 @@ export async function recycleAfterPublish(
       return result;
     }
 
-    // Step 3: Create recycle bin
-    const recycleBinPath = await createRecycleBin(entityType, entityId);
-    result.recycleBinPath = recycleBinPath;
+    // Step 3: Ensure recycle bin exists
+    await ensureRecycleBinExists();
 
     // Step 4: Recycle unknown files
     for (const classifiedFile of classificationResult.filesToRecycle) {
       const filePath = classifiedFile.facts.filesystem.absolutePath;
 
-      // Safety check
-      const validation = await validateBeforeRecycling(filePath, mainMovieFilePath);
-      if (!validation.safe) {
-        logger.warn('Skipping file recycling - failed validation', {
-          filePath,
-          reason: validation.reason,
-        });
-        result.errors.push(`${filePath}: ${validation.reason}`);
-        continue;
-      }
-
-      const recycleResult = await recycleFile(filePath, recycleBinPath, mainMovieFilePath);
+      const recycleResult = await recycleFile(filePath, mainMovieFilePath);
 
       if (recycleResult.success) {
         result.filesRecycled++;
         logger.debug('Recycled unknown file', {
           filePath,
-          recyclePath: recycleResult.newPath,
+          recyclePath: recycleResult.recyclePath,
         });
       } else {
         result.errors.push(`${filePath}: ${recycleResult.error}`);
       }
     }
 
-    // Step 5: Recycle legacy directories (entire directories)
-    if (classificationResult.legacy) {
-      for (const dirPath of classificationResult.legacy.directoriesToRecycle) {
-        const recycleResult = await recycleDirectory(
-          dirPath,
-          recycleBinPath,
-          mainMovieFilePath
-        );
-
-        if (recycleResult.success) {
-          result.directoriesRecycled++;
-          logger.info('Recycled legacy directory', {
-            dirPath,
-            recyclePath: recycleResult.newPath,
-          });
-        } else {
-          result.errors.push(`${dirPath}: ${recycleResult.error}`);
-        }
-      }
-    }
+    // Step 5: Legacy directories recycling not currently supported
+    // TODO: Implement directory recycling if needed
 
     logger.info('Post-publish recycling complete', {
       entityType,
@@ -140,15 +109,15 @@ export async function recycleAfterPublish(
     });
 
     return result;
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Post-publish recycling failed', {
       entityType,
       entityId,
       libraryPath,
-      error: error.message,
+      error: getErrorMessage(error),
     });
 
-    result.errors.push(`Recycling failed: ${error.message}`);
+    result.errors.push(`Recycling failed: ${getErrorMessage(error)}`);
     return result;
   }
 }
@@ -212,30 +181,18 @@ export async function recycleUnauthorizedFiles(
       count: unauthorizedFiles.length,
     });
 
-    // Create recycle bin
-    const recycleBinPath = await createRecycleBin(entityType, entityId);
-    result.recycleBinPath = recycleBinPath;
+    // Ensure recycle bin exists
+    await ensureRecycleBinExists();
 
     // Recycle each unauthorized file
     for (const filePath of unauthorizedFiles) {
-      // Safety check
-      const validation = await validateBeforeRecycling(filePath, mainMovieFilePath);
-      if (!validation.safe) {
-        logger.warn('Skipping unauthorized file recycling - failed validation', {
-          filePath,
-          reason: validation.reason,
-        });
-        result.errors.push(`${filePath}: ${validation.reason}`);
-        continue;
-      }
-
-      const recycleResult = await recycleFile(filePath, recycleBinPath, mainMovieFilePath);
+      const recycleResult = await recycleFile(filePath, mainMovieFilePath);
 
       if (recycleResult.success) {
         result.filesRecycled++;
         logger.debug('Recycled unauthorized file', {
           filePath,
-          recyclePath: recycleResult.newPath,
+          recyclePath: recycleResult.recyclePath,
         });
       } else {
         result.errors.push(`${filePath}: ${recycleResult.error}`);
@@ -250,15 +207,15 @@ export async function recycleUnauthorizedFiles(
     });
 
     return result;
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Unauthorized file recycling failed', {
       entityType,
       entityId,
       libraryPath,
-      error: error.message,
+      error: getErrorMessage(error),
     });
 
-    result.errors.push(`Recycling failed: ${error.message}`);
+    result.errors.push(`Recycling failed: ${getErrorMessage(error)}`);
     return result;
   }
 }

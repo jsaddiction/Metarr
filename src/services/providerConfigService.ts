@@ -54,8 +54,8 @@ export class ProviderConfigService {
             providerName,
             enabled: true,
             apiKey: defaultApiKey,
-            createdAt: new Date(),
-            updatedAt: new Date()
+            created_at: new Date(),
+            updated_at: new Date()
           });
         }
       }
@@ -108,8 +108,8 @@ export class ProviderConfigService {
           providerName,
           enabled: true, // Default to enabled if we have an API key
           apiKey: defaultApiKey,
-          createdAt: new Date(),
-          updatedAt: new Date()
+          created_at: new Date(),
+          updated_at: new Date()
         };
       }
 
@@ -245,8 +245,8 @@ export class ProviderConfigService {
       id: row.id,
       providerName: row.provider_name,
       enabled: Boolean(row.enabled),
-      createdAt: new Date(row.created_at),
-      updatedAt: new Date(row.updated_at)
+      created_at: new Date(row.created_at),
+      updated_at: new Date(row.updated_at)
     };
 
     // Add optional fields only if they exist

@@ -4,6 +4,8 @@ import { Library, MediaLibraryType, DirectoryEntry } from '../types/models.js';
 import { logger } from '../middleware/logging.js';
 import { validateDirectory, browseDirectory, getAvailableDrives } from './nfo/nfoDiscovery.js';
 import { cleanupEmptyCacheDirectories } from './files/cacheCleanup.js';
+import { getErrorMessage } from '../utils/errorHandling.js';
+import { SqlParam } from '../types/database.js';
 
 export class LibraryService {
   constructor(private dbManager: DatabaseManager) {}
@@ -26,9 +28,9 @@ export class LibraryService {
       );
 
       return libraries;
-    } catch (error: any) {
-      logger.error('Failed to get libraries', { error: error.message });
-      throw new Error(`Failed to retrieve libraries: ${error.message}`);
+    } catch (error) {
+      logger.error('Failed to get libraries', { error: getErrorMessage(error) });
+      throw new Error(`Failed to retrieve libraries: ${getErrorMessage(error)}`);
     }
   }
 
@@ -50,9 +52,9 @@ export class LibraryService {
       library.stats = await this.getLibraryStats(id, library.type);
 
       return library;
-    } catch (error: any) {
-      logger.error(`Failed to get library ${id}`, { error: error.message });
-      throw new Error(`Failed to retrieve library: ${error.message}`);
+    } catch (error) {
+      logger.error(`Failed to get library ${id}`, { error: getErrorMessage(error) });
+      throw new Error(`Failed to retrieve library: ${getErrorMessage(error)}`);
     }
   }
 
@@ -90,9 +92,9 @@ export class LibraryService {
 
       logger.info(`Created library: ${data.name}`, { id: insertId, type: data.type });
       return created;
-    } catch (error: any) {
-      logger.error('Failed to create library', { error: error.message, data });
-      throw new Error(`Failed to create library: ${error.message}`);
+    } catch (error) {
+      logger.error('Failed to create library', { error: getErrorMessage(error), data });
+      throw new Error(`Failed to create library: ${getErrorMessage(error)}`);
     }
   }
 
@@ -120,7 +122,7 @@ export class LibraryService {
 
       // Build dynamic update query
       const updates: string[] = [];
-      const values: any[] = [];
+      const values: SqlParam[] = [];
 
       if (data.name !== undefined) {
         updates.push('name = ?');
@@ -151,9 +153,9 @@ export class LibraryService {
 
       logger.info(`Updated library ${id}`, { data });
       return updated;
-    } catch (error: any) {
-      logger.error(`Failed to update library ${id}`, { error: error.message, data });
-      throw new Error(`Failed to update library: ${error.message}`);
+    } catch (error) {
+      logger.error(`Failed to update library ${id}`, { error: getErrorMessage(error), data });
+      throw new Error(`Failed to update library: ${getErrorMessage(error)}`);
     }
   }
 
@@ -208,9 +210,9 @@ export class LibraryService {
       await cleanupEmptyCacheDirectories();
 
       logger.info(`Completed deletion of library ${id}`, { name: library.name });
-    } catch (error: any) {
-      logger.error(`Failed to delete library ${id}`, { error: error.message });
-      throw new Error(`Failed to delete library: ${error.message}`);
+    } catch (error) {
+      logger.error(`Failed to delete library ${id}`, { error: getErrorMessage(error) });
+      throw new Error(`Failed to delete library: ${getErrorMessage(error)}`);
     }
   }
 
@@ -264,11 +266,11 @@ export class LibraryService {
             // Delete cache record from database
             await db.execute(`DELETE FROM ${cacheTable} WHERE id = ?`, [file.id]);
             deleted++;
-          } catch (err: any) {
+          } catch (err: unknown) {
             // File might not exist - that's okay, still delete the record
-            if (err.code !== 'ENOENT') {
+            if ((err as { code?: string }).code !== 'ENOENT') {
               logger.warn(`Failed to delete orphaned cache file: ${file.file_path}`, {
-                error: err.message,
+                error: (err as { message?: string }).message,
               });
             }
             // Still delete the database record even if file deletion failed
@@ -296,9 +298,9 @@ export class LibraryService {
           audio: audioDeleted,
         });
       }
-    } catch (error: any) {
+    } catch (error) {
       logger.error(`Failed to clean up orphaned cache files`, {
-        error: error.message,
+        error: getErrorMessage(error),
       });
       // Don't throw - cache cleanup is not critical
     }
@@ -332,12 +334,12 @@ export class LibraryService {
         if (actor.image_cache_path) {
           try {
             await fs.unlink(actor.image_cache_path).catch((err) => {
-              if (err.code !== 'ENOENT') {
-                logger.warn(`Failed to delete actor image: ${actor.image_cache_path}`, { error: err.message });
+              if ((err as { code?: string }).code !== 'ENOENT') {
+                logger.warn(`Failed to delete actor image: ${actor.image_cache_path}`, { error: (err as { message?: string }).message });
               }
             });
-          } catch (err: any) {
-            logger.warn(`Failed to delete actor image for actor ${actor.id}`, { error: err.message });
+          } catch (err: unknown) {
+            logger.warn(`Failed to delete actor image for actor ${actor.id}`, { error: (err as { message?: string }).message });
           }
         }
       }
@@ -378,13 +380,13 @@ export class LibraryService {
 
             for (const thumb of thumbs) {
               await fs.unlink(thumb.file_path).catch((err) => {
-                if (err.code !== 'ENOENT') {
-                  logger.warn(`Failed to delete crew thumbnail: ${thumb.file_path}`, { error: err.message });
+                if ((err as { code?: string }).code !== 'ENOENT') {
+                  logger.warn(`Failed to delete crew thumbnail: ${thumb.file_path}`, { error: (err as { message?: string }).message });
                 }
               });
             }
-          } catch (err: any) {
-            logger.warn(`Failed to query crew thumbnail for crew ${crewMember.id}`, { error: err.message });
+          } catch (err: unknown) {
+            logger.warn(`Failed to query crew thumbnail for crew ${crewMember.id}`, { error: (err as { message?: string }).message });
           }
         }
       }
@@ -438,8 +440,8 @@ export class LibraryService {
         studios: studiosCleaned,
         total: totalCleaned,
       });
-    } catch (error: any) {
-      logger.error('Failed to clean up orphaned entities', { error: error.message });
+    } catch (error) {
+      logger.error('Failed to clean up orphaned entities', { error: getErrorMessage(error) });
       // Don't throw - orphan cleanup is nice-to-have, not critical
     }
   }
@@ -459,8 +461,8 @@ export class LibraryService {
   async getAvailableDrives(): Promise<string[]> {
     try {
       return await getAvailableDrives();
-    } catch (error: any) {
-      logger.error('Failed to get available drives', { error: error.message });
+    } catch (error) {
+      logger.error('Failed to get available drives', { error: getErrorMessage(error) });
       return [];
     }
   }
@@ -480,11 +482,11 @@ export class LibraryService {
       }
 
       return { valid: true };
-    } catch (error: any) {
-      logger.error('Failed to validate path', { path, error: error.message });
+    } catch (error) {
+      logger.error('Failed to validate path', { path, error: getErrorMessage(error) });
       return {
         valid: false,
-        error: error.message,
+        error: getErrorMessage(error),
       };
     }
   }
@@ -501,9 +503,9 @@ export class LibraryService {
         path: dir.path,
         isDirectory: true,
       }));
-    } catch (error: any) {
-      logger.error('Failed to browse path', { path, error: error.message });
-      throw new Error(`Failed to browse directory: ${error.message}`);
+    } catch (error) {
+      logger.error('Failed to browse path', { path, error: getErrorMessage(error) });
+      throw new Error(`Failed to browse directory: ${getErrorMessage(error)}`);
     }
   }
 
@@ -586,9 +588,9 @@ export class LibraryService {
         enriched: Number(stats.enriched) || 0,
         lastScan,
       };
-    } catch (error: any) {
+    } catch (error) {
       logger.error(`Failed to get stats for library ${libraryId}`, {
-        error: error.message,
+        error: getErrorMessage(error),
       });
       // Return empty stats on error
       return {
@@ -610,8 +612,8 @@ export class LibraryService {
       name: row.name,
       type: row.type as MediaLibraryType,
       path: row.path,
-      createdAt: new Date(row.created_at),
-      updatedAt: new Date(row.updated_at),
+      created_at: new Date(row.created_at),
+      updated_at: new Date(row.updated_at),
     };
   }
 }

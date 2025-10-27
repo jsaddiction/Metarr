@@ -1,6 +1,7 @@
 import { DatabaseManager } from '../database/DatabaseManager.js';
 import { minimatch } from 'minimatch';
 import { logger } from '../middleware/logging.js';
+import { getErrorMessage } from '../utils/errorHandling.js';
 
 export interface IgnorePattern {
   id: number;
@@ -26,9 +27,9 @@ export class IgnorePatternService {
         `SELECT * FROM ignore_patterns ORDER BY is_system DESC, pattern ASC`
       );
       return patterns;
-    } catch (error: any) {
-      logger.error('Failed to get ignore patterns', { error: error.message });
-      throw new Error(`Failed to get ignore patterns: ${error.message}`);
+    } catch (error) {
+      logger.error('Failed to get ignore patterns', { error: getErrorMessage(error) });
+      throw new Error(`Failed to get ignore patterns: ${getErrorMessage(error)}`);
     }
   }
 
@@ -42,9 +43,9 @@ export class IgnorePatternService {
         `SELECT * FROM ignore_patterns WHERE enabled = 1`
       );
       return patterns;
-    } catch (error: any) {
-      logger.error('Failed to get enabled patterns', { error: error.message });
-      throw new Error(`Failed to get enabled patterns: ${error.message}`);
+    } catch (error) {
+      logger.error('Failed to get enabled patterns', { error: getErrorMessage(error) });
+      throw new Error(`Failed to get enabled patterns: ${getErrorMessage(error)}`);
     }
   }
 
@@ -70,9 +71,9 @@ export class IgnorePatternService {
 
       logger.info('Added ignore pattern', { pattern, patternType });
       return newPatterns[0];
-    } catch (error: any) {
-      logger.error('Failed to add pattern', { pattern, error: error.message });
-      throw new Error(`Failed to add pattern: ${error.message}`);
+    } catch (error) {
+      logger.error('Failed to add pattern', { pattern, error: getErrorMessage(error) });
+      throw new Error(`Failed to add pattern: ${getErrorMessage(error)}`);
     }
   }
 
@@ -88,9 +89,9 @@ export class IgnorePatternService {
       );
 
       logger.info('Toggled pattern', { id, enabled });
-    } catch (error: any) {
-      logger.error('Failed to toggle pattern', { id, error: error.message });
-      throw new Error(`Failed to toggle pattern: ${error.message}`);
+    } catch (error) {
+      logger.error('Failed to toggle pattern', { id, error: getErrorMessage(error) });
+      throw new Error(`Failed to toggle pattern: ${getErrorMessage(error)}`);
     }
   }
 
@@ -117,9 +118,9 @@ export class IgnorePatternService {
       await db.execute(`DELETE FROM ignore_patterns WHERE id = ?`, [id]);
 
       logger.info('Deleted pattern', { id });
-    } catch (error: any) {
-      logger.error('Failed to delete pattern', { id, error: error.message });
-      throw new Error(`Failed to delete pattern: ${error.message}`);
+    } catch (error) {
+      logger.error('Failed to delete pattern', { id, error: getErrorMessage(error) });
+      throw new Error(`Failed to delete pattern: ${getErrorMessage(error)}`);
     }
   }
 
@@ -150,8 +151,8 @@ export class IgnorePatternService {
       }
 
       return false;
-    } catch (error: any) {
-      logger.error('Failed to check pattern match', { fileName, error: error.message });
+    } catch (error) {
+      logger.error('Failed to check pattern match', { fileName, error: getErrorMessage(error) });
       // Don't throw - if pattern matching fails, don't ignore the file
       return false;
     }
@@ -225,9 +226,9 @@ export class IgnorePatternService {
       }
 
       return matchingIds.length;
-    } catch (error: any) {
-      logger.error('Failed to delete matching unknown files', { pattern, error: error.message });
-      throw new Error(`Failed to delete matching unknown files: ${error.message}`);
+    } catch (error) {
+      logger.error('Failed to delete matching unknown files', { pattern, error: getErrorMessage(error) });
+      throw new Error(`Failed to delete matching unknown files: ${getErrorMessage(error)}`);
     }
   }
 }

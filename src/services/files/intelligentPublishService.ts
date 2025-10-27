@@ -15,9 +15,10 @@
 import fs from 'fs/promises';
 import path from 'path';
 import crypto from 'crypto';
-import type { Database } from '../../database/index.js';
+import type { DatabaseConnection } from '../../types/database.js';
 import { logger } from '../../middleware/logging.js';
 import * as recyclingService from './recyclingService.js';
+import { getErrorMessage } from '../../utils/errorHandling.js';
 
 interface LibraryInventory {
   filesByHash: Map<string, string>;      // hash → filepath
@@ -136,10 +137,10 @@ async function inventoryLibraryDirectory(
     });
 
     return inventory;
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to inventory library directory', {
       libraryPath,
-      error: error.message,
+      error: getErrorMessage(error),
     });
     throw error;
   }
@@ -149,13 +150,13 @@ async function inventoryLibraryDirectory(
  * PHASE 2: Process recycle bin (move pending unknown files)
  */
 async function processRecycleBin(
-  db: Database,
+  db: DatabaseConnection,
   entityType: 'movie' | 'episode',
   entityId: number,
   mainMovieFile: string
 ): Promise<number> {
   // Find pending files (recycled_at IS NULL)
-  const pending = await db.all<{
+  const pending = await db.query<{
     id: number;
     original_path: string;
   }>(
@@ -255,7 +256,7 @@ async function syncAsset(
  * PHASE 4: Cleanup unauthorized files
  */
 async function cleanupUnauthorizedFiles(
-  db: Database,
+  db: DatabaseConnection,
   entityType: 'movie' | 'episode',
   entityId: number,
   inventory: LibraryInventory,
@@ -307,7 +308,7 @@ async function cleanupUnauthorizedFiles(
  * PHASE 5: Update library_*_files records (DELETE + INSERT to prevent orphans)
  */
 async function updateLibraryRecords(
-  db: Database,
+  db: DatabaseConnection,
   entityType: 'movie' | 'episode',
   entityId: number,
   publishedAssets: Array<{ cacheId: number; libraryPath: string; fileType: string }>
@@ -392,7 +393,7 @@ function getKodiFilename(basename: string, assetType: string, extension: string)
  * Main publish function
  */
 export async function publishMovie(
-  db: Database,
+  db: DatabaseConnection,
   config: PublishConfig
 ): Promise<PublishResult> {
   const result: PublishResult = {
@@ -490,13 +491,13 @@ export async function publishMovie(
     });
 
     return result;
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Publish failed', {
       entityType: config.entityType,
       entityId: config.entityId,
-      error: error.message,
+      error: getErrorMessage(error),
     });
-    result.errors.push(error.message);
+    result.errors.push(getErrorMessage(error));
     return result;
   }
 }
@@ -505,58 +506,51 @@ export async function publishMovie(
  * Get selected assets from cache tables
  */
 async function getSelectedAssets(
-  db: Database,
+  db: DatabaseConnection,
   config: PublishConfig
 ): Promise<SelectedAsset[]> {
   const assets: SelectedAsset[] = [];
 
-  // Get movie with all asset references
+  // Get NFO cache reference (still uses FK column)
   const movie = await db.get<{
-    poster_id: number | null;
-    fanart_id: number | null;
-    banner_id: number | null;
-    clearlogo_id: number | null;
-    clearart_id: number | null;
-    discart_id: number | null;
-    landscape_id: number | null;
-    keyart_id: number | null;
     nfo_cache_id: number | null;
-  }>('SELECT poster_id, fanart_id, banner_id, clearlogo_id, clearart_id, discart_id, landscape_id, keyart_id, nfo_cache_id FROM movies WHERE id = ?', [config.entityId]);
+  }>('SELECT nfo_cache_id FROM movies WHERE id = ?', [config.entityId]);
 
   if (!movie) {
     return assets;
   }
 
-  // Helper to add asset if exists
-  const addImageAsset = async (cacheId: number | null, assetType: string) => {
-    if (!cacheId) return;
+  // Get all image assets from cache_image_files table
+  // NOTE: Legacy FK columns (poster_id, fanart_id, etc.) removed from schema
+  // Assets are now managed solely through cache_image_files with entity_type/entity_id/image_type
+  const imageAssets = await db.query<{
+    id: number;
+    file_path: string;
+    file_hash: string;
+    image_type: string;
+  }>(
+    `SELECT id, file_path, file_hash, image_type
+     FROM cache_image_files
+     WHERE entity_type = ? AND entity_id = ?
+     ORDER BY image_type, id`,
+    [config.entityType, config.entityId]
+  );
 
-    const cacheFile = await db.get<{ file_path: string; file_hash: string }>(
-      'SELECT file_path, file_hash FROM cache_image_files WHERE id = ?',
-      [cacheId]
-    );
+  // Add all image assets (multiple per type supported)
+  for (const imageAsset of imageAssets) {
+    const ext = path.extname(imageAsset.file_path);
+    const assetType = imageAsset.image_type;
 
-    if (cacheFile) {
-      const ext = path.extname(cacheFile.file_path);
-      assets.push({
-        cacheId,
-        cacheFilePath: cacheFile.file_path,
-        cacheFileHash: cacheFile.file_hash,
-        assetType,
-        expectedFilename: getKodiFilename(config.mediaFilename, assetType, ext),
-      });
-    }
-  };
-
-  // Add all image assets
-  await addImageAsset(movie.poster_id, 'poster');
-  await addImageAsset(movie.fanart_id, 'fanart');
-  await addImageAsset(movie.banner_id, 'banner');
-  await addImageAsset(movie.clearlogo_id, 'clearlogo');
-  await addImageAsset(movie.clearart_id, 'clearart');
-  await addImageAsset(movie.discart_id, 'discart');
-  await addImageAsset(movie.landscape_id, 'landscape');
-  await addImageAsset(movie.keyart_id, 'keyart');
+    // For multiple assets of same type, Kodi needs different filenames
+    // We'll handle this in getKodiFilename or add index suffix later if needed
+    assets.push({
+      cacheId: imageAsset.id,
+      cacheFilePath: imageAsset.file_path,
+      cacheFileHash: imageAsset.file_hash,
+      assetType,
+      expectedFilename: getKodiFilename(config.mediaFilename, assetType, ext),
+    });
+  }
 
   // Add NFO (from cache_text_files)
   if (movie.nfo_cache_id) {

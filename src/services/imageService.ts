@@ -1,5 +1,5 @@
 import { DatabaseManager } from '../database/DatabaseManager.js';
-import * as fs from 'fs-extra';
+import fs from 'fs-extra';
 import * as fsSync from 'fs'; // For createReadStream
 import * as path from 'path';
 import axios from 'axios';
@@ -9,6 +9,8 @@ import {
   cacheImageFile,
 } from './files/unifiedFileService.js';
 import { DatabaseConnection } from '../types/database.js';
+import { getErrorMessage } from '../utils/errorHandling.js';
+import { SqlParam } from '../types/database.js';
 
 export interface Image {
   id: number;
@@ -72,7 +74,7 @@ export class ImageService {
       FROM cache_image_files
       WHERE entity_type = ? AND entity_id = ?
     `;
-    const params: any[] = [entityType, entityId];
+    const params: SqlParam[] = [entityType, entityId];
 
     if (imageType) {
       query += ' AND image_type = ?';
@@ -328,12 +330,12 @@ export class ImageService {
           voteAverage: candidate.vote_average,
           dimensions: `${candidate.width}x${candidate.height}`
         });
-      } catch (error: any) {
+      } catch (error) {
         logger.error('Failed to cache selected image', {
           imageType,
           entityId,
           url: candidate.url,
-          error: error.message
+          error: getErrorMessage(error)
         });
       }
     }
@@ -364,12 +366,12 @@ export class ImageService {
             entityId,
             cacheFileId: cacheFileIds[0]
           });
-        } catch (error: any) {
+        } catch (error) {
           // Column may not exist for this entity type, that's OK
           logger.debug('Failed to update entity FK column (may not exist)', {
             tableName,
             columnName,
-            error: error.message
+            error: getErrorMessage(error)
           });
         }
       }
@@ -418,25 +420,8 @@ export class ImageService {
         filename
       });
 
-      // Update movie FK column if applicable
-      const primaryImageTypes = ['poster', 'fanart', 'banner', 'clearlogo', 'clearart', 'landscape'];
-      if (primaryImageTypes.includes(imageType) && (entityType === 'movie' || entityType === 'series')) {
-        const columnName = `${imageType}_id`;
-        const tableName = entityType === 'movie' ? 'movies' : 'series';
-
-        try {
-          await db.execute(
-            `UPDATE ${tableName} SET ${columnName} = ? WHERE id = ?`,
-            [cacheFileId, entityId]
-          );
-        } catch (error: any) {
-          logger.debug('Failed to update entity FK column (may not exist)', {
-            tableName,
-            columnName,
-            error: error.message
-          });
-        }
-      }
+      // NOTE: Legacy FK columns (poster_id, fanart_id, etc.) removed from schema
+      // Assets are now managed solely through cache_image_files table with entity_type/entity_id/image_type
 
       return cacheFileId;
     } finally {
@@ -595,10 +580,10 @@ export class ImageService {
           libraryPath,
           imageType: cacheImage.image_type
         });
-      } catch (error: any) {
+      } catch (error) {
         logger.error('Failed to recover image from cache', {
           cacheFileId: cacheImage.id,
-          error: error.message
+          error: getErrorMessage(error)
         });
       }
     }

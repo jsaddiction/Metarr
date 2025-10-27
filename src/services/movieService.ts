@@ -3,20 +3,13 @@ import { scanMovieDirectory } from './scan/unifiedScanService.js';
 import { getDirectoryPath } from './pathMappingService.js';
 import { logger } from '../middleware/logging.js';
 import fs from 'fs/promises';
-import * as fsSync from 'fs';
 import path from 'path';
-import crypto from 'crypto';
-import sharp from 'sharp';
-import { hashSmallFile } from './hash/hashService.js';
-import { cacheService } from './cacheService.js';
-import { getDefaultMaxCount } from '../config/assetTypeDefaults.js';
-import https from 'https';
-import http from 'http';
-import { ProviderOrchestrator } from './providers/ProviderOrchestrator.js';
-import { ProviderRegistry } from './providers/ProviderRegistry.js';
-import { ProviderConfigService } from './providerConfigService.js';
-import { WorkflowControlService } from './workflowControlService.js';
 import { JobQueueService } from './jobQueue/JobQueueService.js';
+import { MovieAssetService } from './movie/MovieAssetService.js';
+import { MovieUnknownFilesService } from './movie/MovieUnknownFilesService.js';
+import { MovieWorkflowService } from './movie/MovieWorkflowService.js';
+import { getErrorMessage } from '../utils/errorHandling.js';
+import { SqlParam } from '../types/database.js';
 
 export type AssetStatus = 'none' | 'partial' | 'complete';
 
@@ -75,15 +68,22 @@ export interface MovieListResult {
 }
 
 export class MovieService {
-  private jobQueue: JobQueueService | undefined;
+  // @ts-expect-error - Property reserved for future use
+  private _jobQueue: JobQueueService | undefined;
+  private assetService: MovieAssetService;
+  private unknownFilesService: MovieUnknownFilesService;
+  private workflowService: MovieWorkflowService;
 
   constructor(private db: DatabaseManager, jobQueue?: JobQueueService) {
-    this.jobQueue = jobQueue;
+    this._jobQueue = jobQueue;
+    this.assetService = new MovieAssetService(db);
+    this.unknownFilesService = new MovieUnknownFilesService(db);
+    this.workflowService = new MovieWorkflowService(db, jobQueue);
   }
 
   async getAll(filters?: MovieFilters): Promise<MovieListResult> {
     const whereClauses: string[] = ['1=1'];
-    const params: any[] = [];
+    const params: SqlParam[] = [];
 
     // ALWAYS exclude soft-deleted movies (unless explicitly requested)
     whereClauses.push('m.deleted_at IS NULL');
@@ -241,54 +241,9 @@ export class MovieService {
   }
 
   /**
-   * Map database row (snake_case) to TypeScript object (camelCase)
+   * Get movie by ID with optional related data
+   * Returns raw database row (snake_case) - no mapping needed
    */
-  private mapMovieFromDb(dbRow: any): any {
-    return {
-      id: dbRow.id,
-      libraryId: dbRow.library_id,
-      filePath: dbRow.file_path,
-      title: dbRow.title,
-      originalTitle: dbRow.original_title,
-      sortTitle: dbRow.sort_title,
-      year: dbRow.year,
-
-      // External IDs (critical for provider lookups)
-      tmdbId: dbRow.tmdb_id,
-      imdbId: dbRow.imdb_id,
-
-      // Metadata fields
-      plot: dbRow.plot,
-      outline: dbRow.outline,
-      tagline: dbRow.tagline,
-      mpaa: dbRow.mpaa,
-      premiered: dbRow.premiered,
-      userRating: dbRow.user_rating,
-      trailerUrl: dbRow.trailer_url,
-      setId: dbRow.set_id,
-
-      // Hashes (clean schema only has file_hash)
-      fileHash: dbRow.file_hash,
-
-      // Locks
-      titleLocked: dbRow.title_locked,
-      originalTitleLocked: dbRow.original_title_locked,
-      sortTitleLocked: dbRow.sort_title_locked,
-      yearLocked: dbRow.year_locked,
-      plotLocked: dbRow.plot_locked,
-      outlineLocked: dbRow.outline_locked,
-      taglineLocked: dbRow.tagline_locked,
-      mpaaLocked: dbRow.mpaa_locked,
-      premieredLocked: dbRow.premiered_locked,
-      userRatingLocked: dbRow.user_rating_locked,
-      trailerUrlLocked: dbRow.trailer_url_locked,
-
-      // Timestamps
-      createdAt: dbRow.created_at,
-      updatedAt: dbRow.updated_at,
-    };
-  }
-
   async getById(movieId: number, include: string[] = ['files']): Promise<any | null> {
     // Get base movie data with all fields
     const movieQuery = `SELECT * FROM movies WHERE id = ?`;
@@ -298,7 +253,8 @@ export class MovieService {
       return null;
     }
 
-    const movie = this.mapMovieFromDb(movies[0]);
+    // Use raw database row - no mapping needed (consistent snake_case throughout)
+    const movie = movies[0];
 
     // Get related entities (clean schema)
     const [actors, genres, directors, writers, studios] = await Promise.all([
@@ -371,378 +327,40 @@ export class MovieService {
     return images;
   }
 
+  /**
+   * Get extras (trailer, subtitles, theme song)
+   * Delegates to MovieWorkflowService
+   */
   async getExtras(movieId: number): Promise<{
     trailer: any | null;
     subtitles: any[];
     themeSong: any | null;
   }> {
-    const conn = this.db.getConnection();
-
-    // Get trailer (cache_video_files with video_type='trailer')
-    const trailers = await conn.query(
-      `SELECT * FROM cache_video_files
-       WHERE entity_type = 'movie' AND entity_id = ? AND video_type = 'trailer'
-       LIMIT 1`,
-      [movieId]
-    );
-
-    // Get subtitles (cache_text_files with text_type='subtitle')
-    const subtitles = await conn.query(
-      `SELECT * FROM cache_text_files
-       WHERE entity_type = 'movie' AND entity_id = ? AND text_type = 'subtitle'`,
-      [movieId]
-    );
-
-    // Get theme song (cache_audio_files with audio_type='theme')
-    const themes = await conn.query(
-      `SELECT * FROM cache_audio_files
-       WHERE entity_type = 'movie' AND entity_id = ? AND audio_type = 'theme'
-       LIMIT 1`,
-      [movieId]
-    );
-
-    return {
-      trailer: trailers.length > 0 ? trailers[0] : null,
-      subtitles: subtitles,
-      themeSong: themes.length > 0 ? themes[0] : null
-    };
+    return this.workflowService.getExtras(movieId);
   }
 
   /**
    * Assign an unknown file to a specific asset type
-   * This processes the file as if it were discovered during scanning
+   * Delegates to MovieUnknownFilesService
    */
   async assignUnknownFile(movieId: number, fileId: number, fileType: string): Promise<any> {
-    const conn = this.db.getConnection();
-
-    try {
-      // Get the unknown file record
-      const unknownFileResults = await conn.query(
-        'SELECT * FROM unknown_files WHERE id = ? AND entity_id = ? AND entity_type = ?',
-        [fileId, movieId, 'movie']
-      );
-
-      if (!unknownFileResults || unknownFileResults.length === 0) {
-        throw new Error('Unknown file not found');
-      }
-
-      const unknownFile = unknownFileResults[0];
-      const originalFilePath = unknownFile.file_path;
-
-      // Get movie details
-      const movieResults = await conn.query(
-        'SELECT id, file_path, title, year FROM movies WHERE id = ?',
-        [movieId]
-      );
-
-      if (!movieResults || movieResults.length === 0) {
-        throw new Error('Movie not found');
-      }
-
-      const movie = movieResults[0];
-      const movieDir = path.dirname(movie.file_path);
-      const movieFileName = path.parse(movie.file_path).name;
-
-      // Validate file type for images
-      const imageTypes = ['poster', 'fanart', 'landscape', 'keyart', 'banner', 'clearart', 'clearlogo', 'discart'];
-
-      if (imageTypes.includes(fileType)) {
-        const ext = path.extname(originalFilePath);
-
-        // TWO-COPY ARCHITECTURE:
-        // 1. Discovered in library → Copy to cache (keep library copy)
-        // 2. Library copy must follow Kodi naming convention for media player scans
-        // 3. Cache is source of truth for rebuild operations
-
-        // Hash the original file
-        let fileHash: string | undefined;
-        try {
-          const hashResult = await hashSmallFile(originalFilePath);
-          fileHash = hashResult.hash;
-        } catch (error: any) {
-          logger.warn('Failed to hash image file', {
-            filePath: originalFilePath,
-            error: error.message,
-          });
-        }
-
-        // Get image dimensions and file stats
-        const stats = await fs.stat(originalFilePath);
-        let width: number | undefined;
-        let height: number | undefined;
-
-        try {
-          const metadata = await sharp(originalFilePath).metadata();
-          width = metadata.width;
-          height = metadata.height;
-        } catch (error: any) {
-          logger.warn('Failed to get image dimensions', {
-            filePath: originalFilePath,
-            error: error.message,
-          });
-        }
-
-        // Step 1: Copy to cache (source of truth)
-        const cacheDir = path.join(process.cwd(), 'data', 'cache', 'images', movieId.toString());
-        await fs.mkdir(cacheDir, { recursive: true });
-
-        const hash = crypto.randomBytes(8).toString('hex');
-        const cacheFileName = `${fileType}_${hash}${ext}`;
-        const cachePath = path.join(cacheDir, cacheFileName);
-
-        await fs.copyFile(originalFilePath, cachePath);
-        logger.debug('Copied image to cache', {
-          from: originalFilePath,
-          to: cachePath,
-        });
-
-        // Step 2: Ensure library file follows Kodi naming convention
-        const properFileName = `${movieFileName}-${fileType}${ext}`;
-        const properLibraryPath = path.join(movieDir, properFileName);
-
-        let finalLibraryPath = originalFilePath;
-        if (originalFilePath !== properLibraryPath) {
-          // Check if properly named file already exists
-          try {
-            await fs.access(properLibraryPath);
-            // Properly named file exists - check if it's the same content
-            if (await this.areFilesSame(originalFilePath, properLibraryPath)) {
-              // Same file, delete the incorrectly named duplicate
-              await fs.unlink(originalFilePath);
-              finalLibraryPath = properLibraryPath;
-              logger.info('Deleted duplicate, using existing Kodi-compliant file', {
-                deleted: originalFilePath,
-                keeping: properLibraryPath,
-              });
-            } else {
-              // Different content - replace the old one with new assignment
-              await fs.unlink(properLibraryPath);
-              await fs.rename(originalFilePath, properLibraryPath);
-              finalLibraryPath = properLibraryPath;
-              logger.info('Replaced existing file with newly assigned image', {
-                from: originalFilePath,
-                to: properLibraryPath,
-              });
-            }
-          } catch (error) {
-            // Properly named file doesn't exist - rename to Kodi convention
-            await fs.rename(originalFilePath, properLibraryPath);
-            finalLibraryPath = properLibraryPath;
-            logger.info('Renamed to Kodi naming convention', {
-              from: originalFilePath,
-              to: properLibraryPath,
-            });
-          }
-        }
-
-        // Insert cache copy into cache_image_files table
-        const cacheResult = await conn.execute(
-          `INSERT INTO cache_image_files (
-            entity_type, entity_id, image_type, file_path, file_name,
-            file_size, file_hash, width, height, format, source_type
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            'movie',
-            movieId,
-            fileType,
-            cachePath,
-            path.basename(cachePath),
-            stats.size,
-            fileHash,
-            width,
-            height,
-            ext.substring(1), // Remove leading dot
-            'local'
-          ]
-        );
-
-        // Insert library copy into library_image_files table
-        await conn.execute(
-          `INSERT INTO library_image_files (cache_file_id, file_path)
-           VALUES (?, ?)`,
-          [cacheResult.insertId, finalLibraryPath]
-        );
-
-        logger.info('Assigned unknown file as image (two-copy architecture)', {
-          movieId,
-          fileId,
-          fileType,
-          cachePath,
-          libraryPath: finalLibraryPath,
-        });
-      } else if (fileType === 'trailer') {
-        // Handle trailer assignment
-        const ext = path.extname(originalFilePath);
-        const newFileName = `${movieFileName}-trailer${ext}`;
-        const newFilePath = path.join(movieDir, newFileName);
-
-        let finalFilePath = originalFilePath;
-        if (originalFilePath !== newFilePath) {
-          try {
-            await fs.access(newFilePath);
-            if (await this.areFilesSame(originalFilePath, newFilePath)) {
-              finalFilePath = newFilePath;
-              await fs.unlink(originalFilePath);
-            }
-          } catch (error) {
-            await fs.rename(originalFilePath, newFilePath);
-            finalFilePath = newFilePath;
-          }
-        }
-
-        const stats = await fs.stat(finalFilePath);
-        let fileHash: string | undefined;
-        try {
-          const hashResult = await hashSmallFile(finalFilePath);
-          fileHash = hashResult.hash;
-        } catch (error: any) {
-          logger.warn('Failed to hash trailer file', { filePath: finalFilePath, error: error.message });
-        }
-
-        // Insert trailer into cache_video_files table (discovered in library)
-        const cacheResult = await conn.execute(
-          `INSERT INTO cache_video_files (
-            entity_type, entity_id, video_type, file_path, file_size, file_hash, source_type
-          ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          ['movie', movieId, 'trailer', finalFilePath, stats.size, fileHash, 'local']
-        );
-
-        // Also insert into library_video_files
-        await conn.execute(
-          `INSERT INTO library_video_files (cache_file_id, file_path) VALUES (?, ?)`,
-          [cacheResult.insertId, finalFilePath]
-        );
-
-        logger.info('Assigned unknown file as trailer', { movieId, fileId, originalPath: originalFilePath, finalPath: finalFilePath });
-      } else if (fileType === 'subtitle') {
-        // Handle subtitle assignment
-        await conn.execute(
-          `INSERT INTO subtitle_streams (
-            entity_type, entity_id, source_type, file_path
-          ) VALUES (?, ?, ?, ?)`,
-          ['movie', movieId, 'external', originalFilePath]
-        );
-
-        logger.info('Assigned unknown file as subtitle', { movieId, fileId, filePath: originalFilePath });
-      } else if (fileType === 'theme') {
-        // Handle theme song assignment
-        const ext = path.extname(originalFilePath);
-        const newFileName = `${movieFileName}-theme${ext}`;
-        const newFilePath = path.join(movieDir, newFileName);
-
-        let finalFilePath = originalFilePath;
-        if (originalFilePath !== newFilePath) {
-          try {
-            await fs.access(newFilePath);
-            if (await this.areFilesSame(originalFilePath, newFilePath)) {
-              finalFilePath = newFilePath;
-              await fs.unlink(originalFilePath);
-            }
-          } catch (error) {
-            await fs.rename(originalFilePath, newFilePath);
-            finalFilePath = newFilePath;
-          }
-        }
-
-        // Store theme in assets table or a dedicated theme table if it exists
-        // For now, we'll log it as unhandled
-        logger.warn('Theme song assignment not yet fully implemented', { movieId, fileId, filePath: finalFilePath });
-      }
-
-      // Delete from unknown_files table
-      await conn.execute('DELETE FROM unknown_files WHERE id = ?', [fileId]);
-
-      return {
-        success: true,
-        message: `Successfully assigned file as ${fileType}`,
-        fileType,
-      };
-    } catch (error: any) {
-      logger.error('Failed to assign unknown file', {
-        movieId,
-        fileId,
-        fileType,
-        error: error.message,
-      });
-      throw error;
-    }
-  }
-
-  /**
-   * Check if two files have the same content by comparing their hashes
-   */
-  private async areFilesSame(file1: string, file2: string): Promise<boolean> {
-    try {
-      const hash1Result = await hashSmallFile(file1);
-      const hash2Result = await hashSmallFile(file2);
-      return hash1Result.hash === hash2Result.hash;
-    } catch (error) {
-      return false;
-    }
+    return this.unknownFilesService.assignUnknownFile(movieId, fileId, fileType);
   }
 
   /**
    * Mark an unknown file as ignored
-   * File will remain in library but won't appear in unknown files list
+   * Delegates to MovieUnknownFilesService
    */
   async ignoreUnknownFile(movieId: number, fileId: number): Promise<any> {
-    // NOTE: Ignore functionality not yet implemented in schema
-    // The unknown_files table doesn't have an 'ignored' column yet
-    // For now, this is a no-op that returns success
-    logger.info('Ignore unknown file requested (not implemented)', { movieId, fileId });
-
-    return {
-      success: true,
-      message: 'Ignore functionality not yet implemented',
-    };
+    return this.unknownFilesService.ignoreUnknownFile(movieId, fileId);
   }
 
   /**
    * Delete an unknown file from the filesystem
+   * Delegates to MovieUnknownFilesService
    */
   async deleteUnknownFile(movieId: number, fileId: number): Promise<any> {
-    const conn = this.db.getConnection();
-
-    try {
-      // Get the file path
-      const results = await conn.query(
-        'SELECT file_path FROM unknown_files WHERE id = ? AND entity_id = ? AND entity_type = ?',
-        [fileId, movieId, 'movie']
-      );
-
-      if (!results || results.length === 0) {
-        throw new Error('Unknown file not found');
-      }
-
-      const filePath = results[0].file_path;
-
-      // Delete the file from filesystem
-      try {
-        await fs.unlink(filePath);
-        logger.info('Deleted unknown file from filesystem', { movieId, fileId, filePath });
-      } catch (error: any) {
-        logger.warn('Failed to delete file from filesystem (may already be deleted)', {
-          movieId,
-          fileId,
-          filePath,
-          error: error.message,
-        });
-      }
-
-      // Remove from database
-      await conn.execute(
-        'DELETE FROM unknown_files WHERE id = ? AND entity_id = ? AND entity_type = ?',
-        [fileId, movieId, 'movie']
-      );
-
-      return {
-        success: true,
-        message: 'File deleted successfully',
-      };
-    } catch (error: any) {
-      logger.error('Failed to delete unknown file', { movieId, fileId, error: error.message });
-      throw error;
-    }
+    return this.unknownFilesService.deleteUnknownFile(movieId, fileId);
   }
 
   /**
@@ -812,10 +430,10 @@ export class MovieService {
         assetsFound: scanResult.assetsFound,
         unknownFilesFound: scanResult.unknownFilesFound,
       };
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Failed to refresh movie', {
         movieId,
-        error: error.message,
+        error: getErrorMessage(error),
       });
       throw error;
     }
@@ -826,7 +444,7 @@ export class MovieService {
     try {
       // Build the UPDATE query dynamically based on provided fields
       const updateFields: string[] = [];
-      const updateValues: any[] = [];
+      const updateValues: SqlParam[] = [];
 
       // Metadata fields that can be updated
       const allowedFields = [
@@ -877,10 +495,10 @@ export class MovieService {
 
       // Return the updated movie
       return await this.getById(movieId);
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Failed to update movie metadata', {
         movieId,
-        error: error.message,
+        error: getErrorMessage(error),
       });
       throw error;
     }
@@ -888,311 +506,18 @@ export class MovieService {
 
   /**
    * Save asset selections for a movie
-   * Downloads assets from provider URLs, stores in cache, creates library copies
+   * Delegates to MovieAssetService
    */
-  async saveAssets(movieId: number, selections: any, metadata?: any): Promise<any> {
-    const conn = this.db.getConnection();
-
-    try {
-      const results = {
-        success: true,
-        savedAssets: [] as any[],
-        errors: [] as string[],
-      };
-
-      // Get movie details
-      const movieResults = await conn.query(
-        'SELECT id, file_path, title, year FROM movies WHERE id = ?',
-        [movieId]
-      );
-
-      if (!movieResults || movieResults.length === 0) {
-        throw new Error('Movie not found');
-      }
-
-      const movie = movieResults[0];
-      const movieDir = path.dirname(movie.file_path);
-      const movieFileName = path.parse(movie.file_path).name;
-
-      // Update metadata if provided
-      if (metadata) {
-        await this.updateMetadata(movieId, metadata);
-      }
-
-      // Process each asset selection
-      for (const [assetType, assetData] of Object.entries(selections)) {
-        try {
-          const asset = assetData as any;
-
-          if (!asset.url) {
-            results.errors.push(`Asset ${assetType}: No URL provided`);
-            continue;
-          }
-
-          // Download asset to temporary location
-          const tempFilePath = path.join(process.cwd(), 'data', 'temp', `${crypto.randomBytes(16).toString('hex')}${path.extname(asset.url)}`);
-          await fs.mkdir(path.dirname(tempFilePath), { recursive: true });
-
-          await this.downloadFile(asset.url, tempFilePath);
-
-          // Get image dimensions
-          let width: number | undefined;
-          let height: number | undefined;
-
-          try {
-            const imageMetadata = await sharp(tempFilePath).metadata();
-            width = imageMetadata.width;
-            height = imageMetadata.height;
-          } catch (error) {
-            logger.warn('Could not get image dimensions', { assetType, url: asset.url });
-          }
-
-          // Store in cache using CacheService
-          const cacheMetadata: any = {
-            mimeType: asset.metadata?.mimeType || 'image/jpeg',
-            sourceType: 'provider' as const,
-            sourceUrl: asset.url,
-            providerName: asset.provider,
-          };
-
-          if (width !== undefined) cacheMetadata.width = width;
-          if (height !== undefined) cacheMetadata.height = height;
-
-          const cacheResult = await cacheService.addAsset(tempFilePath, cacheMetadata);
-
-          // Create library copy with Kodi naming convention
-          const libraryFileName = `${movieFileName}-${assetType}${path.extname(tempFilePath)}`;
-          const libraryPath = path.join(movieDir, libraryFileName);
-
-          await fs.copyFile(cacheResult.cachePath, libraryPath);
-
-          // Insert or update image record in database using split cache/library tables
-          // Check for existing cache copy
-          const existingCache = await conn.get(
-            'SELECT id FROM cache_image_files WHERE entity_type = ? AND entity_id = ? AND image_type = ?',
-            ['movie', movieId, assetType]
-          );
-
-          let cacheFileId: number;
-
-          if (existingCache) {
-            // Update existing cache copy
-            await conn.execute(
-              `UPDATE cache_image_files SET
-                file_path = ?,
-                file_name = ?,
-                file_size = ?,
-                file_hash = ?,
-                width = ?,
-                height = ?,
-                format = ?,
-                source_type = ?,
-                source_url = ?,
-                provider_name = ?
-              WHERE id = ?`,
-              [
-                cacheResult.cachePath,
-                path.basename(cacheResult.cachePath),
-                cacheResult.fileSize,
-                cacheResult.contentHash,
-                width,
-                height,
-                path.extname(tempFilePath).substring(1), // Remove leading dot
-                'provider',
-                asset.url,
-                asset.provider,
-                existingCache.id
-              ]
-            );
-            cacheFileId = existingCache.id;
-          } else {
-            // Insert new cache copy
-            const result = await conn.execute(
-              `INSERT INTO cache_image_files (
-                entity_type, entity_id, image_type, file_path, file_name,
-                file_size, file_hash, width, height, format,
-                source_type, source_url, provider_name
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-              [
-                'movie',
-                movieId,
-                assetType,
-                cacheResult.cachePath,
-                path.basename(cacheResult.cachePath),
-                cacheResult.fileSize,
-                cacheResult.contentHash,
-                width,
-                height,
-                path.extname(tempFilePath).substring(1),
-                'provider',
-                asset.url,
-                asset.provider
-              ]
-            );
-            cacheFileId = result.insertId!;
-          }
-
-          // Check for existing library copy
-          const existingLibrary = await conn.get(
-            'SELECT id FROM library_image_files WHERE cache_file_id = ?',
-            [cacheFileId]
-          );
-
-          if (existingLibrary) {
-            // Update existing library copy
-            await conn.execute(
-              `UPDATE library_image_files SET file_path = ? WHERE id = ?`,
-              [libraryPath, existingLibrary.id]
-            );
-          } else {
-            // Insert new library copy
-            await conn.execute(
-              `INSERT INTO library_image_files (cache_file_id, file_path)
-               VALUES (?, ?)`,
-              [cacheFileId, libraryPath]
-            );
-          }
-
-          // Clean up temp file
-          try {
-            await fs.unlink(tempFilePath);
-          } catch (error) {
-            // Ignore cleanup errors
-          }
-
-          results.savedAssets.push({
-            assetType,
-            cacheAssetId: cacheResult.id,
-            cachePath: cacheResult.cachePath,
-            libraryPath,
-            isNew: cacheResult.isNew,
-          });
-
-          logger.info('Saved asset', {
-            movieId,
-            assetType,
-            provider: asset.provider,
-            cacheAssetId: cacheResult.id,
-            isNew: cacheResult.isNew,
-          });
-
-        } catch (error: any) {
-          results.errors.push(`Asset ${assetType}: ${error.message}`);
-          logger.error('Failed to save asset', {
-            movieId,
-            assetType,
-            error: error.message,
-          });
-        }
-      }
-
-      logger.info('Asset save complete', {
-        movieId,
-        savedCount: results.savedAssets.length,
-        errorCount: results.errors.length,
-      });
-
-      return results;
-
-    } catch (error: any) {
-      logger.error('Failed to save assets', {
-        movieId,
-        error: error.message,
-      });
-      throw error;
-    }
-  }
-
-  /**
-   * Download file from URL
-   */
-  private async downloadFile(url: string, destPath: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const protocol = url.startsWith('https') ? https : http;
-
-      protocol.get(url, (response) => {
-        if (response.statusCode === 301 || response.statusCode === 302) {
-          // Handle redirect
-          if (response.headers.location) {
-            this.downloadFile(response.headers.location, destPath)
-              .then(resolve)
-              .catch(reject);
-            return;
-          }
-        }
-
-        if (response.statusCode !== 200) {
-          reject(new Error(`Failed to download: HTTP ${response.statusCode}`));
-          return;
-        }
-
-        const fileStream = fsSync.createWriteStream(destPath);
-        response.pipe(fileStream);
-
-        fileStream.on('finish', () => {
-          fileStream.close();
-          resolve();
-        });
-
-        fileStream.on('error', (err: Error) => {
-          fs.unlink(destPath).catch(() => {});
-          reject(err);
-        });
-
-      }).on('error', (err) => {
-        reject(err);
-      });
-    });
+  async saveAssets(movieId: number, selections: any, metadata?: unknown): Promise<any> {
+    return this.assetService.saveAssets(movieId, selections, metadata);
   }
 
   /**
    * Toggle monitored status for a movie
-   *
-   * Monitored = 1: Automation enabled, respects field locks
-   * Monitored = 0: Automation STOPPED, everything frozen
+   * Delegates to MovieWorkflowService
    */
   async toggleMonitored(movieId: number): Promise<{ id: number; monitored: boolean }> {
-    try {
-      const conn = this.db.getConnection();
-
-      // Get current monitored status
-      const movie = await conn.query(
-        'SELECT id, monitored FROM movies WHERE id = ?',
-        [movieId]
-      );
-
-      if (!movie || movie.length === 0) {
-        throw new Error('Movie not found');
-      }
-
-      const currentMovie = movie[0];
-
-      // Toggle the status
-      const newMonitoredStatus = currentMovie.monitored === 1 ? 0 : 1;
-
-      // Update database
-      await conn.execute(
-        'UPDATE movies SET monitored = ? WHERE id = ?',
-        [newMonitoredStatus, movieId]
-      );
-
-      logger.info('Toggled monitored status', {
-        movieId,
-        oldStatus: currentMovie.monitored === 1,
-        newStatus: newMonitoredStatus === 1
-      });
-
-      return {
-        id: movieId,
-        monitored: newMonitoredStatus === 1
-      };
-    } catch (error: any) {
-      logger.error('Failed to toggle monitored status', {
-        movieId,
-        error: error.message
-      });
-      throw error;
-    }
+    return this.workflowService.toggleMonitored(movieId);
   }
 
   /**
@@ -1228,11 +553,11 @@ export class MovieService {
         fieldName,
         locked: true
       };
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Failed to lock field', {
         movieId,
         fieldName,
-        error: error.message
+        error: getErrorMessage(error)
       });
       throw error;
     }
@@ -1271,11 +596,11 @@ export class MovieService {
         fieldName,
         locked: false
       };
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Failed to unlock field', {
         movieId,
         fieldName,
-        error: error.message
+        error: getErrorMessage(error)
       });
       throw error;
     }
@@ -1328,10 +653,10 @@ export class MovieService {
         success: true,
         unlockedFields: metadataLockFields.map(f => f.replace('_locked', ''))
       };
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Failed to reset metadata', {
         movieId,
-        error: error.message
+        error: getErrorMessage(error)
       });
       throw error;
     }
@@ -1427,10 +752,10 @@ export class MovieService {
         text: textFiles,
         unknown: unknownFiles
       };
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Failed to get all files for movie', {
         movieId,
-        error: error.message
+        error: getErrorMessage(error)
       });
       throw error;
     }
@@ -1484,10 +809,10 @@ export class MovieService {
         success: true,
         deletedAt: deletedAt.toISOString()
       };
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Failed to soft delete movie', {
         movieId,
-        error: error.message
+        error: getErrorMessage(error)
       });
       throw error;
     }
@@ -1558,28 +883,18 @@ export class MovieService {
         success: true,
         message: 'Movie restored successfully'
       };
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Failed to restore movie', {
         movieId,
-        error: error.message
+        error: getErrorMessage(error)
       });
       throw error;
     }
   }
 
   /**
-   * Replace all assets of a specific type (atomic operation)
-   * Smart replacement that:
-   * - Validates aspect ratios and dimensions
-   * - Checks asset limits
-   * - Removes old assets not in new selection
-   * - Adds new assets not already present
-   * - Returns detailed results with intelligent error messages
-   *
-   * @param movieId - Movie ID
-   * @param assetType - Asset type (poster, fanart, etc.)
-   * @param assets - Array of assets to set as the new selection
-   * @returns Result with counts of added, removed, and kept assets
+   * Replace all assets of a specific type (atomic snapshot operation)
+   * Delegates to MovieAssetService
    */
   async replaceAssets(
     movieId: number,
@@ -1590,6 +905,7 @@ export class MovieService {
       width?: number;
       height?: number;
       perceptualHash?: string;
+      imageFileId?: number;
     }>
   ): Promise<{
     success: boolean;
@@ -1599,151 +915,12 @@ export class MovieService {
     errors: string[];
     warnings: string[];
   }> {
-    const conn = this.db.getConnection();
-
-    try {
-      const result = {
-        success: true,
-        added: 0,
-        removed: 0,
-        kept: 0,
-        errors: [] as string[],
-        warnings: [] as string[]
-      };
-
-      // Get movie details
-      const movieResults = await conn.query(
-        'SELECT id, file_path, title, year FROM movies WHERE id = ?',
-        [movieId]
-      );
-
-      if (!movieResults || movieResults.length === 0) {
-        throw new Error('Movie not found');
-      }
-
-      // Check if asset type is locked
-      const lockField = `${assetType}_locked`;
-      const lockCheck = await conn.query(
-        `SELECT ${lockField} as locked FROM movies WHERE id = ?`,
-        [movieId]
-      );
-
-      if (lockCheck[0]?.locked === 1) {
-        throw new Error(`${assetType} is locked by user. Unlock it first to make changes.`);
-      }
-
-      // Get asset limit configuration from app_settings
-      const key = `asset_limit_${assetType}`;
-      const limitResults = await conn.query(
-        'SELECT value FROM app_settings WHERE key = ?',
-        [key]
-      );
-
-      let maxLimit = 1; // Default fallback
-      if (limitResults.length > 0) {
-        maxLimit = parseInt(limitResults[0].value, 10);
-      } else {
-        // Use default from config if not set in database
-        maxLimit = getDefaultMaxCount(assetType);
-      }
-
-      // Validate asset count doesn't exceed limit
-      if (assets.length > maxLimit) {
-        throw new Error(`Cannot add ${assets.length} ${assetType}(s). Maximum allowed: ${maxLimit}`);
-      }
-
-      // Get current assets for this type
-      const currentAssets = await conn.query(
-        `SELECT id, source_url, perceptual_hash FROM cache_image_files
-         WHERE entity_type = 'movie' AND entity_id = ? AND image_type = ?`,
-        [movieId, assetType]
-      );
-
-      // Build sets for comparison
-      const newUrls = new Set(assets.map(a => a.url));
-      const newHashes = new Set(assets.map(a => a.perceptualHash).filter(Boolean));
-
-      // Determine which assets to remove
-      const toRemove: number[] = [];
-      for (const current of currentAssets) {
-        const matchByUrl = newUrls.has(current.source_url);
-        const matchByHash = current.perceptual_hash && newHashes.has(current.perceptual_hash);
-
-        if (!matchByUrl && !matchByHash) {
-          toRemove.push(current.id);
-        } else {
-          result.kept++;
-        }
-      }
-
-      // Remove assets that are no longer selected
-      for (const imageFileId of toRemove) {
-        try {
-          await this.removeAsset(movieId, imageFileId);
-          result.removed++;
-        } catch (error: any) {
-          result.errors.push(`Failed to remove asset ${imageFileId}: ${error.message}`);
-        }
-      }
-
-      // Add new assets that aren't already present
-      for (const asset of assets) {
-        // Check if already exists by URL or hash
-        const alreadyExists = currentAssets.some(current =>
-          current.source_url === asset.url ||
-          (current.perceptual_hash && asset.perceptualHash && current.perceptual_hash === asset.perceptualHash)
-        );
-
-        if (!alreadyExists) {
-          try {
-            await this.addAsset(movieId, assetType, asset);
-            result.added++;
-          } catch (error: any) {
-            result.errors.push(`Failed to add asset from ${asset.provider}: ${error.message}`);
-          }
-        }
-      }
-
-      // Add warnings for quality issues (optional enhancement)
-      for (const asset of assets) {
-        if (asset.width && asset.height) {
-          // Example: Warn about low resolution posters
-          if (assetType === 'poster' && asset.width < 500) {
-            result.warnings.push(`Poster from ${asset.provider} has low resolution (${asset.width}x${asset.height}). Consider selecting a higher quality image.`);
-          }
-          if (assetType === 'fanart' && asset.width < 1280) {
-            result.warnings.push(`Fanart from ${asset.provider} has low resolution (${asset.width}x${asset.height}). HD fanart is typically 1920x1080 or higher.`);
-          }
-        }
-      }
-
-      logger.info('Replaced assets', {
-        movieId,
-        assetType,
-        added: result.added,
-        removed: result.removed,
-        kept: result.kept,
-        totalErrors: result.errors.length,
-        totalWarnings: result.warnings.length
-      });
-
-      return result;
-
-    } catch (error: any) {
-      logger.error('Failed to replace assets', {
-        movieId,
-        assetType,
-        error: error.message
-      });
-      throw error;
-    }
+    return this.assetService.replaceAssets(movieId, assetType, assets);
   }
 
   /**
    * Add an asset to a movie from a provider URL
-   * Downloads asset, stores in cache, validates against limits
-   *
-   * Part of multi-asset selection feature
+   * Delegates to MovieAssetService
    */
   async addAsset(
     movieId: number,
@@ -1756,302 +933,35 @@ export class MovieService {
       perceptualHash?: string;
     }
   ): Promise<{ success: boolean; imageFileId: number; cachePath: string }> {
-    const conn = this.db.getConnection();
-
-    try {
-      // Get movie details
-      const movieResults = await conn.query(
-        'SELECT id, file_path, title, year FROM movies WHERE id = ?',
-        [movieId]
-      );
-
-      if (!movieResults || movieResults.length === 0) {
-        throw new Error('Movie not found');
-      }
-
-      // Check if asset type is locked
-      const lockField = `${assetType}_locked`;
-      const lockCheck = await conn.query(
-        `SELECT ${lockField} as locked FROM movies WHERE id = ?`,
-        [movieId]
-      );
-
-      if (lockCheck[0]?.locked === 1) {
-        throw new Error(`${assetType} is locked by user`);
-      }
-
-      // Check if we already have this asset (by source_url or perceptual_hash)
-      const existing = await conn.query(
-        `SELECT id FROM cache_image_files
-         WHERE entity_type = 'movie' AND entity_id = ? AND image_type = ?
-           AND (source_url = ? OR (perceptual_hash IS NOT NULL AND perceptual_hash = ?))`,
-        [movieId, assetType, assetData.url, assetData.perceptualHash || null]
-      );
-
-      if (existing.length > 0) {
-        throw new Error('Asset already exists for this movie');
-      }
-
-      // Download asset to temporary location
-      const tempFilePath = path.join(
-        process.cwd(),
-        'data',
-        'temp',
-        `${crypto.randomBytes(16).toString('hex')}${path.extname(assetData.url)}`
-      );
-      await fs.mkdir(path.dirname(tempFilePath), { recursive: true });
-
-      await this.downloadFile(assetData.url, tempFilePath);
-
-      // Get image metadata
-      const stats = await fs.stat(tempFilePath);
-      let width = assetData.width;
-      let height = assetData.height;
-      let format: string | undefined;
-
-      try {
-        const imageMetadata = await sharp(tempFilePath).metadata();
-        width = imageMetadata.width;
-        height = imageMetadata.height;
-        format = imageMetadata.format;
-      } catch (error) {
-        logger.warn('Could not get image dimensions', { assetType, url: assetData.url });
-      }
-
-      // Calculate file hash
-      let fileHash: string | undefined;
-      try {
-        const hashResult = await hashSmallFile(tempFilePath);
-        fileHash = hashResult.hash;
-      } catch (error: any) {
-        logger.warn('Failed to hash image file', { error: error.message });
-      }
-
-      // Store in cache
-      const cacheDir = path.join(process.cwd(), 'data', 'cache', 'images', movieId.toString());
-      await fs.mkdir(cacheDir, { recursive: true });
-
-      const hash = crypto.randomBytes(8).toString('hex');
-      const ext = path.extname(tempFilePath);
-      const cacheFileName = `${assetType}_${hash}${ext}`;
-      const cachePath = path.join(cacheDir, cacheFileName);
-
-      await fs.copyFile(tempFilePath, cachePath);
-
-      // Clean up temp file
-      try {
-        await fs.unlink(tempFilePath);
-      } catch (error) {
-        // Ignore cleanup errors
-      }
-
-      // Insert into cache_image_files table
-      const result = await conn.execute(
-        `INSERT INTO cache_image_files (
-          entity_type, entity_id, image_type, file_path, file_name,
-          file_size, file_hash, perceptual_hash,
-          width, height, format, source_type, source_url, provider_name,
-          classification_score, discovered_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'provider', ?, ?, 0, CURRENT_TIMESTAMP)`,
-        [
-          'movie',
-          movieId,
-          assetType,
-          cachePath,
-          cacheFileName,
-          stats.size,
-          fileHash,
-          assetData.perceptualHash || null,
-          width,
-          height,
-          format,
-          assetData.url,
-          assetData.provider
-        ]
-      );
-
-      const imageFileId = result.insertId!;
-
-      logger.info('Added asset to movie', {
-        movieId,
-        assetType,
-        provider: assetData.provider,
-        imageFileId,
-        cachePath
-      });
-
-      return {
-        success: true,
-        imageFileId,
-        cachePath
-      };
-
-    } catch (error: any) {
-      logger.error('Failed to add asset', {
-        movieId,
-        assetType,
-        error: error.message
-      });
-      throw error;
-    }
+    return this.assetService.addAsset(movieId, assetType, assetData);
   }
 
   /**
    * Remove an asset from a movie
-   * Deletes cache file and database record
-   *
-   * Part of multi-asset selection feature
+   * Delegates to MovieAssetService
    */
   async removeAsset(movieId: number, imageFileId: number): Promise<{ success: boolean }> {
-    const conn = this.db.getConnection();
-
-    try {
-      // Get image record
-      const images = await conn.query(
-        'SELECT id, image_type, file_path FROM cache_image_files WHERE id = ? AND entity_id = ? AND entity_type = ?',
-        [imageFileId, movieId, 'movie']
-      );
-
-      if (images.length === 0) {
-        throw new Error('Image not found');
-      }
-
-      const image = images[0];
-
-      // Check if asset type is locked
-      const lockField = `${image.image_type}_locked`;
-      const lockCheck = await conn.query(
-        `SELECT ${lockField} as locked FROM movies WHERE id = ?`,
-        [movieId]
-      );
-
-      if (lockCheck[0]?.locked === 1) {
-        throw new Error(`${image.image_type} is locked by user`);
-      }
-
-      // Delete cache file ONLY
-      // NOTE: Library files are NOT deleted here - they remain until explicit "Publish" operation
-      // This preserves the three-tier architecture: Candidates → Cache → Library
-      if (image.file_path) {
-        try {
-          await fs.unlink(image.file_path);
-          logger.debug('Deleted cache file', { filePath: image.file_path });
-        } catch (error: any) {
-          logger.warn('Failed to delete cache file (may already be deleted)', {
-            filePath: image.file_path,
-            error: error.message
-          });
-        }
-      }
-
-      // Delete cache record from database (CASCADE will delete library entries)
-      await conn.execute('DELETE FROM cache_image_files WHERE id = ?', [imageFileId]);
-
-      logger.info('Removed asset from movie', {
-        movieId,
-        imageFileId,
-        assetType: image.image_type
-      });
-
-      return { success: true };
-
-    } catch (error: any) {
-      logger.error('Failed to remove asset', {
-        movieId,
-        imageFileId,
-        error: error.message
-      });
-      throw error;
-    }
+    return this.assetService.removeAsset(movieId, imageFileId);
   }
 
   /**
    * Toggle asset type lock (group lock for all assets of this type)
-   * When locked, enrichment will not add/remove/replace assets of this type
-   *
-   * Part of multi-asset selection feature
+   * Delegates to MovieAssetService
    */
   async toggleAssetLock(
     movieId: number,
     assetType: string,
     locked: boolean
   ): Promise<{ success: boolean; assetType: string; locked: boolean }> {
-    const conn = this.db.getConnection();
-
-    try {
-      const lockField = `${assetType}_locked`;
-
-      // Verify the lock field exists
-      const validLockFields = [
-        'poster_locked',
-        'fanart_locked',
-        'banner_locked',
-        'clearlogo_locked',
-        'clearart_locked',
-        'landscape_locked',
-        'keyart_locked',
-        'thumb_locked',
-        'discart_locked'
-      ];
-
-      if (!validLockFields.includes(lockField)) {
-        throw new Error(`Invalid asset type: ${assetType}`);
-      }
-
-      await conn.execute(
-        `UPDATE movies SET ${lockField} = ? WHERE id = ?`,
-        [locked ? 1 : 0, movieId]
-      );
-
-      logger.info('Toggled asset lock', {
-        movieId,
-        assetType,
-        locked
-      });
-
-      return {
-        success: true,
-        assetType,
-        locked
-      };
-
-    } catch (error: any) {
-      logger.error('Failed to toggle asset lock', {
-        movieId,
-        assetType,
-        locked,
-        error: error.message
-      });
-      throw error;
-    }
+    return this.assetService.toggleAssetLock(movieId, assetType, locked);
   }
 
   /**
    * Get count of assets for a specific type
-   * Used to enforce asset limits
-   *
-   * Part of multi-asset selection feature
+   * Delegates to MovieAssetService
    */
   async countAssetsByType(movieId: number, assetType: string): Promise<number> {
-    const conn = this.db.getConnection();
-
-    try {
-      const result = await conn.query(
-        `SELECT COUNT(*) as count FROM cache_image_files
-         WHERE entity_type = 'movie' AND entity_id = ? AND image_type = ?`,
-        [movieId, assetType]
-      );
-
-      return result[0]?.count || 0;
-
-    } catch (error: any) {
-      logger.error('Failed to count assets by type', {
-        movieId,
-        assetType,
-        error: error.message
-      });
-      throw error;
-    }
+    return this.assetService.countAssetsByType(movieId, assetType);
   }
 
   /**
@@ -2078,11 +988,11 @@ export class MovieService {
 
       return images;
 
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Failed to get assets by type', {
         movieId,
         assetType,
-        error: error.message
+        error: getErrorMessage(error)
       });
       throw error;
     }
@@ -2090,364 +1000,135 @@ export class MovieService {
 
   /**
    * Search TMDB for identification
-   * Uses ProviderOrchestrator to search across providers
-   *
-   * @param movieId - Movie ID (for logging)
-   * @param query - Search query (movie title)
-   * @param year - Optional year filter
-   * @returns Array of search results
+   * Delegates to MovieWorkflowService
    */
   async searchForIdentification(
     movieId: number,
     query: string,
     year?: number
   ): Promise<any[]> {
-    try {
-      const conn = this.db.getConnection();
-
-      // Initialize services
-      const providerRegistry = ProviderRegistry.getInstance();
-      const providerConfigService = new ProviderConfigService(conn);
-      const orchestrator = new ProviderOrchestrator(providerRegistry, providerConfigService);
-
-      // Search across providers
-      const results = await orchestrator.searchAcrossProviders({
-        entityType: 'movie',
-        query,
-        ...(year !== undefined && { year }),
-      });
-
-      logger.info('Search for identification complete', {
-        movieId,
-        query,
-        year,
-        resultsCount: results.length,
-      });
-
-      return results;
-    } catch (error: any) {
-      logger.error('Search for identification failed', {
-        movieId,
-        query,
-        year,
-        error: error.message,
-      });
-      throw error;
-    }
+    return this.workflowService.searchForIdentification(movieId, query, year);
   }
 
   /**
    * Identify movie with TMDB ID
-   * Updates movie record with provider IDs and respects field locks
-   *
-   * @param movieId - Movie ID
-   * @param data - Identification data (tmdbId, title, year, imdbId)
-   * @returns Updated movie
+   * Delegates to MovieWorkflowService
    */
   async identifyMovie(
     movieId: number,
     data: { tmdbId: number; title: string; year?: number; imdbId?: string }
   ): Promise<any> {
-    const conn = this.db.getConnection();
-
-    try {
-      // Get field locks
-      const locks = await this.getFieldLocks(movieId);
-
-      // Build update dynamically based on locks
-      const updates: string[] = [];
-      const values: any[] = [];
-
-      // TMDB ID (no lock field - always update)
-      updates.push('tmdb_id = ?');
-      values.push(data.tmdbId);
-
-      // IMDB ID (no lock field - always update if provided)
-      if (data.imdbId) {
-        updates.push('imdb_id = ?');
-        values.push(data.imdbId);
-      }
-
-      // Title (respect lock)
-      if (!locks.title_locked) {
-        updates.push('title = ?');
-        values.push(data.title);
-      }
-
-      // Year (respect lock)
-      if (data.year && !locks.year_locked) {
-        updates.push('year = ?');
-        values.push(data.year);
-      }
-
-      // Set identification status to 'identified'
-      updates.push('identification_status = ?');
-      values.push('identified');
-
-      // Update timestamp
-      updates.push('updated_at = CURRENT_TIMESTAMP');
-
-      // Add movieId for WHERE clause
-      values.push(movieId);
-
-      // Execute update
-      await conn.execute(
-        `UPDATE movies SET ${updates.join(', ')} WHERE id = ?`,
-        values
-      );
-
-      logger.info('Movie identified', {
-        movieId,
-        tmdbId: data.tmdbId,
-        title: data.title,
-        year: data.year,
-        lockedFields: Object.keys(locks).filter((k) => locks[k]),
-      });
-
-      // Return updated movie
-      return await this.getById(movieId);
-    } catch (error: any) {
-      logger.error('Failed to identify movie', {
-        movieId,
-        data,
-        error: error.message,
-      });
-      throw error;
-    }
+    return this.workflowService.identifyMovie(movieId, data);
   }
 
   /**
    * Trigger verify job for movie
-   * Queues verify-movie job with priority 3 (manual trigger)
-   *
-   * @param movieId - Movie ID
-   * @returns Job details
+   * Delegates to MovieWorkflowService
    */
   async triggerVerify(movieId: number): Promise<any> {
-    const conn = this.db.getConnection();
-
-    try {
-      // Verification is a maintenance operation - no workflow control check needed
-      // Users should always be able to verify cache/library integrity
-
-      // Get movie details
-      const movie = await this.getById(movieId);
-      if (!movie) {
-        throw new Error('Movie not found');
-      }
-
-      // Get directory path
-      const directoryPath = getDirectoryPath(movie.filePath);
-
-      // Queue verify-movie job
-      if (!this.jobQueue) {
-        throw new Error('Job queue not available. Cannot trigger verify job.');
-      }
-
-      const jobId = await this.jobQueue.addJob({
-        type: 'verify-movie',
-        priority: 3, // HIGH priority (manual trigger)
-        payload: {
-          entityType: 'movie',
-          entityId: movieId,
-          directoryPath,
-        },
-        retry_count: 0,
-        max_retries: 3,
-      });
-
-      logger.info('Verify job queued', {
-        movieId,
-        jobId,
-        directoryPath,
-      });
-
-      return {
-        success: true,
-        jobId,
-        message: 'Verify job queued successfully',
-      };
-    } catch (error: any) {
-      logger.error('Failed to trigger verify job', {
-        movieId,
-        error: error.message,
-      });
-      throw error;
-    }
+    return this.workflowService.triggerVerify(movieId);
   }
 
   /**
    * Trigger enrichment job for movie
-   * Queues fetch-provider-assets job using ProviderOrchestrator with priority 3
-   *
-   * @param movieId - Movie ID
-   * @returns Job details
+   * Delegates to MovieWorkflowService
    */
   async triggerEnrich(movieId: number): Promise<any> {
-    const conn = this.db.getConnection();
-
-    try {
-      // Check workflow control
-      const workflowControl = new WorkflowControlService(conn);
-      const enrichmentEnabled = await workflowControl.isEnabled('enrichment');
-
-      if (!enrichmentEnabled) {
-        throw new Error('Enrichment workflow is disabled. Enable it in Settings > Workflow Control.');
-      }
-
-      // Get movie details
-      const movie = await this.getById(movieId);
-      if (!movie) {
-        throw new Error('Movie not found');
-      }
-
-      // Validate TMDB ID exists
-      if (!movie.tmdbId) {
-        throw new Error('Movie must be identified (have TMDB ID) before enrichment. Use Identify first.');
-      }
-
-      // Queue fetch-provider-assets job with orchestrator
-      if (!this.jobQueue) {
-        throw new Error('Job queue not available. Cannot trigger enrichment job.');
-      }
-
-      const jobId = await this.jobQueue.addJob({
-        type: 'fetch-provider-assets',
-        priority: 3, // HIGH priority (manual trigger)
-        payload: {
-          entityType: 'movie',
-          entityId: movieId,
-          provider: 'orchestrator', // Use ProviderOrchestrator for multi-provider fetch
-          providerId: movie.tmdbId,
-        },
-        retry_count: 0,
-        max_retries: 3,
-      });
-
-      logger.info('Enrichment job queued', {
-        movieId,
-        jobId,
-        tmdbId: movie.tmdbId,
-      });
-
-      return {
-        success: true,
-        jobId,
-        message: 'Enrichment job queued successfully',
-      };
-    } catch (error: any) {
-      logger.error('Failed to trigger enrichment job', {
-        movieId,
-        error: error.message,
-      });
-      throw error;
-    }
+    return this.workflowService.triggerEnrich(movieId);
   }
 
   /**
    * Trigger publish job for movie
-   * Queues publish job with priority 3 and player notifications
-   *
-   * @param movieId - Movie ID
-   * @returns Job details
+   * Delegates to MovieWorkflowService
    */
   async triggerPublish(movieId: number): Promise<any> {
-    const conn = this.db.getConnection();
-
-    try {
-      // Check workflow control
-      const workflowControl = new WorkflowControlService(conn);
-      const publishingEnabled = await workflowControl.isEnabled('publishing');
-
-      if (!publishingEnabled) {
-        throw new Error('Publishing workflow is disabled. Enable it in Settings > Workflow Control.');
-      }
-
-      // Get movie details
-      const movie = await this.getById(movieId);
-      if (!movie) {
-        throw new Error('Movie not found');
-      }
-
-      // Get directory path and library ID
-      const directoryPath = getDirectoryPath(movie.filePath);
-
-      // Queue publish job
-      if (!this.jobQueue) {
-        throw new Error('Job queue not available. Cannot trigger publish job.');
-      }
-
-      const jobId = await this.jobQueue.addJob({
-        type: 'publish',
-        priority: 3, // HIGH priority (manual trigger)
-        payload: {
-          entityType: 'movie',
-          entityId: movieId,
-          libraryPath: directoryPath,
-          mediaFilename: movie.title,
-          chainContext: {
-            source: 'manual',
-            libraryId: movie.libraryId,
-          },
-        },
-        retry_count: 0,
-        max_retries: 3,
-      });
-
-      logger.info('Publish job queued', {
-        movieId,
-        jobId,
-        libraryPath: directoryPath,
-      });
-
-      return {
-        success: true,
-        jobId,
-        message: 'Publish job queued successfully',
-      };
-    } catch (error: any) {
-      logger.error('Failed to trigger publish job', {
-        movieId,
-        error: error.message,
-      });
-      throw error;
-    }
+    return this.workflowService.triggerPublish(movieId);
   }
 
+
   /**
-   * Get field locks for a movie
-   * Helper method used by identification and enrichment
+   * Clean up orphaned cache files (files not referenced in database)
    *
-   * @param movieId - Movie ID
-   * @returns Object with lock status for each field
+   * Scans cache directory and removes files that don't have corresponding
+   * database entries. Prevents storage inflation from failed operations.
+   *
+   * @param dryRun - If true, only reports orphans without deleting
+   * @returns Count of orphaned files found/removed
    */
-  private async getFieldLocks(movieId: number): Promise<Record<string, boolean>> {
-    const conn = this.db.getConnection();
+  async cleanupOrphanedCacheFiles(dryRun: boolean = false): Promise<{
+    scanned: number;
+    orphaned: number;
+    removed: number;
+    errors: string[];
+  }> {
+    const result = {
+      scanned: 0,
+      orphaned: 0,
+      removed: 0,
+      errors: [] as string[]
+    };
 
     try {
-      const result = await conn.query<any>('SELECT * FROM movies WHERE id = ?', [movieId]);
+      const conn = this.db.getConnection();
+      const cacheDir = path.join(process.cwd(), 'data', 'cache', 'images', 'movie');
 
-      if (result.length === 0) {
-        return {};
+      // Check if cache directory exists
+      try {
+        await fs.access(cacheDir);
+      } catch {
+        logger.info('Cache directory does not exist, nothing to clean');
+        return result;
       }
 
-      const row = result[0];
-      const locks: Record<string, boolean> = {};
+      // Get all cache files from database
+      const dbFiles = await conn.query<{ file_path: string }>(
+        `SELECT file_path FROM cache_image_files WHERE entity_type = 'movie'`
+      );
+      const dbFilePaths = new Set(dbFiles.map(f => f.file_path));
 
-      // Extract all *_locked columns
-      for (const key in row) {
-        if (key.endsWith('_locked')) {
-          locks[key] = row[key] === 1;
+      // Scan all subdirectories (organized by movie ID)
+      const movieDirs = await fs.readdir(cacheDir);
+
+      for (const movieDir of movieDirs) {
+        const movieDirPath = path.join(cacheDir, movieDir);
+        const stat = await fs.stat(movieDirPath);
+
+        if (!stat.isDirectory()) continue;
+
+        const files = await fs.readdir(movieDirPath);
+
+        for (const file of files) {
+          const filePath = path.join(movieDirPath, file);
+          result.scanned++;
+
+          if (!dbFilePaths.has(filePath)) {
+            result.orphaned++;
+
+            if (!dryRun) {
+              try {
+                await fs.unlink(filePath);
+                result.removed++;
+                logger.info('Removed orphaned cache file', { filePath });
+              } catch (error) {
+                result.errors.push(`Failed to remove ${filePath}: ${getErrorMessage(error)}`);
+              }
+            }
+          }
         }
       }
 
-      return locks;
-    } catch (error: any) {
-      logger.error('Failed to get field locks', {
-        movieId,
-        error: error.message,
+      logger.info('Cache cleanup complete', {
+        dryRun,
+        scanned: result.scanned,
+        orphaned: result.orphaned,
+        removed: result.removed,
+        errors: result.errors.length
       });
-      return {};
+
+      return result;
+    } catch (error) {
+      logger.error('Failed to cleanup orphaned cache files', { error: getErrorMessage(error) });
+      throw error;
     }
   }
 }

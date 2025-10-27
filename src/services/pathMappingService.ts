@@ -1,6 +1,7 @@
 import { logger } from '../middleware/logging.js';
 import { DatabaseConnection } from '../types/database.js';
 import path from 'path';
+import { getErrorMessage } from '../utils/errorHandling.js';
 
 /**
  * Path Mapping Service
@@ -81,11 +82,11 @@ export async function applyManagerPathMapping(
     });
 
     return managerPath;
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to apply manager path mapping', {
       managerType,
       managerPath,
-      error: error.message,
+      error: getErrorMessage(error),
     });
     // Return original path on error
     return managerPath;
@@ -136,11 +137,11 @@ export async function applyPlayerPathMapping(
     });
 
     return metarrPath;
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to apply player path mapping', {
       playerId,
       metarrPath,
-      error: error.message,
+      error: getErrorMessage(error),
     });
     // Return original path on error
     return metarrPath;
@@ -208,12 +209,12 @@ export async function upsertManagerPathMapping(
         metarrPath,
       });
     }
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to upsert manager path mapping', {
       managerType,
       managerPath,
       metarrPath,
-      error: error.message,
+      error: getErrorMessage(error),
     });
     throw error;
   }
@@ -264,12 +265,12 @@ export async function upsertPlayerPathMapping(
         playerPath,
       });
     }
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to upsert player path mapping', {
       playerId,
       metarrPath,
       playerPath,
-      error: error.message,
+      error: getErrorMessage(error),
     });
     throw error;
   }
@@ -286,10 +287,10 @@ export async function deleteManagerPathMapping(
     await db.execute(`DELETE FROM manager_path_mappings WHERE id = ?`, [mappingId]);
 
     logger.info('Deleted manager path mapping', { mappingId });
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to delete manager path mapping', {
       mappingId,
-      error: error.message,
+      error: getErrorMessage(error),
     });
     throw error;
   }
@@ -306,10 +307,10 @@ export async function deletePlayerPathMapping(
     await db.execute(`DELETE FROM player_path_mappings WHERE id = ?`, [mappingId]);
 
     logger.info('Deleted player path mapping', { mappingId });
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to delete player path mapping', {
       mappingId,
-      error: error.message,
+      error: getErrorMessage(error),
     });
     throw error;
   }
@@ -364,11 +365,11 @@ export async function applyGroupPathMapping(
     });
 
     return metarrPath;
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to apply group path mapping', {
       groupId,
       metarrPath,
-      error: error.message,
+      error: getErrorMessage(error),
     });
     // Return original path on error
     return metarrPath;
@@ -424,12 +425,12 @@ export async function upsertGroupPathMapping(
         description,
       });
     }
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to upsert group path mapping', {
       groupId,
       metarrPath,
       playerPath,
-      error: error.message,
+      error: getErrorMessage(error),
     });
     throw error;
   }
@@ -446,10 +447,10 @@ export async function deleteGroupPathMapping(
     await db.execute(`DELETE FROM media_player_group_path_mappings WHERE id = ?`, [mappingId]);
 
     logger.info('Deleted group path mapping', { mappingId });
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to delete group path mapping', {
       mappingId,
-      error: error.message,
+      error: getErrorMessage(error),
     });
     throw error;
   }
@@ -471,10 +472,10 @@ export async function getGroupPathMappings(
     )) as GroupPathMapping[];
 
     return mappings;
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to get group path mappings', {
       groupId,
-      error: error.message,
+      error: getErrorMessage(error),
     });
     throw error;
   }

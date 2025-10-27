@@ -20,7 +20,8 @@ import fs from 'fs/promises';
 import path from 'path';
 import crypto from 'crypto';
 import { logger } from '../../middleware/logging.js';
-import { calculatePerceptualHash } from '../../utils/imageHash.js';
+import { computePerceptualHash } from '../../utils/imageHash.js';
+import { getErrorMessage } from '../../utils/errorHandling.js';
 
 const CACHE_BASE_PATH = path.join(process.cwd(), 'data', 'cache');
 
@@ -84,11 +85,11 @@ export async function copyToCache(options: CacheCopyOptions): Promise<CacheFileI
       let perceptualHash: string | null = null;
       if (fileType === 'images') {
         try {
-          perceptualHash = await calculatePerceptualHash(tempPath);
-        } catch (error: any) {
+          perceptualHash = await computePerceptualHash(tempPath);
+        } catch (error) {
           logger.warn('Failed to calculate perceptual hash', {
             tempPath,
-            error: error.message,
+            error: getErrorMessage(error),
           });
           // Continue without perceptual hash - not critical
         }
@@ -126,15 +127,15 @@ export async function copyToCache(options: CacheCopyOptions): Promise<CacheFileI
       }
       throw error;
     }
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to copy file to cache', {
       sourcePath,
       entityType,
       entityId,
       fileType,
-      error: error.message,
+      error: getErrorMessage(error),
     });
-    throw new Error(`Failed to copy to cache: ${error.message}`);
+    throw new Error(`Failed to copy to cache: ${getErrorMessage(error)}`);
   }
 }
 
@@ -155,14 +156,14 @@ export async function copyMultipleToCache(
     try {
       const result = await copyToCache(fileOptions);
       successful.push(result);
-    } catch (error: any) {
+    } catch (error) {
       errors.push({
         options: fileOptions,
-        error: error.message,
+        error: getErrorMessage(error),
       });
       logger.error('Failed to copy file in batch', {
         sourcePath: fileOptions.sourcePath,
-        error: error.message,
+        error: getErrorMessage(error),
       });
     }
   }
@@ -201,10 +202,10 @@ export async function deleteCacheFile(cachePath: string): Promise<boolean> {
     await fs.unlink(cachePath);
     logger.info('Deleted cache file', { cachePath });
     return true;
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to delete cache file', {
       cachePath,
-      error: error.message,
+      error: getErrorMessage(error),
     });
     return false;
   }

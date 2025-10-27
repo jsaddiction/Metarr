@@ -5,6 +5,7 @@ import sharp from 'sharp';
 import { logger } from '../../middleware/logging.js';
 import { DatabaseConnection } from '../../types/database.js';
 import { hashSmallFile, hashFile } from '../hash/hashService.js';
+import { getErrorMessage } from '../../utils/errorHandling.js';
 
 /**
  * Asset Discovery Service
@@ -151,12 +152,12 @@ export async function discoverAssets(
     });
 
     return { images, trailers, subtitles };
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to discover assets', {
       dirPath,
-      error: error.message,
+      error: getErrorMessage(error),
     });
-    throw new Error(`Asset discovery failed: ${error.message}`);
+    throw new Error(`Asset discovery failed: ${getErrorMessage(error)}`);
   }
 }
 
@@ -373,10 +374,10 @@ export async function storeDiscoveredImages(
       try {
         const hashResult = await hashSmallFile(image.filePath);
         fileHash = hashResult.hash;
-      } catch (error: any) {
+      } catch (error) {
         logger.warn('Failed to hash image file', {
           filePath: image.filePath,
-          error: error.message,
+          error: getErrorMessage(error),
         });
       }
 
@@ -389,10 +390,10 @@ export async function storeDiscoveredImages(
           const metadata = await sharp(image.filePath).metadata();
           width = metadata.width;
           height = metadata.height;
-        } catch (error: any) {
+        } catch (error) {
           logger.warn('Failed to get image dimensions', {
             filePath: image.filePath,
-            error: error.message,
+            error: getErrorMessage(error),
           });
         }
       }
@@ -427,13 +428,13 @@ export async function storeDiscoveredImages(
       entityId,
       count: images.length,
     });
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to store discovered images', {
       entityType,
       entityId,
-      error: error.message,
+      error: getErrorMessage(error),
     });
-    throw new Error(`Failed to store images: ${error.message}`);
+    throw new Error(`Failed to store images: ${getErrorMessage(error)}`);
   }
 }
 
@@ -467,10 +468,10 @@ export async function storeDiscoveredTrailers(
       try {
         const hashResult = await hashFile(trailer.filePath);
         fileHash = hashResult.hash;
-      } catch (error: any) {
+      } catch (error) {
         logger.warn('Failed to hash trailer file', {
           filePath: trailer.filePath,
-          error: error.message,
+          error: getErrorMessage(error),
         });
       }
 
@@ -513,13 +514,13 @@ export async function storeDiscoveredTrailers(
       entityId,
       count: trailers.length,
     });
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to store discovered trailers', {
       entityType,
       entityId,
-      error: error.message,
+      error: getErrorMessage(error),
     });
-    throw new Error(`Failed to store trailers: ${error.message}`);
+    throw new Error(`Failed to store trailers: ${getErrorMessage(error)}`);
   }
 }
 
@@ -584,13 +585,13 @@ export async function storeDiscoveredSubtitles(
       entityId,
       count: subtitles.length,
     });
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to store discovered subtitles', {
       entityType,
       entityId,
-      error: error.message,
+      error: getErrorMessage(error),
     });
-    throw new Error(`Failed to store subtitles: ${error.message}`);
+    throw new Error(`Failed to store subtitles: ${getErrorMessage(error)}`);
   }
 }
 
@@ -626,13 +627,13 @@ export async function discoverAndStoreAssets(
     });
 
     return assets;
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to discover and store assets', {
       entityType,
       entityId,
       dirPath,
-      error: error.message,
+      error: getErrorMessage(error),
     });
-    throw new Error(`Failed to discover and store assets: ${error.message}`);
+    throw new Error(`Failed to discover and store assets: ${getErrorMessage(error)}`);
   }
 }

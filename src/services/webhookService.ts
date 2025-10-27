@@ -1,6 +1,7 @@
 import { JobQueueService } from './jobQueueService.js';
 import { logger } from '../middleware/logging.js';
 import crypto from 'crypto';
+import { getErrorMessage } from '../utils/errorHandling.js';
 
 /**
  * Webhook Service
@@ -284,8 +285,8 @@ export class WebhookService {
         Buffer.from(calculatedSignature, 'hex'),
         Buffer.from(providedSignature, 'hex')
       );
-    } catch (error: any) {
-      logger.error('Failed to validate HMAC signature', { error: error.message });
+    } catch (error) {
+      logger.error('Failed to validate HMAC signature', { error: getErrorMessage(error) });
       return false;
     }
   }

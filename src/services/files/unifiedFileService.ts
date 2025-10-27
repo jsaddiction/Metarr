@@ -11,6 +11,7 @@ import crypto from 'crypto';
 import sharp from 'sharp';
 import { DatabaseConnection } from '../../types/database.js';
 import { logger } from '../../middleware/logging.js';
+import { getErrorMessage, getErrorCode } from '../../utils/errorHandling.js';
 
 // ============================================================
 // UTILITY FUNCTIONS
@@ -46,11 +47,11 @@ async function cleanupEmptyDirectories(filePath: string, cacheRoot: string): Pro
           // Directory not empty, stop climbing
           break;
         }
-      } catch (error: any) {
+      } catch (error) {
         // Directory doesn't exist or can't be read - stop climbing
         logger.debug('Stopped directory cleanup', {
           directory: currentDir,
-          reason: error.code || error.message
+          reason: getErrorCode(error) || getErrorMessage(error)
         });
         break;
       }
@@ -59,15 +60,15 @@ async function cleanupEmptyDirectories(filePath: string, cacheRoot: string): Pro
     // Ensure cache root still exists (safety check)
     try {
       await fs.access(absoluteCacheRoot);
-    } catch (error: any) {
+    } catch (error) {
       // Cache root was deleted - recreate it
       await fs.mkdir(absoluteCacheRoot, { recursive: true });
       logger.warn('Recreated cache root directory', { cacheRoot: absoluteCacheRoot });
     }
-  } catch (error: any) {
+  } catch (error) {
     logger.warn('Failed to cleanup empty directories', {
       filePath,
-      error: error.message
+      error: getErrorMessage(error)
     });
   }
 }
@@ -338,7 +339,7 @@ export async function cacheImageFile(
       sourceFilePath,
       entityType,
       entityId,
-      error: error instanceof Error ? error.message : String(error)
+      error: error instanceof Error ? getErrorMessage(error) : String(error)
     });
 
     throw error;
@@ -381,8 +382,8 @@ export async function deleteCachedImage(
       // Clean up empty parent directories
       const cacheRoot = path.join(process.cwd(), 'data', 'cache', 'images');
       await cleanupEmptyDirectories(filePath, cacheRoot);
-    } catch (error: any) {
-      logger.error('Failed to delete cache file', { cacheFileId, error: error.message });
+    } catch (error) {
+      logger.error('Failed to delete cache file', { cacheFileId, error: getErrorMessage(error) });
     }
   }
 }

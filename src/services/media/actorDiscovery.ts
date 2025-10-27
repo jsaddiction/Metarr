@@ -10,29 +10,40 @@ import {
 } from '../../utils/actorNameUtils.js';
 import { getReliableFileTime } from '../../utils/fileTimeUtils.js';
 import { ActorData } from '../../types/models.js';
+import { getErrorMessage } from '../../utils/errorHandling.js';
 
 /**
  * Actor Discovery Service
  *
- * IMPORTANT ARCHITECTURAL DECISION:
- * Actors are NO LONGER discovered from local NFO or .actors directories during initial scan.
- * Instead, actors are discovered during enrichment phase via TMDB API.
+ * ARCHITECTURAL DECISION: ENRICHMENT-ONLY ACTOR PROCESSING
+ *
+ * Actors are ONLY created during enrichment phase, NOT during scanning.
+ * Local .actors/ folders and NFO actor tags are IGNORED during scan.
  *
  * Rationale:
- * - NFO files don't contain TMDB/IMDb IDs for actors (only names)
- * - Name-based matching is unreliable (e.g., "Chris Evans" ambiguity)
- * - TMDB is the authoritative source with proper IDs, roles, and official images
- * - Simpler workflow: no need to match/merge local and provider data
+ * - TMDB ID is unique identifier (eliminates name collisions like "Michael Jordan")
+ * - NFO/filesystem only provide ambiguous names without IDs
+ * - .actors/ folders may contain misnamed files or non-cast images
+ * - One image per actor, deduplicated across entire library via tmdb_id
+ * - No orphaned actors from filesystem mismatches
  *
- * New workflow (during enrichment):
- * 1. Call TMDB API for movie credits
- * 2. Get official actor list with IDs, roles, and headshot images
- * 3. Match/create actors in database by TMDB ID
- * 4. Download official headshot images to cache
- * 5. Link actors to movies with proper roles and order
+ * Enrichment workflow:
+ * 1. Get TMDB cast with tmdb_id (authoritative source)
+ * 2. For each TMDB actor:
+ *    - Find existing by tmdb_id OR create new
+ *    - Download headshot if missing (gap-filling)
+ *    - Link to movie with role and order
+ *    - Skip if image exists or is locked
+ * 3. Result: Complete cast list with deduplicated images
  *
- * Legacy functions below are kept for backward compatibility but are no longer called during scanning.
- * They will be removed once TMDB enrichment is fully implemented.
+ * Publishing (optional):
+ * - Copy cached images to .actors/ folders for media player compatibility
+ * - Use TMDB names for filenames (authoritative)
+ *
+ * See: docs/phases/ENRICHMENT.md#actor-management
+ *
+ * Legacy functions below are kept for future reference but are NOT called during scanning.
+ * They may be removed in future versions.
  */
 
 interface DiscoveredActor {
@@ -150,10 +161,10 @@ export async function discoverActors(
             file,
           });
         }
-      } catch (error: any) {
+      } catch (error) {
         logger.warn('Failed to process actor image', {
           file,
-          error: error.message,
+          error: getErrorMessage(error),
         });
       }
     }
@@ -161,7 +172,7 @@ export async function discoverActors(
     logger.debug('Scanned .actors directory', {
       totalActors: actorsMap.size,
     });
-  } catch (error: any) {
+  } catch (error) {
     // .actors directory doesn't exist - not an error
     logger.debug('.actors directory not found', {
       path: actorsDir,
@@ -391,11 +402,11 @@ export async function processActorsForMovie(
       movieId,
       actorCount: actors.length,
     });
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to process actors for movie', {
       movieId,
       movieDirectory,
-      error: error.message,
+      error: getErrorMessage(error),
     });
     throw error;
   }

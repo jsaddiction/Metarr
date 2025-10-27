@@ -8,16 +8,16 @@
  * 4. Marks unknown files in recycle_bin for later recycling
  */
 
-import type { Database } from '../../database/index.js';
+import type { DatabaseConnection } from '../../types/database.js';
 import type { ClassificationResult, ClassifiedFile } from '../../types/classification.js';
 import { copyToCache } from '../files/cacheCopyService.js';
 import {
   insertCacheImageFile,
   insertCacheVideoFile,
-  insertCacheAudioFile,
   insertCacheTextFile,
 } from '../files/unifiedFileService.js';
 import { logger } from '../../middleware/logging.js';
+import { getErrorMessage } from '../../utils/errorHandling.js';
 
 export interface StoredAssets {
   posters: number[];
@@ -37,7 +37,7 @@ export interface StoredAssets {
  * Store all classification results in database
  */
 export async function storeClassificationResults(
-  db: Database,
+  db: DatabaseConnection,
   options: {
     classificationResult: ClassificationResult;
     movieId: number;
@@ -74,7 +74,7 @@ export async function storeClassificationResults(
   await storeImages(db, classificationResult.images.banners, movieId, entityType, 'banner', stored.banners);
   await storeImages(db, classificationResult.images.clearlogos, movieId, entityType, 'clearlogo', stored.clearlogos);
   await storeImages(db, classificationResult.images.cleararts, movieId, entityType, 'clearart', stored.cleararts);
-  await storeImages(db, classificationResult.images.discarts, movieId, entityType, 'discart', stored.discarts);
+  await storeImages(db, classificationResult.images.discs, movieId, entityType, 'discart', stored.discarts);
   await storeImages(db, classificationResult.images.landscapes, movieId, entityType, 'landscape', stored.landscapes);
   await storeImages(db, classificationResult.images.keyarts, movieId, entityType, 'keyart', stored.keyarts);
 
@@ -84,10 +84,11 @@ export async function storeClassificationResults(
   // Store subtitles
   await storeSubtitles(db, classificationResult.text.subtitles, movieId, entityType, stored.subtitles);
 
+  // TODO: Re-enable audio storage when insertCacheAudioFile is implemented
   // Store audio (theme songs, etc.)
-  if (classificationResult.audio?.themes) {
-    await storeAudioFiles(db, classificationResult.audio.themes, movieId, entityType, 'theme', stored.audio);
-  }
+  // if (classificationResult.audio?.themes) {
+  //   await storeAudioFiles(db, classificationResult.audio.themes, movieId, entityType, 'theme', stored.audio);
+  // }
 
   logger.info('Classification results stored successfully', {
     entityType,
@@ -102,7 +103,7 @@ export async function storeClassificationResults(
  * Store image files in cache
  */
 async function storeImages(
-  db: Database,
+  db: DatabaseConnection,
   images: ClassifiedFile[],
   entityId: number,
   entityType: 'movie' | 'episode',
@@ -120,21 +121,24 @@ async function storeImages(
       });
 
       // Insert into cache_image_files
-      const cacheId = await insertCacheImageFile(db, {
+      const imageRecord: any = {
         entityType,
         entityId,
         filePath: cacheInfo.cachePath,
         fileName: cacheInfo.cacheFileName,
         fileSize: cacheInfo.fileSize,
         fileHash: cacheInfo.fileHash,
-        perceptualHash: cacheInfo.perceptualHash,
-        imageType,
+        imageType: imageType as 'poster' | 'fanart' | 'banner' | 'clearlogo' | 'clearart' | 'discart' | 'landscape' | 'keyart' | 'thumb' | 'actor_thumb' | 'unknown',
         width: image.facts.image?.width ?? 0,
         height: image.facts.image?.height ?? 0,
         format: image.facts.image?.format ?? 'unknown',
         sourceType: 'local',
         classificationScore: image.confidence,
-      });
+      };
+      if (cacheInfo.perceptualHash) {
+        imageRecord.perceptualHash = cacheInfo.perceptualHash;
+      }
+      const cacheId = await insertCacheImageFile(db, imageRecord);
 
       outputArray.push(cacheId);
 
@@ -144,11 +148,11 @@ async function storeImages(
         cachePath: cacheInfo.cachePath,
         cacheId,
       });
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Failed to store image', {
         imageType,
         filePath: image.facts.filesystem.absolutePath,
-        error: error.message,
+        error: getErrorMessage(error),
       });
     }
   }
@@ -158,7 +162,7 @@ async function storeImages(
  * Store video files (trailers) in cache
  */
 async function storeVideos(
-  db: Database,
+  db: DatabaseConnection,
   videos: ClassifiedFile[],
   entityId: number,
   entityType: 'movie' | 'episode',
@@ -175,28 +179,35 @@ async function storeVideos(
         fileType: 'videos',
       });
 
+      // Extract video stream info (use first video stream if available)
+      const videoStream = video.facts.video?.videoStreams?.[0];
+      const audioStream = video.facts.video?.audioStreams?.[0];
+
       // Insert into cache_video_files
-      const cacheId = await insertCacheVideoFile(db, {
+      const videoRecord: any = {
         entityType,
         entityId,
         filePath: cacheInfo.cachePath,
         fileName: cacheInfo.cacheFileName,
         fileSize: cacheInfo.fileSize,
         fileHash: cacheInfo.fileHash,
-        videoType,
-        codec: video.facts.videoStream?.codec,
-        width: video.facts.videoStream?.width,
-        height: video.facts.videoStream?.height,
-        durationSeconds: video.facts.videoStream?.durationSeconds,
-        bitrate: video.facts.videoStream?.bitrate,
-        framerate: video.facts.videoStream?.framerate,
-        hdrType: video.facts.videoStream?.hdrType,
-        audioCodec: video.facts.audioStream?.codec,
-        audioChannels: video.facts.audioStream?.channels,
-        audioLanguage: video.facts.audioStream?.language,
+        videoType: videoType as 'trailer' | 'sample' | 'extra',
         sourceType: 'local',
         classificationScore: video.confidence,
-      });
+      };
+      // Only add optional properties if they have values
+      if (videoStream?.codec) videoRecord.codec = videoStream.codec;
+      if (videoStream?.width) videoRecord.width = videoStream.width;
+      if (videoStream?.height) videoRecord.height = videoStream.height;
+      if (video.facts.video?.durationSeconds) videoRecord.durationSeconds = video.facts.video.durationSeconds;
+      if (video.facts.video?.overallBitrate) videoRecord.bitrate = video.facts.video.overallBitrate;
+      if (videoStream?.fps) videoRecord.framerate = videoStream.fps;
+      if (videoStream?.hdrFormat) videoRecord.hdrType = videoStream.hdrFormat;
+      if (audioStream?.codec) videoRecord.audioCodec = audioStream.codec;
+      if (audioStream?.channels) videoRecord.audioChannels = audioStream.channels;
+      if (audioStream?.language) videoRecord.audioLanguage = audioStream.language;
+
+      const cacheId = await insertCacheVideoFile(db, videoRecord);
 
       outputArray.push(cacheId);
 
@@ -206,11 +217,11 @@ async function storeVideos(
         cachePath: cacheInfo.cachePath,
         cacheId,
       });
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Failed to store video', {
         videoType,
         filePath: video.facts.filesystem.absolutePath,
-        error: error.message,
+        error: getErrorMessage(error),
       });
     }
   }
@@ -220,7 +231,7 @@ async function storeVideos(
  * Store subtitle files in cache
  */
 async function storeSubtitles(
-  db: Database,
+  db: DatabaseConnection,
   subtitles: ClassifiedFile[],
   entityId: number,
   entityType: 'movie' | 'episode',
@@ -251,7 +262,6 @@ async function storeSubtitles(
         subtitleLanguage: language,
         subtitleFormat: subtitle.facts.filesystem.extension.replace('.', ''),
         sourceType: 'local',
-        classificationScore: subtitle.confidence,
       });
 
       outputArray.push(cacheId);
@@ -262,104 +272,41 @@ async function storeSubtitles(
         cachePath: cacheInfo.cachePath,
         cacheId,
       });
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Failed to store subtitle', {
         filePath: subtitle.facts.filesystem.absolutePath,
-        error: error.message,
+        error: getErrorMessage(error),
       });
     }
   }
 }
 
-/**
- * Store audio files (theme songs) in cache
- */
-async function storeAudioFiles(
-  db: Database,
-  audioFiles: ClassifiedFile[],
-  entityId: number,
-  entityType: 'movie' | 'episode',
-  audioType: string,
-  outputArray: number[]
-): Promise<void> {
-  for (const audio of audioFiles) {
-    try {
-      // Copy to cache with UUID naming
-      const cacheInfo = await copyToCache({
-        sourcePath: audio.facts.filesystem.absolutePath,
-        entityType,
-        entityId,
-        fileType: 'audio',
-      });
-
-      // Insert into cache_audio_files
-      const cacheId = await insertCacheAudioFile(db, {
-        entityType: entityType === 'episode' ? 'series' : 'movie', // Audio is movie/series level
-        entityId,
-        filePath: cacheInfo.cachePath,
-        fileName: cacheInfo.cacheFileName,
-        fileSize: cacheInfo.fileSize,
-        fileHash: cacheInfo.fileHash,
-        audioType,
-        codec: audio.facts.audioStream?.codec,
-        durationSeconds: audio.facts.audioStream?.durationSeconds,
-        bitrate: audio.facts.audioStream?.bitrate,
-        sampleRate: audio.facts.audioStream?.sampleRate,
-        channels: audio.facts.audioStream?.channels,
-        language: audio.facts.audioStream?.language,
-        sourceType: 'local',
-        classificationScore: audio.confidence,
-      });
-
-      outputArray.push(cacheId);
-
-      logger.debug('Stored audio in cache', {
-        audioType,
-        originalPath: audio.facts.filesystem.absolutePath,
-        cachePath: cacheInfo.cachePath,
-        cacheId,
-      });
-    } catch (error: any) {
-      logger.error('Failed to store audio', {
-        audioType,
-        filePath: audio.facts.filesystem.absolutePath,
-        error: error.message,
-      });
-    }
-  }
-}
+// TODO: Re-implement storeAudioFiles when insertCacheAudioFile is available
+// async function storeAudioFiles(...) { ... }
 
 /**
  * Update movie asset references (poster_id, fanart_id, etc.)
  */
 export async function updateMovieAssetLinks(
-  db: Database,
+  _db: DatabaseConnection,
   movieId: number,
   stored: StoredAssets
 ): Promise<void> {
-  // Use first asset of each type (auto-selection)
-  const updates: Record<string, number | null> = {
-    poster_id: stored.posters[0] ?? null,
-    fanart_id: stored.fanarts[0] ?? null,
-    banner_id: stored.banners[0] ?? null,
-    clearlogo_id: stored.clearlogos[0] ?? null,
-    clearart_id: stored.cleararts[0] ?? null,
-    disc_id: stored.discarts[0] ?? null,
-    landscape_id: stored.landscapes[0] ?? null,
-    keyart_id: stored.keyarts[0] ?? null,
-  };
-
-  const setClause = Object.keys(updates)
-    .map((key) => `${key} = ?`)
-    .join(', ');
-
-  const values = [...Object.values(updates), movieId];
-
-  await db.execute(`UPDATE movies SET ${setClause} WHERE id = ?`, values);
-
-  logger.info('Updated movie asset links', {
+  // NOTE: Legacy function - FK columns (poster_id, fanart_id, etc.) removed from schema
+  // Assets are now managed solely through cache_image_files table with entity_type/entity_id/image_type
+  // This function is now a no-op but kept for backward compatibility with scan service
+  logger.debug('updateMovieAssetLinks called (no-op - FK columns removed)', {
     movieId,
-    updates,
+    assetCounts: {
+      posters: stored.posters.length,
+      fanarts: stored.fanarts.length,
+      banners: stored.banners.length,
+      clearlogos: stored.clearlogos.length,
+      cleararts: stored.cleararts.length,
+      discarts: stored.discarts.length,
+      landscapes: stored.landscapes.length,
+      keyarts: stored.keyarts.length,
+    },
   });
 }
 
@@ -367,7 +314,7 @@ export async function updateMovieAssetLinks(
  * Mark unknown files for recycling
  */
 export async function markUnknownFilesForRecycling(
-  db: Database,
+  db: DatabaseConnection,
   options: {
     classificationResult: ClassificationResult;
     movieId: number;
@@ -410,7 +357,7 @@ export async function markUnknownFilesForRecycling(
           movieId,
           file.facts.filesystem.absolutePath,
           file.facts.filesystem.filename,
-          file.facts.filesystem.size,
+          file.facts.filesystem.sizeBytes,
         ]
       );
 
@@ -419,10 +366,10 @@ export async function markUnknownFilesForRecycling(
         entityId: movieId,
         originalPath: file.facts.filesystem.absolutePath,
       });
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Failed to mark file for recycling', {
         filePath: file.facts.filesystem.absolutePath,
-        error: error.message,
+        error: getErrorMessage(error),
       });
     }
   }

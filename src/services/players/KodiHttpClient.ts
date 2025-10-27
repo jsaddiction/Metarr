@@ -8,6 +8,7 @@ import {
   Files,
 } from '../../types/jsonrpc.js';
 import { logger } from '../../middleware/logging.js';
+import { getErrorMessage, isError } from '../../utils/errorHandling.js';
 
 export interface KodiHttpClientOptions {
   host: string;
@@ -35,7 +36,7 @@ export class KodiHttpClient {
   /**
    * Send a JSON-RPC request via HTTP
    */
-  async sendRequest<T = any>(method: KodiMethod, params?: any): Promise<T> {
+  async sendRequest<T = unknown>(method: KodiMethod, params?: unknown): Promise<T> {
     const request: JsonRpcRequest = {
       jsonrpc: '2.0',
       method,
@@ -83,14 +84,14 @@ export class KodiHttpClient {
       logger.debug(`Kodi HTTP Response: ${method}`, { result: jsonResponse.result });
 
       return jsonResponse.result;
-    } catch (error: any) {
+    } catch (error) {
       clearTimeout(timeoutId);
 
-      if (error.name === 'AbortError') {
+      if (isError(error) && error.name === 'AbortError') {
         throw new Error(`Request timeout after ${this.timeout}ms`);
       }
 
-      logger.error(`Kodi HTTP Error: ${method}`, { error: error.message });
+      logger.error(`Kodi HTTP Error: ${method}`, { error: getErrorMessage(error) });
       throw error;
     }
   }
@@ -103,7 +104,7 @@ export class KodiHttpClient {
       const result = await this.sendRequest<string>('JSONRPC.Ping');
       return result === 'pong';
     } catch (error) {
-      logger.error('Kodi HTTP test connection failed', { error });
+      // Connection failures logged by connection manager
       return false;
     }
   }
@@ -164,7 +165,7 @@ export class KodiHttpClient {
    * Scan video library
    */
   async scanVideoLibrary(params?: VideoLibrary.ScanParams): Promise<string> {
-    const result = await this.sendRequest('VideoLibrary.Scan', params);
+    const result = await this.sendRequest<string>('VideoLibrary.Scan', params);
     return result;
   }
 
@@ -172,7 +173,7 @@ export class KodiHttpClient {
    * Clean video library
    */
   async cleanVideoLibrary(params?: VideoLibrary.CleanParams): Promise<string> {
-    const result = await this.sendRequest('VideoLibrary.Clean', params);
+    const result = await this.sendRequest<string>('VideoLibrary.Clean', params);
     return result;
   }
 

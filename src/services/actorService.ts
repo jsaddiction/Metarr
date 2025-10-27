@@ -1,5 +1,7 @@
 import { DatabaseManager } from '../database/DatabaseManager.js';
 import { logger } from '../middleware/logging.js';
+import { getErrorMessage } from '../utils/errorHandling.js';
+import { SqlParam } from '../types/database.js';
 
 export interface Actor {
   id: number;
@@ -39,7 +41,7 @@ export class ActorService {
    */
   async getAll(filters?: ActorFilters): Promise<ActorListResult> {
     const whereClauses: string[] = ['1=1'];
-    const params: any[] = [];
+    const params: SqlParam[] = [];
 
     // Search filter (name contains)
     if (filters?.search) {
@@ -137,7 +139,7 @@ export class ActorService {
 
     try {
       const updateFields: string[] = [];
-      const updateValues: any[] = [];
+      const updateValues: SqlParam[] = [];
 
       // Fields that can be updated
       const allowedFields = ['name', 'tmdb_id', 'imdb_id', 'identification_status', 'enrichment_priority'];
@@ -173,10 +175,10 @@ export class ActorService {
       logger.info('Actor updated', { actorId, updatedFields: Object.keys(data) });
 
       return await this.getById(actorId);
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Failed to update actor', {
         actorId,
-        error: error.message,
+        error: getErrorMessage(error),
       });
       throw error;
     }
@@ -211,10 +213,10 @@ export class ActorService {
         success: true,
         message: 'Actor deleted successfully',
       };
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Failed to delete actor', {
         actorId,
-        error: error.message,
+        error: getErrorMessage(error),
       });
       throw error;
     }
@@ -280,11 +282,11 @@ export class ActorService {
         success: true,
         message: `Merged "${sourceActor.name}" into "${targetActor.name}"`,
       };
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Failed to merge actors', {
         sourceActorId,
         targetActorId,
-        error: error.message,
+        error: getErrorMessage(error),
       });
       throw error;
     }

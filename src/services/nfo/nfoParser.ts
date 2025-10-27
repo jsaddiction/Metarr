@@ -2,6 +2,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { parseStringPromise } from 'xml2js';
 import { logger } from '../../middleware/logging.js';
+import { getErrorMessage } from '../../utils/errorHandling.js';
 import {
   ParsedMovieNFO,
   ParsedTVShowNFO,
@@ -126,8 +127,8 @@ export async function parseMovieNfos(nfoPaths: string[]): Promise<ParsedMovieNFO
       if (ids.tmdbId || ids.imdbId) {
         allIds.push(ids);
       }
-    } catch (error: any) {
-      logger.debug(`Failed to parse NFO file ${nfoPath}`, { error: error.message });
+    } catch (error) {
+      logger.debug(`Failed to parse NFO file ${nfoPath}`, { error: getErrorMessage(error) });
     }
   }
 
@@ -248,35 +249,40 @@ function extractIdsFromUrls(content: string): NFOIds {
 /**
  * Extract TMDB and IMDB IDs from parsed movie NFO XML
  */
-function extractMovieIds(parsed: any): NFOIds {
+function extractMovieIds(parsed: unknown): NFOIds {
   const ids: NFOIds = {};
 
   try {
     // Handle movie root element
-    const movie = parsed.movie || parsed;
+    const parsedObj = parsed as { movie?: unknown; [key: string]: unknown };
+    const movie = (parsedObj.movie || parsedObj) as { [key: string]: unknown };
 
     // Extract TMDB ID
-    if (movie.tmdbid && movie.tmdbid[0]) {
-      const tmdbId = parseInt(movie.tmdbid[0], 10);
+    const tmdbid = movie.tmdbid as unknown[] | undefined;
+    if (tmdbid && tmdbid[0]) {
+      const tmdbId = parseInt(String(tmdbid[0]), 10);
       if (!isNaN(tmdbId)) {
         ids.tmdbId = tmdbId;
       }
     }
 
     // Extract IMDB ID
-    if (movie.imdbid && movie.imdbid[0]) {
-      ids.imdbId = String(movie.imdbid[0]).trim();
+    const imdbid = movie.imdbid as unknown[] | undefined;
+    if (imdbid && imdbid[0]) {
+      ids.imdbId = String(imdbid[0]).trim();
     }
 
     // Also check <id> tags with source attribute
-    if (movie.id && Array.isArray(movie.id)) {
-      for (const idTag of movie.id) {
-        if (typeof idTag === 'object' && idTag.$) {
-          const source = idTag.$.source?.toLowerCase();
-          const value = idTag._ || idTag;
+    const idArray = movie.id;
+    if (idArray && Array.isArray(idArray)) {
+      for (const idTag of idArray) {
+        if (typeof idTag === 'object' && idTag !== null) {
+          const tag = idTag as { $?: { source?: string }; _?: unknown; [key: string]: unknown };
+          const source = tag.$?.source?.toLowerCase();
+          const value = tag._ || idTag;
 
           if (source === 'tmdb') {
-            const tmdbId = parseInt(value, 10);
+            const tmdbId = parseInt(String(value), 10);
             if (!isNaN(tmdbId)) {
               ids.tmdbId = tmdbId;
             }
@@ -305,8 +311,8 @@ function extractMovieIds(parsed: any): NFOIds {
         }
       }
     }
-  } catch (error: any) {
-    logger.warn('Failed to extract IDs from parsed NFO', { error: error.message });
+  } catch (error) {
+    logger.warn('Failed to extract IDs from parsed NFO', { error: getErrorMessage(error) });
   }
 
   return ids;
@@ -348,12 +354,12 @@ export async function parseTVShowNfo(nfoPath: string): Promise<ParsedTVShowNFO> 
       ambiguous: false,
       ...ids,
     };
-  } catch (error: any) {
-    logger.debug(`Failed to parse tvshow.nfo: ${nfoPath}`, { error: error.message });
+  } catch (error) {
+    logger.debug(`Failed to parse tvshow.nfo: ${nfoPath}`, { error: getErrorMessage(error) });
     return {
       valid: false,
       ambiguous: false,
-      error: `Parse error: ${error.message}`,
+      error: `Parse error: ${getErrorMessage(error)}`,
     };
   }
 }
@@ -361,14 +367,15 @@ export async function parseTVShowNfo(nfoPath: string): Promise<ParsedTVShowNFO> 
 /**
  * Extract TMDB, TVDB, and IMDB IDs from parsed TV show NFO XML
  */
-function extractTVShowIds(parsed: any): NFOIds {
+function extractTVShowIds(parsed: unknown): NFOIds {
   const ids: NFOIds = {};
 
   try {
-    const tvshow = parsed.tvshow || parsed;
+    const parsedObj = parsed as { tvshow?: unknown; [key: string]: unknown };
+    const tvshow = (parsedObj.tvshow || parsedObj) as { [key: string]: unknown };
 
     // Extract TMDB ID
-    if (tvshow.tmdbid && tvshow.tmdbid[0]) {
+    if (tvshow.tmdbid && Array.isArray(tvshow.tmdbid) && tvshow.tmdbid[0]) {
       const tmdbId = parseInt(tvshow.tmdbid[0], 10);
       if (!isNaN(tmdbId)) {
         ids.tmdbId = tmdbId;
@@ -376,7 +383,7 @@ function extractTVShowIds(parsed: any): NFOIds {
     }
 
     // Extract TVDB ID
-    if (tvshow.tvdbid && tvshow.tvdbid[0]) {
+    if (tvshow.tvdbid && Array.isArray(tvshow.tvdbid) && tvshow.tvdbid[0]) {
       const tvdbId = parseInt(tvshow.tvdbid[0], 10);
       if (!isNaN(tvdbId)) {
         ids.tvdbId = tvdbId;
@@ -384,7 +391,7 @@ function extractTVShowIds(parsed: any): NFOIds {
     }
 
     // Extract IMDB ID
-    if (tvshow.imdbid && tvshow.imdbid[0]) {
+    if (tvshow.imdbid && Array.isArray(tvshow.imdbid) && tvshow.imdbid[0]) {
       ids.imdbId = String(tvshow.imdbid[0]).trim();
     }
 
@@ -435,8 +442,8 @@ function extractTVShowIds(parsed: any): NFOIds {
         }
       }
     }
-  } catch (error: any) {
-    logger.warn('Failed to extract IDs from parsed TV show NFO', { error: error.message });
+  } catch (error) {
+    logger.warn('Failed to extract IDs from parsed TV show NFO', { error: getErrorMessage(error) });
   }
 
   return ids;
@@ -520,11 +527,11 @@ export async function parseEpisodeNfo(nfoPath: string): Promise<ParsedEpisodeNFO
 
     result.valid = true;
     return result;
-  } catch (error: any) {
-    logger.error(`Failed to parse episode NFO: ${nfoPath}`, { error: error.message });
+  } catch (error) {
+    logger.error(`Failed to parse episode NFO: ${nfoPath}`, { error: getErrorMessage(error) });
     return {
       valid: false,
-      error: `Parse error: ${error.message}`,
+      error: `Parse error: ${getErrorMessage(error)}`,
     };
   }
 }
@@ -569,10 +576,10 @@ export async function parseFullMovieNfos(nfoPaths: string[], videoBasename?: str
         try {
           const parsed = await parseStringPromise(content);
           movieData = extractFullMovieMetadata(parsed);
-        } catch (xmlError: any) {
+        } catch (xmlError: unknown) {
           // XML parse failed - fallback to regex extraction
           logger.debug(`XML parse failed for ${nfoPath}, attempting regex fallback`, {
-            error: xmlError.message
+            error: (xmlError as { message?: string }).message
           });
           const regexIds = extractIdsFromRawText(trimmedContent);
           if (regexIds.tmdbId || regexIds.imdbId) {
@@ -597,8 +604,8 @@ export async function parseFullMovieNfos(nfoPaths: string[], videoBasename?: str
           mtime: stats.mtime,
         });
       }
-    } catch (error: any) {
-      logger.debug(`Failed to parse NFO file ${nfoPath}`, { error: error.message });
+    } catch (error) {
+      logger.debug(`Failed to parse NFO file ${nfoPath}`, { error: getErrorMessage(error) });
     }
   }
 
@@ -824,8 +831,9 @@ function mergeRatingsArray(arrays: RatingData[][]): RatingData[] | undefined {
 /**
  * Extract full movie metadata from parsed XML
  */
-function extractFullMovieMetadata(parsed: any): Partial<FullMovieNFO> {
-  const movie = parsed.movie || parsed;
+function extractFullMovieMetadata(parsed: unknown): Partial<FullMovieNFO> {
+  const parsedObj = parsed as { movie?: unknown; [key: string]: unknown };
+  const movie = (parsedObj.movie || parsedObj) as { [key: string]: unknown };
   const metadata: Partial<FullMovieNFO> = {};
 
   try {
@@ -889,8 +897,8 @@ function extractFullMovieMetadata(parsed: any): Partial<FullMovieNFO> {
 
     if (actors !== undefined) metadata.actors = actors;
     if (ratings !== undefined) metadata.ratings = ratings;
-  } catch (error: any) {
-    logger.warn('Error extracting full movie metadata', { error: error.message });
+  } catch (error) {
+    logger.warn('Error extracting full movie metadata', { error: getErrorMessage(error) });
   }
 
   return metadata;
@@ -926,12 +934,12 @@ export async function parseFullTVShowNfo(nfoPath: string): Promise<FullTVShowNFO
     }
 
     return metadata as FullTVShowNFO;
-  } catch (error: any) {
-    logger.error(`Failed to parse tvshow.nfo: ${nfoPath}`, { error: error.message });
+  } catch (error) {
+    logger.error(`Failed to parse tvshow.nfo: ${nfoPath}`, { error: getErrorMessage(error) });
     return {
       valid: false,
       ambiguous: false,
-      error: `Parse error: ${error.message}`,
+      error: `Parse error: ${getErrorMessage(error)}`,
     };
   }
 }
@@ -939,8 +947,9 @@ export async function parseFullTVShowNfo(nfoPath: string): Promise<FullTVShowNFO
 /**
  * Extract full TV show metadata from parsed XML
  */
-function extractFullTVShowMetadata(parsed: any): Partial<FullTVShowNFO> {
-  const tvshow = parsed.tvshow || parsed;
+function extractFullTVShowMetadata(parsed: unknown): Partial<FullTVShowNFO> {
+  const parsedObj = parsed as { tvshow?: unknown; [key: string]: unknown };
+  const tvshow = (parsedObj.tvshow || parsedObj) as { [key: string]: unknown };
   const metadata: Partial<FullTVShowNFO> = {};
 
   try {
@@ -993,8 +1002,8 @@ function extractFullTVShowMetadata(parsed: any): Partial<FullTVShowNFO> {
 
     if (actors !== undefined) metadata.actors = actors;
     if (ratings !== undefined) metadata.ratings = ratings;
-  } catch (error: any) {
-    logger.warn('Error extracting full TV show metadata', { error: error.message });
+  } catch (error) {
+    logger.warn('Error extracting full TV show metadata', { error: getErrorMessage(error) });
   }
 
   return metadata;
@@ -1063,11 +1072,11 @@ export async function parseFullEpisodeNfo(nfoPath: string): Promise<FullEpisodeN
 
     metadata.valid = true;
     return metadata as FullEpisodeNFO;
-  } catch (error: any) {
-    logger.error(`Failed to parse episode NFO: ${nfoPath}`, { error: error.message });
+  } catch (error) {
+    logger.error(`Failed to parse episode NFO: ${nfoPath}`, { error: getErrorMessage(error) });
     return {
       valid: false,
-      error: `Parse error: ${error.message}`,
+      error: `Parse error: ${getErrorMessage(error)}`,
     };
   }
 }
@@ -1079,8 +1088,8 @@ export async function parseFullEpisodeNfo(nfoPath: string): Promise<FullEpisodeN
 /**
  * Extract text from XML element
  */
-function extractText(element: any): string | undefined {
-  if (!element || !element[0]) return undefined;
+function extractText(element: unknown): string | undefined {
+  if (!element || !Array.isArray(element) || !element[0]) return undefined;
   const text = String(element[0]).trim();
   return text.length > 0 ? text : undefined;
 }
@@ -1088,8 +1097,8 @@ function extractText(element: any): string | undefined {
 /**
  * Extract number from XML element
  */
-function extractNumber(element: any): number | undefined {
-  if (!element || !element[0]) return undefined;
+function extractNumber(element: unknown): number | undefined {
+  if (!element || !Array.isArray(element) || !element[0]) return undefined;
   const num = parseInt(String(element[0]), 10);
   return isNaN(num) ? undefined : num;
 }
@@ -1097,10 +1106,10 @@ function extractNumber(element: any): number | undefined {
 /**
  * Extract array of strings from XML element
  */
-function extractArray(element: any): string[] | undefined {
+function extractArray(element: unknown): string[] | undefined {
   if (!element || !Array.isArray(element)) return undefined;
   const arr = element
-    .map((item: any) => String(item).trim())
+    .map((item: unknown) => String(item).trim())
     .filter((item: string) => item.length > 0);
   return arr.length > 0 ? arr : undefined;
 }
@@ -1108,10 +1117,10 @@ function extractArray(element: any): string[] | undefined {
 /**
  * Extract set info from movie NFO
  */
-function extractSetInfo(movie: any): SetData | undefined {
-  if (!movie.set || !movie.set[0]) return undefined;
+function extractSetInfo(movie: unknown): SetData | undefined {
+  const m = movie as { [key: string]: unknown }; if (!m.set || !Array.isArray(m.set) || !m.set[0]) return undefined;
 
-  const setElement = movie.set[0];
+  const setElement = m.set[0];
   const name = extractText(setElement.name);
   const overview = extractText(setElement.overview);
 
@@ -1125,7 +1134,7 @@ function extractSetInfo(movie: any): SetData | undefined {
 /**
  * Extract actors from NFO
  */
-function extractActors(actorElements: any): ActorData[] | undefined {
+function extractActors(actorElements: unknown): ActorData[] | undefined {
   if (!actorElements || !Array.isArray(actorElements)) return undefined;
 
   const actors: ActorData[] = [];
@@ -1154,8 +1163,8 @@ function extractActors(actorElements: any): ActorData[] | undefined {
 /**
  * Extract ratings from NFO
  */
-function extractRatings(ratingsElement: any): RatingData[] | undefined {
-  if (!ratingsElement || !ratingsElement[0]) return undefined;
+function extractRatings(ratingsElement: unknown): RatingData[] | undefined {
+  if (!ratingsElement || !Array.isArray(ratingsElement) || !ratingsElement[0]) return undefined;
 
   const ratingsContainer = ratingsElement[0];
   const ratings: RatingData[] = [];

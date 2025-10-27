@@ -12,6 +12,7 @@ import sharp from 'sharp';
 import { logger } from '../../middleware/logging.js';
 import { DatabaseConnection } from '../../types/database.js';
 import { findAssetSpecsByFilename, validateImageDimensions, AssetTypeSpec } from './assetTypeSpecs.js';
+import { getErrorMessage } from '../../utils/errorHandling.js';
 import {
   cacheImageFile
 } from '../files/unifiedFileService.js';
@@ -104,10 +105,10 @@ export async function discoverAndStoreAssets(
           const metadata = await sharp(candidate.filePath).metadata();
           candidate.width = metadata.width;
           candidate.height = metadata.height;
-        } catch (error: any) {
+        } catch (error) {
           logger.warn('Failed to read image metadata', {
             file: candidate.fileName,
-            error: error.message
+            error: getErrorMessage(error)
           });
           continue;
         }
@@ -177,11 +178,11 @@ export async function discoverAndStoreAssets(
             score: calculateScore(candidate, assetType),
             cacheFileId
           });
-        } catch (error: any) {
+        } catch (error) {
           logger.error('Failed to cache discovered asset', {
             assetType,
             file: candidate.fileName,
-            error: error.message
+            error: getErrorMessage(error)
           });
         }
       }
@@ -208,8 +209,8 @@ export async function discoverAndStoreAssets(
 
           result.trailers++;
           logger.info('Discovered and cached trailer', { entityId, file, cacheFileId });
-        } catch (error: any) {
-          logger.error('Failed to cache discovered trailer', { file, error: error.message });
+        } catch (error) {
+          logger.error('Failed to cache discovered trailer', { file, error: getErrorMessage(error) });
         }
       }
     }
@@ -229,8 +230,8 @@ export async function discoverAndStoreAssets(
 
           result.subtitles++;
           logger.info('Discovered and cached subtitle', { entityId, file, cacheFileId });
-        } catch (error: any) {
-          logger.error('Failed to cache discovered subtitle', { file, error: error.message });
+        } catch (error) {
+          logger.error('Failed to cache discovered subtitle', { file, error: getErrorMessage(error) });
         }
       }
     }
@@ -252,17 +253,17 @@ export async function discoverAndStoreAssets(
 
           result.subtitles++; // Note: We don't have a theme counter, using subtitles for now
           logger.info('Discovered and cached theme song', { entityId, file, cacheFileId });
-        } catch (error: any) {
-          logger.error('Failed to cache discovered theme song', { file, error: error.message });
+        } catch (error) {
+          logger.error('Failed to cache discovered theme song', { file, error: getErrorMessage(error) });
         }
       }
     }
 
     logger.info('Asset discovery completed', { entityType, entityId, ...result });
     return result;
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to discover assets', {
-      error: error.message,
+      error: getErrorMessage(error),
       entityType,
       entityId,
       dirPath

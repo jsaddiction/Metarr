@@ -2,6 +2,7 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import { logger } from '../../middleware/logging.js';
 import { DatabaseConnection } from '../../types/database.js';
+import { getErrorMessage } from '../../utils/errorHandling.js';
 
 const execPromise = promisify(exec);
 
@@ -124,12 +125,12 @@ export async function extractMediaInfo(filePath: string): Promise<MediaInfo> {
       audioStreams,
       subtitleStreams,
     };
-  } catch (error: any) {
+  } catch (error) {
     logger.error('FFprobe failed to extract media info', {
       filePath,
-      error: error.message,
+      error: getErrorMessage(error),
     });
-    throw new Error(`FFprobe failed: ${error.message}`);
+    throw new Error(`FFprobe failed: ${getErrorMessage(error)}`);
   }
 }
 
@@ -314,13 +315,13 @@ export async function storeVideoStreams(
       entityId,
       count: streams.length,
     });
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to store video streams', {
       entityType,
       entityId,
-      error: error.message,
+      error: getErrorMessage(error),
     });
-    throw new Error(`Failed to store video streams: ${error.message}`);
+    throw new Error(`Failed to store video streams: ${getErrorMessage(error)}`);
   }
 }
 
@@ -366,13 +367,13 @@ export async function storeAudioStreams(
       entityId,
       count: streams.length,
     });
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to store audio streams', {
       entityType,
       entityId,
-      error: error.message,
+      error: getErrorMessage(error),
     });
-    throw new Error(`Failed to store audio streams: ${error.message}`);
+    throw new Error(`Failed to store audio streams: ${getErrorMessage(error)}`);
   }
 }
 
@@ -417,13 +418,13 @@ export async function storeSubtitleStreams(
       entityId,
       count: streams.length,
     });
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to store subtitle streams', {
       entityType,
       entityId,
-      error: error.message,
+      error: getErrorMessage(error),
     });
-    throw new Error(`Failed to store subtitle streams: ${error.message}`);
+    throw new Error(`Failed to store subtitle streams: ${getErrorMessage(error)}`);
   }
 }
 
@@ -456,13 +457,13 @@ export async function extractAndStoreMediaInfo(
     });
 
     return mediaInfo;
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to extract and store media info', {
       entityType,
       entityId,
       filePath,
-      error: error.message,
+      error: getErrorMessage(error),
     });
-    throw new Error(`Failed to extract and store media info: ${error.message}`);
+    throw new Error(`Failed to extract and store media info: ${getErrorMessage(error)}`);
   }
 }

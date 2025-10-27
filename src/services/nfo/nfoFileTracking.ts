@@ -10,6 +10,7 @@ import { DatabaseConnection } from '../../types/database.js';
 import { logger } from '../../middleware/logging.js';
 import { insertCacheTextFile, calculateFileHash } from '../files/unifiedFileService.js';
 import { FullMovieNFO } from '../../types/models.js';
+import { getErrorMessage } from '../../utils/errorHandling.js';
 
 /**
  * Store NFO file record in text_files table
@@ -93,12 +94,12 @@ export async function trackNFOFile(
 
       return nfoFileId;
     }
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to track NFO file', {
       entityType,
       entityId,
       nfoFilePath,
-      error: error.message
+      error: getErrorMessage(error)
     });
     throw error;
   }

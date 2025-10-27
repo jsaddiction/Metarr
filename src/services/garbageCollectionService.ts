@@ -3,6 +3,7 @@ import path from 'path';
 import { logger } from '../middleware/logging.js';
 import { DatabaseManager } from '../database/DatabaseManager.js';
 import { DatabaseConnection } from '../types/database.js';
+import { getErrorMessage, getErrorCode } from '../utils/errorHandling.js';
 
 /**
  * Garbage Collection Service
@@ -106,11 +107,11 @@ export class GarbageCollectionService {
       result.emptyDirectoriesRemoved = await this.cleanupEmptyDirectories();
 
       logger.info('Garbage collection complete', result);
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Garbage collection failed', {
-        error: error.message,
+        error: getErrorMessage(error),
       });
-      result.errors.push(error.message);
+      result.errors.push(getErrorMessage(error));
     }
 
     result.endTime = new Date().toISOString();
@@ -177,9 +178,9 @@ export class GarbageCollectionService {
       }
 
       return expiredMovies.length;
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Failed to delete expired movies', {
-        error: error.message,
+        error: getErrorMessage(error),
       });
       throw error;
     }
@@ -273,10 +274,10 @@ export class GarbageCollectionService {
                 await fs.unlink(fullPath);
                 deletedCount++;
                 logger.debug('Deleted orphaned cache file', { file: fullPath });
-              } catch (error: any) {
+              } catch (error) {
                 logger.error('Failed to delete orphaned cache file', {
                   file: fullPath,
-                  error: error.message,
+                  error: getErrorMessage(error),
                 });
               }
             }
@@ -288,9 +289,9 @@ export class GarbageCollectionService {
 
       logger.info('Orphaned cache file cleanup complete', { deletedCount });
       return deletedCount;
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Failed to cleanup orphaned cache files', {
-        error: error.message,
+        error: getErrorMessage(error),
       });
       return 0;
     }
@@ -324,11 +325,11 @@ export class GarbageCollectionService {
               removed
             });
           }
-        } catch (error: any) {
-          if (error.code !== 'ENOENT') {
+        } catch (error) {
+          if (getErrorCode(error) !== 'ENOENT') {
             logger.warn('Error accessing cache directory', {
               cacheType,
-              error: error.message
+              error: getErrorMessage(error)
             });
           }
         }
@@ -336,9 +337,9 @@ export class GarbageCollectionService {
 
       logger.info('Empty directory cleanup complete', { totalRemoved });
       return totalRemoved;
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Failed to cleanup empty directories', {
-        error: error.message
+        error: getErrorMessage(error)
       });
       return 0;
     }
@@ -379,11 +380,11 @@ export class GarbageCollectionService {
           removed++;
         }
       }
-    } catch (error: any) {
-      if (error.code !== 'ENOENT') {
+    } catch (error) {
+      if (getErrorCode(error) !== 'ENOENT') {
         logger.debug('Error during directory cleanup', {
           directory: dirPath,
-          error: error.message
+          error: getErrorMessage(error)
         });
       }
     }

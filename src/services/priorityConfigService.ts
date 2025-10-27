@@ -42,8 +42,8 @@ export class PriorityConfigService {
       id: row.id,
       assetType: row.asset_type,
       providerOrder: JSON.parse(row.provider_order),
-      createdAt: new Date(row.created_at),
-      updatedAt: new Date(row.updated_at)
+      created_at: new Date(row.created_at),
+      updated_at: new Date(row.updated_at)
     }));
   }
 
@@ -71,8 +71,8 @@ export class PriorityConfigService {
       id: row.id,
       assetType: row.asset_type,
       providerOrder: JSON.parse(row.provider_order),
-      createdAt: new Date(row.created_at),
-      updatedAt: new Date(row.updated_at)
+      created_at: new Date(row.created_at),
+      updated_at: new Date(row.updated_at)
     };
   }
 
@@ -146,8 +146,8 @@ export class PriorityConfigService {
         id: row.id,
         fieldName: row.field_name,
         providerOrder: JSON.parse(row.provider_order),
-        createdAt: new Date(row.created_at),
-        updatedAt: new Date(row.updated_at)
+        created_at: new Date(row.created_at),
+        updated_at: new Date(row.updated_at)
       };
 
       if (row.forced_provider) {
@@ -183,8 +183,8 @@ export class PriorityConfigService {
       id: row.id,
       fieldName: row.field_name,
       providerOrder: JSON.parse(row.provider_order),
-      createdAt: new Date(row.created_at),
-      updatedAt: new Date(row.updated_at)
+      created_at: new Date(row.created_at),
+      updated_at: new Date(row.updated_at)
     };
 
     if (row.forced_provider) {
@@ -259,8 +259,8 @@ export class PriorityConfigService {
       id: row.id,
       presetId: row.preset_id,
       isActive: Boolean(row.is_active),
-      createdAt: new Date(row.created_at),
-      updatedAt: new Date(row.updated_at)
+      created_at: new Date(row.created_at),
+      updated_at: new Date(row.updated_at)
     };
   }
 

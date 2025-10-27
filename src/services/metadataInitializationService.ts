@@ -1,6 +1,7 @@
 import { DatabaseManager } from '../database/DatabaseManager.js';
 import { logger } from '../middleware/logging.js';
 import { FullMovieNFO, FullTVShowNFO, ActorData, RatingData } from '../types/models.js';
+import { getErrorMessage } from '../utils/errorHandling.js';
 
 export class MetadataInitializationService {
   constructor(private dbManager: DatabaseManager) {}
@@ -123,8 +124,8 @@ export class MetadataInitializationService {
       }
 
       return movieId;
-    } catch (error: any) {
-      logger.error('Failed to initialize movie', { error: error.message, filePath });
+    } catch (error) {
+      logger.error('Failed to initialize movie', { error: getErrorMessage(error), filePath });
       throw error;
     }
   }
@@ -223,8 +224,8 @@ export class MetadataInitializationService {
       }
 
       return tvshowId;
-    } catch (error: any) {
-      logger.error('Failed to initialize TV show', { error: error.message, folderPath });
+    } catch (error) {
+      logger.error('Failed to initialize TV show', { error: getErrorMessage(error), folderPath });
       throw error;
     }
   }

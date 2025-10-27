@@ -15,6 +15,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import crypto from 'crypto';
 import { logger } from '../../middleware/logging.js';
+import { getErrorMessage } from '../../utils/errorHandling.js';
 
 const RECYCLE_BASE_PATH = path.join(process.cwd(), 'data', 'recycle');
 
@@ -24,12 +25,12 @@ const RECYCLE_BASE_PATH = path.join(process.cwd(), 'data', 'recycle');
 export async function ensureRecycleBinExists(): Promise<void> {
   try {
     await fs.mkdir(RECYCLE_BASE_PATH, { recursive: true });
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to create recycle bin directory', {
       recycleBinPath: RECYCLE_BASE_PATH,
-      error: error.message,
+      error: getErrorMessage(error),
     });
-    throw new Error(`Failed to create recycle bin directory: ${error.message}`);
+    throw new Error(`Failed to create recycle bin directory: ${getErrorMessage(error)}`);
   }
 }
 
@@ -68,14 +69,14 @@ export async function validateBeforeRecycling(
     }
 
     return { safe: true };
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Error during recycle validation', {
       filePath,
-      error: error.message,
+      error: getErrorMessage(error),
     });
     return {
       safe: false,
-      reason: `Validation error: ${error.message}`,
+      reason: `Validation error: ${getErrorMessage(error)}`,
     };
   }
 }
@@ -135,14 +136,14 @@ export async function recycleFile(
       }
       throw error;
     }
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to recycle file', {
       filePath,
-      error: error.message,
+      error: getErrorMessage(error),
     });
     return {
       success: false,
-      error: error.message,
+      error: getErrorMessage(error),
     };
   }
 }
@@ -206,15 +207,15 @@ export async function restoreFromRecycleBin(
       }
       throw error;
     }
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to restore from recycle bin', {
       recyclePath,
       destinationPath,
-      error: error.message,
+      error: getErrorMessage(error),
     });
     return {
       success: false,
-      error: error.message,
+      error: getErrorMessage(error),
     };
   }
 }
@@ -243,14 +244,14 @@ export async function permanentlyDeleteFromRecycleBin(
     });
 
     return { success: true };
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to permanently delete from recycle bin', {
       recyclePath,
-      error: error.message,
+      error: getErrorMessage(error),
     });
     return {
       success: false,
-      error: error.message,
+      error: getErrorMessage(error),
     };
   }
 }
@@ -292,9 +293,9 @@ export async function getRecycleBinStats(): Promise<{
       totalFiles,
       totalSizeBytes,
     };
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to get recycle bin stats', {
-      error: error.message,
+      error: getErrorMessage(error),
     });
     return {
       totalFiles: 0,
@@ -335,8 +336,8 @@ export async function cleanupOrphanedRecycleBinFiles(
           await fs.unlink(fullPath);
           deletedCount++;
           logger.info('Deleted orphaned recycle bin file', { path: fullPath });
-        } catch (error: any) {
-          errors.push(`${entry.name}: ${error.message}`);
+        } catch (error) {
+          errors.push(`${entry.name}: ${getErrorMessage(error)}`);
         }
       }
     }
@@ -347,10 +348,10 @@ export async function cleanupOrphanedRecycleBinFiles(
     });
 
     return { deletedCount, errors };
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to cleanup orphaned recycle bin files', {
-      error: error.message,
+      error: getErrorMessage(error),
     });
-    return { deletedCount: 0, errors: [error.message] };
+    return { deletedCount: 0, errors: [getErrorMessage(error)] };
   }
 }

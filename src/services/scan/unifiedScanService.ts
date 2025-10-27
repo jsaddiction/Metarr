@@ -19,6 +19,8 @@ import { findOrCreateMovie, rehashMovieFile, MovieLookupContext } from './movieL
 import { gatherAllFacts } from './factGatheringService.js';
 import { classifyDirectory } from './classificationService.js';
 import { canProcessDirectory } from './processingDecisionService.js';
+import { getErrorMessage } from '../../utils/errorHandling.js';
+import { SqlParam } from '../../types/database.js';
 
 /**
  * Unified Scan Service
@@ -109,10 +111,10 @@ async function findMainVideoFile(dirPath: string): Promise<string | null> {
     }
 
     return largestVideo?.path || null;
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to find main video file', {
       dirPath,
-      error: error.message,
+      error: getErrorMessage(error),
     });
     return null;
   }
@@ -270,8 +272,8 @@ export async function scanMovieDirectory(
       try {
         await extractAndStoreMediaInfo(db, 'movie', movieId, videoFilePath);
         result.streamsExtracted = true;
-      } catch (error: any) {
-        result.errors.push(`FFprobe failed: ${error.message}`);
+      } catch (error) {
+        result.errors.push(`FFprobe failed: ${getErrorMessage(error)}`);
       }
 
       // NEW FILE SCANNER: Fact gathering → Classification → Decision
@@ -335,8 +337,8 @@ export async function scanMovieDirectory(
           // TODO: Set flag in movies table for UI to show "needs manual classification"
         }
 
-      } catch (error: any) {
-        result.errors.push(`File classification failed: ${error.message}`);
+      } catch (error) {
+        result.errors.push(`File classification failed: ${getErrorMessage(error)}`);
       }
 
       // ARCHITECTURAL CHANGE: Actors are NO LONGER discovered during initial scan
@@ -363,8 +365,8 @@ export async function scanMovieDirectory(
         } else {
           logger.debug('File hash unchanged - no video modification detected', { movieId });
         }
-      } catch (error: any) {
-        logger.warn('Failed to rehash movie file', { movieId, error: error.message });
+      } catch (error) {
+        logger.warn('Failed to rehash movie file', { movieId, error: getErrorMessage(error) });
         // Assume changed to be safe
         fileHashChanged = true;
         result.videoChanged = true;
@@ -377,8 +379,8 @@ export async function scanMovieDirectory(
           logger.info('File changed - re-extracting video streams', { movieId });
           await extractAndStoreMediaInfo(db, 'movie', movieId, videoFilePath);
           result.streamsExtracted = true;
-        } catch (error: any) {
-          result.errors.push(`FFprobe failed: ${error.message}`);
+        } catch (error) {
+          result.errors.push(`FFprobe failed: ${getErrorMessage(error)}`);
         }
 
         // Note: NFO regeneration will happen during enrichment job, not scan job
@@ -417,8 +419,8 @@ export async function scanMovieDirectory(
         // TODO: Compare with existing cached files and update database
         // TODO: Store classification result for publish service
 
-      } catch (error: any) {
-        result.errors.push(`Re-scan failed: ${error.message}`);
+      } catch (error) {
+        result.errors.push(`Re-scan failed: ${getErrorMessage(error)}`);
       }
 
       // ARCHITECTURAL CHANGE: Actors are NO LONGER discovered during rescans
@@ -438,12 +440,12 @@ export async function scanMovieDirectory(
     });
 
     return result;
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to scan movie directory', {
       movieDir,
-      error: error.message,
+      error: getErrorMessage(error),
     });
-    result.errors.push(`Scan failed: ${error.message}`);
+    result.errors.push(`Scan failed: ${getErrorMessage(error)}`);
     return result;
   }
 }
@@ -459,7 +461,7 @@ async function storeMovieMetadata(
   // Build UPDATE statement dynamically - only update fields provided by NFO
   // This preserves existing values (like title from filename) when NFO doesn't provide them
   const updates: string[] = [];
-  const values: any[] = [];
+  const values: SqlParam[] = [];
 
   // Only update fields that have values in the NFO
   if (nfoData.title !== undefined && nfoData.title !== null) {
@@ -658,8 +660,8 @@ async function findMovieNfos(movieDir: string): Promise<string[]> {
     }
 
     return nfoFiles;
-  } catch (error: any) {
-    logger.error(`Failed to find movie NFOs in ${movieDir}`, { error: error.message });
+  } catch (error) {
+    logger.error(`Failed to find movie NFOs in ${movieDir}`, { error: getErrorMessage(error) });
     return [];
   }
 }

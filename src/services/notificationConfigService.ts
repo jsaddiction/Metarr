@@ -13,7 +13,7 @@ export interface NotificationConfig {
   id: number;
   service: NotificationService;
   enabled: boolean;
-  config: Record<string, any>; // Service-specific configuration
+  config: Record<string, unknown>; // Service-specific configuration
   created_at: string;
   updated_at: string;
 }
@@ -152,7 +152,7 @@ export class NotificationConfigService {
    */
   async updateServiceConfig(
     service: NotificationService,
-    config: Record<string, any>
+    config: Record<string, unknown>
   ): Promise<void> {
     logger.info('[NotificationConfigService] Updating service config', {
       service: 'NotificationConfigService',

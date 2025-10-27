@@ -10,6 +10,7 @@ import path from 'path';
 import crypto from 'crypto';
 import { DatabaseConnection } from '../../types/database.js';
 import { logger } from '../../middleware/logging.js';
+import { getErrorMessage, getErrorCode } from '../../utils/errorHandling.js';
 
 /**
  * Clean up empty parent directories after file deletion
@@ -31,10 +32,10 @@ async function cleanupEmptyDirectories(filePath: string, cacheRoot: string): Pro
         } else {
           break;
         }
-      } catch (error: any) {
+      } catch (error) {
         logger.debug('Stopped directory cleanup', {
           directory: currentDir,
-          reason: error.code || error.message
+          reason: getErrorCode(error) || getErrorMessage(error)
         });
         break;
       }
@@ -43,15 +44,15 @@ async function cleanupEmptyDirectories(filePath: string, cacheRoot: string): Pro
     // Ensure cache root still exists (safety check)
     try {
       await fs.access(absoluteCacheRoot);
-    } catch (error: any) {
+    } catch (error) {
       // Cache root was deleted - recreate it
       await fs.mkdir(absoluteCacheRoot, { recursive: true });
       logger.warn('Recreated cache root directory', { cacheRoot: absoluteCacheRoot });
     }
-  } catch (error: any) {
+  } catch (error) {
     logger.warn('Failed to cleanup empty directories', {
       filePath,
-      error: error.message
+      error: getErrorMessage(error)
     });
   }
 }
@@ -236,11 +237,11 @@ export async function cacheVideoFile(
     });
 
     return cacheFileId;
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to cache video file', {
       libraryFileId: libraryFileId ?? 'N/A (discovered)',
       sourceFilePath,
-      error: error.message
+      error: getErrorMessage(error)
     });
     throw error;
   }
@@ -325,11 +326,11 @@ export async function cacheTextFile(
     });
 
     return cacheFileId;
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to cache text file', {
       libraryFileId: libraryFileId ?? 'N/A (discovered)',
       sourceFilePath,
-      error: error.message
+      error: getErrorMessage(error)
     });
     throw error;
   }
@@ -406,11 +407,11 @@ export async function cacheAudioFile(
     });
 
     return cacheFileId;
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to cache audio file', {
       libraryFileId: libraryFileId ?? 'N/A (discovered)',
       sourceFilePath,
-      error: error.message
+      error: getErrorMessage(error)
     });
     throw error;
   }
@@ -440,8 +441,8 @@ export async function deleteCachedVideo(
       // Clean up empty parent directories
       const cacheRoot = path.join(process.cwd(), "data", "cache", "videos");
       await cleanupEmptyDirectories(filePath, cacheRoot);
-    } catch (error: any) {
-      logger.error("Failed to delete cache video file", { cacheFileId, error: error.message });
+    } catch (error) {
+      logger.error("Failed to delete cache video file", { cacheFileId, error: getErrorMessage(error) });
     }
   }
 }
@@ -469,8 +470,8 @@ export async function deleteCachedText(
       // Clean up empty parent directories
       const cacheRoot = path.join(process.cwd(), "data", "cache", "text");
       await cleanupEmptyDirectories(filePath, cacheRoot);
-    } catch (error: any) {
-      logger.error("Failed to delete cache text file", { cacheFileId, error: error.message });
+    } catch (error) {
+      logger.error("Failed to delete cache text file", { cacheFileId, error: getErrorMessage(error) });
     }
   }
 }
@@ -498,8 +499,8 @@ export async function deleteCachedAudio(
       // Clean up empty parent directories
       const cacheRoot = path.join(process.cwd(), "data", "cache", "audio");
       await cleanupEmptyDirectories(filePath, cacheRoot);
-    } catch (error: any) {
-      logger.error("Failed to delete cache audio file", { cacheFileId, error: error.message });
+    } catch (error) {
+      logger.error("Failed to delete cache audio file", { cacheFileId, error: getErrorMessage(error) });
     }
   }
 }

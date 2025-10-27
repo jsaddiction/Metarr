@@ -15,6 +15,7 @@ import path from 'path';
 import sharp from 'sharp';
 import { logger } from '../../middleware/logging.js';
 import { extractMediaInfo } from '../media/ffprobeService.js';
+import { getErrorMessage } from '../../utils/errorHandling.js';
 import {
   FileFacts,
   FilesystemFacts,
@@ -86,14 +87,14 @@ export async function gatherFilesystemFacts(filePath: string): Promise<Filesyste
       directoryPath: parsedPath.dir,
       directoryName: path.basename(parsedPath.dir),
       modifiedAt: stats.mtime,
-      createdAt: stats.birthtime,
+      created_at: stats.birthtime,
     };
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to gather filesystem facts', {
       filePath,
-      error: error.message,
+      error: getErrorMessage(error),
     });
-    throw new Error(`Failed to gather filesystem facts: ${error.message}`);
+    throw new Error(`Failed to gather filesystem facts: ${getErrorMessage(error)}`);
   }
 }
 
@@ -237,10 +238,10 @@ export async function detectDiscStructure(
     }
 
     return discInfo;
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Error detecting disc structure', {
       directoryPath,
-      error: error.message,
+      error: getErrorMessage(error),
     });
     return discInfo;
   }
@@ -295,10 +296,10 @@ export async function scanLegacyDirectories(
     }
 
     return legacyInfo;
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Error scanning legacy directories', {
       directoryPath,
-      error: error.message,
+      error: getErrorMessage(error),
     });
     return legacyInfo;
   }
@@ -359,10 +360,10 @@ export async function gatherVideoFacts(filePath: string): Promise<VideoStreamFac
     };
 
     return videoFacts;
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to gather video facts', {
       filePath,
-      error: error.message,
+      error: getErrorMessage(error),
     });
     return null; // Return null on failure, don't block entire scan
   }
@@ -405,10 +406,10 @@ export async function gatherImageFacts(filePath: string): Promise<ImageFacts | n
     };
 
     return imageFacts;
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to gather image facts', {
       filePath,
-      error: error.message,
+      error: getErrorMessage(error),
     });
     return null; // Return null on failure, don't block entire scan
   }
@@ -477,11 +478,31 @@ export async function gatherTextFacts(filePath: string): Promise<TextFileFacts |
             textFacts.imdbId = imdbTagMatch[1];
           }
         }
-      } catch (xmlError: any) {
+      } catch (xmlError: unknown) {
         logger.debug('XML parsing failed, using regex fallback', {
           filePath,
-          error: xmlError.message,
+          error: (xmlError as { message?: string }).message,
         });
+      }
+    }
+
+    // Fallback: URL extraction for Radarr/Sonarr-style NFO files
+    // These contain just URLs like: https://www.themoviedb.org/movie/535292
+    if (!textFacts.containsTmdbId) {
+      const tmdbUrlMatch = contentSample.match(/themoviedb\.org\/movie\/(\d+)/i);
+      if (tmdbUrlMatch) {
+        textFacts.containsTmdbId = true;
+        textFacts.tmdbId = parseInt(tmdbUrlMatch[1], 10);
+        textFacts.looksLikeNfo = true;
+      }
+    }
+
+    if (!textFacts.containsImdbId) {
+      const imdbUrlMatch = contentSample.match(/imdb\.com\/title\/(tt\d+)/i);
+      if (imdbUrlMatch) {
+        textFacts.containsImdbId = true;
+        textFacts.imdbId = imdbUrlMatch[1];
+        textFacts.looksLikeNfo = true;
       }
     }
 
@@ -525,10 +546,10 @@ export async function gatherTextFacts(filePath: string): Promise<TextFileFacts |
     }
 
     return textFacts;
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to gather text facts', {
       filePath,
-      error: error.message,
+      error: getErrorMessage(error),
     });
     return null; // Return null on failure, don't block entire scan
   }
@@ -685,11 +706,11 @@ export async function gatherAllFacts(
       scanCompletedAt,
       processingTimeMs,
     };
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to gather facts for directory', {
       directoryPath,
-      error: error.message,
+      error: getErrorMessage(error),
     });
-    throw new Error(`Failed to gather facts: ${error.message}`);
+    throw new Error(`Failed to gather facts: ${getErrorMessage(error)}`);
   }
 }

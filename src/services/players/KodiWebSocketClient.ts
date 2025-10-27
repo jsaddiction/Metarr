@@ -9,6 +9,7 @@ import {
   DetectedVersion,
 } from '../../types/jsonrpc.js';
 import { logger } from '../../middleware/logging.js';
+import { getErrorMessage } from '../../utils/errorHandling.js';
 
 export interface KodiWebSocketClientOptions {
   host: string;
@@ -80,7 +81,7 @@ export class KodiWebSocketClient extends EventEmitter {
 
     return new Promise((resolve, reject) => {
       try {
-        const wsOptions: any = {};
+        const wsOptions: Record<string, unknown> = {};
         if (this.auth) {
           wsOptions.headers = {
             Authorization: `Basic ${this.auth}`,
@@ -90,7 +91,7 @@ export class KodiWebSocketClient extends EventEmitter {
         this.ws = new WebSocket(this.url, wsOptions);
 
         this.ws.on('open', () => {
-          logger.info('Kodi WebSocket connected', { url: this.url });
+          // Connection success logged by connection manager
           this.updateState({
             status: 'connected',
             connectedAt: new Date(),
@@ -106,8 +107,13 @@ export class KodiWebSocketClient extends EventEmitter {
         });
 
         this.ws.on('error', (error: Error) => {
-          logger.error('Kodi WebSocket error', { url: this.url, error: error.message });
-          this.updateState({ status: 'error', error: error.message });
+          // Only log errors after connection is established
+          // Connection errors are handled by the connection manager
+          if (this.state.status !== 'connecting') {
+            logger.debug('WebSocket error', { url: this.url, error: getErrorMessage(error) });
+          }
+
+          this.updateState({ status: 'error', error: getErrorMessage(error) });
           this.emit('error', error);
 
           if (this.state.status === 'connecting') {
@@ -116,7 +122,11 @@ export class KodiWebSocketClient extends EventEmitter {
         });
 
         this.ws.on('close', (code: number, reason: string) => {
-          logger.info('Kodi WebSocket closed', { url: this.url, code, reason: reason.toString() });
+          // Only log close events for established connections
+          if (this.state.status === 'connected') {
+            logger.debug('WebSocket closed', { url: this.url, code, reason: reason.toString() });
+          }
+
           this.stopPing();
           this.updateState({ status: 'disconnected' });
           this.emit('disconnected', { code, reason });
@@ -130,13 +140,19 @@ export class KodiWebSocketClient extends EventEmitter {
         // Connection timeout
         setTimeout(() => {
           if (this.state.status === 'connecting') {
-            reject(new Error('WebSocket connection timeout'));
-            this.disconnect();
+            const error = new Error('WebSocket connection timeout');
+            this.updateState({ status: 'error', error: getErrorMessage(error) });
+
+            // Just reject - don't try to clean up the WebSocket here
+            // The ws library doesn't allow ANY operations (even terminate) on CONNECTING sockets
+            // The error event handler or caller will handle cleanup
+            reject(error);
           }
         }, 10000);
-      } catch (error: any) {
-        logger.error('Failed to create Kodi WebSocket', { error: error.message });
-        this.updateState({ status: 'error', error: error.message });
+      } catch (error) {
+        // Synchronous errors during WebSocket creation
+        // Logged by connection manager
+        this.updateState({ status: 'error', error: getErrorMessage(error) });
         reject(error);
       }
     });
@@ -181,14 +197,35 @@ export class KodiWebSocketClient extends EventEmitter {
         }
       }, 5000);
 
-      this.ws.close();
+      // Only call close() if WebSocket is in OPEN or CONNECTING state
+      // Calling close() on CLOSING or CLOSED states throws an error
+      try {
+        if (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING) {
+          this.ws.close();
+        } else {
+          // Already closing/closed, just clean up
+          this.ws.terminate();
+          this.ws = null;
+          this.updateState({ status: 'disconnected' });
+          resolve();
+        }
+      } catch (error) {
+        // If close() fails, terminate and clean up
+        logger.debug('Error closing WebSocket, terminating instead', { error: getErrorMessage(error) });
+        if (this.ws) {
+          this.ws.terminate();
+          this.ws = null;
+        }
+        this.updateState({ status: 'disconnected' });
+        resolve();
+      }
     });
   }
 
   /**
    * Send JSON-RPC request and wait for response
    */
-  async sendRequest<T = any>(method: KodiMethod, params?: any, timeout: number = 5000): Promise<T> {
+  async sendRequest<T = unknown>(method: KodiMethod, params?: unknown, timeout: number = 5000): Promise<T> {
     if (!this.ws || this.state.status !== 'connected') {
       throw new Error('WebSocket not connected');
     }
@@ -216,7 +253,7 @@ export class KodiWebSocketClient extends EventEmitter {
       try {
         this.ws!.send(JSON.stringify(request));
         logger.debug('Kodi WebSocket Request', { method, params });
-      } catch (error: any) {
+      } catch (error) {
         clearTimeout(timeoutId);
         this.pendingRequests.delete(id);
         reject(error);
@@ -331,8 +368,8 @@ export class KodiWebSocketClient extends EventEmitter {
         const notification = message as JsonRpcNotification;
         this.handleNotification(notification);
       }
-    } catch (error: any) {
-      logger.error('Failed to parse Kodi WebSocket message', { error: error.message, data });
+    } catch (error) {
+      logger.error('Failed to parse Kodi WebSocket message', { error: getErrorMessage(error), data });
     }
   }
 
@@ -370,16 +407,11 @@ export class KodiWebSocketClient extends EventEmitter {
       60000 // Max 60 seconds
     );
 
-    logger.info('Scheduling Kodi WebSocket reconnect', {
-      url: this.url,
-      attempt: this.state.reconnectAttempts + 1,
-      delay,
-    });
-
+    // Reconnect attempts are managed by the connection manager
     this.reconnectTimer = setTimeout(() => {
       this.updateState({ reconnectAttempts: this.state.reconnectAttempts + 1 });
-      this.connect().catch(error => {
-        logger.error('Reconnection failed', { error: error.message });
+      this.connect().catch(() => {
+        // Reconnection errors handled by connection manager
       });
     }, delay);
   }

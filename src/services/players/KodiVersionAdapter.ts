@@ -123,7 +123,7 @@ export class KodiVersionAdapter {
   /**
    * Adapt parameters for version-specific API calls
    */
-  adaptParameters(_method: string, params: any): any {
+  adaptParameters(_method: string, params: unknown): unknown {
     // Most parameters are compatible across versions
     // Add specific adaptations here if needed for certain methods
     return params;

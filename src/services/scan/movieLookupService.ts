@@ -2,6 +2,7 @@ import { logger } from '../../middleware/logging.js';
 import { DatabaseConnection } from '../../types/database.js';
 import { hashFile } from '../hash/hashService.js';
 import fs from 'fs/promises';
+import { getErrorMessage } from '../../utils/errorHandling.js';
 
 /**
  * Movie Lookup Service
@@ -56,10 +57,10 @@ export async function findMovieByTmdbId(
     )) as Movie[];
 
     return results.length > 0 ? results[0] : null;
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to find movie by TMDB ID', {
       tmdbId,
-      error: error.message,
+      error: getErrorMessage(error),
     });
     throw error;
   }
@@ -79,10 +80,10 @@ export async function findMovieByPath(
     )) as Movie[];
 
     return results.length > 0 ? results[0] : null;
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to find movie by path', {
       filePath,
-      error: error.message,
+      error: getErrorMessage(error),
     });
     throw error;
   }
@@ -119,11 +120,11 @@ export async function updateMoviePath(
         strategy: hashResult.strategy,
         timeMs: hashResult.timeMs,
       });
-    } catch (error: any) {
+    } catch (error) {
       logger.warn('Failed to compute file hash for updated path', {
         movieId,
         newPath,
-        error: error.message,
+        error: getErrorMessage(error),
       });
       // Continue with null hash - not critical
     }
@@ -145,11 +146,11 @@ export async function updateMoviePath(
       fileSize,
       hashChanged: true, // Always true since we re-hashed
     });
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to update movie path', {
       movieId,
       newPath,
-      error: error.message,
+      error: getErrorMessage(error),
     });
     throw error;
   }
@@ -199,11 +200,11 @@ export async function rehashMovieFile(
         strategy: hashResult.strategy,
         timeMs: hashResult.timeMs,
       });
-    } catch (error: any) {
+    } catch (error) {
       logger.warn('Failed to re-compute file hash', {
         movieId,
         filePath,
-        error: error.message,
+        error: getErrorMessage(error),
       });
       return false;
     }
@@ -232,11 +233,11 @@ export async function rehashMovieFile(
     );
 
     return hashChanged;
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to rehash movie file', {
       movieId,
       filePath,
-      error: error.message,
+      error: getErrorMessage(error),
     });
     throw error;
   }
@@ -297,10 +298,10 @@ async function createMovie(db: DatabaseConnection, context: MovieLookupContext):
         strategy: hashResult.strategy,
         timeMs: hashResult.timeMs,
       });
-    } catch (error: any) {
+    } catch (error) {
       logger.warn('Failed to compute file hash for new movie', {
         filePath: context.filePath,
-        error: error.message,
+        error: getErrorMessage(error),
       });
       // Continue with null hash - not critical for initial creation
     }
@@ -356,10 +357,10 @@ async function createMovie(db: DatabaseConnection, context: MovieLookupContext):
     if (context.year) createdMovie.year = context.year;
 
     return createdMovie;
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to create movie record', {
       context,
-      error: error.message,
+      error: getErrorMessage(error),
     });
     throw error;
   }

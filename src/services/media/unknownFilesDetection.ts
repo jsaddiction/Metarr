@@ -3,6 +3,7 @@ import path from 'path';
 import { logger } from '../../middleware/logging.js';
 import { DatabaseConnection } from '../../types/database.js';
 import { IgnorePatternService } from '../ignorePatternService.js';
+import { getErrorMessage } from '../../utils/errorHandling.js';
 
 /**
  * Unknown Files Detection Service
@@ -124,12 +125,12 @@ export async function detectUnknownFiles(
     });
 
     return { unknownFiles, totalSize };
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to detect unknown files', {
       dirPath,
-      error: error.message,
+      error: getErrorMessage(error),
     });
-    throw new Error(`Unknown file detection failed: ${error.message}`);
+    throw new Error(`Unknown file detection failed: ${getErrorMessage(error)}`);
   }
 }
 
@@ -332,13 +333,13 @@ export async function buildKnownFilesSet(
     });
 
     return knownFiles;
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to build known files set', {
       entityType,
       entityId,
-      error: error.message,
+      error: getErrorMessage(error),
     });
-    throw new Error(`Failed to build known files set: ${error.message}`);
+    throw new Error(`Failed to build known files set: ${getErrorMessage(error)}`);
   }
 }
 
@@ -382,13 +383,13 @@ export async function storeUnknownFiles(
       entityId,
       count: unknownFiles.length,
     });
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to store unknown files', {
       entityType,
       entityId,
-      error: error.message,
+      error: getErrorMessage(error),
     });
-    throw new Error(`Failed to store unknown files: ${error.message}`);
+    throw new Error(`Failed to store unknown files: ${getErrorMessage(error)}`);
   }
 }
 
@@ -422,13 +423,13 @@ export async function detectAndStoreUnknownFiles(
     });
 
     return result;
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to detect and store unknown files', {
       entityType,
       entityId,
       dirPath,
-      error: error.message,
+      error: getErrorMessage(error),
     });
-    throw new Error(`Failed to detect and store unknown files: ${error.message}`);
+    throw new Error(`Failed to detect and store unknown files: ${getErrorMessage(error)}`);
   }
 }

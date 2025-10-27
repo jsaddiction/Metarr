@@ -2,19 +2,22 @@ import { MediaPlayer } from '../types/models.js';
 import { DatabaseManager } from '../database/DatabaseManager.js';
 import { MediaPlayerConnectionManager } from './mediaPlayerConnectionManager.js';
 import { logger } from '../middleware/logging.js';
+import { getErrorMessage } from '../utils/errorHandling.js';
+import { SqlParam } from '../types/database.js';
 
 export interface CreateMediaPlayerData {
   name: string;
   type: 'kodi' | 'jellyfin' | 'plex';
   host: string;
-  port: number;
+  http_port: number;
   username?: string;
   password?: string;
   enabled: boolean;
   libraryGroup?: string;
-  useWebsocket?: boolean;
   libraryPaths?: string[];
-  config?: Record<string, any>;
+  config?: Record<string, unknown>;
+  groupName?: string;
+  isSharedMysql?: boolean;
 }
 
 export interface UpdateMediaPlayerData extends Partial<CreateMediaPlayerData> {
@@ -39,20 +42,19 @@ export class MediaPlayerService {
     try {
       const result = await db.execute(
         `INSERT INTO media_players (
-          name, type, host, port, username, password, enabled,
-          library_group, use_websocket, library_paths, config,
+          name, type, host, http_port, username, password, enabled,
+          library_group, library_paths, config,
           connection_status, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
         [
           data.name,
           data.type,
           data.host,
-          data.port,
+          data.http_port,
           data.username || null,
           data.password || null,
           data.enabled ? 1 : 0,
           data.libraryGroup || null,
-          data.useWebsocket !== false ? 1 : 0,
           JSON.stringify(data.libraryPaths || []),
           JSON.stringify(data.config || {}),
           'disconnected',
@@ -76,8 +78,8 @@ export class MediaPlayerService {
       }
 
       return player;
-    } catch (error: any) {
-      logger.error('Failed to create media player', { error: error.message });
+    } catch (error) {
+      logger.error('Failed to create media player', { error: getErrorMessage(error) });
       throw error;
     }
   }
@@ -90,7 +92,7 @@ export class MediaPlayerService {
 
     try {
       const updates: string[] = [];
-      const values: any[] = [];
+      const values: SqlParam[] = [];
 
       if (data.name !== undefined) {
         updates.push('name = ?');
@@ -100,9 +102,9 @@ export class MediaPlayerService {
         updates.push('host = ?');
         values.push(data.host);
       }
-      if (data.port !== undefined) {
-        updates.push('port = ?');
-        values.push(data.port);
+      if (data.http_port !== undefined) {
+        updates.push('http_port = ?');
+        values.push(data.http_port);
       }
       if (data.username !== undefined) {
         updates.push('username = ?');
@@ -119,10 +121,6 @@ export class MediaPlayerService {
       if (data.libraryGroup !== undefined) {
         updates.push('library_group = ?');
         values.push(data.libraryGroup);
-      }
-      if (data.useWebsocket !== undefined) {
-        updates.push('use_websocket = ?');
-        values.push(data.useWebsocket ? 1 : 0);
       }
       if (data.libraryPaths !== undefined) {
         updates.push('library_paths = ?');
@@ -146,10 +144,9 @@ export class MediaPlayerService {
       // Reconnect if connection settings changed
       const needsReconnect =
         data.host !== undefined ||
-        data.port !== undefined ||
+        data.http_port !== undefined ||
         data.username !== undefined ||
-        data.password !== undefined ||
-        data.useWebsocket !== undefined;
+        data.password !== undefined;
 
       if (needsReconnect) {
         try {
@@ -170,8 +167,8 @@ export class MediaPlayerService {
       }
 
       return player;
-    } catch (error: any) {
-      logger.error('Failed to update media player', { error: error.message });
+    } catch (error) {
+      logger.error('Failed to update media player', { error: getErrorMessage(error) });
       throw error;
     }
   }
@@ -188,8 +185,8 @@ export class MediaPlayerService {
 
       await db.execute('DELETE FROM media_players WHERE id = ?', [id]);
       logger.info(`Deleted media player ${id}`);
-    } catch (error: any) {
-      logger.error('Failed to delete media player', { error: error.message });
+    } catch (error) {
+      logger.error('Failed to delete media player', { error: getErrorMessage(error) });
       throw error;
     }
   }
@@ -204,8 +201,8 @@ export class MediaPlayerService {
       const result = await db.query('SELECT * FROM media_players ORDER BY created_at DESC');
       const rows = Array.isArray(result) ? result : (result as any).rows || [];
       return rows.map(this.mapRowToPlayer);
-    } catch (error: any) {
-      logger.error('Failed to get all media players', { error: error.message });
+    } catch (error) {
+      logger.error('Failed to get all media players', { error: getErrorMessage(error) });
       throw error;
     }
   }
@@ -220,8 +217,8 @@ export class MediaPlayerService {
       const result = await db.query('SELECT * FROM media_players WHERE id = ?', [id]);
       const rows = Array.isArray(result) ? result : (result as any).rows || [];
       return rows.length > 0 ? this.mapRowToPlayer(rows[0]) : null;
-    } catch (error: any) {
-      logger.error('Failed to get media player by ID', { error: error.message });
+    } catch (error) {
+      logger.error('Failed to get media player by ID', { error: getErrorMessage(error) });
       throw error;
     }
   }
@@ -239,8 +236,8 @@ export class MediaPlayerService {
       );
       const rows = Array.isArray(result) ? result : (result as any).rows || [];
       return rows.map(this.mapRowToPlayer);
-    } catch (error: any) {
-      logger.error('Failed to get media players by library group', { error: error.message });
+    } catch (error) {
+      logger.error('Failed to get media players by library group', { error: getErrorMessage(error) });
       throw error;
     }
   }
@@ -258,8 +255,8 @@ export class MediaPlayerService {
       }
 
       return await this.connectionManager.testConnection(player);
-    } catch (error: any) {
-      return { success: false, error: error.message };
+    } catch (error) {
+      return { success: false, error: getErrorMessage(error) };
     }
   }
 
@@ -283,6 +280,40 @@ export class MediaPlayerService {
   }
 
   /**
+   * Get all media player groups (unique library_group values)
+   */
+  async getAllGroups(): Promise<string[]> {
+    const db = this.dbManager.getConnection();
+    const rows = await db.query<{ library_group: string }>(
+      `SELECT DISTINCT library_group
+       FROM media_players
+       WHERE library_group IS NOT NULL
+       ORDER BY library_group`
+    );
+    return rows.map(row => row.library_group);
+  }
+
+  /**
+   * Get all groups with their member players
+   */
+  async getAllGroupsWithMembers(): Promise<{ groupName: string; members: MediaPlayer[] }[]> {
+    const groups = await this.getAllGroups();
+    const result = [];
+
+    for (const groupName of groups) {
+      const db = this.dbManager.getConnection();
+      const rows = await db.query<any>(
+        `SELECT * FROM media_players WHERE library_group = ? ORDER BY name`,
+        [groupName]
+      );
+      const members = rows.map(row => this.mapRowToPlayer(row));
+      result.push({ groupName, members });
+    }
+
+    return result;
+  }
+
+  /**
    * Map database row to MediaPlayer object
    */
   private mapRowToPlayer(row: any): MediaPlayer {
@@ -291,31 +322,30 @@ export class MediaPlayerService {
       name: row.name,
       type: row.type,
       host: row.host,
-      port: row.port,
+      http_port: row.http_port || row.port, // Support both column names
       username: row.username,
       password: row.password,
-      apiKey: row.api_key,
+      api_key: row.api_key,
       enabled: Boolean(row.enabled),
-      libraryPaths: JSON.parse(row.library_paths || '[]'),
-      libraryGroup: row.library_group,
-      connectionStatus: row.connection_status || 'disconnected',
-      jsonRpcVersion: row.json_rpc_version,
-      useWebsocket: Boolean(row.use_websocket),
+      library_paths: JSON.parse(row.library_paths || '[]'),
+      library_group: row.library_group,
+      connection_status: row.connection_status || 'disconnected',
+      json_rpc_version: row.json_rpc_version,
       config: JSON.parse(row.config || '{}'),
-      createdAt: new Date(row.created_at),
-      updatedAt: new Date(row.updated_at),
+      created_at: new Date(row.created_at),
+      updated_at: new Date(row.updated_at),
     };
 
     if (row.last_connected) {
-      player.lastConnected = new Date(row.last_connected);
+      player.last_connected = new Date(row.last_connected);
     }
 
     if (row.last_error) {
-      player.lastError = row.last_error;
+      player.last_error = row.last_error;
     }
 
     if (row.last_sync) {
-      player.lastSync = new Date(row.last_sync);
+      player.last_sync = new Date(row.last_sync);
     }
 
     return player;

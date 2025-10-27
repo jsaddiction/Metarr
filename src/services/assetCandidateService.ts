@@ -1,5 +1,6 @@
 import { DatabaseManager } from '../database/DatabaseManager.js';
 import { logger } from '../middleware/logging.js';
+import { getErrorMessage } from '../utils/errorHandling.js';
 
 /**
  * Asset Candidate Service
@@ -292,13 +293,13 @@ export class AssetCandidateService {
       });
 
       return cached;
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Failed to cache asset candidates', {
         entityType,
         entityId,
         assetType,
         provider,
-        error: error.message
+        error: getErrorMessage(error)
       });
       throw error;
     }
@@ -336,12 +337,12 @@ export class AssetCandidateService {
       );
 
       return candidates;
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Failed to get asset candidates', {
         entityType,
         entityId,
         assetType,
-        error: error.message
+        error: getErrorMessage(error)
       });
       throw error;
     }
@@ -407,10 +408,10 @@ export class AssetCandidateService {
       );
 
       return updated[0];
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Failed to select asset candidate', {
         candidateId,
-        error: error.message
+        error: getErrorMessage(error)
       });
       throw error;
     }
@@ -440,10 +441,10 @@ export class AssetCandidateService {
         candidateId,
         blockedBy
       });
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Failed to block asset candidate', {
         candidateId,
-        error: error.message
+        error: getErrorMessage(error)
       });
       throw error;
     }
@@ -470,10 +471,10 @@ export class AssetCandidateService {
       logger.info('Unblocked asset candidate', {
         candidateId
       });
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Failed to unblock asset candidate', {
         candidateId,
-        error: error.message
+        error: getErrorMessage(error)
       });
       throw error;
     }
@@ -509,12 +510,12 @@ export class AssetCandidateService {
         entityId,
         assetType
       });
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Failed to reset asset selection', {
         entityType,
         entityId,
         assetType,
-        error: error.message
+        error: getErrorMessage(error)
       });
       throw error;
     }

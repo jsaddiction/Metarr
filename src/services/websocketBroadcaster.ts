@@ -502,7 +502,7 @@ export class WebSocketBroadcaster {
     jobId: number,
     jobType: string,
     status: 'pending' | 'processing' | 'completed' | 'failed' | 'retrying',
-    payload?: any,
+    payload?: unknown,
     error?: string
   ): void {
     if (!this.isReady()) return;

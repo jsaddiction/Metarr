@@ -1,0 +1,406 @@
+import { DatabaseManager } from '../../database/DatabaseManager.js';
+import { SqlParam } from '../../types/database.js';
+
+export type AssetStatus = 'none' | 'partial' | 'complete';
+
+export interface AssetCounts {
+  poster: number;
+  fanart: number;
+  landscape: number;
+  keyart: number;
+  banner: number;
+  clearart: number;
+  clearlogo: number;
+  discart: number;
+  trailer: number;
+  subtitle: number;
+  theme: number;
+  actor: number;
+}
+
+export interface AssetStatuses {
+  nfo: AssetStatus;
+  poster: AssetStatus;
+  fanart: AssetStatus;
+  landscape: AssetStatus;
+  keyart: AssetStatus;
+  banner: AssetStatus;
+  clearart: AssetStatus;
+  clearlogo: AssetStatus;
+  discart: AssetStatus;
+  trailer: AssetStatus;
+  subtitle: AssetStatus;
+  theme: AssetStatus;
+}
+
+export interface Movie {
+  id: number;
+  title: string;
+  year?: number;
+  studio?: string;
+  monitored: boolean;
+  identification_status: 'unidentified' | 'identified' | 'enriched';
+  assetCounts: AssetCounts;
+  assetStatuses: AssetStatuses;
+}
+
+export interface MovieFilters {
+  status?: string;
+  identificationStatus?: 'unidentified' | 'identified' | 'enriched';
+  libraryId?: number;
+  limit?: number;
+  offset?: number;
+}
+
+export interface MovieListResult {
+  movies: Movie[];
+  total: number;
+}
+
+/**
+ * MovieQueryService
+ *
+ * Read-only query operations for movies.
+ * Handles complex queries with scalar subqueries for optimal performance.
+ *
+ * Responsibilities:
+ * - List movies with filters
+ * - Get single movie with includes
+ * - Get all files for movie
+ * - Calculate asset/NFO statuses
+ *
+ * This service is pure data access layer - no mutations.
+ */
+export class MovieQueryService {
+  constructor(private db: DatabaseManager) {}
+
+  async getAll(filters?: MovieFilters): Promise<MovieListResult> {
+    const whereClauses: string[] = ['1=1'];
+    const params: SqlParam[] = [];
+
+    // ALWAYS exclude soft-deleted movies (unless explicitly requested)
+    whereClauses.push('m.deleted_at IS NULL');
+
+    if (filters?.status) {
+      whereClauses.push('m.status = ?');
+      params.push(filters.status);
+    }
+
+    if (filters?.identificationStatus) {
+      whereClauses.push('m.identification_status = ?');
+      params.push(filters.identificationStatus);
+    }
+
+    if (filters?.libraryId) {
+      whereClauses.push('m.library_id = ?');
+      params.push(filters.libraryId);
+    }
+
+    const limit = filters?.limit || 1000;
+    const offset = filters?.offset || 0;
+
+    // Optimized query using scalar subqueries instead of JOINs to avoid Cartesian product
+    const query = `
+      SELECT
+        m.*,
+
+        -- Get first studio name (scalar subquery)
+        (SELECT s.name FROM studios s
+         INNER JOIN movie_studios ms ON s.id = ms.studio_id
+         WHERE ms.movie_id = m.id
+         ORDER BY ms.studio_id LIMIT 1) as studio_name,
+
+        -- Entity counts for NFO completeness check (scalar subqueries)
+        (SELECT COUNT(*) FROM movie_genres WHERE movie_id = m.id) as genre_count,
+        (SELECT COUNT(*) FROM movie_actors WHERE movie_id = m.id) as actor_count,
+        (SELECT COUNT(*) FROM movie_crew WHERE movie_id = m.id AND role = 'director') as director_count,
+        (SELECT COUNT(*) FROM movie_crew WHERE movie_id = m.id AND role = 'writer') as writer_count,
+        (SELECT COUNT(DISTINCT studio_id) FROM movie_studios WHERE movie_id = m.id) as studio_count,
+
+        -- NFO parsed timestamp (scalar subquery from cache - source of truth)
+        (SELECT MAX(discovered_at) FROM cache_text_files
+         WHERE entity_type = 'movie' AND entity_id = m.id AND text_type = 'nfo') as nfo_parsed_at,
+
+        -- Asset counts from cache tables (source of truth for all assets)
+        (SELECT COUNT(*) FROM cache_image_files WHERE entity_type = 'movie' AND entity_id = m.id AND image_type = 'poster') as poster_count,
+        (SELECT COUNT(*) FROM cache_image_files WHERE entity_type = 'movie' AND entity_id = m.id AND image_type = 'fanart') as fanart_count,
+        (SELECT COUNT(*) FROM cache_image_files WHERE entity_type = 'movie' AND entity_id = m.id AND image_type = 'landscape') as landscape_count,
+        (SELECT COUNT(*) FROM cache_image_files WHERE entity_type = 'movie' AND entity_id = m.id AND image_type = 'keyart') as keyart_count,
+        (SELECT COUNT(*) FROM cache_image_files WHERE entity_type = 'movie' AND entity_id = m.id AND image_type = 'banner') as banner_count,
+        (SELECT COUNT(*) FROM cache_image_files WHERE entity_type = 'movie' AND entity_id = m.id AND image_type = 'clearart') as clearart_count,
+        (SELECT COUNT(*) FROM cache_image_files WHERE entity_type = 'movie' AND entity_id = m.id AND image_type = 'clearlogo') as clearlogo_count,
+        (SELECT COUNT(*) FROM cache_image_files WHERE entity_type = 'movie' AND entity_id = m.id AND image_type = 'discart') as discart_count,
+        (SELECT COUNT(*) FROM cache_video_files WHERE entity_type = 'movie' AND entity_id = m.id AND video_type = 'trailer') as trailer_count,
+        (SELECT COUNT(*) FROM cache_text_files WHERE entity_type = 'movie' AND entity_id = m.id AND text_type = 'subtitle') as subtitle_count,
+        (SELECT COUNT(*) FROM cache_audio_files WHERE entity_type = 'movie' AND entity_id = m.id AND audio_type = 'theme') as theme_count
+
+      FROM movies m
+
+      WHERE ${whereClauses.join(' AND ')}
+
+      ORDER BY m.title ASC
+      LIMIT ? OFFSET ?
+    `;
+
+    params.push(limit, offset);
+
+    // Get total count
+    const countQuery = `
+      SELECT COUNT(*) as total
+      FROM movies m
+      WHERE ${whereClauses.join(' AND ')}
+    `;
+
+    const [rows, countResult] = await Promise.all([
+      this.db.query<any>(query, params),
+      this.db.query<{ total: number }>(countQuery, params.slice(0, -2)), // Exclude limit/offset from count
+    ]);
+
+    return {
+      movies: rows.map(row => this.mapToMovie(row)),
+      total: countResult[0]?.total || 0,
+    };
+  }
+
+  /**
+   * Get movie by ID with optional related data
+   * Returns raw database row (snake_case) - no mapping needed
+   */
+  async getById(movieId: number, include: string[] = ['files']): Promise<any | null> {
+    // Get base movie data with all fields
+    const movieQuery = `SELECT * FROM movies WHERE id = ?`;
+    const movies = await this.db.query<any>(movieQuery, [movieId]);
+
+    if (!movies || movies.length === 0) {
+      return null;
+    }
+
+    // Use raw database row - no mapping needed (consistent snake_case throughout)
+    const movie = movies[0];
+
+    // Get related entities (clean schema)
+    const [actors, genres, directors, writers, studios] = await Promise.all([
+      this.db.query<any>('SELECT a.*, ma.role, ma.actor_order FROM actors a JOIN movie_actors ma ON a.id = ma.actor_id WHERE ma.movie_id = ? ORDER BY ma.actor_order', [movieId]),
+      this.db.query<any>('SELECT g.* FROM genres g JOIN movie_genres mg ON g.id = mg.genre_id WHERE mg.movie_id = ?', [movieId]),
+      this.db.query<any>('SELECT c.* FROM crew c JOIN movie_crew mc ON c.id = mc.crew_id WHERE mc.movie_id = ? AND mc.role = \'director\'', [movieId]),
+      this.db.query<any>('SELECT c.* FROM crew c JOIN movie_crew mc ON c.id = mc.crew_id WHERE mc.movie_id = ? AND mc.role = \'writer\'', [movieId]),
+      this.db.query<any>('SELECT s.* FROM studios s JOIN movie_studios ms ON s.id = ms.studio_id WHERE ms.movie_id = ?', [movieId]),
+    ]);
+
+    const result: any = {
+      ...movie,
+      actors: actors.map(a => ({ name: a.name, role: a.role, order: a.actor_order })),
+      genres: genres.map(g => g.name),
+      directors: directors.map(d => d.name),
+      writers: writers.map(w => w.name),
+      studios: studios.map(s => s.name),
+    };
+
+    // Conditionally include files based on ?include parameter
+    // Default includes 'files' for backward compatibility
+    if (include.includes('files')) {
+      result.files = await this.getAllFiles(movieId);
+    }
+
+    // Future: Support other includes
+    // if (include.includes('candidates')) {
+    //   result.candidates = await assetCandidateService.getAllCandidates('movie', movieId);
+    // }
+    // if (include.includes('locks')) {
+    //   result.locks = this.getFieldLocks(movie);
+    // }
+
+    return result;
+  }
+
+  async getUnknownFiles(movieId: number): Promise<any[]> {
+    const query = `
+      SELECT
+        id,
+        file_path,
+        file_name,
+        file_size,
+        extension,
+        category,
+        created_at
+      FROM unknown_files
+      WHERE entity_type = 'movie' AND entity_id = ?
+      ORDER BY file_name ASC
+    `;
+
+    return this.db.query<any>(query, [movieId]);
+  }
+
+  async getImages(movieId: number): Promise<any[]> {
+    const conn = this.db.getConnection();
+
+    // Query cache_image_files for cache images
+    const images = await conn.query(
+      `SELECT
+        id, entity_type, entity_id, file_path, file_name, file_size,
+        image_type, width, height, format, source_type, source_url, provider_name,
+        classification_score, discovered_at
+      FROM cache_image_files
+      WHERE entity_type = 'movie' AND entity_id = ?
+      ORDER BY image_type, classification_score DESC`,
+      [movieId]
+    );
+
+    return images;
+  }
+
+  /**
+   * Get all files for a movie from unified file system
+   * Returns aggregated view of all file types (video, image, audio, text, unknown)
+   */
+  async getAllFiles(movieId: number): Promise<any> {
+    try {
+      const conn = this.db.getConnection();
+
+      // Get video files (cache only - source of truth)
+      const videoFiles = await conn.query(
+        `SELECT
+          id, file_path, file_name, file_size, video_type,
+          codec, width, height, duration_seconds, bitrate, framerate, hdr_type,
+          audio_codec, audio_channels, audio_language,
+          source_type, source_url, provider_name, classification_score,
+          discovered_at
+        FROM cache_video_files
+        WHERE entity_type = 'movie' AND entity_id = ?
+        ORDER BY video_type, discovered_at DESC`,
+        [movieId]
+      );
+
+      // Get image files (cache only - source of truth)
+      const imageFiles = await conn.query(
+        `SELECT
+          id, file_path, file_name, file_size, image_type,
+          width, height, format, perceptual_hash,
+          source_type, source_url, provider_name, classification_score,
+          is_locked, discovered_at
+        FROM cache_image_files
+        WHERE entity_type = 'movie' AND entity_id = ?
+        ORDER BY image_type, classification_score DESC, discovered_at DESC`,
+        [movieId]
+      );
+
+      // Get audio files (cache only - source of truth)
+      const audioFiles = await conn.query(
+        `SELECT
+          id, file_path, file_name, file_size, audio_type,
+          codec, duration_seconds, bitrate, sample_rate, channels, language,
+          source_type, source_url, provider_name, classification_score,
+          discovered_at
+        FROM cache_audio_files
+        WHERE entity_type = 'movie' AND entity_id = ?
+        ORDER BY audio_type, discovered_at DESC`,
+        [movieId]
+      );
+
+      // Get text files (cache only - source of truth)
+      const textFiles = await conn.query(
+        `SELECT
+          id, file_path, file_name, file_size, text_type,
+          subtitle_language, subtitle_format, nfo_is_valid, nfo_has_tmdb_id, nfo_needs_regen,
+          source_type, source_url, provider_name, classification_score,
+          discovered_at
+        FROM cache_text_files
+        WHERE entity_type = 'movie' AND entity_id = ?
+        ORDER BY text_type, discovered_at DESC`,
+        [movieId]
+      );
+
+      // Get unknown files
+      const unknownFiles = await conn.query(
+        `SELECT
+          id, file_path, file_name, file_size, extension,
+          category, discovered_at
+        FROM unknown_files
+        WHERE entity_type = 'movie' AND entity_id = ?
+        ORDER BY discovered_at DESC`,
+        [movieId]
+      );
+
+      return {
+        video: videoFiles,
+        images: imageFiles,
+        audio: audioFiles,
+        text: textFiles,
+        unknown: unknownFiles
+      };
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  private mapToMovie(row: any): Movie {
+    return {
+      id: row.id,
+      title: row.title || '[Unknown]',
+      year: row.year,
+      studio: row.studio_name,
+      monitored: row.monitored === 1,
+      identification_status: row.identification_status || 'unidentified',
+      assetCounts: {
+        poster: row.poster_count || 0,
+        fanart: row.fanart_count || 0,
+        landscape: row.landscape_count || 0,
+        keyart: row.keyart_count || 0,
+        banner: row.banner_count || 0,
+        clearart: row.clearart_count || 0,
+        clearlogo: row.clearlogo_count || 0,
+        discart: row.discart_count || 0,
+        trailer: row.trailer_count || 0,
+        subtitle: row.subtitle_count || 0,
+        theme: row.theme_count || 0,
+        actor: row.actor_count || 0,
+      },
+      assetStatuses: {
+        nfo: this.calculateNFOStatus(row),
+        poster: this.getAssetStatus(row.poster_count || 0, 1),
+        fanart: this.getAssetStatus(row.fanart_count || 0, 5),
+        landscape: this.getAssetStatus(row.landscape_count || 0, 1),
+        keyart: this.getAssetStatus(row.keyart_count || 0, 1),
+        banner: this.getAssetStatus(row.banner_count || 0, 1),
+        clearart: this.getAssetStatus(row.clearart_count || 0, 1),
+        clearlogo: this.getAssetStatus(row.clearlogo_count || 0, 1),
+        discart: this.getAssetStatus(row.discart_count || 0, 1),
+        trailer: this.getAssetStatus(row.trailer_count || 0, 1),
+        subtitle: this.getAssetStatus(row.subtitle_count || 0, 1),
+        theme: this.getAssetStatus(row.theme_count || 0, 1),
+      },
+    };
+  }
+
+  private calculateNFOStatus(row: any): AssetStatus {
+    // Grey: No NFO parsed
+    if (!row.nfo_parsed_at) {
+      return 'none';
+    }
+
+    // Green: Essential fields populated
+    const allFieldsPopulated = !!(
+      row.title &&
+      row.year &&
+      row.plot &&
+      (row.tmdb_id || row.imdb_id) &&
+      // Array fields must have at least 1
+      row.genre_count > 0 &&
+      row.actor_count > 0 &&
+      row.director_count > 0
+    );
+
+    if (allFieldsPopulated) {
+      return 'complete';
+    }
+
+    // Orange: NFO parsed but incomplete
+    return 'partial';
+  }
+
+  private getAssetStatus(count: number, threshold: number): AssetStatus {
+    if (count === 0) return 'none';
+    if (count < threshold) return 'partial';
+    return 'complete';
+  }
+}

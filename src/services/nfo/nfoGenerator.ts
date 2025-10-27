@@ -3,6 +3,7 @@ import path from 'path';
 import { Builder } from 'xml2js';
 import { logger } from '../../middleware/logging.js';
 import { DatabaseConnection } from '../../types/database.js';
+import { getErrorMessage } from '../../utils/errorHandling.js';
 
 /**
  * NFO Generation Service
@@ -138,7 +139,7 @@ const xmlBuilder = new Builder({
  */
 export async function generateMovieNFO(movieDir: string, data: MovieNFOData): Promise<string> {
   try {
-    const nfoObj: any = {};
+    const nfoObj: Record<string, unknown> = {};
 
     // Title (required for display)
     if (data.title) nfoObj.title = data.title;
@@ -148,14 +149,14 @@ export async function generateMovieNFO(movieDir: string, data: MovieNFOData): Pr
       nfoObj.uniqueid = [];
 
       if (data.tmdbId) {
-        nfoObj.uniqueid.push({
+        (nfoObj.uniqueid as unknown[]).push({
           $: { type: 'tmdb', default: 'true' },
           _: data.tmdbId,
         });
       }
 
       if (data.imdbId) {
-        nfoObj.uniqueid.push({
+        (nfoObj.uniqueid as unknown[]).push({
           $: { type: 'imdb', default: data.tmdbId ? 'false' : 'true' },
           _: data.imdbId,
         });
@@ -201,7 +202,7 @@ export async function generateMovieNFO(movieDir: string, data: MovieNFOData): Pr
     // Actors
     if (data.actors && data.actors.length > 0) {
       nfoObj.actor = data.actors.map(actor => {
-        const actorObj: any = { name: actor.name };
+        const actorObj: Record<string, unknown> = { name: actor.name };
         if (actor.role) actorObj.role = actor.role;
         if (actor.order !== undefined) actorObj.order = actor.order;
         if (actor.thumb) actorObj.thumb = actor.thumb;
@@ -225,11 +226,11 @@ export async function generateMovieNFO(movieDir: string, data: MovieNFOData): Pr
 
     // Set/Collection
     if (data.set) {
-      nfoObj.set = {
+      (nfoObj.set as Record<string, unknown>) = {
         name: data.set.name,
       };
       if (data.set.overview) {
-        nfoObj.set.overview = data.set.overview;
+        (nfoObj.set as Record<string, unknown>).overview = data.set.overview;
       }
     }
 
@@ -239,13 +240,13 @@ export async function generateMovieNFO(movieDir: string, data: MovieNFOData): Pr
       const { video, audio, subtitle } = data.streamDetails;
 
       if (video && video.length > 0 || audio && audio.length > 0 || subtitle && subtitle.length > 0) {
-        nfoObj.fileinfo = {
+        (nfoObj.fileinfo as Record<string, unknown>) = {
           streamdetails: {}
         };
 
         // Video stream information
         if (video && video.length > 0) {
-          nfoObj.fileinfo.streamdetails.video = video.map(v => ({
+          (nfoObj.fileinfo as any).streamdetails.video = video.map(v => ({
             codec: v.codec,
             aspect: v.aspect,
             width: v.width,
@@ -256,7 +257,7 @@ export async function generateMovieNFO(movieDir: string, data: MovieNFOData): Pr
 
         // Audio stream information
         if (audio && audio.length > 0) {
-          nfoObj.fileinfo.streamdetails.audio = audio.map(a => ({
+          (nfoObj.fileinfo as any).streamdetails.audio = audio.map(a => ({
             codec: a.codec,
             language: a.language,
             channels: a.channels
@@ -265,7 +266,7 @@ export async function generateMovieNFO(movieDir: string, data: MovieNFOData): Pr
 
         // Subtitle stream information
         if (subtitle && subtitle.length > 0) {
-          nfoObj.fileinfo.streamdetails.subtitle = subtitle.map(s => ({
+          (nfoObj.fileinfo as any).streamdetails.subtitle = subtitle.map(s => ({
             language: s.language
           }));
         }
@@ -281,12 +282,12 @@ export async function generateMovieNFO(movieDir: string, data: MovieNFOData): Pr
 
     logger.debug('Generated movie NFO', { nfoPath });
     return nfoPath;
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to generate movie NFO', {
       movieDir,
-      error: error.message,
+      error: getErrorMessage(error),
     });
-    throw new Error(`NFO generation failed: ${error.message}`);
+    throw new Error(`NFO generation failed: ${getErrorMessage(error)}`);
   }
 }
 
@@ -295,7 +296,7 @@ export async function generateMovieNFO(movieDir: string, data: MovieNFOData): Pr
  */
 export async function generateTVShowNFO(seriesDir: string, data: TVShowNFOData): Promise<string> {
   try {
-    const nfoObj: any = {};
+    const nfoObj: Record<string, unknown> = {};
 
     // Title
     if (data.title) nfoObj.title = data.title;
@@ -305,21 +306,21 @@ export async function generateTVShowNFO(seriesDir: string, data: TVShowNFOData):
       nfoObj.uniqueid = [];
 
       if (data.tvdbId) {
-        nfoObj.uniqueid.push({
+        (nfoObj.uniqueid as unknown[]).push({
           $: { type: 'tvdb', default: 'true' },
           _: data.tvdbId,
         });
       }
 
       if (data.tmdbId) {
-        nfoObj.uniqueid.push({
+        (nfoObj.uniqueid as unknown[]).push({
           $: { type: 'tmdb', default: data.tvdbId ? 'false' : 'true' },
           _: data.tmdbId,
         });
       }
 
       if (data.imdbId) {
-        nfoObj.uniqueid.push({
+        (nfoObj.uniqueid as unknown[]).push({
           $: { type: 'imdb', default: 'false' },
           _: data.imdbId,
         });
@@ -356,7 +357,7 @@ export async function generateTVShowNFO(seriesDir: string, data: TVShowNFOData):
     // Actors
     if (data.actors && data.actors.length > 0) {
       nfoObj.actor = data.actors.map(actor => {
-        const actorObj: any = { name: actor.name };
+        const actorObj: Record<string, unknown> = { name: actor.name };
         if (actor.role) actorObj.role = actor.role;
         if (actor.order !== undefined) actorObj.order = actor.order;
         if (actor.thumb) actorObj.thumb = actor.thumb;
@@ -393,12 +394,12 @@ export async function generateTVShowNFO(seriesDir: string, data: TVShowNFOData):
 
     logger.debug('Generated tvshow NFO', { nfoPath });
     return nfoPath;
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to generate tvshow NFO', {
       seriesDir,
-      error: error.message,
+      error: getErrorMessage(error),
     });
-    throw new Error(`NFO generation failed: ${error.message}`);
+    throw new Error(`NFO generation failed: ${getErrorMessage(error)}`);
   }
 }
 
@@ -410,7 +411,7 @@ export async function generateEpisodeNFO(
   data: EpisodeNFOData
 ): Promise<string> {
   try {
-    const nfoObj: any = {
+    const nfoObj: Record<string, unknown> = {
       season: data.seasonNumber,
       episode: data.episodeNumber,
     };
@@ -438,7 +439,7 @@ export async function generateEpisodeNFO(
     // Actors
     if (data.actors && data.actors.length > 0) {
       nfoObj.actor = data.actors.map(actor => {
-        const actorObj: any = { name: actor.name };
+        const actorObj: Record<string, unknown> = { name: actor.name };
         if (actor.role) actorObj.role = actor.role;
         if (actor.order !== undefined) actorObj.order = actor.order;
         if (actor.thumb) actorObj.thumb = actor.thumb;
@@ -477,12 +478,12 @@ export async function generateEpisodeNFO(
 
     logger.debug('Generated episode NFO', { nfoPath });
     return nfoPath;
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to generate episode NFO', {
       episodeFilePath,
-      error: error.message,
+      error: getErrorMessage(error),
     });
-    throw new Error(`NFO generation failed: ${error.message}`);
+    throw new Error(`NFO generation failed: ${getErrorMessage(error)}`);
   }
 }
 
@@ -559,7 +560,13 @@ export async function generateMovieNFOFromDatabase(
     );
 
     // Ratings are stored directly in movies table, not separate ratings table
-    const ratings: any[] = [];
+    type RatingEntry = {
+      source: string;
+      value: number;
+      votes: number;
+      isDefault: boolean;
+    };
+    const ratings: RatingEntry[] = [];
     if (movie.tmdb_rating) {
       ratings.push({
         source: 'tmdb',
@@ -678,12 +685,12 @@ export async function generateMovieNFOFromDatabase(
       runtime: movie.runtime,
       tmdbId: movie.tmdb_id,
       imdbId: movie.imdb_id,
-      genres: genres.map((g: any) => g.name),
-      directors: directors.map((d: any) => d.name),
-      writers: writers.map((w: any) => w.name),
-      studios: studios.map((s: any) => s.name),
-      countries: countries.map((c: any) => c.name),
-      tags: tags.map((t: any) => t.name),
+      genres: genres.map((g: unknown) => (g as { name: string }).name),
+      directors: directors.map((d: unknown) => (d as { name: string }).name),
+      writers: writers.map((w: unknown) => (w as { name: string }).name),
+      studios: studios.map((s: unknown) => (s as { name: string }).name),
+      countries: countries.map((c: unknown) => (c as { name: string }).name),
+      tags: tags.map((t: unknown) => (t as { name: string }).name),
       actors: actors,
       ratings: ratings,
       ...(setData && { set: setData }),
@@ -692,12 +699,12 @@ export async function generateMovieNFOFromDatabase(
 
     // Generate NFO file
     return await generateMovieNFO(movieDir, nfoData);
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to generate movie NFO from database', {
       movieId,
-      error: error.message,
+      error: getErrorMessage(error),
     });
-    throw new Error(`NFO generation from database failed: ${error.message}`);
+    throw new Error(`NFO generation from database failed: ${getErrorMessage(error)}`);
   }
 }
 
@@ -777,22 +784,22 @@ export async function generateTVShowNFOFromDatabase(
       tmdbId: series.tmdb_id,
       tvdbId: series.tvdb_id,
       imdbId: series.imdb_id,
-      genres: genres.map((g: any) => g.name),
-      directors: directors.map((d: any) => d.name),
-      studios: studios.map((s: any) => s.name),
-      tags: tags.map((t: any) => t.name),
+      genres: genres.map((g: unknown) => (g as { name: string }).name),
+      directors: directors.map((d: unknown) => (d as { name: string }).name),
+      studios: studios.map((s: unknown) => (s as { name: string }).name),
+      tags: tags.map((t: unknown) => (t as { name: string }).name),
       actors: actors,
       ratings: ratings,
     };
 
     // Generate NFO file
     return await generateTVShowNFO(seriesDir, nfoData);
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to generate tvshow NFO from database', {
       seriesId,
-      error: error.message,
+      error: getErrorMessage(error),
     });
-    throw new Error(`NFO generation from database failed: ${error.message}`);
+    throw new Error(`NFO generation from database failed: ${getErrorMessage(error)}`);
   }
 }
 
@@ -854,19 +861,19 @@ export async function generateEpisodeNFOFromDatabase(
       title: episode.title,
       plot: episode.plot,
       aired: episode.aired,
-      directors: directors.map((d: any) => d.name),
-      writers: writers.map((w: any) => w.name),
+      directors: directors.map((d: unknown) => (d as { name: string }).name),
+      writers: writers.map((w: unknown) => (w as { name: string }).name),
       actors: actors,
       ratings: ratings,
     };
 
     // Generate NFO file
     return await generateEpisodeNFO(episodeFilePath, nfoData);
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to generate episode NFO from database', {
       episodeId,
-      error: error.message,
+      error: getErrorMessage(error),
     });
-    throw new Error(`NFO generation from database failed: ${error.message}`);
+    throw new Error(`NFO generation from database failed: ${getErrorMessage(error)}`);
   }
 }

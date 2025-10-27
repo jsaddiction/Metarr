@@ -5,6 +5,7 @@ import { logger } from '../middleware/logging.js';
 import { getSubdirectories } from './nfo/nfoDiscovery.js';
 import { websocketBroadcaster } from './websocketBroadcaster.js';
 import { JobQueueService } from './jobQueue/JobQueueService.js';
+import { getErrorMessage } from '../utils/errorHandling.js';
 
 export class LibraryScanService extends EventEmitter {
   private activeScansCancellationFlags: Map<number, boolean> = new Map();
@@ -39,8 +40,8 @@ export class LibraryScanService extends EventEmitter {
         name: row.name,
         type: row.type,
         path: row.path,
-        createdAt: new Date(row.created_at),
-        updatedAt: new Date(row.updated_at),
+        created_at: new Date(row.created_at),
+        updated_at: new Date(row.updated_at),
       };
 
       // Check for existing running scan
@@ -83,13 +84,13 @@ export class LibraryScanService extends EventEmitter {
 
       // Process scan asynchronously
       this.processScan(scanJob, library).catch(error => {
-        logger.error(`Scan process failed for library ${libraryId}`, { error: error.message });
+        logger.error(`Scan process failed for library ${libraryId}`, { error: getErrorMessage(error) });
       });
 
       return scanJob;
-    } catch (error: any) {
-      logger.error(`Failed to start scan for library ${libraryId}`, { error: error.message });
-      throw new Error(`Failed to start scan: ${error.message}`);
+    } catch (error) {
+      logger.error(`Failed to start scan for library ${libraryId}`, { error: getErrorMessage(error) });
+      throw new Error(`Failed to start scan: ${getErrorMessage(error)}`);
     }
   }
 
@@ -106,8 +107,8 @@ export class LibraryScanService extends EventEmitter {
       }
 
       return this.mapRowToScanJob(rows[0]);
-    } catch (error: any) {
-      logger.error(`Failed to get scan job ${scanJobId}`, { error: error.message });
+    } catch (error) {
+      logger.error(`Failed to get scan job ${scanJobId}`, { error: getErrorMessage(error) });
       return null;
     }
   }
@@ -124,8 +125,8 @@ export class LibraryScanService extends EventEmitter {
       );
 
       return rows.map(this.mapRowToScanJob);
-    } catch (error: any) {
-      logger.error('Failed to get active scan jobs', { error: error.message });
+    } catch (error) {
+      logger.error('Failed to get active scan jobs', { error: getErrorMessage(error) });
       return [];
     }
   }
@@ -158,8 +159,8 @@ export class LibraryScanService extends EventEmitter {
       // when they check the cancellation flag between file processing
 
       return true;
-    } catch (error: any) {
-      logger.error(`Failed to cancel scan ${scanJobId}`, { error: error.message });
+    } catch (error) {
+      logger.error(`Failed to cancel scan ${scanJobId}`, { error: getErrorMessage(error) });
       return false;
     }
   }
@@ -230,9 +231,9 @@ export class LibraryScanService extends EventEmitter {
 
       // Emit completion event
       this.emit('scanCompleted', { scanJobId: scanJob.id, libraryId: library.id, stats });
-    } catch (error: any) {
+    } catch (error) {
       logger.error(`Scan failed for ${library.name}`, {
-        error: error.message,
+        error: getErrorMessage(error),
         scanJobId: scanJob.id,
       });
 
@@ -255,7 +256,7 @@ export class LibraryScanService extends EventEmitter {
       this.emit('scanFailed', {
         scanJobId: scanJob.id,
         libraryId: library.id,
-        error: error.message,
+        error: getErrorMessage(error),
       });
     } finally {
       // Clean up cancellation flag
@@ -336,9 +337,9 @@ export class LibraryScanService extends EventEmitter {
             [queuedCount, `Queued ${queuedCount}/${movieDirs.length} directories`, scanJob.id]
           );
         }
-      } catch (error: any) {
+      } catch (error) {
         logger.error(`Failed to queue directory-scan job for ${movieDir}`, {
-          error: error.message,
+          error: getErrorMessage(error),
           scanJobId: scanJob.id
         });
         await this.incrementErrorCount(scanJob.id);

@@ -3,6 +3,7 @@ import path from 'path';
 import crypto from 'crypto';
 import { DatabaseConnection } from '../types/database.js';
 import { logger } from '../middleware/logging.js';
+import { getErrorMessage } from '../utils/errorHandling.js';
 
 /**
  * Publishing Service
@@ -65,9 +66,9 @@ export class PublishingService {
         try {
           await this.publishAsset(asset, config);
           result.assetsPublished++;
-        } catch (error: any) {
+        } catch (error) {
           logger.error(`Error publishing asset ${asset.id}:`, error);
-          result.errors.push(`Asset ${asset.asset_type}: ${error.message}`);
+          result.errors.push(`Asset ${asset.asset_type}: ${getErrorMessage(error)}`);
         }
       }
 
@@ -84,9 +85,9 @@ export class PublishingService {
         await this.updatePublishedMetadata(config.entityType, config.entityId, nfoHash);
 
         result.nfoGenerated = true;
-      } catch (error: any) {
+      } catch (error) {
         logger.error('Error generating/writing NFO:', error);
-        result.errors.push(`NFO: ${error.message}`);
+        result.errors.push(`NFO: ${getErrorMessage(error)}`);
       }
 
       // Log publication
@@ -102,9 +103,9 @@ export class PublishingService {
 
       return result;
 
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Error during publish:', error);
-      result.errors.push(error.message);
+      result.errors.push(getErrorMessage(error));
       return result;
     }
   }

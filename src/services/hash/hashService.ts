@@ -2,6 +2,7 @@ import fs from 'fs/promises';
 import crypto from 'crypto';
 import path from 'path';
 import { logger } from '../../middleware/logging.js';
+import { getErrorMessage } from '../../utils/errorHandling.js';
 
 /**
  * Hybrid Hash Service
@@ -77,12 +78,12 @@ export async function hashDirectoryFingerprint(dirPath: string): Promise<Directo
       fileCount: fileData.length,
       totalSize,
     };
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to generate directory fingerprint', {
       dirPath,
-      error: error.message,
+      error: getErrorMessage(error),
     });
-    throw new Error(`Directory fingerprint failed: ${error.message}`);
+    throw new Error(`Directory fingerprint failed: ${getErrorMessage(error)}`);
   }
 }
 
@@ -120,12 +121,12 @@ export async function hashSmallFile(filePath: string): Promise<FileHashResult> {
       fileSize: stats.size,
       timeMs,
     };
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to hash small file', {
       filePath,
-      error: error.message,
+      error: getErrorMessage(error),
     });
-    throw new Error(`Small file hash failed: ${error.message}`);
+    throw new Error(`Small file hash failed: ${getErrorMessage(error)}`);
   }
 }
 
@@ -190,12 +191,12 @@ export async function hashMediumFile(filePath: string): Promise<FileHashResult> 
     } finally {
       await file.close();
     }
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to hash medium file', {
       filePath,
-      error: error.message,
+      error: getErrorMessage(error),
     });
-    throw new Error(`Medium file hash failed: ${error.message}`);
+    throw new Error(`Medium file hash failed: ${getErrorMessage(error)}`);
   }
 }
 
@@ -266,12 +267,12 @@ export async function hashLargeFile(filePath: string): Promise<FileHashResult> {
     } finally {
       await file.close();
     }
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to hash large file', {
       filePath,
-      error: error.message,
+      error: getErrorMessage(error),
     });
-    throw new Error(`Large file hash failed: ${error.message}`);
+    throw new Error(`Large file hash failed: ${getErrorMessage(error)}`);
   }
 }
 
@@ -292,12 +293,12 @@ export async function hashFile(filePath: string): Promise<FileHashResult> {
     } else {
       return await hashLargeFile(filePath);
     }
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to auto-hash file', {
       filePath,
-      error: error.message,
+      error: getErrorMessage(error),
     });
-    throw new Error(`File hash failed: ${error.message}`);
+    throw new Error(`File hash failed: ${getErrorMessage(error)}`);
   }
 }
 
@@ -321,10 +322,10 @@ export async function hasNfoChanged(nfoPath: string, storedHash: string | null):
   try {
     const result = await hashSmallFile(nfoPath);
     return !compareHash(result.hash, storedHash);
-  } catch (error: any) {
+  } catch (error) {
     logger.warn('Failed to check NFO changes', {
       nfoPath,
-      error: error.message,
+      error: getErrorMessage(error),
     });
     return true; // Assume changed if we can't verify
   }
@@ -341,10 +342,10 @@ export async function hasVideoChanged(
   try {
     const result = await hashFile(videoPath);
     return !compareHash(result.hash, storedHash);
-  } catch (error: any) {
+  } catch (error) {
     logger.warn('Failed to check video changes', {
       videoPath,
-      error: error.message,
+      error: getErrorMessage(error),
     });
     return true; // Assume changed if we can't verify
   }
@@ -361,10 +362,10 @@ export async function hasDirectoryChanged(
   try {
     const result = await hashDirectoryFingerprint(dirPath);
     return !compareHash(result.directoryHash, storedHash);
-  } catch (error: any) {
+  } catch (error) {
     logger.warn('Failed to check directory changes', {
       dirPath,
-      error: error.message,
+      error: getErrorMessage(error),
     });
     return true; // Assume changed if we can't verify
   }
