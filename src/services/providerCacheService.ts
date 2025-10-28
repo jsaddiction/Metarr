@@ -389,4 +389,205 @@ export class ProviderCacheService {
       throw error;
     }
   }
+
+  /**
+   * Save movie metadata to provider cache
+   *
+   * Merges metadata from multiple providers into a single cached record.
+   * Updates existing cache or creates new entry.
+   *
+   * @param movieId - Movie ID
+   * @param metadata - Metadata fields from providers
+   * @returns void
+   */
+  async saveMovieMetadata(
+    movieId: number,
+    metadata: Record<string, any>
+  ): Promise<void> {
+    try {
+      const conn = this.db.getConnection();
+
+      // Extract and prepare metadata fields
+      const data = {
+        entity_id: movieId,
+        tmdb_id: metadata.tmdb_id || null,
+        imdb_id: metadata.imdb_id || null,
+        title: metadata.title || null,
+        original_title: metadata.originalTitle || null,
+        overview: metadata.overview || null,
+        tagline: metadata.tagline || null,
+        release_date: metadata.releaseDate || null,
+        runtime: metadata.runtime || null,
+        status: metadata.status || null,
+        budget: metadata.budget || null,
+        revenue: metadata.revenue || null,
+        genres: metadata.genres ? JSON.stringify(metadata.genres) : null,
+        production_companies: metadata.productionCompanies ? JSON.stringify(metadata.productionCompanies) : null,
+        production_countries: metadata.productionCountries ? JSON.stringify(metadata.productionCountries) : null,
+        spoken_languages: metadata.spokenLanguages ? JSON.stringify(metadata.spokenLanguages) : null,
+        cast: metadata.cast ? JSON.stringify(metadata.cast) : null,
+        crew: metadata.crew ? JSON.stringify(metadata.crew) : null,
+        keywords: metadata.keywords ? JSON.stringify(metadata.keywords) : null,
+        vote_average: metadata.voteAverage || null,
+        vote_count: metadata.voteCount || null,
+        popularity: metadata.popularity || null,
+        homepage: metadata.homepage || null,
+        trailer_key: metadata.trailerKey || null,
+      };
+
+      // Upsert (update if exists, insert if not)
+      const existing = await conn.get(
+        'SELECT id FROM provider_cache_movies WHERE entity_id = ?',
+        [movieId]
+      );
+
+      if (existing) {
+        // Update existing
+        const updateFields = Object.keys(data)
+          .filter(k => k !== 'entity_id')
+          .map(k => `${k} = ?`)
+          .join(', ');
+
+        await conn.execute(
+          `UPDATE provider_cache_movies SET ${updateFields}, fetched_at = CURRENT_TIMESTAMP WHERE entity_id = ?`,
+          [...Object.values(data).slice(1), movieId]
+        );
+      } else {
+        // Insert new
+        const fields = Object.keys(data).join(', ');
+        const placeholders = Object.keys(data).map(() => '?').join(', ');
+
+        await conn.execute(
+          `INSERT INTO provider_cache_movies (${fields}) VALUES (${placeholders})`,
+          Object.values(data)
+        );
+      }
+
+      logger.info('Saved movie metadata to cache', {
+        movieId,
+        fieldCount: Object.keys(metadata).length,
+      });
+    } catch (error) {
+      logger.error('Failed to save movie metadata to cache', {
+        movieId,
+        error: getErrorMessage(error),
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Get cached movie metadata
+   *
+   * @param movieId - Movie ID
+   * @returns Cached metadata or null if not found
+   */
+  async getMovieMetadata(movieId: number): Promise<any | null> {
+    try {
+      const conn = this.db.getConnection();
+
+      const cached = await conn.get(
+        'SELECT * FROM provider_cache_movies WHERE entity_id = ?',
+        [movieId]
+      );
+
+      if (!cached) {
+        return null;
+      }
+
+      // Parse JSON fields
+      return {
+        ...cached,
+        genres: cached.genres ? JSON.parse(cached.genres) : null,
+        production_companies: cached.production_companies ? JSON.parse(cached.production_companies) : null,
+        production_countries: cached.production_countries ? JSON.parse(cached.production_countries) : null,
+        spoken_languages: cached.spoken_languages ? JSON.parse(cached.spoken_languages) : null,
+        cast: cached.cast ? JSON.parse(cached.cast) : null,
+        crew: cached.crew ? JSON.parse(cached.crew) : null,
+        keywords: cached.keywords ? JSON.parse(cached.keywords) : null,
+      };
+    } catch (error) {
+      logger.error('Failed to get cached movie metadata', {
+        movieId,
+        error: getErrorMessage(error),
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Check if cache is stale (older than specified days)
+   *
+   * @param movieId - Movie ID
+   * @param maxAgeDays - Maximum age in days (default: 7)
+   * @returns True if cache is stale or missing
+   */
+  async isCacheStale(movieId: number, maxAgeDays: number = 7): Promise<boolean> {
+    try {
+      const conn = this.db.getConnection();
+
+      const cached = await conn.get<{ fetched_at: string }>(
+        'SELECT fetched_at FROM provider_cache_movies WHERE entity_id = ?',
+        [movieId]
+      );
+
+      if (!cached) {
+        return true; // No cache = stale
+      }
+
+      const fetchedAt = new Date(cached.fetched_at);
+      const ageMs = Date.now() - fetchedAt.getTime();
+      const ageDays = ageMs / (1000 * 60 * 60 * 24);
+
+      return ageDays > maxAgeDays;
+    } catch (error) {
+      logger.warn('Failed to check cache staleness, assuming stale', {
+        movieId,
+        error: getErrorMessage(error),
+      });
+      return true; // On error, assume stale to trigger refresh
+    }
+  }
+
+  /**
+   * Clear all cached data for a movie (metadata + all assets)
+   *
+   * Used when user forces a complete refresh.
+   *
+   * @param movieId - Movie ID
+   * @returns void
+   */
+  async clearMovieCache(movieId: number): Promise<void> {
+    try {
+      const conn = this.db.getConnection();
+
+      await conn.beginTransaction();
+      try {
+        // Clear metadata
+        await conn.execute(
+          'DELETE FROM provider_cache_movies WHERE entity_id = ?',
+          [movieId]
+        );
+
+        // Clear all assets
+        await conn.execute(
+          'DELETE FROM provider_cache_assets WHERE entity_id = ? AND entity_type = ?',
+          [movieId, 'movie']
+        );
+
+        await conn.commit();
+
+        logger.info('Cleared all cache for movie', { movieId });
+      } catch (error) {
+        await conn.rollback();
+        throw error;
+      }
+    } catch (error) {
+      logger.error('Failed to clear movie cache', {
+        movieId,
+        error: getErrorMessage(error),
+      });
+      throw error;
+    }
+  }
 }
