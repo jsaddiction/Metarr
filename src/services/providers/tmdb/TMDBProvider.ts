@@ -113,7 +113,7 @@ export class TMDBProvider extends BaseProvider {
         fuzzyMatching: true,
         multiLanguage: true,
         yearFilter: true,
-        externalIdLookup: ['imdb_id'],
+        externalIdLookup: ['tmdb_id', 'imdb_id'],
       },
 
       dataQuality: {
