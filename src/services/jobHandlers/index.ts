@@ -80,7 +80,8 @@ export function registerAllJobHandlers(
     deps.db,
     deps.jobQueue,
     deps.cacheDir,
-    deps.tmdbClient
+    deps.tmdbClient,
+    deps.dbManager
   );
 
   const scheduledHandlers = new ScheduledJobHandlers(deps.db, deps.dbManager, deps.jobQueue);

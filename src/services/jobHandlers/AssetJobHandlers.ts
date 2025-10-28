@@ -22,6 +22,7 @@ import { SqlParam } from '../../types/database.js';
  */
 export class AssetJobHandlers {
   private db: DatabaseConnection;
+  private dbManager: any; // DatabaseManager instance
   private jobQueue: JobQueueService;
   private assetDiscovery: AssetDiscoveryService;
   private providerAssets: ProviderAssetService;
@@ -34,9 +35,11 @@ export class AssetJobHandlers {
     db: DatabaseConnection,
     jobQueue: JobQueueService,
     cacheDir: string,
-    tmdbClient?: TMDBClient
+    tmdbClient?: TMDBClient,
+    dbManager?: any
   ) {
     this.db = db;
+    this.dbManager = dbManager;
     this.jobQueue = jobQueue;
     this.assetDiscovery = new AssetDiscoveryService(db, cacheDir);
     this.providerAssets = new ProviderAssetService(db, cacheDir, tmdbClient);
@@ -202,37 +205,141 @@ export class AssetJobHandlers {
       return;
     }
 
-    // 1. Fetch assets from provider
-    let result;
+    // 1. Fetch assets from all providers using FetchOrchestrator
     if (provider === 'orchestrator' && entityType === 'movie') {
-      // Use ProviderOrchestrator for multi-provider fetch
-      const { ProviderOrchestrator } = await import('../providers/ProviderOrchestrator.js');
+      // Use FetchOrchestrator for multi-provider fetch (same as manual UI flow)
+      const { FetchOrchestrator } = await import('../providers/FetchOrchestrator.js');
       const { ProviderRegistry } = await import('../providers/ProviderRegistry.js');
       const { ProviderConfigService } = await import('../providerConfigService.js');
+      const { ProviderCacheService } = await import('../providerCacheService.js');
+      const { DatabaseManager } = await import('../../database/DatabaseManager.js');
 
       const registry = ProviderRegistry.getInstance();
       const configService = new ProviderConfigService(this.db);
-      const orchestrator = new ProviderOrchestrator(registry, configService);
+      const orchestrator = new FetchOrchestrator(registry, configService);
+      const cacheService = new ProviderCacheService(this.dbManager);
 
-      // Fetch metadata from all providers
-      const metadataResult = await orchestrator.fetchMetadata(
-        entityType,
-        { tmdb: providerId },
-        { strategy: 'aggregate_all', fillGaps: true }
+      // Get the movie entity
+      const movie = await this.db.get<{ id: number; title: string; tmdb_id: number | null; imdb_id: string | null }>(
+        'SELECT id, title, tmdb_id, imdb_id FROM movies WHERE id = ?',
+        [entityId]
       );
 
-      logger.info('[AssetJobHandlers] Fetched metadata from all providers', {
-        service: 'AssetJobHandlers',
-        handler: 'handleFetchProviderAssets',
-        jobId: job.id,
-        providersUsed: metadataResult.providerId,
-        completeness: metadataResult.completeness,
-      });
+      if (!movie) {
+        logger.error('[AssetJobHandlers] Movie not found for enrichment', {
+          service: 'AssetJobHandlers',
+          handler: 'handleFetchProviderAssets',
+          jobId: job.id,
+          entityId
+        });
+        return;
+      }
 
-      result = { fetched: true }; // Simplified result for now
+      // Check cache freshness for automatic jobs (manual jobs always fetch fresh)
+      let shouldFetch = true;
+      if (!job.manual) {
+        const isStale = await cacheService.isCacheStale(entityId, 7);
+        if (!isStale) {
+          logger.info('[AssetJobHandlers] Cache is fresh, skipping provider fetch', {
+            service: 'AssetJobHandlers',
+            handler: 'handleFetchProviderAssets',
+            jobId: job.id,
+            entityId
+          });
+          shouldFetch = false;
+        }
+      }
+
+      if (shouldFetch) {
+        // Fetch from all providers (metadata + assets)
+        const assetTypes = ['poster', 'fanart', 'banner', 'clearlogo', 'clearart', 'discart', 'landscape'];
+        const providerResults = await orchestrator.fetchAllProviders(movie as any, 'movie', {
+          priority: job.manual ? 'user' : 'background',
+          assetTypes,
+        });
+
+        if (providerResults.allFailed) {
+          logger.error('[AssetJobHandlers] All providers failed during enrichment', {
+            service: 'AssetJobHandlers',
+            handler: 'handleFetchProviderAssets',
+            jobId: job.id,
+            entityId
+          });
+          return;
+        }
+
+        logger.info('[AssetJobHandlers] Fetched from providers', {
+          service: 'AssetJobHandlers',
+          handler: 'handleFetchProviderAssets',
+          jobId: job.id,
+          completed: providerResults.metadata.completedProviders.length,
+          failed: providerResults.metadata.failedProviders.length
+        });
+
+        // Save all fetched data to cache
+        // 1. Save metadata
+        const mergedMetadata: Record<string, any> = {};
+        for (const [providerName, providerData] of Object.entries(providerResults.providers)) {
+          if (providerData?.metadata) {
+            Object.assign(mergedMetadata, providerData.metadata);
+          }
+        }
+        if (Object.keys(mergedMetadata).length > 0) {
+          await cacheService.saveMovieMetadata(entityId, mergedMetadata);
+        }
+
+        // 2. Save image assets
+        for (const assetType of assetTypes) {
+          const candidates: any[] = [];
+          for (const [providerName, providerData] of Object.entries(providerResults.providers)) {
+            if (providerData?.images?.[assetType]) {
+              for (const asset of providerData.images[assetType]) {
+                candidates.push({
+                  url: asset.url,
+                  width: asset.width,
+                  height: asset.height,
+                  language: asset.language,
+                  provider_name: providerName,
+                  provider_score: (asset as any).score || 0,
+                  provider_metadata: {
+                    votes: asset.votes,
+                    voteAverage: asset.voteAverage,
+                  },
+                });
+              }
+            }
+          }
+          if (candidates.length > 0) {
+            await cacheService.saveCandidates(entityId, 'movie', assetType, candidates);
+          }
+        }
+
+        // 3. Save video assets (trailers)
+        for (const [providerName, providerData] of Object.entries(providerResults.providers)) {
+          if (providerData?.videos) {
+            for (const [videoType, videoList] of Object.entries(providerData.videos)) {
+              const videoCandidates = videoList.map(video => ({
+                url: video.url,
+                provider_name: providerName,
+                provider_score: (video as any).score || 0,
+                provider_metadata: {
+                  type: video.assetType,
+                  site: (video as any).site,
+                  key: (video as any).key,
+                },
+              }));
+              if (videoCandidates.length > 0) {
+                await cacheService.saveCandidates(entityId, 'movie', videoType as any, videoCandidates);
+              }
+            }
+          }
+        }
+      }
+
     } else if (provider === 'tmdb' && entityType === 'movie') {
-      result = await this.providerAssets.fetchMovieAssets(entityId, parseInt(providerId, 10));
-      logger.info('[AssetJobHandlers] Fetched assets from TMDB', {
+      // Legacy single-provider path (deprecated in favor of orchestrator)
+      const result = await this.providerAssets.fetchMovieAssets(entityId, parseInt(providerId, 10));
+      logger.info('[AssetJobHandlers] Fetched assets from TMDB (legacy path)', {
         service: 'AssetJobHandlers',
         handler: 'handleFetchProviderAssets',
         jobId: job.id,
@@ -383,22 +490,24 @@ export class AssetJobHandlers {
    * Handle select-assets job (JOB CHAINING PATTERN)
    *
    * This handler:
-   * 1. Auto-selects best assets based on automation config
-   * 2. Chains to publish job (if publishing workflow enabled and YOLO mode)
+   * 1. Auto-selects best assets using YOLO strategy
+   * 2. Chains to publish job (if publishing workflow enabled or user-initiated)
+   *
+   * Logic:
+   * - If manual job: Always execute (user-initiated)
+   * - If automated job: Skip if enrichment workflow disabled
    *
    * Payload: {
    *   entityType: 'movie' | 'series' | 'episode',
    *   entityId: number,
-   *   mode?: 'yolo' | 'hybrid' | 'manual',
    *   assetTypes?: string[],
    *   chainContext?: { source, libraryId }
    * }
    */
   private async handleSelectAssets(job: Job): Promise<void> {
-    const { entityType, entityId, mode, assetTypes, chainContext } = job.payload as {
+    const { entityType, entityId, assetTypes, chainContext } = job.payload as {
       entityType: 'movie' | 'series' | 'episode';
       entityId: number;
-      mode?: 'manual' | 'yolo' | 'hybrid';
       assetTypes?: string[];
       chainContext?: unknown;
     };
@@ -409,26 +518,10 @@ export class AssetJobHandlers {
       jobId: job.id,
       entityType,
       entityId,
-      mode
+      manual: job.manual
     });
 
-    // Get automation config for this entity
-    const config = await this.getAutomationConfig(entityId, entityType);
-    const selectionMode = mode || config?.mode || 'manual';
-
-    // Skip if manual mode (user must select)
-    if (selectionMode === 'manual') {
-      logger.info('[AssetJobHandlers] Manual mode, skipping auto-selection', {
-        service: 'AssetJobHandlers',
-        handler: 'handleSelectAssets',
-        jobId: job.id,
-        entityType,
-        entityId
-      });
-      return;
-    }
-
-    // 1. Auto-select assets
+    // 1. Auto-select assets using YOLO strategy
     const types = assetTypes || ['poster', 'fanart', 'banner', 'clearlogo', 'clearart', 'discart', 'landscape'];
     let selectedCount = 0;
 
@@ -437,15 +530,10 @@ export class AssetJobHandlers {
         entityType,
         entityId,
         assetType,
-        mode: selectionMode as 'manual' | 'yolo' | 'hybrid'
+        mode: 'yolo' as const
       };
 
-      let result;
-      if (selectionMode === 'yolo') {
-        result = await this.assetSelection.selectAssetYOLO(selectConfig);
-      } else {
-        result = await this.assetSelection.selectAssetHybrid(selectConfig);
-      }
+      const result = await this.assetSelection.selectAssetYOLO(selectConfig);
 
       if (result.selected) {
         selectedCount++;
@@ -482,20 +570,7 @@ export class AssetJobHandlers {
       }
     }
 
-    // 3. Only publish in YOLO mode (hybrid requires user approval, unless user-initiated)
-    if (!job.manual && selectionMode !== 'yolo') {
-      logger.info('[AssetJobHandlers] Not in YOLO mode, skipping publish', {
-        service: 'AssetJobHandlers',
-        handler: 'handleSelectAssets',
-        jobId: job.id,
-        entityType,
-        entityId,
-        mode: selectionMode
-      });
-      return;
-    }
-
-    // 4. Get entity details for publishing
+    // 3. Get entity details for publishing
     const entity = await this.getEntityForPublish(entityType, entityId);
     if (!entity) {
       logger.error('[AssetJobHandlers] Entity not found for publishing', {
@@ -508,7 +583,7 @@ export class AssetJobHandlers {
       return;
     }
 
-    // 5. Chain to publish job (preserve manual flag)
+    // 4. Chain to publish job (preserve manual flag)
     const publishJobId = await this.jobQueue.addJob({
       type: 'publish',
       priority: job.manual ? 3 : 5, // HIGH priority if user-initiated, NORMAL otherwise
@@ -952,107 +1027,6 @@ export class AssetJobHandlers {
     }
   }
 
-  /**
-   * Get automation config for entity
-   */
-  private async getAutomationConfig(entityId: number, entityType: string): Promise<{
-    mode: 'manual' | 'yolo' | 'hybrid';
-    autoDiscoverAssets: boolean;
-    autoFetchProviderAssets: boolean;
-    autoEnrichMetadata: boolean;
-    autoSelectAssets: boolean;
-    autoPublish: boolean;
-  } | null> {
-    try {
-      // Get library ID for entity
-      let libraryId: number | null = null;
-
-      if (entityType === 'movie') {
-        const result = await this.db.query<{ library_id: number }>(
-          `SELECT library_id FROM movies WHERE id = ?`,
-          [entityId]
-        );
-        if (result.length > 0) {
-          libraryId = result[0].library_id;
-        }
-      } else if (entityType === 'series') {
-        const result = await this.db.query<{ library_id: number }>(
-          `SELECT library_id FROM series WHERE id = ?`,
-          [entityId]
-        );
-        if (result.length > 0) {
-          libraryId = result[0].library_id;
-        }
-      }
-
-      if (!libraryId) {
-        logger.warn(`No library found for ${entityType} ${entityId}, using manual mode`);
-        return {
-          mode: 'manual',
-          autoDiscoverAssets: false,
-          autoFetchProviderAssets: false,
-          autoEnrichMetadata: false,
-          autoSelectAssets: false,
-          autoPublish: false
-        };
-      }
-
-      // Query automation config for library
-      const config = await this.db.query<{
-        mode: 'manual' | 'yolo' | 'hybrid';
-        auto_discover_assets: number;
-        auto_fetch_provider_assets: number;
-        auto_enrich_metadata: number;
-        auto_select_assets: number;
-        auto_publish: number;
-      }>(
-        `SELECT mode, auto_discover_assets, auto_fetch_provider_assets,
-                auto_enrich_metadata, auto_select_assets, auto_publish
-         FROM library_automation_config
-         WHERE library_id = ?`,
-        [libraryId]
-      );
-
-      if (config.length === 0) {
-        // No config found, use defaults (manual mode)
-        logger.debug(`No automation config for library ${libraryId}, using manual mode`);
-        return {
-          mode: 'manual',
-          autoDiscoverAssets: false,
-          autoFetchProviderAssets: false,
-          autoEnrichMetadata: false,
-          autoSelectAssets: false,
-          autoPublish: false
-        };
-      }
-
-      const row = config[0];
-      return {
-        mode: row.mode,
-        autoDiscoverAssets: row.auto_discover_assets === 1,
-        autoFetchProviderAssets: row.auto_fetch_provider_assets === 1,
-        autoEnrichMetadata: row.auto_enrich_metadata === 1,
-        autoSelectAssets: row.auto_select_assets === 1,
-        autoPublish: row.auto_publish === 1
-      };
-
-    } catch (error) {
-      logger.error('Failed to get automation config', {
-        entityId,
-        entityType,
-        error: getErrorMessage(error)
-      });
-      // Return manual mode on error (safe default)
-      return {
-        mode: 'manual',
-        autoDiscoverAssets: false,
-        autoFetchProviderAssets: false,
-        autoEnrichMetadata: false,
-        autoSelectAssets: false,
-        autoPublish: false
-      };
-    }
-  }
 
   /**
    * Get entity details for publishing
@@ -1396,36 +1370,19 @@ export class AssetJobHandlers {
   }
 
   /**
-   * Recycle file to recycle bin
-   * Uses RecycleBinService for database-tracked recycling
+   * Delete file directly (no recycle bin)
    */
   private async recycleFile(filePath: string, entityType?: string, entityId?: number): Promise<void> {
     try {
-      // Import RecycleBinService dynamically
-      const { RecycleBinService } = await import('../recycleBinService.js');
-      const recycleBin = new RecycleBinService(this.db);
-
-      // If entity info is available, use database-tracked recycling
-      if (entityType && entityId) {
-        await recycleBin.recycleFile({
-          entityType: entityType as 'movie' | 'episode' | 'series' | 'season',
-          entityId,
-          filePath,
-        });
-        logger.debug('[AssetJobHandlers] File recycled with tracking', {
-          filePath,
-          entityType,
-          entityId,
-        });
-      } else {
-        // Fallback to immediate deletion if no entity context
-        await fs.unlink(filePath);
-        logger.debug('[AssetJobHandlers] File deleted immediately (no entity context)', {
-          filePath,
-        });
-      }
+      // Delete file directly
+      await fs.unlink(filePath);
+      logger.debug('[AssetJobHandlers] File deleted', {
+        filePath,
+        entityType,
+        entityId,
+      });
     } catch (error) {
-      logger.error('[AssetJobHandlers] Failed to recycle file', {
+      logger.error('[AssetJobHandlers] Failed to delete file', {
         filePath,
         error: getErrorMessage(error),
       });

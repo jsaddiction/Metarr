@@ -101,6 +101,21 @@ export class MovieProviderController {
         },
       };
 
+      // Check cache freshness unless force=true
+      if (!force) {
+        const isStale = await this.providerCacheService.isCacheStale(movieId, 7);
+        if (!isStale) {
+          logger.info('Using cached provider data (fresh)', { movieId });
+          // Return cached data instead of fetching
+          // For now, we'll let it fetch anyway since the UI expects fresh results
+          // In the future, we can return cached data here
+        }
+      } else {
+        // Force refresh - clear existing cache
+        logger.info('Force refresh requested, clearing cache', { movieId });
+        await this.providerCacheService.clearMovieCache(movieId);
+      }
+
       // Broadcast scrape start
       const enabledProviders = await this.getEnabledProviderNames();
       websocketBroadcaster.broadcastProviderScrapeStart(movieId, enabledProviders);
@@ -170,6 +185,24 @@ export class MovieProviderController {
       // Save results to provider cache
       if (providerResults.metadata.completedProviders.length > 0) {
         try {
+          // 1. Save metadata from all providers
+          const mergedMetadata: Record<string, any> = {};
+          for (const [providerName, providerData] of Object.entries(providerResults.providers)) {
+            if (providerData?.metadata) {
+              // Merge metadata from this provider
+              Object.assign(mergedMetadata, providerData.metadata);
+              logger.debug('Merged metadata from provider', {
+                providerName,
+                fieldCount: Object.keys(providerData.metadata).length,
+              });
+            }
+          }
+
+          if (Object.keys(mergedMetadata).length > 0) {
+            await this.providerCacheService.saveMovieMetadata(movieId, mergedMetadata);
+          }
+
+          // 2. Save image assets
           for (const assetType of assetTypes) {
             // Collect all candidates for this asset type from all successful providers
             type CandidateRecord = {
@@ -215,6 +248,34 @@ export class MovieProviderController {
                 assetType,
                 candidateCount: candidates.length,
               });
+            }
+          }
+
+          // 3. Save video assets (trailers, etc.) - store as special asset types
+          for (const [providerName, providerData] of Object.entries(providerResults.providers)) {
+            if (providerData?.videos) {
+              for (const [videoType, videoList] of Object.entries(providerData.videos)) {
+                const videoCandidates = videoList.map(video => ({
+                  url: video.url,
+                  provider_name: providerName,
+                  provider_score: (video as any).score || 0,
+                  provider_metadata: {
+                    type: video.assetType,
+                    site: (video as any).site,
+                    key: (video as any).key,
+                  },
+                }));
+
+                if (videoCandidates.length > 0) {
+                  // Save videos as asset type 'trailer', 'featurette', etc.
+                  await this.providerCacheService.saveCandidates(
+                    movieId,
+                    'movie',
+                    videoType as any,
+                    videoCandidates
+                  );
+                }
+              }
             }
           }
         } catch (cacheError) {
