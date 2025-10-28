@@ -256,38 +256,7 @@ export class ScheduledJobHandlers {
         deletedJobs,
       });
 
-      // 2. Cleanup expired recycle bin items
-      const { RecycleBinService } = await import('../recycleBinService.js');
-      const recycleBin = new RecycleBinService(this.db);
-
-      const expiredDeleted = await recycleBin.cleanupExpired();
-      logger.info('[ScheduledJobHandlers] Recycle bin expired items cleaned up', {
-        service: 'ScheduledJobHandlers',
-        handler: 'handleScheduledCleanup',
-        jobId: job.id,
-        expiredDeleted,
-      });
-
-      // 3. Cleanup pending recycle bin items (failed moves)
-      const pendingCleaned = await recycleBin.cleanupPending();
-      logger.info('[ScheduledJobHandlers] Recycle bin pending items cleaned up', {
-        service: 'ScheduledJobHandlers',
-        handler: 'handleScheduledCleanup',
-        jobId: job.id,
-        pendingCleaned,
-      });
-
-      // 4. Get recycle bin stats for logging
-      const stats = await recycleBin.getStats();
-      logger.info('[ScheduledJobHandlers] Recycle bin statistics', {
-        service: 'ScheduledJobHandlers',
-        handler: 'handleScheduledCleanup',
-        jobId: job.id,
-        totalFiles: stats.totalFiles,
-        totalSizeGB: (stats.totalSizeBytes / (1024 * 1024 * 1024)).toFixed(2),
-        oldestEntry: stats.oldestEntry,
-        pendingDeletion: stats.pendingDeletion,
-      });
+      // 2. No recycle bin cleanup needed (recycle bin removed)
 
       logger.info('[ScheduledJobHandlers] Scheduled cleanup complete', {
         service: 'ScheduledJobHandlers',

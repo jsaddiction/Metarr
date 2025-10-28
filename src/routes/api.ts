@@ -11,7 +11,6 @@ import { IgnorePatternController } from '../controllers/ignorePatternController.
 import { ImageController } from '../controllers/imageController.js';
 import { AssetController } from '../controllers/assetController.js';
 import { JobController } from '../controllers/jobController.js';
-import { AutomationConfigController } from '../controllers/automationConfigController.js';
 import { DatabaseManager } from '../database/DatabaseManager.js';
 import { MediaPlayerConnectionManager } from '../services/mediaPlayerConnectionManager.js';
 import { MediaPlayerService } from '../services/mediaPlayerService.js';
@@ -21,7 +20,6 @@ import { MovieService } from '../services/movieService.js';
 import { IgnorePatternService } from '../services/ignorePatternService.js';
 import { ImageService } from '../services/imageService.js';
 import { JobQueueService } from '../services/jobQueue/JobQueueService.js';
-import { AutomationConfigService } from '../services/automationConfigService.js';
 import { AssetSelectionService } from '../services/assetSelectionService.js';
 import { ProviderCacheService } from '../services/providerCacheService.js';
 import { ActorController } from '../controllers/actorController.js';
@@ -49,8 +47,6 @@ import { updateSchedulerConfigSchema } from '../validation/schedulerSchemas.js';
 import { logger } from '../middleware/logging.js';
 // Import provider index to trigger provider registrations
 import '../services/providers/index.js';
-// Import recycle bin routes factory
-import { createRecycleBinRouter } from './recycleBin.js';
 
 // Initialize router factory function
 export const createApiRouter = (
@@ -118,9 +114,6 @@ export const createApiRouter = (
   // This is legacy code that should be removed when routes are refactored
   // TODO: Remove this after refactoring routes to not need jobQueue locally
 
-  // Initialize automation config service and controller
-  const automationConfigService = new AutomationConfigService(db);
-  const automationConfigController = new AutomationConfigController(automationConfigService);
 
   // Initialize priority config service and controller
   const priorityConfigService = new PriorityConfigService(db);
@@ -583,15 +576,6 @@ export const createApiRouter = (
   router.post('/settings/workflow/disable-all', (req, res) => settingsController.disableAllWorkflows(req, res));
 
   // Automation Config Routes
-  logger.debug('[API Router] Registering automation config routes');
-  router.get('/automation/:libraryId', automationConfigController.getAutomationConfig);
-  router.put('/automation/:libraryId', automationConfigController.setAutomationConfig);
-  router.get('/automation/:libraryId/asset-selection', automationConfigController.getAssetSelectionConfig);
-  router.put('/automation/:libraryId/asset-selection/:assetType', automationConfigController.setAssetSelectionConfig);
-  router.get('/automation/:libraryId/completeness', automationConfigController.getCompletenessConfig);
-  router.put('/automation/:libraryId/completeness/:fieldName', automationConfigController.setCompletenessConfig);
-  router.post('/automation/:libraryId/initialize', automationConfigController.initializeDefaults);
-  router.delete('/automation/:libraryId', automationConfigController.deleteAutomationConfig);
 
   // Placeholder routes for future implementation
   router.get('/series', (_req, res) => {
@@ -721,12 +705,6 @@ export const createApiRouter = (
       (req, res, next) => schedulerController.triggerProviderUpdate(req, res, next)
     );
   }
-
-  // Recycle Bin Routes
-  // ========================================
-  logger.debug('[API Router] Registering recycle bin routes');
-  const recycleBinRouter = createRecycleBinRouter(dbManager);
-  router.use(recycleBinRouter);
 
   return router;
 };

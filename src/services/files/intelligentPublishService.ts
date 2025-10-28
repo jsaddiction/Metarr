@@ -3,11 +3,10 @@
  *
  * Publishes entity metadata and assets to library directory with intelligent change detection:
  * 1. Inventory library directory (calculate hashes)
- * 2. Process recycle_bin (move pending unknown files)
- * 3. Sync assets using hash comparison (skip unchanged, copy new, rename mis-named)
- * 4. Cleanup unauthorized files
- * 5. Update library_*_files records (DELETE + INSERT to prevent orphans)
- * 6. Conditional job chaining (only trigger media player update if changes detected)
+ * 2. Sync assets using hash comparison (skip unchanged, copy new, rename mis-named)
+ * 3. Cleanup unauthorized files (delete directly, no recycle bin)
+ * 4. Update library_*_files records (DELETE + INSERT to prevent orphans)
+ * 5. Conditional job chaining (only trigger media player update if changes detected)
  *
  * Core principle: "Only copy what's changed, only delete what's unauthorized"
  */
@@ -17,8 +16,7 @@ import path from 'path';
 import crypto from 'crypto';
 import type { DatabaseConnection } from '../../types/database.js';
 import { logger } from '../../middleware/logging.js';
-import * as recyclingService from './recyclingService.js';
-import { getErrorMessage } from '../../utils/errorHandling.js';
+import { getErrorMessage, getErrorCode } from '../../utils/errorHandling.js';
 
 interface LibraryInventory {
   filesByHash: Map<string, string>;      // hash → filepath
@@ -147,64 +145,7 @@ async function inventoryLibraryDirectory(
 }
 
 /**
- * PHASE 2: Process recycle bin (move pending unknown files)
- */
-async function processRecycleBin(
-  db: DatabaseConnection,
-  entityType: 'movie' | 'episode',
-  entityId: number,
-  mainMovieFile: string
-): Promise<number> {
-  // Get retention period from settings (default 30 days)
-  const retentionResult = await db.query<{ value: string }>(
-    `SELECT value FROM app_settings WHERE key = 'recycle_bin.retention_days'`
-  );
-  const retentionDays = retentionResult.length > 0 ? parseInt(retentionResult[0].value) : 30;
-
-  // Find pending files (recycled_at IS NULL)
-  const pending = await db.query<{
-    id: number;
-    original_path: string;
-  }>(
-    `SELECT id, original_path
-     FROM recycle_bin
-     WHERE entity_type = ? AND entity_id = ? AND recycled_at IS NULL`,
-    [entityType, entityId]
-  );
-
-  let recycled = 0;
-
-  for (const record of pending) {
-    const result = await recyclingService.recycleFile(
-      record.original_path,
-      mainMovieFile
-    );
-
-    if (result.success && result.recyclePath) {
-      await db.execute(
-        `UPDATE recycle_bin
-         SET recycle_path = ?,
-             recycled_at = CURRENT_TIMESTAMP,
-             expires_at = datetime(CURRENT_TIMESTAMP, '+${retentionDays} days')
-         WHERE id = ?`,
-        [result.recyclePath, record.id]
-      );
-      recycled++;
-    }
-  }
-
-  logger.info('Processed recycle bin', {
-    entityType,
-    entityId,
-    recycled,
-    retentionDays,
-  });
-
-  return recycled;
-}
-
-/**
- * PHASE 3: Sync single asset using hash-based change detection
+ * PHASE 2: Sync single asset using hash-based change detection
  */
 async function syncAsset(
   asset: SelectedAsset,
@@ -262,7 +203,7 @@ async function syncAsset(
 }
 
 /**
- * PHASE 4: Cleanup unauthorized files
+ * PHASE 3: Cleanup unauthorized files (direct deletion, no recycle bin)
  */
 async function cleanupUnauthorizedFiles(
   db: DatabaseConnection,
@@ -273,6 +214,12 @@ async function cleanupUnauthorizedFiles(
   mainMovieFile: string,
   changes: PublishChanges
 ): Promise<void> {
+  // Get entity to check monitored status
+  const entity = await db.query(
+    `SELECT monitored FROM ${entityType === 'movie' ? 'movies' : 'episodes'} WHERE id = ?`,
+    [entityId]
+  );
+
   // Find unauthorized files
   for (const [filePath, hash] of inventory.filesByPath) {
     // Skip if authorized
@@ -289,32 +236,49 @@ async function cleanupUnauthorizedFiles(
       continue;
     }
 
-    // Move to recycle_bin
-    const result = await recyclingService.recycleFile(filePath, mainMovieFile);
-
-    if (result.success && result.recyclePath) {
-      // Insert into recycle_bin table
-      const fileName = path.basename(filePath);
-      const fileStat = await fs.stat(filePath).catch(() => ({ size: 0 }));
-
-      await db.execute(
-        `INSERT INTO recycle_bin
-         (entity_type, entity_id, original_path, recycle_path, file_name, file_size, recycled_at)
-         VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-        [entityType, entityId, filePath, result.recyclePath, fileName, fileStat.size]
+    // Check if file should be protected (locked asset in unmonitored mode)
+    let isProtected = false;
+    if (entity.length > 0 && !entity[0].monitored) {
+      // Check if this file corresponds to a locked cache asset
+      const cacheFile = await db.query(
+        `SELECT is_locked FROM cache_image_files WHERE file_hash = ? AND entity_id = ?`,
+        [hash, entityId]
       );
+      isProtected = cacheFile.length > 0 && cacheFile[0].is_locked;
+    }
 
-      changes.recycled.push(filePath);
-      logger.info('Recycled unauthorized file', {
+    if (isProtected) {
+      logger.info('Skipping deletion (unmonitored and locked)', {
         filePath,
-        recyclePath: result.recyclePath,
+        fileHash: hash,
       });
+      continue;
+    }
+
+    // Delete unauthorized file directly
+    try {
+      await fs.unlink(filePath);
+      changes.recycled.push(filePath); // Keep property name for backward compatibility
+      logger.info('Deleted unauthorized file', {
+        filePath,
+        reason: entity.length > 0 && entity[0].monitored ? 'monitored' : 'unlocked',
+      });
+    } catch (error) {
+      const errorCode = getErrorCode(error);
+      if (errorCode === 'ENOENT') {
+        logger.warn('File already deleted', { filePath });
+      } else {
+        logger.error('Failed to delete unauthorized file', {
+          filePath,
+          error: getErrorMessage(error),
+        });
+      }
     }
   }
 }
 
 /**
- * PHASE 5: Update library_*_files records (DELETE + INSERT to prevent orphans)
+ * PHASE 4: Update library_*_files records (DELETE + INSERT to prevent orphans)
  */
 async function updateLibraryRecords(
   db: DatabaseConnection,
@@ -430,17 +394,14 @@ export async function publishMovie(
       config.mainMovieFile
     );
 
-    // PHASE 2: Process recycle bin
-    await processRecycleBin(db, config.entityType, config.entityId, config.mainMovieFile);
-
     // Get selected assets from cache
     const selectedAssets = await getSelectedAssets(db, config);
 
-    // Track authorized hashes (so we don't recycle them)
+    // Track authorized hashes (so we don't delete them)
     const authorizedHashes = new Set<string>();
     const publishedAssets: Array<{ cacheId: number; libraryPath: string; fileType: string }> = [];
 
-    // PHASE 3: Sync each asset
+    // PHASE 2: Sync each asset
     for (const asset of selectedAssets) {
       await syncAsset(asset, inventory, config.libraryPath, result.changes);
       authorizedHashes.add(asset.cacheFileHash);
@@ -452,7 +413,7 @@ export async function publishMovie(
       });
     }
 
-    // PHASE 4: Cleanup unauthorized files
+    // PHASE 3: Cleanup unauthorized files
     await cleanupUnauthorizedFiles(
       db,
       config.entityType,
@@ -463,10 +424,10 @@ export async function publishMovie(
       result.changes
     );
 
-    // PHASE 5: Update library records (DELETE + INSERT)
+    // PHASE 4: Update library records (DELETE + INSERT)
     await updateLibraryRecords(db, config.entityType, config.entityId, publishedAssets);
 
-    // PHASE 6: Update last_published_at
+    // Update last_published_at
     await db.execute(
       `UPDATE movies SET last_published_at = CURRENT_TIMESTAMP WHERE id = ?`,
       [config.entityId]
