@@ -7,11 +7,9 @@ import { MetadataTab } from '../../components/movie/MetadataTab';
 import { ImagesTab } from '../../components/movie/ImagesTab';
 import { ExtrasTab } from '../../components/movie/ExtrasTab';
 import { CastTab } from '../../components/movie/CastTab';
-import { RecycleBinTab } from '../../components/movie/RecycleBinTab';
 import { useMovie } from '../../hooks/useMovies';
-import { useRecycleBinForMovie } from '../../hooks/useRecycleBin';
 
-type TabType = 'metadata' | 'images' | 'cast' | 'extras' | 'recycle-bin';
+type TabType = 'metadata' | 'images' | 'cast' | 'extras';
 
 export const MovieEdit: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -20,9 +18,6 @@ export const MovieEdit: React.FC = () => {
 
   // Fetch movie data
   const { data: movie, isLoading: movieLoading, error: movieError } = useMovie(movieId);
-
-  // Fetch recycle bin files for badge count
-  const { data: recycleBinFiles } = useRecycleBinForMovie(movieId || 0);
 
   const [activeTab, setActiveTab] = useState<TabType>('metadata');
 
@@ -101,15 +96,6 @@ export const MovieEdit: React.FC = () => {
             { value: 'images', label: 'Images' },
             { value: 'cast', label: 'Cast' },
             { value: 'extras', label: 'Extras' },
-            {
-              value: 'recycle-bin',
-              label: 'Recycle Bin',
-              badge: (recycleBinFiles && recycleBinFiles.length > 0) ? (
-                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-warning/20 text-warning">
-                  {recycleBinFiles.length}
-                </span>
-              ) : undefined,
-            },
           ]}
         >
           <AnimatedTabsContent value="metadata">
@@ -126,10 +112,6 @@ export const MovieEdit: React.FC = () => {
 
           <AnimatedTabsContent value="extras">
             {id && <ExtrasTab movieId={parseInt(id)} />}
-          </AnimatedTabsContent>
-
-          <AnimatedTabsContent value="recycle-bin">
-            {id && <RecycleBinTab movieId={parseInt(id)} />}
           </AnimatedTabsContent>
         </AnimatedTabs>
       )}

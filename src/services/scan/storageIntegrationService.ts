@@ -312,9 +312,12 @@ export async function updateMovieAssetLinks(
 
 /**
  * Mark unknown files for recycling
+ *
+ * NOTE: Recycle bin feature has been removed. This function now just logs unknown files.
+ * Unknown files are tracked in the unknown_files table instead.
  */
 export async function markUnknownFilesForRecycling(
-  db: DatabaseConnection,
+  _db: DatabaseConnection,
   options: {
     classificationResult: ClassificationResult;
     movieId: number;
@@ -325,59 +328,19 @@ export async function markUnknownFilesForRecycling(
   const unknownFiles = classificationResult.filesToRecycle;
 
   if (unknownFiles.length === 0) {
-    logger.debug('No unknown files to mark for recycling', {
+    logger.debug('No unknown files found', {
       entityType,
       entityId: movieId,
     });
     return;
   }
 
-  for (const file of unknownFiles) {
-    try {
-      // Check if already in recycle bin
-      const existing = await db.get(
-        'SELECT id FROM recycle_bin WHERE original_path = ?',
-        [file.facts.filesystem.absolutePath]
-      );
-
-      if (existing) {
-        logger.debug('File already in recycle bin', {
-          originalPath: file.facts.filesystem.absolutePath,
-        });
-        continue;
-      }
-
-      // Insert with recycle_path = NULL (pending physical move)
-      await db.execute(
-        `INSERT INTO recycle_bin
-         (entity_type, entity_id, original_path, recycle_path, file_name, file_size, recycled_at)
-         VALUES (?, ?, ?, NULL, ?, ?, NULL)`,
-        [
-          entityType,
-          movieId,
-          file.facts.filesystem.absolutePath,
-          file.facts.filesystem.filename,
-          file.facts.filesystem.sizeBytes,
-        ]
-      );
-
-      logger.info('Marked file for recycling', {
-        entityType,
-        entityId: movieId,
-        originalPath: file.facts.filesystem.absolutePath,
-      });
-    } catch (error) {
-      logger.error('Failed to mark file for recycling', {
-        filePath: file.facts.filesystem.absolutePath,
-        error: getErrorMessage(error),
-      });
-    }
-  }
-
-  logger.info('Marked unknown files for recycling', {
+  // Log unknown files for visibility
+  logger.info('Unknown files detected (tracked in unknown_files table)', {
     entityType,
     entityId: movieId,
     count: unknownFiles.length,
+    files: unknownFiles.map(f => f.facts.filesystem.filename)
   });
 }
 

@@ -22,7 +22,6 @@ import { Tasks } from './pages/system/Tasks';
 import { Backup } from './pages/system/Backup';
 import { Events } from './pages/system/Events';
 import { LogFiles } from './pages/system/LogFiles';
-import { RecycleBin } from './pages/system/RecycleBin';
 import { General } from './pages/settings/General';
 import { Providers } from './pages/settings/Providers';
 import { DataSelection } from './pages/settings/DataSelection';
@@ -84,7 +83,6 @@ function usePageTitle() {
     '/system/backup': 'Backup',
     '/system/events': 'Events',
     '/system/logs': 'Log Files',
-    '/system/recycle-bin': 'Recycle Bin',
   };
   return pathMap[location.pathname] || 'Metarr';
 }
@@ -184,11 +182,6 @@ function AppRoutes() {
         <Route path="/system/logs" element={
           <RouteErrorBoundary routeName="Log Files">
             <LogFiles />
-          </RouteErrorBoundary>
-        } />
-        <Route path="/system/recycle-bin" element={
-          <RouteErrorBoundary routeName="Recycle Bin">
-            <RecycleBin />
           </RouteErrorBoundary>
         } />
 

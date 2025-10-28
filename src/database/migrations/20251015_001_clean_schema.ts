@@ -383,47 +383,6 @@ export class CleanSchemaMigration {
 
     console.log('✅ unknown_files table created');
 
-    // Recycle Bin (flat file storage with UUID naming)
-    // Unified table for all recyclable items: unknown files, unselected assets, deleted movies
-    await db.execute(`
-      CREATE TABLE recycle_bin (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-
-        -- What & Where
-        entity_type TEXT NOT NULL CHECK(entity_type IN ('movie', 'episode', 'series', 'season')),
-        entity_id INTEGER NOT NULL,
-        original_path TEXT NOT NULL,
-        recycle_path TEXT NULL,
-        file_name TEXT NOT NULL,
-        file_size INTEGER,
-        file_hash TEXT,
-
-        -- Why & When
-        reason TEXT NOT NULL DEFAULT 'unknown' CHECK(reason IN (
-          'unknown',        -- Files we don't recognize (pdf, exe, txt)
-          'unselected',     -- Assets not selected during selection phase
-          'replaced',       -- Assets replaced with new versions
-          'movie_deleted',  -- Movie deleted by user/webhook
-          'user_cleanup'    -- User manually recycled
-        )),
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        recycled_at TIMESTAMP NULL,      -- When moved to /data/recycle/
-        expires_at TIMESTAMP NULL,        -- When to permanently delete
-
-        -- User Control
-        ignored BOOLEAN DEFAULT 0,        -- User marked "keep forever"
-
-        -- Optional metadata
-        notes TEXT
-      )
-    `);
-
-    await db.execute('CREATE INDEX idx_recycle_bin_entity ON recycle_bin(entity_type, entity_id)');
-    await db.execute('CREATE INDEX idx_recycle_bin_pending ON recycle_bin(recycled_at) WHERE recycled_at IS NULL');
-    await db.execute('CREATE INDEX idx_recycle_bin_expires ON recycle_bin(expires_at) WHERE expires_at IS NOT NULL AND ignored = 0');
-    await db.execute('CREATE INDEX idx_recycle_bin_ignored ON recycle_bin(ignored) WHERE ignored = 1');
-
-    console.log('✅ recycle_bin table created');
     console.log('✅ Unified file system tables created');
 
     // ============================================================
