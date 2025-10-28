@@ -1334,6 +1334,56 @@ export class CleanSchemaMigration {
 
     console.log('✅ Provider cache assets table created');
 
+    // Provider Assets (Master Catalog for Enrichment & Selection)
+    await db.execute(`
+      CREATE TABLE provider_assets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        entity_type TEXT NOT NULL CHECK(entity_type IN ('movie', 'episode', 'series', 'season', 'actor')),
+        entity_id INTEGER NOT NULL,
+        asset_type TEXT NOT NULL CHECK(asset_type IN (
+          'poster', 'fanart', 'banner', 'clearlogo', 'clearart', 'discart',
+          'landscape', 'keyart', 'thumb', 'trailer', 'sample'
+        )),
+
+        -- Provider information
+        provider_name TEXT NOT NULL,
+        provider_url TEXT NOT NULL,
+        provider_metadata TEXT,  -- JSON: votes, likes, language, etc.
+
+        -- Analysis results (from enrichment Phase 3 download)
+        analyzed BOOLEAN DEFAULT 0,
+        width INTEGER,
+        height INTEGER,
+        duration_seconds INTEGER,
+        content_hash TEXT,
+        perceptual_hash TEXT,
+        mime_type TEXT,
+        file_size INTEGER,
+
+        -- Selection state
+        score INTEGER,
+        is_selected BOOLEAN DEFAULT 0,
+        is_rejected BOOLEAN DEFAULT 0,
+        is_downloaded BOOLEAN DEFAULT 0,
+
+        -- Timestamps
+        fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        analyzed_at TIMESTAMP,
+        selected_at TIMESTAMP,
+        selected_by TEXT,  -- 'auto' or 'user'
+
+        UNIQUE(entity_type, entity_id, asset_type, provider_url)
+      )
+    `);
+
+    await db.execute('CREATE INDEX idx_provider_assets_entity ON provider_assets(entity_type, entity_id, asset_type)');
+    await db.execute('CREATE INDEX idx_provider_assets_selection ON provider_assets(entity_type, entity_id, asset_type, is_selected, score DESC)');
+    await db.execute('CREATE INDEX idx_provider_assets_hash ON provider_assets(content_hash)');
+    await db.execute('CREATE INDEX idx_provider_assets_phash ON provider_assets(perceptual_hash)');
+    await db.execute('CREATE INDEX idx_provider_assets_unanalyzed ON provider_assets(analyzed) WHERE analyzed = 0');
+
+    console.log('✅ provider_assets table created');
+
     // ============================================================
     // CONFIGURATION TABLES
     // ============================================================
