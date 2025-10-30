@@ -2,7 +2,7 @@
 
 **Purpose**: Fetch metadata and asset information from providers, analyze assets, calculate scores, and intelligently select the best options for each media item.
 
-**Status**: Design complete - awaiting implementation
+**Status**: ✅ Implemented (EnrichmentService.ts)
 
 ## Overview
 
@@ -444,9 +444,9 @@ for (const asset of analyzedAssets) {
 
 ---
 
-## Phase 5: Intelligent Selection
+## Phase 5: Unified Intelligent Selection (Cache + Provider Assets)
 
-**Goal**: Select the top N assets per type, automatically evicting lower-ranked assets when better options arrive.
+**Goal**: Select the top N unique assets per type from a unified pool of cache and provider assets, automatically evicting lower-ranked assets and removing unselected cache files.
 
 ### Selection Configuration
 
@@ -455,8 +455,7 @@ Default limits (user-configurable):
 ```typescript
 const maxAllowable = {
   poster: 3,
-  fanart: 5,
-  logo: 2,
+  fanart: 4,
   banner: 1,
   clearlogo: 1,
   clearart: 1,
@@ -464,36 +463,172 @@ const maxAllowable = {
   landscape: 1,
   keyart: 1,
   thumb: 1,
-  trailer: 3,
+  actor_thumb: 1,
 };
 ```
 
-### Selection Logic with Auto-Eviction
+### Unified Selection Algorithm (5 Steps)
 
+Phase 5 now considers **both cache assets AND provider assets** together, with deduplication:
+
+#### Step 1: Gather All Assets
 ```typescript
-const assetTypes = Object.keys(maxAllowable);
+// Query provider_assets (remote candidates)
+const providerAssets = await db.provider_assets.findByType(entityId, entityType, assetType);
 
-for (const assetType of assetTypes) {
-  // Check if asset type is locked by user
-  const lockField = `${assetType}_locked`;
-  const isLocked = movie[lockField] === 1;
+// Query cache_image_files (local/downloaded candidates)
+const cacheAssets = await db.cache_image_files.findByType(entityId, entityType, assetType);
+```
 
-  if (isLocked) {
-    // User manually selected assets for this type - never auto-change
-    continue;
+#### Step 2: Enrich Cache Assets with Provider Metadata
+```typescript
+// Match cache assets to providers via perceptual hash (90% similarity threshold)
+for (const cacheAsset of cacheAssets) {
+  if (cacheAsset.perceptual_hash) {
+    for (const providerAsset of providerAssets) {
+      const similarity = calculateHashSimilarity(
+        cacheAsset.perceptual_hash,
+        providerAsset.perceptual_hash
+      );
+
+      if (similarity >= 90) {
+        // Copy provider metadata to cache asset for scoring
+        cacheAsset.matchedMetadata = {
+          provider_name: providerAsset.provider_name,
+          provider_metadata: providerAsset.provider_metadata, // vote_average, vote_count, language
+        };
+        break;
+      }
+    }
+  }
+}
+```
+
+#### Step 3: Deduplicate by Perceptual Hash
+```typescript
+const candidates = [];
+
+// Add cache assets first (already downloaded = priority)
+for (const cacheAsset of enrichedCache) {
+  candidates.push({ source: 'cache', cacheId: cacheAsset.id, ...cacheAsset });
+}
+
+// Add provider assets, marking duplicates
+for (const providerAsset of providerAssets) {
+  let isDuplicate = false;
+
+  // Check if this provider asset duplicates any cache asset (90% similarity)
+  for (const candidate of candidates.filter(c => c.source === 'cache')) {
+    const similarity = calculateHashSimilarity(
+      providerAsset.perceptual_hash,
+      candidate.perceptualHash
+    );
+
+    if (similarity >= 90) {
+      isDuplicate = true; // Skip this provider asset
+      break;
+    }
   }
 
-  // Get top N candidates by score
-  const topN = await db.provider_assets.findTopN({
-    entity_id: entityId,
-    entity_type: entityType,
-    asset_type: assetType,
-    is_rejected: 0,  // Exclude user-rejected assets
-    limit: maxAllowable[assetType],
-    order_by: 'score DESC',
-  });
+  candidates.push({ source: 'provider', isDuplicate, ...providerAsset });
+}
+```
 
-  const topNIds = topN.map(a => a.id);
+#### Step 4: Score and Select Top N
+```typescript
+// Score all non-duplicate candidates
+for (const candidate of candidates.filter(c => !c.isDuplicate)) {
+  candidate.score = calculateAssetScore(candidate); // 0-100 scoring algorithm
+
+  // Add source priority tiebreaker (provider +0.5 to win ties)
+  if (candidate.source === 'provider') {
+    candidate.score += 0.5;
+  }
+}
+
+// Sort by score descending, take top N
+const selected = candidates
+  .filter(c => !c.isDuplicate)
+  .sort((a, b) => b.score - a.score)
+  .slice(0, maxAllowable);
+```
+
+#### Step 5: Update Database and Clean Cache
+```typescript
+const selectedProviderIds = [];
+
+for (const selected of selectedCandidates) {
+  if (selected.source === 'provider') {
+    selectedProviderIds.push(selected.providerId);
+  } else if (selected.source === 'cache') {
+    // Find matching provider asset(s) by phash and mark selected
+    for (const provider of providerAssets) {
+      if (hashSimilarity(selected.perceptualHash, provider.perceptual_hash) >= 90) {
+        selectedProviderIds.push(provider.id);
+      }
+    }
+  }
+}
+
+// Mark selected provider assets
+await db.provider_assets.updateMany(selectedProviderIds, { is_selected: 1 });
+
+// Deselect all others
+await db.provider_assets.deselectExcept(entityId, entityType, assetType, selectedProviderIds);
+
+// Clean cache: remove unselected cache assets
+const selectedCacheIds = selectedCandidates
+  .filter(c => c.source === 'cache')
+  .map(c => c.cacheId);
+
+const unselectedCacheIds = allCacheIds.filter(id => !selectedCacheIds.includes(id));
+
+for (const cacheId of unselectedCacheIds) {
+  // Delete physical file and cache_image_files entry
+  await fs.unlink(cacheAsset.file_path);
+  await db.cache_image_files.delete(cacheId);
+}
+```
+
+### Why Unified Selection?
+
+**Before**: Only provider assets were considered, cache assets were ignored
+- Problem: Provider assets downloaded → cache → then enrichment re-ran → provider assets re-selected → unselected cache assets orphaned
+- Result: Cache accumulation, UI showed all assets (not just top N)
+
+**After**: Cache and provider assets compete equally
+- Cache assets can win if they have better quality (resolution, aspect ratio)
+- Provider assets win ties (+0.5 tiebreaker) as canonical sources
+- Deduplication prevents the same image appearing twice
+- Unselected cache assets are cleaned up immediately
+
+### Scoring Example
+
+**Local/Generated Poster** (1000x1500, no metadata):
+- Resolution: 30 pts
+- Aspect Ratio: 20 pts
+- Language: 0 pts (no metadata)
+- Votes: 0 pts (no metadata)
+- Provider: 5 pts (unknown)
+- **Total: 55.0 pts**
+
+**TMDB Poster** (2000x3000, 50 votes, 8.5/10):
+- Resolution: 30 pts
+- Aspect Ratio: 20 pts
+- Language: 20 pts (en)
+- Votes: 17 pts (normalized)
+- Provider: 10 pts (tmdb)
+- Source: +0.5 pts (tiebreaker)
+- **Total: 97.5 pts** ← Wins
+
+### Auto-Eviction Behavior
+
+When new assets arrive that score higher than existing selections:
+1. Phase 5 selects new top N (including new high-scorer)
+2. Old asset drops out of top N
+3. `provider_assets.is_selected` set to 0 for evicted asset
+4. If evicted asset is in cache, physical file deleted
+5. UI instantly reflects updated selection
 
   // Mark top N as selected
   await db.provider_assets.updateMany({

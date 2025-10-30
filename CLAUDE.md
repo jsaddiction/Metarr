@@ -197,10 +197,13 @@ npm run test:watch    # Watch mode
 src/
 ├── controllers/      # Request handlers
 ├── services/        # Business logic
-├── models/          # Data models
+├── types/           # TypeScript type definitions
 ├── routes/          # API endpoints
 ├── database/        # Migrations & schema
 ├── config/          # Configuration
+├── middleware/      # Express middleware
+├── validation/      # Input validation
+├── errors/          # Error classes
 └── utils/           # Helpers
 
 public/frontend/
@@ -219,7 +222,9 @@ docs/
 ├── phases/          # Elemental phase docs
 ├── providers/       # Provider specifics
 ├── players/         # Player protocols
-└── technical/       # Implementation details
+├── technical/       # Implementation details
+├── architecture/    # Architecture decision docs
+└── frontend/        # Frontend-specific docs
 ```
 
 ## Troubleshooting

@@ -1,10 +1,10 @@
 import { DatabaseManager } from '../../database/DatabaseManager.js';
-import { SqlParam } from '../../types/database.js';
 import { scanMovieDirectory } from '../scan/unifiedScanService.js';
 import { getDirectoryPath } from '../pathMappingService.js';
 import { logger } from '../../middleware/logging.js';
 import { websocketBroadcaster } from '../websocketBroadcaster.js';
 import { createErrorLogContext } from '../../utils/errorHandling.js';
+import { buildUpdateQuery } from '../../utils/sqlBuilder.js';
 
 /**
  * MovieCrudService
@@ -33,11 +33,7 @@ export class MovieCrudService {
     const conn = this.db.getConnection();
 
     try {
-      // Build the UPDATE query dynamically based on provided fields
-      const updateFields: string[] = [];
-      const updateValues: SqlParam[] = [];
-
-      // Metadata fields that can be updated
+      // Metadata fields that can be updated (enforced allowlist)
       const allowedFields = [
         'title',
         'original_title',
@@ -62,25 +58,31 @@ export class MovieCrudService {
         'premiered_locked',
         'user_rating_locked',
         'trailer_url_locked',
-      ];
+      ] as const;
 
-      for (const field of allowedFields) {
-        if (metadata.hasOwnProperty(field)) {
-          updateFields.push(`${field} = ?`);
-          updateValues.push(metadata[field]);
+      // Build type-safe UPDATE query using allowlist
+      // Addresses Audit Finding 1.4: SQL injection risk
+      let query: string;
+      let values: any[];
+
+      try {
+        const result = buildUpdateQuery(
+          'movies',
+          allowedFields,
+          metadata,
+          'id = ?',
+          [movieId]
+        );
+        query = result.query;
+        values = result.values;
+      } catch (error: any) {
+        if (error.message.includes('No valid columns to update')) {
+          return { success: true, message: 'No fields to update' };
         }
+        throw error;
       }
 
-      if (updateFields.length === 0) {
-        return { success: true, message: 'No fields to update' };
-      }
-
-      // Add movieId to the end of the values array
-      updateValues.push(movieId);
-
-      const query = `UPDATE movies SET ${updateFields.join(', ')} WHERE id = ?`;
-
-      await conn.execute(query, updateValues);
+      await conn.execute(query, values);
 
       logger.info('Movie metadata updated', { movieId, updatedFields: Object.keys(metadata) });
 

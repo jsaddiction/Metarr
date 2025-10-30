@@ -253,15 +253,14 @@ Once configured, Metarr operates automatically:
 
 Detailed documentation is available in the [`docs/`](docs/) directory:
 
-- [API Architecture](docs/API_ARCHITECTURE.md) - REST API + SSE communication
-- [Database Schema](docs/DATABASE_SCHEMA.md) - Complete schema reference
-- [Workflows](docs/WORKFLOWS.md) - Core application workflows
-- [Field Locking](docs/FIELD_LOCKING.md) - Field-level locking system
-- [Image Management](docs/IMAGE_MANAGEMENT.md) - Three-tier image storage
-- [Kodi API](docs/KODI_API.md) - Kodi JSON-RPC integration
-- [NFO Parsing](docs/NFO_PARSING.md) - Kodi NFO file format
-- [Path Mapping](docs/PATH_MAPPING.md) - Path translation system
-- [Metadata Providers](docs/METADATA_PROVIDERS.md) - TMDB/TVDB integration
+- [API Architecture](docs/API.md) - REST API + WebSocket communication
+- [Database Schema](docs/DATABASE.md) - Complete schema reference
+- [Development Guide](docs/DEVELOPMENT.md) - Development setup and guidelines
+- [Kodi API](docs/players/KODI.md) - Kodi JSON-RPC integration
+- [NFO Parsing](docs/technical/NFO_PARSING.md) - Kodi NFO file format
+- [Path Mapping](docs/technical/PATH_MAPPING.md) - Path translation system
+- [Metadata Providers](docs/providers/OVERVIEW.md) - TMDB/TVDB integration
+- [Git Workflow](docs/technical/GIT_WORKFLOW.md) - Commit conventions and guidelines
 
 ---
 
@@ -270,9 +269,9 @@ Detailed documentation is available in the [`docs/`](docs/) directory:
 **Development Phase**: Pre-Release
 **Current Focus**: Building distributable codebase with production-ready features
 
-For detailed development status and roadmap, see [docs/PROJECT_ROADMAP.md](docs/PROJECT_ROADMAP.md).
+For detailed development status and roadmap, see [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md).
 
-For contribution guidelines and git workflow, see [docs/GIT_WORKFLOW.md](docs/GIT_WORKFLOW.md).
+For contribution guidelines and git workflow, see [docs/technical/GIT_WORKFLOW.md](docs/technical/GIT_WORKFLOW.md).
 
 ---
 

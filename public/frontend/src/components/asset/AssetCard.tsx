@@ -98,18 +98,37 @@ export const AssetCard: React.FC<AssetCardProps> = ({
 
   const isSelectionMode = mode === 'selection';
 
+  // Keyboard event handler for accessibility
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    // Enter or Space key activates the card (standard keyboard interaction)
+    if (onClick && (e.key === 'Enter' || e.key === ' ')) {
+      e.preventDefault(); // Prevent page scroll on Space
+      onClick();
+    }
+  };
+
+  // Use button for selection mode (interactive), div for display mode (non-interactive)
+  const Component = isSelectionMode ? 'button' : 'div';
+
   return (
-    <div
-      onClick={onClick}
+    <Component
+      onClick={isSelectionMode ? onClick : undefined}
+      onKeyDown={isSelectionMode ? handleKeyDown : undefined}
+      tabIndex={isSelectionMode ? 0 : undefined}
+      type={isSelectionMode ? 'button' : undefined}
+      aria-label={isSelectionMode ? `Select ${asset.assetType} from ${provider}, ${resolution || 'unknown resolution'}` : undefined}
+      aria-pressed={isSelectionMode ? isSelected : undefined}
       className={`
         relative group border rounded overflow-hidden
         transition-all duration-200
         ${isSelectionMode ? 'cursor-pointer' : ''}
+        ${isSelectionMode ? 'focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 focus:ring-offset-neutral-900' : ''}
         ${isSelected && isSelectionMode
           ? 'border-primary-500 shadow-lg ring-2 ring-primary-500'
           : 'border-neutral-700'
         }
         ${isSelectionMode && !isSelected ? 'hover:border-primary-400' : ''}
+        w-full text-left
       `}
     >
       {/* Image Container - Dynamic sizing based on grid */}
@@ -162,6 +181,6 @@ export const AssetCard: React.FC<AssetCardProps> = ({
           {resolution || 'Unknown'}
         </span>
       </div>
-    </div>
+    </Component>
   );
 };

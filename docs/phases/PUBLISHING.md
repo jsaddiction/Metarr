@@ -2,7 +2,7 @@
 
 **Purpose**: Deploy selected assets from cache to library directories and create the ideal Kodi-compatible presentation for media player scanners.
 
-**Status**: Design complete - awaiting implementation
+**Status**: ✅ Implemented (publishingService.ts)
 
 ## Overview
 

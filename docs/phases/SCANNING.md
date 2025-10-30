@@ -2,7 +2,7 @@
 
 **Purpose**: Discover and classify files in media directories, building Metarr's understanding of the library state.
 
-**Status**: Design complete, implementation pending
+**Status**: ✅ Implemented (unifiedScanService.ts)
 
 ## Overview
 

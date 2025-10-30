@@ -315,8 +315,8 @@ export async function scanMovieDirectory(
       try {
         logger.info('Starting new file scanner', { movieId, movieDir });
 
-        // Phase 1: Gather all facts (metadata extraction)
-        const scanFacts = await gatherAllFacts(movieDir);
+        // Phase 1: Gather all facts (metadata extraction with FFprobe caching)
+        const scanFacts = await gatherAllFacts(movieDir, dbManager);
 
         // Phase 2: Classify files based on facts
         const classificationResult = await classifyDirectory(scanFacts);
@@ -425,8 +425,8 @@ export async function scanMovieDirectory(
       try {
         logger.info('Re-scanning movie directory', { movieId, movieDir });
 
-        // Phase 1: Gather all facts (metadata extraction)
-        const scanFacts = await gatherAllFacts(movieDir);
+        // Phase 1: Gather all facts (metadata extraction with FFprobe caching)
+        const scanFacts = await gatherAllFacts(movieDir, dbManager);
 
         // Phase 2: Classify files based on facts
         const classificationResult = await classifyDirectory(scanFacts);

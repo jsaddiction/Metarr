@@ -22,7 +22,7 @@ export const Header: React.FC<HeaderProps> = ({ title, onToggleSidebar }) => {
           onClick={onToggleSidebar}
           aria-label="Toggle sidebar"
         >
-          <FontAwesomeIcon icon={faBars} />
+          <FontAwesomeIcon icon={faBars} aria-hidden="true" />
         </button>
         <div className="flex items-center">
           <div className="w-8 h-8 bg-primary-500 rounded-lg flex items-center justify-center text-white font-bold text-lg">

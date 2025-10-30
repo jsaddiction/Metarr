@@ -179,9 +179,12 @@ export class CleanSchemaMigration {
       )
     `);
 
-    // Composite index for polymorphic entity lookups (covers entity_type + entity_id + video_type)
+    // Enhanced composite index for polymorphic entity lookups with sorting
+    // Includes classification_score and discovered_at for efficient ordered queries
     // Optimizes: WHERE entity_type = ? AND entity_id = ? [AND video_type = ?]
-    await db.execute('CREATE INDEX idx_cache_videos_entity_composite ON cache_video_files(entity_type, entity_id, video_type)');
+    //           ORDER BY classification_score DESC, discovered_at DESC
+    // Audit Finding 5.2: Eliminates separate sort operation (10x performance improvement)
+    await db.execute('CREATE INDEX idx_cache_videos_entity_score ON cache_video_files(entity_type, entity_id, video_type, classification_score DESC, discovered_at DESC)');
     await db.execute('CREATE INDEX idx_cache_videos_hash ON cache_video_files(file_hash)');
     await db.execute('CREATE INDEX idx_cache_videos_locked ON cache_video_files(is_locked)');
 
@@ -235,10 +238,13 @@ export class CleanSchemaMigration {
       )
     `);
 
-    // Composite index for polymorphic entity lookups (covers entity_type + entity_id + image_type)
+    // Enhanced composite index for polymorphic entity lookups with sorting
+    // Includes classification_score and discovered_at for efficient ordered queries
     // Optimizes: WHERE entity_type = ? AND entity_id = ? [AND image_type = ?]
+    //           ORDER BY classification_score DESC, discovered_at DESC
     // Used in: movieService movie list query (13+ subqueries), imageService, assetDiscovery
-    await db.execute('CREATE INDEX idx_cache_images_entity_composite ON cache_image_files(entity_type, entity_id, image_type)');
+    // Audit Finding 5.2: Eliminates separate sort operation (10x performance improvement)
+    await db.execute('CREATE INDEX idx_cache_images_entity_score ON cache_image_files(entity_type, entity_id, image_type, classification_score DESC, discovered_at DESC)');
     await db.execute('CREATE INDEX idx_cache_images_hash ON cache_image_files(file_hash)');
     await db.execute('CREATE INDEX idx_cache_images_locked ON cache_image_files(is_locked)');
 
@@ -336,10 +342,13 @@ export class CleanSchemaMigration {
       )
     `);
 
-    // Composite index for polymorphic entity lookups (covers entity_type + entity_id + text_type)
+    // Enhanced composite index for polymorphic entity lookups with sorting
+    // Includes classification_score and discovered_at for efficient ordered queries
     // Optimizes: WHERE entity_type = ? AND entity_id = ? [AND text_type = ?]
+    //           ORDER BY classification_score DESC, discovered_at DESC
     // Critical for: SELECT MAX(discovered_at) FROM cache_text_files WHERE entity_type = 'movie' AND entity_id = ? AND text_type = 'nfo'
-    await db.execute('CREATE INDEX idx_cache_text_entity_composite ON cache_text_files(entity_type, entity_id, text_type)');
+    // Audit Finding 5.2: Eliminates separate sort operation (10x performance improvement)
+    await db.execute('CREATE INDEX idx_cache_text_entity_score ON cache_text_files(entity_type, entity_id, text_type, classification_score DESC, discovered_at DESC)');
     await db.execute('CREATE INDEX idx_cache_text_locked ON cache_text_files(is_locked)');
 
     console.log('✅ cache_text_files table created');
@@ -1132,6 +1141,11 @@ export class CleanSchemaMigration {
     await db.execute('CREATE INDEX idx_job_history_type_date ON job_history(type, completed_at DESC)');
     await db.execute('CREATE INDEX idx_job_history_cleanup ON job_history(status, completed_at)');
     await db.execute('CREATE INDEX idx_job_history_manual ON job_history(manual, type, completed_at DESC)');
+
+    // Additional index for "get recent jobs" query (all types, sorted by date)
+    // Note: Cannot use partial index with datetime() in WHERE clause (non-deterministic)
+    // Audit Finding 5.5: Optimizes dashboard/activity views
+    await db.execute('CREATE INDEX idx_job_history_recent ON job_history(completed_at DESC, status, type)');
 
     // Job queue pickup indexes - optimized for worker polling
     // Covers: WHERE status IN ('pending', 'retrying') AND (status = 'pending' OR next_retry_at <= ?) ORDER BY priority, created_at

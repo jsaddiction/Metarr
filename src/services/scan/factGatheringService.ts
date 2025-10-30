@@ -16,6 +16,8 @@ import sharp from 'sharp';
 import { logger } from '../../middleware/logging.js';
 import { extractMediaInfo } from '../media/ffprobeService.js';
 import { getErrorMessage } from '../../utils/errorHandling.js';
+import { calculateQuickHash } from '../../utils/fileHash.js';
+import { DatabaseManager } from '../../database/DatabaseManager.js';
 import {
   FileFacts,
   FilesystemFacts,
@@ -306,10 +308,64 @@ export async function scanLegacyDirectories(
 }
 
 /**
- * Gather video stream facts using FFprobe
+ * Gather video stream facts using FFprobe with hash-based caching
+ *
+ * Performance optimization (Audit Finding 2.3):
+ * - Calculates quick file hash (first/last 64KB + size)
+ * - Queries cache_video_files by hash
+ * - If hash matches → returns cached facts (skips FFprobe)
+ * - If hash misses → runs FFprobe and returns facts
+ *
+ * Expected improvement: 50-100x faster rescans
+ * - First scan: 1000 movies × 30sec = 8.3 hours
+ * - Rescan (cache hit): 1000 movies × 0.05sec = 50 seconds
+ *
+ * @param filePath - Absolute path to video file
+ * @param db - Database manager (optional, caching disabled if not provided)
+ * @returns Video stream facts or null on error
  */
-export async function gatherVideoFacts(filePath: string): Promise<VideoStreamFacts | null> {
+export async function gatherVideoFacts(
+  filePath: string,
+  db?: DatabaseManager
+): Promise<VideoStreamFacts | null> {
   try {
+    // Hash-based caching optimization
+    if (db) {
+      try {
+        const fileHash = await calculateQuickHash(filePath);
+
+        // Query cache by hash (content-addressed lookup)
+        const cached = await db.query<any>(
+          'SELECT * FROM cache_video_files WHERE file_hash = ? LIMIT 1',
+          [fileHash]
+        );
+
+        if (cached && cached.length > 0) {
+          const row = cached[0];
+          logger.debug('FFprobe cache hit - reusing stored facts', {
+            filePath,
+            cachedPath: row.file_path,
+            hash: fileHash,
+          });
+
+          // Convert cached database row to VideoStreamFacts
+          return convertCachedRowToVideoFacts(row);
+        }
+
+        logger.debug('FFprobe cache miss - running analysis', {
+          filePath,
+          hash: fileHash,
+        });
+      } catch (cacheError) {
+        // Cache lookup failed, fall through to FFprobe
+        logger.warn('FFprobe cache lookup failed, falling back to direct analysis', {
+          filePath,
+          error: getErrorMessage(cacheError),
+        });
+      }
+    }
+
+    // Cache miss or disabled - run FFprobe
     const mediaInfo = await extractMediaInfo(filePath);
 
     const videoStreamsData = mediaInfo.videoStreams.map((stream) => {
@@ -367,6 +423,50 @@ export async function gatherVideoFacts(filePath: string): Promise<VideoStreamFac
     });
     return null; // Return null on failure, don't block entire scan
   }
+}
+
+/**
+ * Convert cached database row to VideoStreamFacts structure
+ *
+ * Note: cache_video_files stores the primary stream data, not all streams.
+ * This returns basic facts indicating the file has been processed before.
+ * The full stream data is stored in video_streams/audio_streams/subtitle_streams tables
+ * and will be queried separately if needed.
+ */
+function convertCachedRowToVideoFacts(row: any): VideoStreamFacts {
+  // Build minimal facts from cache row
+  // The presence of codec indicates video stream exists
+  const hasVideoStream = !!row.codec;
+  const hasAudioStream = !!row.audio_codec;
+
+  return {
+    hasVideoStream,
+    hasAudioStream,
+    durationSeconds: row.duration_seconds || 0,
+    videoStreams: hasVideoStream
+      ? [
+          {
+            codec: row.codec || 'unknown',
+            width: row.width || 0,
+            height: row.height || 0,
+            fps: row.framerate || 0,
+            ...(row.bitrate && { bitrate: row.bitrate }),
+            ...(row.hdr_type && { hdrFormat: row.hdr_type }),
+          },
+        ]
+      : [],
+    audioStreams: hasAudioStream
+      ? [
+          {
+            codec: row.audio_codec || 'unknown',
+            channels: row.audio_channels || 0,
+            sampleRate: 0, // Not stored in cache_video_files
+            ...(row.audio_language && { language: row.audio_language }),
+          },
+        ]
+      : [],
+    subtitleStreams: [], // Subtitles are in separate cache_text_files table
+  };
 }
 
 /**
@@ -612,9 +712,13 @@ export async function gatherDirectoryContextFacts(
 /**
  * Main orchestrator: Gather all facts for a directory
  * Returns complete directory scan with all file facts
+ *
+ * @param directoryPath - Absolute path to directory to scan
+ * @param db - Database manager (optional, enables FFprobe caching)
  */
 export async function gatherAllFacts(
-  directoryPath: string
+  directoryPath: string,
+  db?: DatabaseManager
 ): Promise<DirectoryScanFacts> {
   const scanStartedAt = new Date();
   logger.info('Starting fact gathering for directory', { directoryPath });
@@ -661,7 +765,7 @@ export async function gatherAllFacts(
       const ext = filesystem.extension.toLowerCase();
 
       if (VIDEO_EXTENSIONS.includes(ext)) {
-        const videoFacts = await gatherVideoFacts(filePath);
+        const videoFacts = await gatherVideoFacts(filePath, db);
         if (videoFacts) {
           fileFacts.video = videoFacts;
         }
