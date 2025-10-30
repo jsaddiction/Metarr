@@ -10,7 +10,7 @@ export interface Actor {
   tmdb_id?: number;
   imdb_id?: string;
   image_cache_path?: string;
-  image_hash?: string;
+  image_hash?: string; // SHA256 hash used by frontend to construct /cache/actors/{first2}/{next2}/{hash}.jpg
   image_ctime?: number;
   identification_status: 'identified' | 'enriched';
   enrichment_priority: number;
