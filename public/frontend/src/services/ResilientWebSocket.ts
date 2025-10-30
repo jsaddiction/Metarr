@@ -196,15 +196,13 @@ export class ResilientWebSocket {
   }
 
   /**
-   * Schedule reconnection with exponential backoff
+   * Schedule reconnection with fixed 3-second interval
+   * No exponential backoff - always retry every 3 seconds for faster recovery
    */
   private scheduleReconnect(): void {
     this.clearReconnectTimer();
 
-    const delay = Math.min(
-      this.config.reconnectInterval * Math.pow(2, this.reconnectAttempts),
-      this.config.maxReconnectInterval
-    );
+    const delay = 3000; // Fixed 3-second interval
 
     console.log(`[WebSocket] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts + 1})`);
 
