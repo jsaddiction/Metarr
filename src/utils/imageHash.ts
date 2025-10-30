@@ -24,8 +24,10 @@ import { getErrorMessage } from './errorHandling.js';
  */
 export async function computePerceptualHash(imagePath: string): Promise<string> {
   try {
-    // Resize to 8x8 and convert to grayscale
+    // Flatten transparent images onto white background before hashing
+    // This prevents transparent PNGs from producing all-zero hashes
     const { data } = await sharp(imagePath)
+      .flatten({ background: { r: 255, g: 255, b: 255 } }) // Remove alpha channel, use white background
       .resize(8, 8, { fit: 'fill' })
       .grayscale()
       .raw()
@@ -37,6 +39,25 @@ export async function computePerceptualHash(imagePath: string): Promise<string> 
       sum += data[i];
     }
     const average = sum / data.length;
+
+    // Check for zero variance (solid color images)
+    // These produce unreliable hashes, so use a hash based on the color value
+    let hasVariance = false;
+    for (let i = 0; i < data.length; i++) {
+      if (Math.abs(data[i] - average) > 0.5) {
+        hasVariance = true;
+        break;
+      }
+    }
+
+    if (!hasVariance) {
+      // Solid color image - use the average value as the hash
+      // This ensures different solid colors get different hashes
+      // Format: 0x00000000AABBCCDD where AA = average value repeated
+      const colorValue = Math.round(average);
+      const solidHash = BigInt(colorValue) << 32n | BigInt(colorValue) << 16n | BigInt(colorValue);
+      return solidHash.toString(16).padStart(16, '0');
+    }
 
     // Generate 64-bit hash
     let hash = 0n;

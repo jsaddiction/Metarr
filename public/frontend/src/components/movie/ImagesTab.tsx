@@ -135,7 +135,7 @@ export const ImagesTab: React.FC<ImagesTabProps> = ({ movieId, movieTitle = 'Unk
 
   // Convert Image to AssetCandidate for use with AssetCard
   const imageToAssetCandidate = (image: Image, assetType: string): AssetCandidate => ({
-    providerId: image.source_url ? 'tmdb' : ('custom' as any), // If from provider, assume tmdb, otherwise custom
+    providerId: image.provider_name || 'custom', // Use actual provider name from database
     providerResultId: image.id.toString(),
     assetType: assetType as AssetType,
     url: image.cache_url,
