@@ -9,7 +9,7 @@ import { MovieFieldLockController } from '../controllers/movie/MovieFieldLockCon
 import { MovieUnknownFilesController } from '../controllers/movie/MovieUnknownFilesController.js';
 import { IgnorePatternController } from '../controllers/ignorePatternController.js';
 import { ImageController } from '../controllers/imageController.js';
-import { AssetController } from '../controllers/assetController.js';
+// import { AssetController } from '../controllers/assetController.js'; // DELETED: Legacy unused controller
 import { JobController } from '../controllers/jobController.js';
 import { DatabaseManager } from '../database/DatabaseManager.js';
 import { MediaPlayerConnectionManager } from '../services/mediaPlayerConnectionManager.js';
@@ -20,12 +20,12 @@ import { MovieService } from '../services/movieService.js';
 import { IgnorePatternService } from '../services/ignorePatternService.js';
 import { ImageService } from '../services/imageService.js';
 import { JobQueueService } from '../services/jobQueue/JobQueueService.js';
-import { AssetSelectionService } from '../services/assetSelectionService.js';
-import { ProviderCacheService } from '../services/providerCacheService.js';
+// import { AssetSelectionService } from '../services/assetSelectionService.js'; // TODO: Refactor to use ProviderAssetsRepository
 import { ActorController } from '../controllers/actorController.js';
 // import { tmdbService } from '../services/providers/TMDBService.js'; // TODO: Re-enable if needed
 import { ProviderConfigService } from '../services/providerConfigService.js';
 import { ProviderConfigController } from '../controllers/providerConfigController.js';
+import { ProviderCacheManager } from '../services/providers/ProviderCacheManager.js';
 import { PriorityConfigService } from '../services/priorityConfigService.js';
 import { PriorityConfigController } from '../controllers/priorityConfigController.js';
 import { AssetConfigService } from '../services/assetConfigService.js';
@@ -34,7 +34,7 @@ import { WebhookConfigController } from '../controllers/webhookConfigController.
 import { WebhookEventsController } from '../controllers/webhookEventsController.js';
 import { ActivityLogController } from '../controllers/activityLogController.js';
 import { SettingsController } from '../controllers/settingsController.js';
-import { WorkflowControlService } from '../services/workflowControlService.js';
+import { PhaseConfigService } from '../services/PhaseConfigService.js';
 import { ProviderRegistry } from '../services/providers/ProviderRegistry.js';
 import { FetchOrchestrator } from '../services/providers/FetchOrchestrator.js';
 import { SchedulerController } from '../controllers/schedulerController.js';
@@ -78,23 +78,18 @@ export const createApiRouter = (
   const providerRegistry = ProviderRegistry.getInstance();
   const fetchOrchestrator = new FetchOrchestrator(providerRegistry, providerConfigService);
 
-  // Initialize asset selection service (used by MovieProviderController for recommendations)
-  const assetSelectionService = new AssetSelectionService(db);
-
-  // Initialize provider cache service
-  const providerCacheService = new ProviderCacheService(dbManager);
+  // Initialize unified provider cache manager
+  const providerCacheManager = new ProviderCacheManager(db, fetchOrchestrator);
 
   // Initialize movie service and controllers (refactored into focused controllers)
   const movieService = new MovieService(dbManager, jobQueueService);
 
   // New focused controllers following Single Responsibility Principle
   const movieCrudController = new MovieCrudController(movieService);
-  const movieAssetController = new MovieAssetController(movieService, providerCacheService);
+  const movieAssetController = new MovieAssetController(movieService, providerCacheManager);
   const movieProviderController = new MovieProviderController(
     movieService,
-    fetchOrchestrator,
-    providerCacheService,
-    assetSelectionService
+    providerCacheManager  // Uses unified ProviderCacheManager
   );
   const movieJobController = new MovieJobController(movieService);
   const movieFieldLockController = new MovieFieldLockController(movieService);
@@ -132,12 +127,12 @@ export const createApiRouter = (
   // Initialize activity log controller
   const activityLogController = new ActivityLogController(dbManager);
 
-  // Initialize workflow control service and settings controller
-  const workflowControlService = new WorkflowControlService(db);
-  const settingsController = new SettingsController(workflowControlService);
+  // Initialize phase config service and settings controller
+  const phaseConfigService = new PhaseConfigService(db);
+  const settingsController = new SettingsController(phaseConfigService);
 
-  // Initialize asset controller
-  const assetController = new AssetController(db);
+  // DELETED: Legacy AssetController (unused - replaced by movie-specific endpoints)
+  // const assetController = new AssetController(db);
 
   // Initialize actor controller
   const actorController = new ActorController(dbManager);
@@ -545,20 +540,26 @@ export const createApiRouter = (
     actorController.merge(req, res, next);
   });
 
-  // Asset Routes
-  logger.debug('[API Router] Registering asset routes');
-  router.get('/assets/candidates/:entityType/:entityId', assetController.getCandidates);
-  router.get('/assets/selected/:entityType/:entityId', assetController.getSelected);
-  router.post('/assets/select/manual', assetController.selectManual);
-  router.post('/assets/select/yolo', assetController.selectYOLO);
-  router.post('/assets/select/hybrid', assetController.selectHybrid);
-  router.post('/assets/approve', assetController.approveHybrid);
-  router.post('/assets/reject-selection', assetController.rejectSelection);
-  router.post('/assets/reject', assetController.rejectAsset);
-  router.post('/assets/unlock', assetController.unlockAssetType);
-  router.post('/assets/publish', assetController.publish);
-  router.get('/assets/needs-publishing/:entityType/:entityId', assetController.needsPublishing);
-  router.get('/assets/needs-publishing/:entityType', assetController.getEntitiesNeedingPublish);
+  // DELETED: Legacy Asset Routes (unused - replaced by movie-specific endpoints)
+  // These endpoints were never called by the frontend UI:
+  // - GET /api/assets/candidates/:entityType/:entityId
+  // - GET /api/assets/selected/:entityType/:entityId
+  // - POST /api/assets/select/manual
+  // - POST /api/assets/select/yolo
+  // - POST /api/assets/select/hybrid
+  // - POST /api/assets/approve
+  // - POST /api/assets/reject-selection
+  // - POST /api/assets/reject
+  // - POST /api/assets/unlock
+  // - POST /api/assets/publish
+  // - GET /api/assets/needs-publishing/:entityType/:entityId
+  // - GET /api/assets/needs-publishing/:entityType
+  //
+  // UI actually uses:
+  // - GET /api/movies/:id/provider-results (fetch assets from providers)
+  // - PUT /api/movies/:id/assets/:assetType (select/replace assets)
+  // - POST /api/movies/:id/assets/:assetType/add (add single asset)
+  // - DELETE /api/movies/:id/assets/:assetType/:imageFileId (remove asset)
 
   // Job Routes
   logger.debug('[API Router] Registering job routes');
@@ -567,13 +568,14 @@ export const createApiRouter = (
   router.get('/jobs/history', jobController.getHistory);
   router.get('/jobs/:jobId', jobController.getJob);
 
-  // Settings Routes (Workflow Control)
+  // Settings Routes (Phase Configuration)
+  // All workflow phases ALWAYS run - configuration controls behavior, not enablement
   logger.debug('[API Router] Registering settings routes');
-  router.get('/settings/workflow', (req, res) => settingsController.getWorkflowSettings(req, res));
-  router.put('/settings/workflow', (req, res) => settingsController.updateWorkflowSettings(req, res));
-  router.put('/settings/workflow/:stage', (req, res) => settingsController.updateWorkflowStage(req, res));
-  router.post('/settings/workflow/enable-all', (req, res) => settingsController.enableAllWorkflows(req, res));
-  router.post('/settings/workflow/disable-all', (req, res) => settingsController.disableAllWorkflows(req, res));
+  router.get('/settings/phase-config', (req, res) => settingsController.getPhaseConfig(req, res));
+  router.get('/settings/phase-config/:phase', (req, res) => settingsController.getPhaseConfigByPhase(req, res));
+  router.patch('/settings/phase-config', (req, res) => settingsController.updatePhaseConfig(req, res));
+  router.patch('/settings/phase-config/:key', (req, res) => settingsController.updatePhaseConfigSetting(req, res));
+  router.post('/settings/phase-config/reset', (req, res) => settingsController.resetPhaseConfig(req, res));
 
   // Automation Config Routes
 

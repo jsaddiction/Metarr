@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { MovieService } from '../../services/movieService.js';
-import { ProviderCacheService } from '../../services/providerCacheService.js';
+import { ProviderCacheManager } from '../../services/providers/ProviderCacheManager.js';
 import { websocketBroadcaster } from '../../services/websocketBroadcaster.js';
 import { logger } from '../../middleware/logging.js';
 
@@ -23,16 +23,17 @@ import { logger } from '../../middleware/logging.js';
 export class MovieAssetController {
   constructor(
     private movieService: MovieService,
-    private providerCacheService: ProviderCacheService
+    private providerCacheManager: ProviderCacheManager
   ) {}
 
   /**
    * GET /api/movies/:id/asset-candidates?type=poster
-   * Get cached asset candidates from provider_cache_assets table
+   * Get cached asset candidates from provider_assets table
    *
    * Cache is populated by:
    * - User-initiated provider fetches (getProviderResults)
-   * - Weekly scheduled enrichment jobs
+   * - Automated enrichment jobs
+   * - Weekly scheduled refreshes
    */
   async getAssetCandidates(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
@@ -52,47 +53,49 @@ export class MovieAssetController {
         return;
       }
 
-      // Get cached candidates
-      const cachedCandidates = await this.providerCacheService.getCandidates(
-        movieId,
-        'movie',
-        assetType
-      );
-
-      // Map to frontend-compatible format
-      const candidates = cachedCandidates.map((c) => {
-        const metadata = c.provider_metadata ? JSON.parse(c.provider_metadata) : {};
-        return {
-          id: c.id, // For React keys
-          provider: c.provider_name,
-          url: c.url,
-          width: c.width,
-          height: c.height,
-          language: c.language,
-          vote_count: metadata.votes,
-          vote_average: metadata.voteAverage,
-          // Additional fields for compatibility
-          providerId: c.provider_name as any,
-          providerResultId: c.id.toString(),
-          assetType: c.asset_type as any,
-        };
+      // Get cached candidates from unified ProviderCacheManager
+      const cachedAssets = await this.providerCacheManager.getCachedAssets({
+        entityType: 'movie',
+        entityId: movieId,
+        assetType: assetType as any, // Query param - validated by provider
       });
 
-      // Get cache metadata for UI (age, providers)
-      const metadata = await this.providerCacheService.getCacheMetadata(
-        movieId,
-        'movie',
-        assetType
-      );
+      // Map to frontend-compatible format
+      const candidates = cachedAssets.map((asset) => ({
+        id: asset.id, // For React keys
+        provider: asset.provider_name,
+        url: asset.url,
+        width: asset.width,
+        height: asset.height,
+        language: asset.language,
+        vote_count: asset.provider_metadata?.votes,
+        vote_average: asset.provider_metadata?.voteAverage,
+        score: asset.score,
+        analyzed: asset.analyzed,
+        is_selected: asset.is_selected,
+        // Additional fields for compatibility
+        providerId: asset.provider_name as any,
+        providerResultId: asset.id.toString(),
+        assetType: assetType as any,
+      }));
+
+      // Calculate cache metadata
+      const providers = [...new Set(cachedAssets.map((a) => a.provider_name))];
+      const newestFetchedAt = cachedAssets.length > 0
+        ? cachedAssets.reduce((newest, asset) =>
+            asset.fetched_at > newest ? asset.fetched_at : newest,
+            cachedAssets[0].fetched_at
+          )
+        : null;
 
       res.json({
         candidates,
         cached: candidates.length > 0,
-        metadata: metadata
+        metadata: candidates.length > 0
           ? {
-              count: metadata.count,
-              providers: metadata.providers,
-              cachedAt: metadata.newestFetchedAt,
+              count: candidates.length,
+              providers,
+              cachedAt: newestFetchedAt,
             }
           : null,
       });
