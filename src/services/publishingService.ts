@@ -1,7 +1,9 @@
 import fs from 'fs/promises';
 import path from 'path';
 import crypto from 'crypto';
+import axios from 'axios';
 import { DatabaseConnection } from '../types/database.js';
+import { PublishConfig as PublishPhaseConfig, DEFAULT_PHASE_CONFIG } from '../config/phaseConfig.js';
 import { logger } from '../middleware/logging.js';
 import { getErrorMessage } from '../utils/errorHandling.js';
 
@@ -13,16 +15,17 @@ import { getErrorMessage } from '../utils/errorHandling.js';
  * 2. Generate NFO file with current metadata
  * 3. Calculate NFO hash and store in published_nfo_hash
  * 4. Update last_published_at timestamp
- * 5. Log publication in publish_log table
  *
  * Publishing is idempotent - can be called multiple times safely.
+ * Publishing ALWAYS runs - phase configuration controls WHAT gets published.
  */
 
-export interface PublishConfig {
+export interface PublishJobConfig {
   entityType: 'movie' | 'series' | 'episode';
   entityId: number;
   libraryPath: string; // Directory containing media file
   mediaFilename?: string; // For naming assets (e.g., "Movie Name (2023)")
+  phaseConfig?: PublishPhaseConfig; // Optional phase configuration (uses defaults if not provided)
 }
 
 export interface PublishResult {
@@ -34,21 +37,35 @@ export interface PublishResult {
 
 export class PublishingService {
   private db: DatabaseConnection;
+  private cacheDir: string;
 
-  constructor(db: DatabaseConnection) {
+  constructor(db: DatabaseConnection, cacheDir?: string) {
     this.db = db;
+    // Default to data/cache if not provided
+    this.cacheDir = cacheDir || path.join(process.cwd(), 'data', 'cache');
   }
 
   /**
    * Publish entity to library directory
    */
-  async publish(config: PublishConfig): Promise<PublishResult> {
+  async publish(config: PublishJobConfig): Promise<PublishResult> {
     const result: PublishResult = {
       success: false,
       assetsPublished: 0,
       nfoGenerated: false,
       errors: []
     };
+
+    // Use provided phase config or defaults
+    const phaseConfig = config.phaseConfig || DEFAULT_PHASE_CONFIG.publish;
+
+    logger.info('[PublishingService] Starting publish', {
+      entityType: config.entityType,
+      entityId: config.entityId,
+      publishAssets: phaseConfig.publishAssets,
+      publishActors: phaseConfig.publishActors,
+      publishTrailers: phaseConfig.publishTrailers,
+    });
 
     try {
       // Get entity data
@@ -58,40 +75,73 @@ export class PublishingService {
         return result;
       }
 
-      // Get selected assets
-      const selectedAssets = await this.getSelectedAssets(config.entityType, config.entityId);
+      // Get selected assets (only if publishing assets is enabled)
+      if (phaseConfig.publishAssets || phaseConfig.publishTrailers) {
+        const selectedAssets = await this.getSelectedAssets(config.entityType, config.entityId);
 
-      // Publish each asset
-      for (const asset of selectedAssets) {
-        try {
-          await this.publishAsset(asset, config);
-          result.assetsPublished++;
-        } catch (error) {
-          logger.error(`Error publishing asset ${asset.id}:`, error);
-          result.errors.push(`Asset ${asset.asset_type}: ${getErrorMessage(error)}`);
+        // Publish each asset (filter based on phase config)
+        for (const asset of selectedAssets) {
+          // Skip trailers if publishTrailers is false
+          if (asset.asset_type === 'trailer' && !phaseConfig.publishTrailers) {
+            logger.debug(`[PublishingService] Skipping trailer (publishTrailers=false)`);
+            continue;
+          }
+
+          // Skip non-trailer assets if publishAssets is false
+          if (asset.asset_type !== 'trailer' && !phaseConfig.publishAssets) {
+            logger.debug(`[PublishingService] Skipping asset ${asset.asset_type} (publishAssets=false)`);
+            continue;
+          }
+
+          try {
+            await this.publishAsset(asset, config);
+            result.assetsPublished++;
+          } catch (error) {
+            logger.error(`Error publishing asset ${asset.id}:`, error);
+            result.errors.push(`Asset ${asset.asset_type}: ${getErrorMessage(error)}`);
+          }
         }
+      } else {
+        logger.info('[PublishingService] Skipping assets (publishAssets=false, publishTrailers=false)');
+      }
+
+      // Publish actor thumbnails (only if publishing actors is enabled)
+      if (phaseConfig.publishActors) {
+        try {
+          const actorsPublished = await this.publishActors(config);
+          logger.info(`[PublishingService] Published ${actorsPublished} actor thumbnails`);
+        } catch (error) {
+          logger.error('Error publishing actors:', error);
+          result.errors.push(`Actors: ${getErrorMessage(error)}`);
+        }
+      } else {
+        logger.info('[PublishingService] Skipping actors (publishActors=false)');
       }
 
       // Generate and write NFO file
       try {
         const nfoContent = await this.generateNFO(config.entityType, config.entityId);
-        const nfoPath = path.join(config.libraryPath, this.getNFOFilename(config));
-        await fs.writeFile(nfoPath, nfoContent, 'utf-8');
 
         // Calculate NFO hash
         const nfoHash = crypto.createHash('sha256').update(nfoContent).digest('hex');
 
-        // Update entity with published metadata
-        await this.updatePublishedMetadata(config.entityType, config.entityId, nfoHash);
+        // Save to cache and update cache_text_files table
+        const nfoCachePath = await this.saveNFOToCache(
+          config.entityType,
+          config.entityId,
+          nfoContent,
+          nfoHash
+        );
+
+        // Copy from cache to library
+        const nfoLibraryPath = path.join(config.libraryPath, this.getNFOFilename(config));
+        await fs.copyFile(nfoCachePath, nfoLibraryPath);
 
         result.nfoGenerated = true;
       } catch (error) {
         logger.error('Error generating/writing NFO:', error);
         result.errors.push(`NFO: ${getErrorMessage(error)}`);
       }
-
-      // Log publication
-      await this.logPublication(config, result);
 
       result.success = result.errors.length === 0;
 
@@ -120,7 +170,7 @@ export class PublishingService {
       content_hash: string | null;
       provider_url: string;
     },
-    config: PublishConfig
+    config: PublishJobConfig
   ): Promise<void> {
     // Skip trailers (YouTube URLs, not downloaded)
     if (asset.asset_type === 'trailer' && !asset.content_hash) {
@@ -162,29 +212,50 @@ export class PublishingService {
       throw new Error(`Failed to copy ${cachePath} to ${libraryAssetPath}: ${error}`);
     }
 
-    // Update cache_path in asset_candidates (for tracking)
-    await this.db.execute(
-      `UPDATE asset_candidates SET cache_path = ? WHERE id = ?`,
-      [libraryAssetPath, asset.id]
-    );
+    // Note: cache_path tracking removed - provider_assets table doesn't have this column
+    // The cache location is tracked in cache_image_files/cache_video_files tables instead
   }
 
   /**
-   * Get cache file path from content hash
+   * Get cache file path from file hash
+   * Searches across all cache file tables (images, videos, audio, text)
    */
-  private async getCachePath(contentHash: string): Promise<string | null> {
-    const result = await this.db.query<{ file_path: string }>(
-      `SELECT file_path FROM cache_inventory WHERE content_hash = ?`,
-      [contentHash]
+  private async getCachePath(fileHash: string): Promise<string | null> {
+    // Try cache_image_files first (most common)
+    let result = await this.db.query<{ file_path: string }>(
+      `SELECT file_path FROM cache_image_files WHERE file_hash = ? LIMIT 1`,
+      [fileHash]
     );
+    if (result.length > 0) return result[0].file_path;
 
-    return result.length > 0 ? result[0].file_path : null;
+    // Try cache_video_files
+    result = await this.db.query<{ file_path: string }>(
+      `SELECT file_path FROM cache_video_files WHERE file_hash = ? LIMIT 1`,
+      [fileHash]
+    );
+    if (result.length > 0) return result[0].file_path;
+
+    // Try cache_audio_files
+    result = await this.db.query<{ file_path: string }>(
+      `SELECT file_path FROM cache_audio_files WHERE file_hash = ? LIMIT 1`,
+      [fileHash]
+    );
+    if (result.length > 0) return result[0].file_path;
+
+    // Try cache_text_files
+    result = await this.db.query<{ file_path: string }>(
+      `SELECT file_path FROM cache_text_files WHERE file_hash = ? LIMIT 1`,
+      [fileHash]
+    );
+    if (result.length > 0) return result[0].file_path;
+
+    return null;
   }
 
   /**
    * Get library asset path with Kodi naming convention
    */
-  private getLibraryAssetPath(config: PublishConfig, assetType: string, cachePath: string): string {
+  private getLibraryAssetPath(config: PublishJobConfig, assetType: string, cachePath: string): string {
     const ext = path.extname(cachePath);
 
     // SECURITY: Sanitize mediaFilename to prevent path traversal attacks
@@ -226,7 +297,7 @@ export class PublishingService {
   /**
    * Get NFO filename for entity
    */
-  private getNFOFilename(config: PublishConfig): string {
+  private getNFOFilename(config: PublishJobConfig): string {
     // SECURITY: Sanitize mediaFilename to prevent path traversal
     let safeFilename = '';
     if (config.mediaFilename) {
@@ -385,43 +456,58 @@ export class PublishingService {
   }
 
   /**
-   * Update entity with published metadata
+   * Save NFO to cache and update cache_text_files with hash
+   * This allows verification to detect when metadata changes and re-publish
+   * Returns the cache file path
    */
-  private async updatePublishedMetadata(
+  private async saveNFOToCache(
     entityType: string,
     entityId: number,
+    nfoContent: string,
     nfoHash: string
-  ): Promise<void> {
-    const table = this.getTableName(entityType);
-    if (!table) {
-      throw new Error(`Unknown entity type: ${entityType}`);
+  ): Promise<string> {
+    // Save NFO to cache directory
+    const cacheDir = path.join(this.cacheDir, 'text', entityType, entityId.toString());
+    await fs.mkdir(cacheDir, { recursive: true });
+
+    const nfoFileName = `${entityType}.nfo`;
+    const nfoCachePath = path.join(cacheDir, nfoFileName);
+
+    // Write NFO content to cache
+    await fs.writeFile(nfoCachePath, nfoContent, 'utf-8');
+
+    // Get file size
+    const stats = await fs.stat(nfoCachePath);
+    const fileSize = stats.size;
+
+    // Check if NFO already exists in cache_text_files
+    const existing = await this.db.query<{ id: number; file_hash: string }>(
+      `SELECT id, file_hash FROM cache_text_files
+       WHERE entity_type = ? AND entity_id = ? AND text_type = 'nfo'
+       LIMIT 1`,
+      [entityType, entityId]
+    );
+
+    if (existing.length > 0) {
+      // Update existing record with new hash and file size
+      await this.db.execute(
+        `UPDATE cache_text_files
+         SET file_hash = ?, file_size = ?, last_verified_at = CURRENT_TIMESTAMP
+         WHERE id = ?`,
+        [nfoHash, fileSize, existing[0].id]
+      );
+    } else {
+      // Insert new cache record
+      await this.db.execute(
+        `INSERT INTO cache_text_files (
+          entity_type, entity_id, file_path, file_name, file_size, file_hash,
+          text_type, source_type, nfo_is_valid, nfo_has_tmdb_id
+        ) VALUES (?, ?, ?, ?, ?, ?, 'nfo', 'user', 1, 1)`,
+        [entityType, entityId, nfoCachePath, nfoFileName, fileSize, nfoHash]
+      );
     }
 
-    await this.db.execute(
-      `UPDATE ${table}
-       SET last_published_at = CURRENT_TIMESTAMP,
-           published_nfo_hash = ?
-       WHERE id = ?`,
-      [nfoHash, entityId]
-    );
-  }
-
-  /**
-   * Log publication in publish_log table
-   */
-  private async logPublication(config: PublishConfig, result: PublishResult): Promise<void> {
-    await this.db.execute(
-      `INSERT INTO publish_log (
-        entity_type, entity_id, published_at, assets_published, nfo_content, error_message
-      ) VALUES (?, ?, CURRENT_TIMESTAMP, ?, ?, ?)`,
-      [
-        config.entityType,
-        config.entityId,
-        JSON.stringify({ count: result.assetsPublished }),
-        result.nfoGenerated ? 'NFO Generated' : null,
-        result.errors.length > 0 ? JSON.stringify(result.errors) : null
-      ]
-    );
+    return nfoCachePath;
   }
 
   /**
@@ -448,7 +534,7 @@ export class PublishingService {
   }>> {
     return this.db.query(
       `SELECT id, asset_type, content_hash, provider_url
-       FROM asset_candidates
+       FROM provider_assets
        WHERE entity_type = ? AND entity_id = ? AND is_selected = 1`,
       [entityType, entityId]
     );
@@ -527,11 +613,11 @@ export class PublishingService {
     thumb: string | null;
   }>> {
     return this.db.query(
-      `SELECT a.name, ma.character, ma.display_order as 'order', a.thumb
+      `SELECT a.name, ma.role as character, ma.actor_order as 'order', a.image_cache_path as thumb
        FROM actors a
        INNER JOIN movie_actors ma ON a.id = ma.actor_id
        WHERE ma.movie_id = ?
-       ORDER BY ma.display_order, a.name`,
+       ORDER BY ma.actor_order, a.name`,
       [movieId]
     );
   }
@@ -576,5 +662,230 @@ export class PublishingService {
        ORDER BY s.name`,
       [movieId]
     );
+  }
+
+  // ============================================
+  // Actor Publishing
+  // ============================================
+
+  /**
+   * Publish actor thumbnails to library .actors/ directory
+   *
+   * Workflow:
+   * 1. Delete entire .actors/ directory
+   * 2. Get actors linked to movie
+   * 3. For each actor:
+   *    - Check cache for thumbnail
+   *    - If not cached, download from TMDB
+   *    - Copy to .actors/Actor Name.jpg
+   *
+   * @returns Number of actors published
+   */
+  private async publishActors(config: PublishJobConfig): Promise<number> {
+    const actorsDir = path.join(config.libraryPath, '.actors');
+
+    try {
+      // Step 1: Delete entire .actors/ directory
+      await fs.rm(actorsDir, { recursive: true, force: true });
+      logger.debug('[PublishingService] Deleted .actors/ directory', { actorsDir });
+    } catch (error) {
+      // Ignore if directory doesn't exist
+      logger.debug('[PublishingService] .actors/ directory did not exist', { actorsDir });
+    }
+
+    // Step 2: Get actors linked to this movie
+    const actors = await this.db.query<{
+      actor_id: number;
+      name: string;
+      tmdb_id: number | null;
+      image_cache_path: string | null;
+    }>(
+      `SELECT
+         a.id as actor_id,
+         a.name,
+         a.tmdb_id,
+         a.image_cache_path
+       FROM actors a
+       INNER JOIN movie_actors ma ON a.id = ma.actor_id
+       WHERE ma.movie_id = ?
+       ORDER BY ma.actor_order`,
+      [config.entityId]
+    );
+
+    if (actors.length === 0) {
+      logger.debug('[PublishingService] No actors to publish', { entityId: config.entityId });
+      return 0;
+    }
+
+    // Ensure .actors/ directory exists
+    await fs.mkdir(actorsDir, { recursive: true });
+
+    let publishedCount = 0;
+
+    // Step 3: Process each actor
+    for (const actor of actors) {
+      try {
+        let cachePath: string;
+
+        // Check if image_cache_path is a local file (downloaded during enrichment)
+        if (actor.image_cache_path && !actor.image_cache_path.startsWith('/')) {
+          // Local path - already downloaded during enrichment
+          cachePath = actor.image_cache_path;
+        } else {
+          // TMDB URL - need to download (fallback for legacy data or manual entries)
+          const cachedImage = await this.db.query<{
+            file_path: string;
+          }>(
+            `SELECT file_path
+             FROM cache_image_files
+             WHERE entity_type = 'actor'
+               AND entity_id = ?
+             LIMIT 1`,
+            [actor.actor_id]
+          );
+
+          if (cachedImage.length > 0) {
+            cachePath = cachedImage[0].file_path;
+          } else if (actor.image_cache_path && actor.tmdb_id) {
+            // Download from TMDB (fallback)
+            cachePath = await this.downloadActorThumbnail(
+              actor.actor_id,
+              actor.tmdb_id,
+              actor.image_cache_path
+            );
+          } else {
+            logger.debug('[PublishingService] Actor has no thumbnail', {
+              actorId: actor.actor_id,
+              name: actor.name,
+            });
+            continue;
+          }
+        }
+
+        // Copy to library .actors/Actor Name.jpg
+        const sanitizedName = this.sanitizeActorName(actor.name);
+        const libraryPath = path.join(actorsDir, `${sanitizedName}.jpg`);
+
+        await fs.copyFile(cachePath, libraryPath);
+
+        logger.debug('[PublishingService] Published actor thumbnail', {
+          actorId: actor.actor_id,
+          name: actor.name,
+          libraryPath,
+        });
+
+        publishedCount++;
+      } catch (error) {
+        logger.error('[PublishingService] Failed to publish actor thumbnail', {
+          actorId: actor.actor_id,
+          name: actor.name,
+          error: getErrorMessage(error),
+        });
+        // Continue with other actors
+      }
+    }
+
+    logger.info('[PublishingService] Actor publishing complete', {
+      entityId: config.entityId,
+      totalActors: actors.length,
+      publishedCount,
+    });
+
+    return publishedCount;
+  }
+
+  /**
+   * Download actor thumbnail from TMDB to cache
+   *
+   * @param actorId Database actor ID
+   * @param tmdbId TMDB person ID
+   * @param tmdbPath TMDB image path (e.g., "/abc123.jpg")
+   * @returns Cache file path
+   */
+  private async downloadActorThumbnail(
+    actorId: number,
+    tmdbId: number,
+    tmdbPath: string
+  ): Promise<string> {
+    // Construct full TMDB URL (original size for quality)
+    const tmdbUrl = `https://image.tmdb.org/t/p/original${tmdbPath}`;
+
+    logger.debug('[PublishingService] Downloading actor thumbnail from TMDB', {
+      actorId,
+      tmdbId,
+      tmdbUrl,
+    });
+
+    // Download image
+    const response = await axios.get(tmdbUrl, { responseType: 'arraybuffer' });
+    const imageBuffer = Buffer.from(response.data);
+
+    // Calculate hash for deduplication
+    const hash = crypto.createHash('sha256').update(imageBuffer).digest('hex');
+
+    // Determine file extension
+    const ext = path.extname(tmdbPath) || '.jpg';
+
+    // Create cache directory
+    const cacheDir = path.join(this.cacheDir, 'images', 'actor', actorId.toString());
+    await fs.mkdir(cacheDir, { recursive: true });
+
+    // Save to cache
+    const cachePath = path.join(cacheDir, `${hash}${ext}`);
+    await fs.writeFile(cachePath, imageBuffer);
+
+    // Insert into cache_image_files table
+    // Note: width/height default to 0 since we don't analyze the image
+    // format is inferred from extension
+    const format = ext.substring(1); // Remove leading dot
+
+    await this.db.execute(
+      `INSERT INTO cache_image_files (
+        entity_type, entity_id, image_type, file_path, file_name,
+        file_hash, file_size, width, height, format, source_type, source_url, provider_name
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        'actor',
+        actorId,
+        'actor_thumb',
+        cachePath,
+        path.basename(cachePath),
+        hash,
+        imageBuffer.length,
+        0, // width - unknown
+        0, // height - unknown
+        format,
+        'provider',
+        tmdbUrl,
+        'tmdb',
+      ]
+    );
+
+    // Update actor record with cache path for UI serving
+    await this.db.execute(
+      `UPDATE actors SET image_cache_path = ? WHERE id = ?`,
+      [cachePath, actorId]
+    );
+
+    logger.info('[PublishingService] Downloaded actor thumbnail to cache', {
+      actorId,
+      tmdbId,
+      cachePath,
+      fileSize: imageBuffer.length,
+    });
+
+    return cachePath;
+  }
+
+  /**
+   * Sanitize actor name for filesystem
+   * Removes invalid characters and limits length
+   */
+  private sanitizeActorName(name: string): string {
+    return name
+      .replace(/[<>:"/\\|?*]/g, '') // Remove Windows/Linux invalid chars
+      .replace(/\s+/g, ' ') // Normalize whitespace
+      .trim()
+      .substring(0, 100); // Limit length
   }
 }
