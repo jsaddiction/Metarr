@@ -228,6 +228,24 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({ children }
         toast.error(`Job failed: ${(message as any).error || 'Unknown error'}`);
         break;
 
+      case 'enrichment.complete':
+        // Enrichment completed - invalidate movie and actor queries
+        const entityId = (message as any).entityId;
+        if (entityId) {
+          console.log(`[WebSocket] Enrichment complete for movie ${entityId} - invalidating queries`);
+          queryClient.invalidateQueries({ queryKey: ['movies'] }); // Movies list (plural)
+          queryClient.invalidateQueries({ queryKey: ['movie', entityId] }); // Single movie detail
+          queryClient.invalidateQueries({ queryKey: ['movieImages', entityId] });
+          queryClient.invalidateQueries({ queryKey: ['movieExtras', entityId] });
+          queryClient.invalidateQueries({ queryKey: ['actors'] }); // Actors may have been added
+
+          // Show success toast with sonar effect
+          toast.success('Enrichment complete', {
+            description: `Movie metadata and assets updated`,
+          });
+        }
+        break;
+
       default:
         // Handle other message types
         break;
