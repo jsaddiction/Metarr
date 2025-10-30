@@ -1255,84 +1255,282 @@ export class CleanSchemaMigration {
     // PROVIDER CACHE TABLES
     // ============================================================
 
-    // Provider Cache - Movies
+    // Provider Cache - Movies (independent aggregate, no entity_id linking)
     await db.execute(`
       CREATE TABLE provider_cache_movies (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        entity_id INTEGER NOT NULL UNIQUE,
 
-        -- Identification
-        tmdb_id TEXT,
-        imdb_id TEXT,
+        -- Provider IDs (indexed for fast lookup)
+        tmdb_id INTEGER UNIQUE,
+        imdb_id TEXT UNIQUE,
+        tvdb_id INTEGER UNIQUE,
 
-        -- Basic metadata (all fields from all providers)
-        title TEXT,
+        -- Core Metadata
+        title TEXT NOT NULL,
         original_title TEXT,
         overview TEXT,
         tagline TEXT,
+
+        -- Release Info
         release_date TEXT,
+        year INTEGER,
         runtime INTEGER,
         status TEXT,
-        budget INTEGER,
-        revenue INTEGER,
-
-        -- Complex metadata (JSON arrays)
-        genres TEXT,              -- JSON array of genre names
-        production_companies TEXT, -- JSON array of company names
-        production_countries TEXT, -- JSON array of country codes
-        spoken_languages TEXT,     -- JSON array of language codes
-        cast TEXT,                -- JSON array of cast members
-        crew TEXT,                -- JSON array of crew members
-        keywords TEXT,            -- JSON array of keywords
+        content_rating TEXT,
 
         -- Ratings
-        vote_average REAL,
-        vote_count INTEGER,
+        tmdb_rating REAL,
+        tmdb_votes INTEGER,
+        imdb_rating REAL,
+        imdb_votes INTEGER,
         popularity REAL,
 
-        -- Media details
+        -- Business
+        budget INTEGER,
+        revenue INTEGER,
         homepage TEXT,
-        trailer_key TEXT,
+
+        -- Flags
+        adult BOOLEAN DEFAULT 0,
 
         -- Cache management
         fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
 
-    await db.execute('CREATE INDEX idx_provider_cache_movies_entity ON provider_cache_movies(entity_id)');
+    await db.execute('CREATE UNIQUE INDEX idx_provider_cache_movies_tmdb ON provider_cache_movies(tmdb_id)');
+    await db.execute('CREATE UNIQUE INDEX idx_provider_cache_movies_imdb ON provider_cache_movies(imdb_id)');
+    await db.execute('CREATE UNIQUE INDEX idx_provider_cache_movies_tvdb ON provider_cache_movies(tvdb_id)');
     await db.execute('CREATE INDEX idx_provider_cache_movies_fetched ON provider_cache_movies(fetched_at)');
 
     console.log('✅ Provider cache movies table created');
 
-    // Provider Cache - Assets
+    // Provider Cache - Collections
     await db.execute(`
-      CREATE TABLE provider_cache_assets (
+      CREATE TABLE provider_cache_movie_collections (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        entity_id INTEGER NOT NULL,
-        entity_type TEXT NOT NULL CHECK(entity_type IN ('movie', 'tv', 'music')),
-
-        -- Asset details
-        asset_type TEXT NOT NULL,      -- poster, fanart, banner, clearlogo, etc
-        url TEXT NOT NULL,
-        width INTEGER,
-        height INTEGER,
-        language TEXT,
-
-        -- Provider information
-        provider_name TEXT NOT NULL,   -- tmdb, fanart.tv, tvdb
-        provider_score INTEGER,         -- Normalized 0-100 score
-        provider_metadata TEXT,         -- Small JSON: votes, likes, etc
-
-        -- Cache management
+        tmdb_collection_id INTEGER UNIQUE NOT NULL,
+        name TEXT NOT NULL,
+        overview TEXT,
         fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
 
-    await db.execute('CREATE INDEX idx_provider_cache_assets_entity ON provider_cache_assets(entity_id, entity_type)');
-    await db.execute('CREATE INDEX idx_provider_cache_assets_type_score ON provider_cache_assets(asset_type, provider_score DESC)');
-    await db.execute('CREATE INDEX idx_provider_cache_assets_fetched ON provider_cache_assets(fetched_at)');
+    await db.execute('CREATE UNIQUE INDEX idx_provider_cache_collections_tmdb ON provider_cache_movie_collections(tmdb_collection_id)');
 
-    console.log('✅ Provider cache assets table created');
+    await db.execute(`
+      CREATE TABLE provider_cache_collection_movies (
+        collection_id INTEGER NOT NULL,
+        movie_cache_id INTEGER NOT NULL,
+        part_number INTEGER,
+        PRIMARY KEY (collection_id, movie_cache_id),
+        FOREIGN KEY (collection_id) REFERENCES provider_cache_movie_collections(id) ON DELETE CASCADE,
+        FOREIGN KEY (movie_cache_id) REFERENCES provider_cache_movies(id) ON DELETE CASCADE
+      )
+    `);
+
+    await db.execute('CREATE INDEX idx_provider_cache_collection_movies_collection ON provider_cache_collection_movies(collection_id)');
+    await db.execute('CREATE INDEX idx_provider_cache_collection_movies_movie ON provider_cache_collection_movies(movie_cache_id)');
+
+    console.log('✅ Provider cache collections tables created');
+
+    // Provider Cache - Images (ALL types, ALL entities)
+    await db.execute(`
+      CREATE TABLE provider_cache_images (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        entity_type TEXT NOT NULL CHECK(entity_type IN ('movie', 'collection', 'person', 'series', 'season', 'episode', 'artist', 'album')),
+        entity_cache_id INTEGER NOT NULL,
+        image_type TEXT NOT NULL CHECK(image_type IN (
+          'poster', 'backdrop', 'logo',
+          'clearlogo', 'clearart', 'discart', 'banner', 'keyart', 'landscape',
+          'clearlogo_hd', 'clearart_hd', 'characterart', 'seasonposter', 'seasonthumb', 'seasonbanner',
+          'artistbackground', 'artistthumb', 'musiclogo', 'musicbanner', 'cdart', 'albumcover',
+          'profile', 'headshot'
+        )),
+        provider_name TEXT NOT NULL CHECK(provider_name IN ('tmdb', 'fanart.tv', 'tvdb', 'musicbrainz', 'local')),
+        provider_image_id TEXT,
+        file_path TEXT NOT NULL,
+        width INTEGER,
+        height INTEGER,
+        aspect_ratio REAL,
+        vote_average REAL,
+        vote_count INTEGER,
+        likes INTEGER,
+        iso_639_1 TEXT,
+        disc_number INTEGER,
+        disc_type TEXT,
+        season_number INTEGER,
+        is_hd BOOLEAN DEFAULT 0,
+        fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await db.execute('CREATE INDEX idx_provider_cache_images_entity ON provider_cache_images(entity_type, entity_cache_id)');
+    await db.execute('CREATE INDEX idx_provider_cache_images_type ON provider_cache_images(entity_type, entity_cache_id, image_type)');
+    await db.execute('CREATE INDEX idx_provider_cache_images_provider ON provider_cache_images(provider_name)');
+
+    console.log('✅ Provider cache images table created');
+
+    // Provider Cache - Videos (trailers, teasers, clips)
+    await db.execute(`
+      CREATE TABLE provider_cache_videos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        entity_type TEXT NOT NULL CHECK(entity_type IN ('movie', 'series', 'episode', 'person')),
+        entity_cache_id INTEGER NOT NULL,
+        video_type TEXT NOT NULL CHECK(video_type IN (
+          'trailer', 'teaser', 'clip', 'featurette', 'behind_the_scenes', 'bloopers', 'opening_credits'
+        )),
+        provider_name TEXT NOT NULL CHECK(provider_name IN ('tmdb', 'youtube', 'vimeo')),
+        provider_video_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        site TEXT NOT NULL,
+        key TEXT NOT NULL,
+        size INTEGER,
+        duration_seconds INTEGER,
+        published_at TEXT,
+        official BOOLEAN DEFAULT 0,
+        iso_639_1 TEXT,
+        iso_3166_1 TEXT,
+        fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await db.execute('CREATE INDEX idx_provider_cache_videos_entity ON provider_cache_videos(entity_type, entity_cache_id)');
+    await db.execute('CREATE INDEX idx_provider_cache_videos_type ON provider_cache_videos(entity_type, entity_cache_id, video_type)');
+    await db.execute('CREATE INDEX idx_provider_cache_videos_provider ON provider_cache_videos(provider_name)');
+
+    console.log('✅ Provider cache videos table created');
+
+    // Provider Cache - People
+    await db.execute(`
+      CREATE TABLE provider_cache_people (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        tmdb_person_id INTEGER UNIQUE,
+        imdb_person_id TEXT UNIQUE,
+        name TEXT NOT NULL,
+        profile_path TEXT,
+        popularity REAL,
+        gender INTEGER,
+        known_for_department TEXT,
+        fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await db.execute('CREATE UNIQUE INDEX idx_provider_cache_people_tmdb ON provider_cache_people(tmdb_person_id)');
+    await db.execute('CREATE UNIQUE INDEX idx_provider_cache_people_imdb ON provider_cache_people(imdb_person_id)');
+
+    await db.execute(`
+      CREATE TABLE provider_cache_movie_cast (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        movie_cache_id INTEGER NOT NULL,
+        person_cache_id INTEGER NOT NULL,
+        character_name TEXT,
+        cast_order INTEGER,
+        FOREIGN KEY (movie_cache_id) REFERENCES provider_cache_movies(id) ON DELETE CASCADE,
+        FOREIGN KEY (person_cache_id) REFERENCES provider_cache_people(id) ON DELETE CASCADE
+      )
+    `);
+
+    await db.execute('CREATE INDEX idx_provider_cache_cast_movie ON provider_cache_movie_cast(movie_cache_id)');
+    await db.execute('CREATE INDEX idx_provider_cache_cast_person ON provider_cache_movie_cast(person_cache_id)');
+
+    await db.execute(`
+      CREATE TABLE provider_cache_movie_crew (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        movie_cache_id INTEGER NOT NULL,
+        person_cache_id INTEGER NOT NULL,
+        job TEXT NOT NULL,
+        department TEXT,
+        FOREIGN KEY (movie_cache_id) REFERENCES provider_cache_movies(id) ON DELETE CASCADE,
+        FOREIGN KEY (person_cache_id) REFERENCES provider_cache_people(id) ON DELETE CASCADE
+      )
+    `);
+
+    await db.execute('CREATE INDEX idx_provider_cache_crew_movie ON provider_cache_movie_crew(movie_cache_id)');
+    await db.execute('CREATE INDEX idx_provider_cache_crew_person ON provider_cache_movie_crew(person_cache_id)');
+
+    console.log('✅ Provider cache people/cast/crew tables created');
+
+    // Provider Cache - Genres
+    await db.execute(`
+      CREATE TABLE provider_cache_genres (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        tmdb_genre_id INTEGER UNIQUE,
+        tvdb_genre_id INTEGER UNIQUE,
+        name TEXT NOT NULL UNIQUE
+      )
+    `);
+
+    await db.execute(`
+      CREATE TABLE provider_cache_movie_genres (
+        movie_cache_id INTEGER NOT NULL,
+        genre_id INTEGER NOT NULL,
+        PRIMARY KEY (movie_cache_id, genre_id),
+        FOREIGN KEY (movie_cache_id) REFERENCES provider_cache_movies(id) ON DELETE CASCADE,
+        FOREIGN KEY (genre_id) REFERENCES provider_cache_genres(id) ON DELETE CASCADE
+      )
+    `);
+
+    // Provider Cache - Companies
+    await db.execute(`
+      CREATE TABLE provider_cache_companies (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        tmdb_company_id INTEGER UNIQUE,
+        name TEXT NOT NULL,
+        logo_path TEXT,
+        origin_country TEXT
+      )
+    `);
+
+    await db.execute(`
+      CREATE TABLE provider_cache_movie_companies (
+        movie_cache_id INTEGER NOT NULL,
+        company_id INTEGER NOT NULL,
+        PRIMARY KEY (movie_cache_id, company_id),
+        FOREIGN KEY (movie_cache_id) REFERENCES provider_cache_movies(id) ON DELETE CASCADE,
+        FOREIGN KEY (company_id) REFERENCES provider_cache_companies(id) ON DELETE CASCADE
+      )
+    `);
+
+    // Provider Cache - Countries
+    await db.execute(`
+      CREATE TABLE provider_cache_countries (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        iso_3166_1 TEXT UNIQUE NOT NULL,
+        name TEXT NOT NULL
+      )
+    `);
+
+    await db.execute(`
+      CREATE TABLE provider_cache_movie_countries (
+        movie_cache_id INTEGER NOT NULL,
+        country_id INTEGER NOT NULL,
+        PRIMARY KEY (movie_cache_id, country_id),
+        FOREIGN KEY (movie_cache_id) REFERENCES provider_cache_movies(id) ON DELETE CASCADE,
+        FOREIGN KEY (country_id) REFERENCES provider_cache_countries(id) ON DELETE CASCADE
+      )
+    `);
+
+    // Provider Cache - Keywords
+    await db.execute(`
+      CREATE TABLE provider_cache_keywords (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        tmdb_keyword_id INTEGER UNIQUE,
+        name TEXT NOT NULL UNIQUE
+      )
+    `);
+
+    await db.execute(`
+      CREATE TABLE provider_cache_movie_keywords (
+        movie_cache_id INTEGER NOT NULL,
+        keyword_id INTEGER NOT NULL,
+        PRIMARY KEY (movie_cache_id, keyword_id),
+        FOREIGN KEY (movie_cache_id) REFERENCES provider_cache_movies(id) ON DELETE CASCADE,
+        FOREIGN KEY (keyword_id) REFERENCES provider_cache_keywords(id) ON DELETE CASCADE
+      )
+    `);
+
+    console.log('✅ Provider cache relational tables created (genres, companies, countries, keywords)');
 
     // Provider Assets (Master Catalog for Enrichment & Selection)
     await db.execute(`
@@ -1442,14 +1640,35 @@ export class CleanSchemaMigration {
       )
     `);
 
-    // Insert default workflow settings (all disabled for development safety)
+    // Insert default phase configuration settings
+    // All phases ALWAYS run - configuration controls BEHAVIOR not ENABLEMENT
     await db.execute(`
       INSERT INTO app_settings (key, value) VALUES
-        ('workflow.webhooks', 'false'),
-        ('workflow.scanning', 'false'),
-        ('workflow.identification', 'false'),
-        ('workflow.enrichment', 'false'),
-        ('workflow.publishing', 'false'),
+        -- Scan Phase
+        ('phase.scan.ignorePatterns', '["**/@eaDir/**","**/.DS_Store","**/Thumbs.db","**/.thumbnails/**"]'),
+        ('phase.scan.maxFileSizeGB', '100'),
+        ('phase.scan.ffprobeTimeoutSeconds', '30'),
+        ('phase.scan.videoExtensions', '[".mkv",".mp4",".avi",".m4v",".mov",".wmv",".flv",".webm"]'),
+        ('phase.scan.imageExtensions', '[".jpg",".jpeg",".png",".webp",".gif"]'),
+
+        -- Enrichment Phase
+        ('phase.enrichment.fetchProviderAssets', 'true'),
+        ('phase.enrichment.autoSelectAssets', 'true'),
+        ('phase.enrichment.maxAssetsPerType', '{"poster":3,"fanart":5,"logo":2,"trailer":1}'),
+        ('phase.enrichment.preferredLanguage', 'en'),
+        ('phase.enrichment.minAssetResolution', '720'),
+
+        -- Publish Phase
+        ('phase.publish.publishAssets', 'true'),
+        ('phase.publish.publishActors', 'true'),
+        ('phase.publish.publishTrailers', 'false'),
+
+        -- Player Sync Phase
+        ('phase.playerSync.notifyOnPublish', 'true'),
+        ('phase.playerSync.delaySeconds', '0'),
+        ('phase.playerSync.cleanLibraryFirst', 'false'),
+
+        -- Other Settings
         ('recycle_bin.retention_days', '30'),
         ('recycle_bin.unknown_files_auto_recycle', 'false')
     `);
