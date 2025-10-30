@@ -36,27 +36,36 @@ interface EnrichmentJobPayload {
 }
 ```
 
-## The Five-Phase Process
+## The Seven-Phase Process
 
-Enrichment is a **single job** that executes five sequential phases:
+Enrichment is a **single job** that executes seven sequential phases:
 
 ```
-ENRICHMENT JOB (Single Heavy Task)
+ENRICHMENT JOB (Cache Preparation for UI)
 │
-├─ Phase 1: Fetch Provider Metadata & Actors
-│  └─ Query providers, save to provider_assets, create actor records
+├─ Phase 1: Fetch Provider Metadata
+│  └─ Query providers, save URLs and metadata to provider_assets table
 │
-├─ Phase 2: Match Cache Assets to Providers
-│  └─ Link existing cache files to provider assets via hash matching
+├─ Phase 2: Match Existing Cache Assets
+│  └─ Link existing cache files to provider assets via perceptual hash
 │
-├─ Phase 3: Download & Analyze Unanalyzed Assets
-│  └─ Temp download, extract metadata, calculate hashes, discard files
+├─ Phase 3: Download & Analyze ALL Candidates
+│  └─ Temp download, extract metadata, calculate hashes, discard temp files
 │
 ├─ Phase 4: Calculate Scores
-│  └─ Score all analyzed assets using resolution, aspect ratio, votes, language, provider priority
+│  └─ Score all analyzed assets using 0-100 algorithm
 │
-└─ Phase 5: Intelligent Selection
-   └─ Select top N per asset type, evict lowest-ranked, respect locks
+├─ Phase 5: Intelligent Selection
+│  └─ Select top N per asset type, evict lowest-ranked, respect locks
+│
+├─ Phase 5B: Download Selected to Cache
+│  └─ Permanently store selected assets in cache for UI display
+│
+├─ Phase 6: Fetch Actors & Download Thumbnails
+│  └─ Create actor records, download headshots to cache
+│
+└─ Phase 7: Update Entity Status
+   └─ Mark as 'enriched', emit WebSocket event to UI
 ```
 
 ---
@@ -222,11 +231,15 @@ for (const cacheFile of cacheFiles) {
 
 ---
 
-## Phase 3: Download & Analyze Unanalyzed Assets
+## Phase 3: Download & Analyze Assets + Store Selected in Cache
 
-**Goal**: Download unanalyzed assets temporarily, extract accurate metadata, then discard files.
+**Goal**: Download and analyze assets to get accurate metadata for scoring, then download selected assets to permanent cache storage.
 
-**Critical**: This phase does NOT store files in cache. It only analyzes them to get accurate dimensions, hashes, and metadata for scoring. Publishing will download selected assets to cache.
+**Critical Change**: This phase now operates in TWO sub-phases:
+- **Phase 3A**: Download ALL assets temporarily for analysis (dimensions, hashes, scoring)
+- **Phase 3B**: After selection, download SELECTED assets to permanent cache storage
+
+This ensures the user can immediately see selected assets in the UI after enrichment completes.
 
 ### Parallel Download with Limit
 
@@ -543,7 +556,290 @@ async function manualSelectAsset(assetId: number) {
 }
 ```
 
-### Completion
+---
+
+## Phase 5B: Download Selected Assets to Cache
+
+**Goal**: Permanently store selected assets in cache for UI display and future publishing.
+
+**Critical**: This is the NEW phase that makes enrichment cache-complete. After Phase 5 (selection), we now download the selected assets to permanent storage.
+
+### Download Selected to Cache
+
+```typescript
+// Get all selected assets that aren't already in cache
+const selectedAssets = await db.query(`
+  SELECT pa.id, pa.asset_type, pa.provider_url, pa.content_hash,
+         pa.perceptual_hash, pa.width, pa.height, pa.mime_type, pa.file_size
+  FROM provider_assets pa
+  WHERE pa.entity_id = ?
+    AND pa.entity_type = ?
+    AND pa.is_selected = 1
+    AND pa.is_downloaded = 0
+`, [entityId, entityType]);
+
+logger.info('[Enrichment] Downloading selected assets to cache', {
+  count: selectedAssets.length,
+});
+
+for (const asset of selectedAssets) {
+  try {
+    // Determine cache path (content-addressed)
+    const ext = path.extname(new URL(asset.provider_url).pathname) || '.jpg';
+    const cacheDir = `/data/cache/${asset.asset_type}`;
+    const cachePath = path.join(
+      cacheDir,
+      asset.content_hash.slice(0, 2),
+      `${asset.content_hash}${ext}`
+    );
+
+    // Ensure directory exists
+    await fs.mkdir(path.dirname(cachePath), { recursive: true });
+
+    // Download from provider
+    const buffer = await downloadFile(asset.provider_url);
+
+    // Verify hash matches
+    const actualHash = calculateSHA256(buffer);
+    if (actualHash !== asset.content_hash) {
+      logger.error('[Enrichment] Hash mismatch - provider changed asset', {
+        assetId: asset.id,
+        expected: asset.content_hash.slice(0, 8),
+        actual: actualHash.slice(0, 8),
+      });
+      continue; // Skip this asset
+    }
+
+    // Write to cache
+    await fs.writeFile(cachePath, buffer);
+
+    // Get image dimensions (if not already accurate)
+    let width = asset.width;
+    let height = asset.height;
+    let format = ext.slice(1);
+
+    if (asset.asset_type !== 'trailer' && asset.asset_type !== 'sample') {
+      const metadata = await sharp(cachePath).metadata();
+      width = metadata.width;
+      height = metadata.height;
+      format = metadata.format;
+    }
+
+    // Insert cache_image_files record
+    const cacheFileId = await db.execute(
+      `INSERT INTO cache_image_files (
+        entity_type, entity_id, file_path, file_name, file_size,
+        file_hash, perceptual_hash, image_type, width, height, format,
+        source_type, source_url, provider_name, discovered_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+      [
+        entityType,
+        entityId,
+        cachePath,
+        path.basename(cachePath),
+        buffer.length,
+        asset.content_hash,
+        asset.perceptual_hash,
+        asset.asset_type,
+        width,
+        height,
+        format,
+        'provider',
+        asset.provider_url,
+        asset.provider_name,
+      ]
+    );
+
+    // Update provider_assets
+    await db.provider_assets.update(asset.id, {
+      is_downloaded: 1,
+    });
+
+    logger.debug('[Enrichment] Asset downloaded to cache', {
+      assetId: asset.id,
+      assetType: asset.asset_type,
+      cachePath,
+    });
+
+  } catch (error) {
+    logger.error('[Enrichment] Failed to download asset to cache', {
+      assetId: asset.id,
+      url: asset.provider_url,
+      error: getErrorMessage(error),
+    });
+    // Continue with other assets
+  }
+}
+
+logger.info('[Enrichment] Phase 5B complete', {
+  assetsDownloaded: selectedAssets.length,
+});
+```
+
+**Output**: Selected assets permanently stored in cache, visible in UI
+
+---
+
+## Phase 6: Fetch Actor Data and Download Thumbnails
+
+**Goal**: Create actor records and download thumbnails to cache for UI display.
+
+**Critical**: Actors are created during enrichment (not scan) to avoid naming ambiguities. Thumbnails download to cache immediately so user can review cast before publishing.
+
+### Fetch Cast from TMDB
+
+```typescript
+// Get TMDB ID for this movie
+const movie = await db.movies.findById(entityId);
+if (!movie.tmdb_id) {
+  logger.warn('[Enrichment] No TMDB ID, skipping actor fetch', { entityId });
+  return { actorsFetched: 0 };
+}
+
+// Fetch cast from TMDB
+const credits = await tmdbClient.getMovieCredits(movie.tmdb_id);
+const cast = credits.cast.slice(0, 15); // Top 15 actors
+
+logger.info('[Enrichment] Fetching actors', {
+  movieId: entityId,
+  tmdbId: movie.tmdb_id,
+  actorCount: cast.length,
+});
+
+let actorsFetched = 0;
+
+for (const tmdbActor of cast) {
+  try {
+    // Find or create actor by tmdb_id (unique identifier)
+    let actor = await db.get(
+      `SELECT id, name, tmdb_id FROM actors WHERE tmdb_id = ?`,
+      [tmdbActor.id]
+    );
+
+    if (!actor) {
+      // Create new actor
+      const actorId = await db.execute(
+        `INSERT INTO actors (
+          name, name_normalized, tmdb_id, tmdb_profile_path, created_at
+        ) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+        [
+          tmdbActor.name,
+          normalizeActorName(tmdbActor.name),
+          tmdbActor.id,
+          tmdbActor.profile_path,
+        ]
+      );
+
+      actor = { id: actorId, name: tmdbActor.name, tmdb_id: tmdbActor.id };
+
+      logger.debug('[Enrichment] Created actor', {
+        actorId,
+        name: tmdbActor.name,
+        tmdbId: tmdbActor.id,
+      });
+    }
+
+    // Link actor to movie
+    await db.execute(
+      `INSERT OR IGNORE INTO movie_actors (
+        movie_id, actor_id, character, actor_order, created_at
+      ) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+      [entityId, actor.id, tmdbActor.character, tmdbActor.order]
+    );
+
+    // Download actor thumbnail to cache
+    if (tmdbActor.profile_path) {
+      const imageUrl = `https://image.tmdb.org/t/p/original${tmdbActor.profile_path}`;
+
+      // Download and hash
+      const buffer = await downloadFile(imageUrl);
+      const contentHash = calculateSHA256(buffer);
+
+      // Determine cache path
+      const cachePath = path.join(
+        '/data/cache/actor',
+        contentHash.slice(0, 2),
+        `${contentHash}.jpg`
+      );
+
+      // Check if already cached
+      const existingCache = await db.get(
+        `SELECT id FROM cache_image_files WHERE file_hash = ?`,
+        [contentHash]
+      );
+
+      if (!existingCache) {
+        // Write to cache
+        await fs.mkdir(path.dirname(cachePath), { recursive: true });
+        await fs.writeFile(cachePath, buffer);
+
+        // Get metadata
+        const metadata = await sharp(cachePath).metadata();
+
+        // Insert cache_image_files record
+        await db.execute(
+          `INSERT INTO cache_image_files (
+            entity_type, entity_id, file_path, file_name, file_size,
+            file_hash, image_type, width, height, format,
+            source_type, source_url, provider_name, discovered_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+          [
+            'movie',
+            entityId,
+            cachePath,
+            path.basename(cachePath),
+            buffer.length,
+            contentHash,
+            'actor_thumb',
+            metadata.width,
+            metadata.height,
+            metadata.format,
+            'provider',
+            imageUrl,
+            'tmdb',
+          ]
+        );
+
+        logger.debug('[Enrichment] Actor thumbnail cached', {
+          actorName: tmdbActor.name,
+          cachePath,
+        });
+      }
+
+      // Update actor record with cache path
+      await db.execute(
+        `UPDATE actors SET
+          image_cache_path = ?,
+          image_hash = ?,
+          image_ctime = ?
+        WHERE id = ?`,
+        [cachePath, contentHash, Date.now(), actor.id]
+      );
+    }
+
+    actorsFetched++;
+
+  } catch (error) {
+    logger.error('[Enrichment] Failed to process actor', {
+      actorName: tmdbActor.name,
+      error: getErrorMessage(error),
+    });
+    // Continue with other actors
+  }
+}
+
+logger.info('[Enrichment] Phase 6 complete', {
+  actorsFetched,
+});
+```
+
+**Output**: Actors table populated, thumbnails in cache, visible in UI
+
+---
+
+## Phase 7: Update Entity Status and Complete
+
+**Goal**: Mark entity as enriched and notify UI.
 
 ```typescript
 // Update movie enrichment timestamp
@@ -552,13 +848,24 @@ await db.movies.update(entityId, {
   identification_status: 'enriched',
 });
 
-// Emit completion event (Sonner toast notification)
-eventBus.emit('enrichment.complete', {
-  entityId,
+// Emit completion event (WebSocket to UI)
+websocketBroadcaster.broadcast('enrichment.complete', {
   entityType,
+  entityId,
   assetsSelected: selectedCount,
+  actorsFound: actorsFetched,
+});
+
+logger.info('[Enrichment] Complete', {
+  entityType,
+  entityId,
+  assetsSelected: selectedCount,
+  actorsFetched,
+  durationMs: Date.now() - startTime,
 });
 ```
+
+**Output**: Entity marked as enriched, UI updates immediately
 
 ---
 
@@ -712,6 +1019,50 @@ interface EnrichmentConfig {
 
 ---
 
+## Completion State
+
+Upon completion, enrichment:
+
+1. **Marks entity as enriched**
+   ```typescript
+   await db.movies.update(entityId, {
+     identification_status: 'enriched',
+     enriched_at: new Date(),
+   });
+   ```
+
+2. **Broadcasts completion event**
+   ```typescript
+   websocketBroadcaster.broadcast('enrichment.complete', {
+     entityId,
+     entityType,
+     assetsSelected: selectedCount,
+   });
+   ```
+
+3. **DOES NOT auto-publish** (by default)
+   - Enrichment creates a **user review gate**
+   - User can preview assets, edit metadata, swap selections
+   - User manually triggers publishing when satisfied
+   - **Exception**: If `workflow.auto_publish = true`, creates publish job automatically
+
+## User Review Gate
+
+After enrichment, the user sees:
+- ✅ All metadata populated (title, plot, ratings, etc.)
+- ✅ Selected assets visible in UI (posters, fanart, logos)
+- ✅ Actor list with headshots
+- ✅ Status badge: "Enriched - Ready to Publish"
+- ✅ **"Publish" button** to deploy to library
+
+The user can:
+- Swap asset selections (click alternative poster)
+- Edit metadata fields (title, plot, etc.)
+- Lock asset types to prevent future auto-selection
+- Manually trigger publishing when satisfied
+
 ## Next Phase
 
-Upon completion, enrichment **always** creates a job for the [Publishing Phase](PUBLISHING.md). If publishing is disabled in workflow settings, the job completes without processing, maintaining the phase chain.
+Publishing is **manually triggered** (or automated if `workflow.auto_publish = true`):
+- See [Publishing Phase](PUBLISHING.md) for deployment workflow
+- Publishing copies cache → library and notifies media players

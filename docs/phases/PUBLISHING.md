@@ -1,12 +1,19 @@
 # Publishing Phase
 
-**Purpose**: Deploy selected assets from cache to library directories, download actor images, and create the ideal Kodi-compatible presentation for media player scanners.
+**Purpose**: Deploy selected assets from cache to library directories and create the ideal Kodi-compatible presentation for media player scanners.
 
 **Status**: Design complete - awaiting implementation
 
 ## Overview
 
 The publishing phase materializes Metarr's curated metadata and assets into the library filesystem. It ensures media players see a perfectly organized, Kodi-compliant structure with all selected assets in place, proper naming conventions, and complete NFO metadata.
+
+**Prerequisites**:
+- Entity must have `identification_status = 'enriched'`
+- Selected assets must be in cache (`is_downloaded = 1`)
+- At least one asset selected (`is_selected = 1`)
+
+**Key Principle**: Publishing is a **deployment operation**, not a download operation. All assets should already be in cache from the enrichment phase. If cache files are missing (edge case: cache cleanup), publishing will re-download them.
 
 ## Phase Rules
 
@@ -18,11 +25,11 @@ The publishing phase materializes Metarr's curated metadata and assets into the 
 
 ## Triggers
 
-- **Post-enrichment**: After selection changes (if workflow.publishing enabled)
-- **Manual**: User clicks "Publish" button
-- **Verification**: Repair missing/changed files
-- **Bulk**: User publishes multiple items
-- **Webhook**: After upgrade/rename operations from Radarr/Sonarr
+- **Manual** (most common): User clicks "Publish" button after reviewing enriched metadata
+- **Automated** (optional): After enrichment if `workflow.auto_publish = true`
+- **Republish**: User clicks "Republish" after making changes to enriched data
+- **Verification**: Repair job detects missing/corrupted files in library
+- **Bulk**: User selects multiple items and publishes via batch operation
 
 ## Job Parameters
 
@@ -33,40 +40,92 @@ interface PublishingJobPayload {
 }
 ```
 
-## The Five-Phase Process
+## The Six-Phase Process
 
-Publishing is a **single job** that executes five sequential phases:
+Publishing is a **single job** that executes six sequential phases:
 
 ```
-PUBLISHING JOB (Materialization & Cleanup)
+PUBLISHING JOB (Library Deployment & Cleanup)
 │
-├─ Phase 1: Ensure Selected Assets in Cache
-│  └─ Download selected provider assets if not already cached
+├─ Phase 0: Validate Prerequisites
+│  └─ Check entity is enriched, cache is complete
 │
-├─ Phase 1B: Download Actor Images
-│  └─ Fetch actor headshots from TMDB to cache
+├─ Phase 1: Ensure Cache Completeness
+│  └─ Re-download selected assets if missing (rare edge case)
 │
 ├─ Phase 2: Cleanup Unselected Cache Assets
-│  └─ Delete cache files not linked to selected provider assets
+│  └─ Delete cache files not linked to selected provider assets (space reclamation)
 │
-├─ Phase 3: Copy to Library (Kodi Naming)
-│  └─ Deploy assets with rank-based numbering (poster.jpg, poster1.jpg, poster2.jpg)
+├─ Phase 3: Copy Assets to Library (Rank-Based Kodi Naming)
+│  └─ Deploy with numbering: poster.jpg (best), poster1.jpg (2nd), poster2.jpg (3rd)
 │
-├─ Phase 3B: Copy Actor Images to .actors/ Folder
-│  └─ Publish actor headshots with proper naming
+├─ Phase 4: Copy Actor Images to .actors/ Folder
+│  └─ Publish actor headshots: "Keanu Reeves.jpg" (spaces, not underscores)
 │
-├─ Phase 4: Generate NFO (No Asset URLs)
-│  └─ Create Kodi-compatible metadata with local file references only
+├─ Phase 5: Generate NFO with Stream Details
+│  └─ Create Kodi-compatible metadata with video/audio/subtitle streams
 │
-└─ Phase 5: Notify Media Players
-   └─ Queue Kodi/Jellyfin/Plex scan notifications
+└─ Phase 6: Update Status & Notify Players
+   └─ Set last_published_at, queue Kodi/Jellyfin/Plex scan notifications
 ```
 
 ---
 
-## Phase 1: Ensure Selected Assets in Cache
+## Phase 0: Validate Prerequisites
 
-**Goal**: Download selected provider assets that aren't already in cache.
+**Goal**: Ensure entity is ready for publishing and perform safety checks.
+
+```typescript
+// Check entity is enriched
+const movie = await db.movies.findById(entityId);
+
+if (movie.identification_status !== 'enriched') {
+  throw new Error(`Cannot publish: movie ${entityId} not enriched (status: ${movie.identification_status})`);
+}
+
+// Check selected assets exist
+const selectedAssets = await db.query(`
+  SELECT COUNT(*) as count
+  FROM provider_assets
+  WHERE entity_id = ? AND entity_type = ? AND is_selected = 1
+`, [entityId, entityType]);
+
+if (selectedAssets[0].count === 0) {
+  throw new Error(`Cannot publish: no assets selected for movie ${entityId}`);
+}
+
+// Check library directory writable
+const movieDir = path.dirname(movie.file_path);
+try {
+  await fs.access(movieDir, fs.constants.W_OK);
+} catch {
+  throw new Error(`Library directory not writable: ${movieDir}`);
+}
+
+// Check disk space (warn if < 100MB)
+const stats = await fs.statfs(movieDir);
+if (stats.available < 100 * 1024 * 1024) {
+  logger.warn('[Publishing] Low disk space', {
+    available: `${Math.round(stats.available / 1024 / 1024)}MB`,
+    path: movieDir,
+  });
+}
+
+logger.info('[Publishing] Prerequisites validated', {
+  entityId,
+  selectedAssets: selectedAssets[0].count,
+});
+```
+
+**Output**: Validation passed or errors thrown
+
+---
+
+## Phase 1: Ensure Cache Completeness
+
+**Goal**: Re-download selected assets if missing from cache (edge case: cache cleanup between enrich/publish).
+
+**Note**: Under normal operation, enrichment Phase 5B already downloaded all selected assets. This phase handles edge cases only.
 
 ### Hash-Based Cache Lookup
 
@@ -254,11 +313,65 @@ for (const actor of actors) {
 
 **Goal**: Delete cache files NOT linked to selected provider assets to reclaim disk space.
 
+**Rationale**: User has reviewed and approved selections. Unselected assets can be deleted immediately. If user changes mind later, re-enrichment will fetch them again.
+
 ```typescript
-// Find cache files not linked to selected provider assets
-const unselectedCacheFiles = await db.query(`
-  SELECT c.id, c.file_path, c.image_type
+logger.info('[Publishing] Starting cache cleanup', {
+  entityId,
+  entityType,
+});
+
+let filesDeleted = 0;
+let bytesReclaimed = 0;
+
+// Find cache IMAGE files not linked to selected provider assets
+const unselectedImages = await db.query(`
+  SELECT c.id, c.file_path, c.image_type, c.file_size
   FROM cache_image_files c
+  WHERE c.entity_id = ?
+    AND c.entity_type = ?
+    AND c.image_type != 'actor_thumb'  -- Keep actor images (shared across movies)
+    AND c.file_hash NOT IN (
+      SELECT content_hash
+      FROM provider_assets
+      WHERE entity_id = ?
+        AND entity_type = ?
+        AND is_selected = 1
+    )
+`, [entityId, entityType, entityId, entityType]);
+
+for (const cacheFile of unselectedImages) {
+  try {
+    // Delete physical file
+    if (await fs.exists(cacheFile.file_path)) {
+      await fs.unlink(cacheFile.file_path);
+      bytesReclaimed += cacheFile.file_size || 0;
+    }
+
+    // Delete database record
+    await db.execute(`DELETE FROM cache_image_files WHERE id = ?`, [cacheFile.id]);
+
+    filesDeleted++;
+
+    logger.debug('[Publishing] Deleted unselected cache file', {
+      cacheFileId: cacheFile.id,
+      assetType: cacheFile.image_type,
+      filePath: cacheFile.file_path,
+    });
+
+  } catch (error) {
+    logger.error('[Publishing] Failed to delete cache file', {
+      error: getErrorMessage(error),
+      filePath: cacheFile.file_path,
+    });
+    // Continue with other files
+  }
+}
+
+// Cleanup VIDEO files (trailers)
+const unselectedVideos = await db.query(`
+  SELECT c.id, c.file_path, c.video_type, c.file_size
+  FROM cache_video_files c
   WHERE c.entity_id = ?
     AND c.entity_type = ?
     AND c.file_hash NOT IN (
@@ -270,36 +383,34 @@ const unselectedCacheFiles = await db.query(`
     )
 `, [entityId, entityType, entityId, entityType]);
 
-logger.info('Cleaning up unselected cache assets', {
-  count: unselectedCacheFiles.length,
-});
-
-for (const cacheFile of unselectedCacheFiles) {
+for (const cacheFile of unselectedVideos) {
   try {
-    // Delete physical file
-    await fs.unlink(cacheFile.file_path);
+    if (await fs.exists(cacheFile.file_path)) {
+      await fs.unlink(cacheFile.file_path);
+      bytesReclaimed += cacheFile.file_size || 0;
+    }
 
-    // Delete database record
-    await db.cache_image_files.delete(cacheFile.id);
-
-    logger.debug('Deleted unselected cache file', {
-      cacheFileId: cacheFile.id,
-      assetType: cacheFile.image_type,
-      filePath: cacheFile.file_path,
-    });
+    await db.execute(`DELETE FROM cache_video_files WHERE id = ?`, [cacheFile.id]);
+    filesDeleted++;
 
   } catch (error) {
-    logger.error('Failed to delete cache file', {
+    logger.error('[Publishing] Failed to delete cache video', {
       error: getErrorMessage(error),
       filePath: cacheFile.file_path,
     });
-    // Continue with other files
   }
 }
 
-// Repeat for cache_video_files, cache_audio_files, cache_text_files
-// (Similar logic for each cache table)
+logger.info('[Publishing] Cache cleanup complete', {
+  entityId,
+  filesDeleted,
+  bytesReclaimed: `${Math.round(bytesReclaimed / 1024 / 1024)}MB`,
+});
 ```
+
+**Output**: Unselected cache files deleted, space reclaimed
+
+**Note**: Actor thumbnails are NOT deleted (they're shared across multiple movies)
 
 ---
 
@@ -392,7 +503,7 @@ for (const asset of selectedAssets) {
 
 ---
 
-## Phase 3B: Copy Actor Images to .actors/ Folder
+## Phase 4: Copy Actor Images to .actors/ Folder
 
 **Goal**: Publish actor headshots to Kodi-compatible `.actors/` directory.
 
@@ -451,7 +562,7 @@ for (const actor of actors) {
 
 ---
 
-## Phase 4: Generate NFO (No Asset URLs)
+## Phase 5: Generate NFO with Stream Details
 
 **Goal**: Create Kodi-compatible NFO metadata file with local file references only.
 
@@ -627,9 +738,9 @@ function escapeXml(unsafe: string): string {
 
 ---
 
-## Phase 5: Notify Media Players
+## Phase 6: Update Status & Notify Media Players
 
-**Goal**: Queue notification jobs for each media player group monitoring this library.
+**Goal**: Mark entity as published and queue notification jobs for media players.
 
 ```typescript
 // Get library for this movie
@@ -663,26 +774,50 @@ for (const group of playerGroups) {
 }
 ```
 
-### Completion Event
+### Update Entity Status
 
 ```typescript
+// Calculate NFO hash for change detection
+const nfoHash = crypto.createHash('sha256').update(nfoContent).digest('hex');
+
 // Update movie publish timestamp
 await db.movies.update(movieId, {
   last_published_at: new Date(),
+  published_nfo_hash: nfoHash,
 });
 
-// Emit completion event (Sonner toast notification)
-eventBus.emit('publish.complete', {
-  entityId: movieId,
-  entityType: 'movie',
-  assetsPublished: selectedAssets.length,
+// Log publication
+await db.execute(
+  `INSERT INTO publish_log (
+    entity_type, entity_id, published_at, assets_published, nfo_generated
+  ) VALUES (?, ?, CURRENT_TIMESTAMP, ?, ?)`,
+  [
+    entityType,
+    entityId,
+    JSON.stringify({ count: assetsPublished }),
+    true,
+  ]
+);
+
+// Emit completion event (WebSocket to UI)
+websocketBroadcaster.broadcast('entity.published', {
+  entityType,
+  entityId,
+  assetsPublished,
+  nfoGenerated: true,
 });
 
-logger.info('Publishing completed', {
-  movieId,
-  assetsPublished: selectedAssets.length,
+logger.info('[Publishing] Complete', {
+  entityId,
+  entityType,
+  assetsPublished,
+  nfoGenerated: true,
 });
 ```
+
+### Notify Media Players
+
+```typescript
 
 ---
 
