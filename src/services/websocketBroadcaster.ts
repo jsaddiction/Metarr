@@ -561,7 +561,7 @@ export class WebSocketBroadcaster {
     };
 
     this.wsServer!.broadcastToAll(message);
-    logger.debug('Broadcasted custom message', { eventType });
+    logger.info('Broadcasted WebSocket message', { eventType, data });
   }
 
   /**
