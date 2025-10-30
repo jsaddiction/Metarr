@@ -1,43 +1,74 @@
 import { Request, Response } from 'express';
-import { WorkflowControlService, WorkflowStage } from '../services/workflowControlService.js';
+import { PhaseConfigService } from '../services/PhaseConfigService.js';
 import { logger } from '../middleware/logging.js';
 import { getErrorMessage } from '../utils/errorHandling.js';
 
 /**
  * Settings Controller
  *
- * Handles workflow control and general application settings
+ * Handles phase configuration and general application settings.
+ * All workflow phases ALWAYS run - configuration controls behavior, not enablement.
  */
 export class SettingsController {
-  private workflowControl: WorkflowControlService;
+  private phaseConfig: PhaseConfigService;
 
-  constructor(workflowControl: WorkflowControlService) {
-    this.workflowControl = workflowControl;
+  constructor(phaseConfig: PhaseConfigService) {
+    this.phaseConfig = phaseConfig;
   }
 
   /**
-   * GET /api/settings/workflow
-   * Get all workflow settings
+   * GET /api/settings/phase-config
+   * Get all phase configurations
    */
-  async getWorkflowSettings(_req: Request, res: Response): Promise<void> {
+  async getPhaseConfig(_req: Request, res: Response): Promise<void> {
     try {
-      const settings = await this.workflowControl.getAll();
+      const config = await this.phaseConfig.getAll();
 
-      res.json(settings);
+      res.json(config);
     } catch (error) {
-      logger.error('Error fetching workflow settings:', error);
+      logger.error('Error fetching phase configuration:', error);
       res.status(500).json({
-        error: 'Failed to fetch workflow settings',
+        error: 'Failed to fetch phase configuration',
         message: getErrorMessage(error)
       });
     }
   }
 
   /**
-   * PUT /api/settings/workflow
-   * Update multiple workflow settings
+   * GET /api/settings/phase-config/:phase
+   * Get configuration for a specific phase
    */
-  async updateWorkflowSettings(req: Request, res: Response): Promise<void> {
+  async getPhaseConfigByPhase(req: Request, res: Response): Promise<void> {
+    try {
+      const { phase } = req.params;
+
+      // Validate phase name
+      const validPhases = ['scan', 'enrichment', 'publish', 'playerSync'];
+      if (!validPhases.includes(phase)) {
+        res.status(400).json({
+          error: 'Invalid phase name',
+          validPhases
+        });
+        return;
+      }
+
+      const config = await this.phaseConfig.getConfig(phase as any);
+
+      res.json({ [phase]: config });
+    } catch (error) {
+      logger.error('Error fetching phase configuration:', error);
+      res.status(500).json({
+        error: 'Failed to fetch phase configuration',
+        message: getErrorMessage(error)
+      });
+    }
+  }
+
+  /**
+   * PATCH /api/settings/phase-config
+   * Update multiple phase configuration settings
+   */
+  async updatePhaseConfig(req: Request, res: Response): Promise<void> {
     try {
       const updates = req.body;
 
@@ -47,106 +78,82 @@ export class SettingsController {
         return;
       }
 
-      const settings = await this.workflowControl.updateMultiple(updates);
+      await this.phaseConfig.updateMultiple(updates);
+      const config = await this.phaseConfig.getAll();
 
-      logger.info('Workflow settings updated', {
+      logger.info('Phase configuration updated', {
         controller: 'SettingsController',
         updates
       });
 
-      res.json(settings);
+      res.json(config);
     } catch (error) {
-      logger.error('Error updating workflow settings:', error);
+      logger.error('Error updating phase configuration:', error);
       res.status(500).json({
-        error: 'Failed to update workflow settings',
+        error: 'Failed to update phase configuration',
         message: getErrorMessage(error)
       });
     }
   }
 
   /**
-   * PUT /api/settings/workflow/:stage
-   * Update a single workflow stage
+   * PATCH /api/settings/phase-config/:key
+   * Update a single phase configuration setting
    */
-  async updateWorkflowStage(req: Request, res: Response): Promise<void> {
+  async updatePhaseConfigSetting(req: Request, res: Response): Promise<void> {
     try {
-      const { stage } = req.params;
-      const { enabled } = req.body;
+      const { key } = req.params;
+      const { value } = req.body;
 
-      // Validate stage
-      const validStages: WorkflowStage[] = ['webhooks', 'scanning', 'identification', 'enrichment', 'publishing'];
-      if (!validStages.includes(stage as WorkflowStage)) {
+      // Validate key format (e.g., "enrichment.fetchProviderAssets")
+      if (!key || typeof key !== 'string' || !key.includes('.')) {
         res.status(400).json({
-          error: 'Invalid workflow stage',
-          validStages
+          error: 'Invalid key format. Expected format: "phase.setting" (e.g., "enrichment.fetchProviderAssets")'
         });
         return;
       }
 
-      // Validate enabled
-      if (typeof enabled !== 'boolean') {
+      // Validate value
+      if (value === undefined) {
         res.status(400).json({
-          error: 'Invalid value for enabled, must be boolean'
+          error: 'Missing value in request body'
         });
         return;
       }
 
-      await this.workflowControl.setEnabled(stage as WorkflowStage, enabled);
+      await this.phaseConfig.set(key, value);
 
       res.json({
-        stage,
-        enabled
+        key,
+        value
       });
     } catch (error) {
-      logger.error('Error updating workflow stage:', error);
+      logger.error('Error updating phase configuration setting:', error);
       res.status(500).json({
-        error: 'Failed to update workflow stage',
+        error: 'Failed to update phase configuration setting',
         message: getErrorMessage(error)
       });
     }
   }
 
   /**
-   * POST /api/settings/workflow/enable-all
-   * Enable all workflow stages (production mode)
+   * POST /api/settings/phase-config/reset
+   * Reset all phase configuration to defaults
    */
-  async enableAllWorkflows(_req: Request, res: Response): Promise<void> {
+  async resetPhaseConfig(_req: Request, res: Response): Promise<void> {
     try {
-      await this.workflowControl.enableAll();
-      const settings = await this.workflowControl.getAll();
+      await this.phaseConfig.resetToDefaults();
+      const config = await this.phaseConfig.getAll();
 
-      logger.info('All workflow stages enabled', {
+      logger.info('Phase configuration reset to defaults', {
         controller: 'SettingsController'
       });
 
-      res.json(settings);
+      res.json(config);
     } catch (error) {
-      logger.error('Error enabling all workflows:', error);
+      logger.error('Error resetting phase configuration:', error);
       res.status(500).json({
-        error: 'Failed to enable all workflows',
-        message: getErrorMessage(error)
-      });
-    }
-  }
-
-  /**
-   * POST /api/settings/workflow/disable-all
-   * Disable all workflow stages (development mode)
-   */
-  async disableAllWorkflows(_req: Request, res: Response): Promise<void> {
-    try {
-      await this.workflowControl.disableAll();
-      const settings = await this.workflowControl.getAll();
-
-      logger.info('All workflow stages disabled', {
-        controller: 'SettingsController'
-      });
-
-      res.json(settings);
-    } catch (error) {
-      logger.error('Error disabling all workflows:', error);
-      res.status(500).json({
-        error: 'Failed to disable all workflows',
+        error: 'Failed to reset phase configuration',
         message: getErrorMessage(error)
       });
     }

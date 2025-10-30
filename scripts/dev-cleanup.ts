@@ -61,7 +61,9 @@ for (const logPath of logsToDelete) {
       fs.unlinkSync(logPath);
       deletedLogs++;
     } catch (error: any) {
-      console.log(`${colors.yellow}⚠${colors.reset} Could not delete log: ${path.basename(logPath)}`);
+      console.log(
+        `${colors.yellow}⚠${colors.reset} Could not delete log: ${path.basename(logPath)}`
+      );
     }
   }
 }
@@ -70,6 +72,29 @@ if (deletedLogs > 0) {
   console.log(`${colors.green}✓${colors.reset} Deleted ${deletedLogs} log file(s)`);
 } else {
   console.log(`${colors.yellow}○${colors.reset} No log files found (already clean)`);
+}
+
+// Delete cache / temp directories recursively
+const directoriesToDelete = [
+  path.join(projectRoot, 'data', 'cache'),
+  path.join(projectRoot, 'data', 'temp'),
+];
+
+let deletedDirectories = 0;
+for (const dir of directoriesToDelete) {
+  if (fs.existsSync(dir)) {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+      deletedDirectories++;
+      console.log(`${colors.green}✓${colors.reset} Deleted directory: ${path.basename(dir)}/`);
+    } catch (error: any) {
+      console.log(
+        `${colors.yellow}⚠${colors.reset} Could not delete directory: ${path.basename(dir)}`
+      );
+    }
+  } else {
+    console.log(`${colors.yellow}○${colors.reset} Directory not found (already clean): ${path.basename(dir)}/`);
+  }
 }
 
 console.log(`\n${colors.bright}${colors.green}✓ Cleanup complete!${colors.reset}\n`);

@@ -15,6 +15,7 @@ import { cacheService } from './services/cacheService.js';
 import { JobQueueService } from './services/jobQueue/JobQueueService.js';
 import { SQLiteJobQueueStorage } from './services/jobQueue/storage/SQLiteJobQueueStorage.js';
 import { NotificationConfigService } from './services/notificationConfigService.js';
+import { PhaseConfigService } from './services/PhaseConfigService.js';
 import { registerAllJobHandlers } from './services/jobHandlers/index.js';
 import { FileScannerScheduler } from './services/schedulers/FileScannerScheduler.js';
 import { ProviderUpdaterScheduler } from './services/schedulers/ProviderUpdaterScheduler.js';
@@ -220,11 +221,16 @@ export class App {
       const notificationConfig = new NotificationConfigService(this.dbManager.getConnection());
       logger.info('Notification config service initialized');
 
+      // Initialize phase config service
+      const phaseConfig = new PhaseConfigService(this.dbManager.getConnection());
+      logger.info('Phase config service initialized');
+
       // Register all job handlers with job queue
       registerAllJobHandlers(this.jobQueueService, {
         db: this.dbManager.getConnection(),
         dbManager: this.dbManager,
         jobQueue: this.jobQueueService,
+        phaseConfig,
         cacheDir: path.join(process.cwd(), 'data', 'cache'),
         notificationConfig,
         mediaPlayerManager: this.connectionManager,

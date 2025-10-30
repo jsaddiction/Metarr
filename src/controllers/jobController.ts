@@ -99,25 +99,17 @@ export class JobController {
 
   /**
    * GET /api/jobs/history
-   * Get job history (completed/failed jobs)
+   * REMOVED: Job history table removed - use structured logs instead
+   *
+   * For job execution history, check logs/app.log with job ID filtering.
+   * The getActive endpoint now returns recently completed/failed jobs (last hour).
    */
-  getHistory = async (req: Request, res: Response): Promise<void> => {
-    try {
-      const limit = req.query.limit ? parseInt(req.query.limit as string) : 100;
-      const type = req.query.type as string | undefined;
-      const status = req.query.status as 'completed' | 'failed' | undefined;
-
-      const history = await this.jobQueue.getJobHistory({
-        ...(type && { type: type as any }),
-        ...(status && { status }),
-        limit,
-      });
-
-      res.json({ history });
-    } catch (error) {
-      logger.error('Error getting job history:', error);
-      res.status(500).json({ error: getErrorMessage(error) });
-    }
+  getHistory = async (_req: Request, res: Response): Promise<void> => {
+    res.status(410).json({
+      error: 'Job history endpoint removed',
+      message: 'Job history table has been removed. Use GET /api/jobs for recent jobs (includes completed/failed in last hour), or check logs/app.log for full execution history.',
+      alternative: 'GET /api/jobs?limit=100'
+    });
   };
 
   // Commented out methods that aren't implemented yet in JobQueueService
