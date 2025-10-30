@@ -10,7 +10,7 @@ import { DatabaseConnection } from '../../types/database.js';
 import { JobQueueService } from '../jobQueueService.js';
 import { NotificationConfigService } from '../notificationConfigService.js';
 import { MediaPlayerConnectionManager } from '../mediaPlayerConnectionManager.js';
-import { WorkflowControlService } from '../workflowControlService.js';
+import { PhaseConfigService } from '../PhaseConfigService.js';
 
 // Import all handler classes
 import { ScanJobHandlers } from './ScanJobHandlers.js';
@@ -26,6 +26,7 @@ export interface HandlerDependencies {
   db: DatabaseConnection;
   dbManager: any; // DatabaseManager - using any to avoid circular dependency
   jobQueue: JobQueueService;
+  phaseConfig: PhaseConfigService;
   cacheDir: string;
   notificationConfig: NotificationConfigService;
   mediaPlayerManager: MediaPlayerConnectionManager;
@@ -66,7 +67,6 @@ export function registerAllJobHandlers(
   const webhookHandlers = new WebhookJobHandlers(
     deps.db,
     deps.jobQueue,
-    new WorkflowControlService(deps.db),
     deps.notificationConfig
   );
 
@@ -79,8 +79,8 @@ export function registerAllJobHandlers(
   const assetHandlers = new AssetJobHandlers(
     deps.db,
     deps.jobQueue,
+    deps.phaseConfig, // Using PhaseConfigService now
     deps.cacheDir,
-    deps.tmdbClient,
     deps.dbManager
   );
 
@@ -96,11 +96,11 @@ export function registerAllJobHandlers(
   console.log('[JobHandlers] All handlers registered successfully');
   console.log('[JobHandlers] Handler breakdown:');
   console.log('  - ScanJobHandlers: 2 handlers (directory-scan, cache-asset)');
-  console.log('  - WebhookJobHandlers: 2 handlers (webhook-received, scan-movie)');
-  console.log('  - NotificationJobHandlers: 6 handlers (kodi, jellyfin, plex, discord, pushover, email)');
-  console.log('  - AssetJobHandlers: 6 handlers (discover, fetch, enrich, select, publish, verify)');
-  console.log('  - ScheduledJobHandlers: 4 handlers (library-scan, file-scan, provider-update, cleanup)');
-  console.log('  - Total: 20 handlers registered');
+  console.log('  - WebhookJobHandlers: 1 handler (webhook-received - stub)');
+  console.log('  - NotificationJobHandlers: 3 handlers (notify-kodi, notify-jellyfin, notify-plex)');
+  console.log('  - AssetJobHandlers: 2 handlers (enrich-metadata, publish)');
+  console.log('  - ScheduledJobHandlers: 3 handlers (cleanup, provider-update, verification)');
+  console.log('  - Total: 11 handlers registered');
 }
 
 // Export all handler classes for direct access if needed

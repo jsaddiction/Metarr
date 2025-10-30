@@ -2,40 +2,155 @@
  * Job Queue Type Definitions
  *
  * Modular job queue architecture with pluggable storage backends.
+ *
+ * All jobs flow through a sequential chain: scan → enrich → publish → notify
+ * Each phase is ALWAYS executed, but behavior is controlled via phase configuration.
  */
 
+/**
+ * Job priority constants
+ * Lower number = higher priority
+ */
+export const JOB_PRIORITY = {
+  CRITICAL: 1,  // Webhooks, immediate system events
+  HIGH: 3,      // User-initiated operations
+  NORMAL: 5,    // Automated workflow chain
+  LOW: 8,       // Scheduled maintenance tasks
+} as const;
+
 export type JobType =
-  // Webhook-triggered (CRITICAL priority 1-2)
-  | 'webhook-received' // Initial webhook processing (fan-out coordinator)
-  | 'scan-movie' // Scan movie directory for metadata/assets
+  // Core workflow (sequential chain)
+  | 'scan-movie'          // Scan movie directory → chains to enrich-metadata
+  | 'enrich-metadata'     // Fetch metadata + assets → chains to publish
+  | 'publish'             // Copy to library + generate NFO → chains to notify
 
-  // Notification jobs (NORMAL priority 5-7, fan-out from webhooks)
-  | 'notify-kodi' // Notify Kodi media player groups
-  | 'notify-jellyfin' // Notify Jellyfin media server
-  | 'notify-plex' // Notify Plex media server (future)
-  | 'notify-discord' // Send Discord webhook notification
-  | 'notify-pushover' // Send Pushover push notification
-  | 'notify-email' // Send email notification (future)
+  // Scanning sub-jobs
+  | 'directory-scan'      // Scan a specific directory for media files
+  | 'cache-asset'         // Download and cache a single asset
 
-  // Asset management (NORMAL priority 5-7)
-  | 'discover-assets' // Discover assets in filesystem
-  | 'fetch-provider-assets' // Fetch assets from TMDB/TVDB
-  | 'enrich-metadata' // Fetch metadata from providers
-  | 'select-assets' // Auto-select assets (YOLO/Hybrid mode)
-  | 'publish' // Publish entity to library
-  | 'verify-movie' // Verify movie directory integrity (manual trigger)
+  // Player notifications
+  | 'notify-kodi'         // Notify Kodi media player group
+  | 'notify-jellyfin'     // Notify Jellyfin media server
+  | 'notify-plex'         // Notify Plex media server
+  | 'notify-discord'      // Send Discord notification
+  | 'notify-pushover'     // Send Pushover notification
+  | 'notify-email'        // Send email notification
 
-  // Scheduled tasks (LOW priority 8-10)
-  | 'scheduled-file-scan' // Scheduled filesystem scan (automatic)
-  | 'scheduled-provider-update' // Scheduled provider update (automatic)
-  | 'scheduled-cleanup' // Cleanup old history/cache (automatic)
+  // Scheduled tasks
+  | 'library-scan'                // Full library scan (scheduled)
+  | 'scheduled-file-scan'         // Scheduled file system scan
+  | 'scheduled-cleanup'           // Garbage collector (orphaned cache files)
+  | 'scheduled-provider-update'   // Refresh metadata from providers
+  | 'scheduled-verification'      // Verify cache ↔ library hash matches
 
-  // User-initiated (HIGH priority 3-4)
-  | 'library-scan' // Full library scan (user-initiated)
+  // Webhook routing
+  | 'webhook-received';   // Webhook router (creates other jobs)
 
-  // Multi-phase scanning (NEW architecture - priority 6-7)
-  | 'directory-scan' // Scan a single directory (Phase 2)
-  | 'cache-asset'; // Copy asset to cache (Phase 3)
+/**
+ * Type-safe job payload mapping
+ * Each job type has a strongly-typed payload structure
+ */
+export type JobPayloadMap = {
+  // Core workflow
+  'scan-movie': {
+    libraryId: number;
+    directoryPath: string;
+    manual: boolean;
+  };
+
+  'enrich-metadata': {
+    entityType: 'movie' | 'series' | 'episode';
+    entityId: number;
+  };
+
+  'publish': {
+    entityType: 'movie' | 'series' | 'episode';
+    entityId: number;
+  };
+
+  // Scanning sub-jobs
+  'directory-scan': {
+    scanJobId: number;
+    libraryId: number;
+    directoryPath: string;
+  };
+
+  'cache-asset': {
+    scanJobId: number;
+    entityType: string;
+    entityId: number;
+    assetType: string;
+    sourcePath: string;
+    language?: string;
+  };
+
+  // Player notifications
+  'notify-kodi': {
+    groupId: number;
+    libraryPath: string;
+  };
+
+  'notify-jellyfin': {
+    groupId: number;
+    libraryPath: string;
+  };
+
+  'notify-plex': {
+    groupId: number;
+    libraryPath: string;
+  };
+
+  'notify-discord': {
+    message: string;
+    metadata?: Record<string, any>;
+  };
+
+  'notify-pushover': {
+    message: string;
+    priority?: number;
+    metadata?: Record<string, any>;
+  };
+
+  'notify-email': {
+    subject: string;
+    message: string;
+    metadata?: Record<string, any>;
+  };
+
+  // Scheduled tasks
+  'library-scan': {
+    libraryId: number;
+    libraryPath: string;
+    libraryType: string;
+  };
+
+  'scheduled-file-scan': {
+    taskId: 'file-scan';
+    manual: boolean;
+  };
+
+  'scheduled-cleanup': {
+    taskId: 'garbage-collector';
+    manual: boolean;
+  };
+
+  'scheduled-provider-update': {
+    taskId: 'provider-refresh';
+    manual: boolean;
+  };
+
+  'scheduled-verification': {
+    taskId: 'cache-verification';
+    manual: boolean;
+  };
+
+  // Webhook routing
+  'webhook-received': {
+    source: string;
+    eventType: string;
+    data: any;
+  };
+};
 
 /**
  * Job progress for long-running jobs
@@ -52,13 +167,13 @@ export interface JobProgress {
 /**
  * Job in active queue
  * Status: Only 'pending' or 'processing'
- * Completed jobs are removed and archived to job_history
+ * Completed jobs simply removed from queue (no history table)
  */
-export interface Job {
+export interface Job<T extends JobType = JobType> {
   id: number;
-  type: JobType;
+  type: T;
   priority: number;
-  payload: unknown;
+  payload: JobPayloadMap[T]; // Type-safe payload!
   status: 'pending' | 'processing';
   error?: string | null;
   retry_count: number;
@@ -67,27 +182,7 @@ export interface Job {
   started_at?: string | null;
   updated_at?: string;
   progress?: JobProgress; // Optional progress tracking (not stored in DB)
-  manual?: boolean; // True if user-initiated (bypasses workflow phase disable checks)
-}
-
-/**
- * Job in history (completed or permanently failed)
- * Archived from active queue for auditing/debugging
- */
-export interface JobHistoryRecord {
-  id: number;
-  job_id: number; // Original job ID from queue
-  type: JobType;
-  priority: number;
-  payload: unknown;
-  status: 'completed' | 'failed';
-  error?: string | null;
-  retry_count: number;
-  created_at: string; // When job was created
-  started_at: string; // When job started processing
-  completed_at: string; // When job finished (completed or failed)
-  duration_ms: number; // completed_at - started_at
-  manual?: boolean; // True if user-initiated (for audit trail)
+  manual?: boolean; // True if user-initiated
 }
 
 /**
@@ -96,15 +191,6 @@ export interface JobHistoryRecord {
 export interface JobFilters {
   type?: JobType;
   status?: 'pending' | 'processing';
-  limit?: number;
-}
-
-/**
- * Filters for listing job history
- */
-export interface JobHistoryFilters {
-  type?: JobType;
-  status?: 'completed' | 'failed';
   limit?: number;
 }
 
@@ -144,16 +230,16 @@ export interface IJobQueueStorage {
 
   /**
    * Mark job as completed and remove from queue
-   * Archives to job_history table
+   * No history - job is simply deleted (use logs for debugging)
    * @param jobId Job ID
-   * @param result Optional result data (stored in history)
+   * @param result Optional result data (for in-memory tracking)
    */
   completeJob(jobId: number, result?: any): Promise<void>;
 
   /**
    * Mark job as failed
    * If retries remaining: state → pending, increment retry_count
-   * If no retries: remove from queue, archive to job_history
+   * If no retries: remove from queue (logged but not archived)
    * @param jobId Job ID
    * @param error Error message
    */
@@ -175,27 +261,11 @@ export interface IJobQueueStorage {
   listJobs(filters?: JobFilters): Promise<Job[]>;
 
   /**
-   * Get job history (completed/failed jobs)
-   * @param filters Optional filters
-   * @returns List of historical jobs
-   */
-  getJobHistory(filters?: JobHistoryFilters): Promise<JobHistoryRecord[]>;
-
-  /**
    * Crash recovery: Reset all 'processing' jobs to 'pending'
    * Call this on application startup
    * @returns Count of reset jobs
    */
   resetStalledJobs(): Promise<number>;
-
-  /**
-   * Cleanup old history records
-   * Delete completed jobs older than X days
-   * Delete failed jobs older than Y days
-   * @param retentionDays Retention policy
-   * @returns Count of deleted records
-   */
-  cleanupHistory(retentionDays: { completed: number; failed: number }): Promise<number>;
 
   /**
    * Health check: Get queue stats
@@ -204,8 +274,8 @@ export interface IJobQueueStorage {
   getStats(): Promise<QueueStats>;
 
   /**
-   * Get recent jobs (active + recently completed/failed)
-   * Used by frontend to show current job activity
+   * Get recent jobs (active + recently completed/failed in last hour)
+   * Optional method - falls back to listJobs() if not implemented
    * @returns List of recent jobs
    */
   getRecentJobs?(): Promise<Job[]>;
