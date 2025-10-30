@@ -535,11 +535,11 @@ export async function generateMovieNFOFromDatabase(
     );
 
     const actors = await db.query(
-      `SELECT a.name, ma.role, ma.sort_order as \`order\`
+      `SELECT a.name, ma.role, ma.actor_order as \`order\`
        FROM actors a
        JOIN movie_actors ma ON a.id = ma.actor_id
        WHERE ma.movie_id = ?
-       ORDER BY ma.sort_order`,
+       ORDER BY ma.actor_order`,
       [movieId]
     );
 

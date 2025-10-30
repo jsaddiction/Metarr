@@ -1,6 +1,5 @@
 import { DatabaseConnection } from '../../types/database.js';
 import { Job, JobQueueService } from '../jobQueueService.js';
-import { WorkflowControlService } from '../workflowControlService.js';
 import { NotificationConfigService } from '../notificationConfigService.js';
 import { logger } from '../../middleware/logging.js';
 
@@ -13,12 +12,14 @@ import { logger } from '../../middleware/logging.js';
  *
  * These handlers implement the fan-out pattern where a single webhook
  * creates multiple independent jobs for better parallelization and failure isolation.
+ *
+ * NOTE: This is stub code for future webhook integration.
+ * Currently focusing on manual operations only.
  */
 export class WebhookJobHandlers {
   constructor(
     private db: DatabaseConnection,
     private jobQueue: JobQueueService,
-    private workflowControl: WorkflowControlService,
     private notificationConfig: NotificationConfigService
   ) {}
 
@@ -68,18 +69,8 @@ export class WebhookJobHandlers {
       eventType,
     });
 
-    // Check if webhook processing is enabled
-    const webhooksEnabled = await this.workflowControl.isEnabled('webhooks');
-    if (!webhooksEnabled) {
-      logger.info('[WebhookJobHandlers] Webhook processing disabled, skipping', {
-        service: 'WebhookJobHandlers',
-        handler: 'handleWebhookReceived',
-        jobId: job.id,
-        source,
-        eventType,
-      });
-      return;
-    }
+    // NOTE: Webhook processing is now always enabled - configuration controls behavior
+    // All phases ALWAYS run in sequence
 
     // Only process Download events for now
     if (eventType !== 'Download') {
@@ -117,13 +108,24 @@ export class WebhookJobHandlers {
 
     // Fan-out: Create scan job (HIGH priority 3)
     if (source === 'radarr' && payload.movie) {
+      // Skip if no library found
+      if (!libraryId) {
+        logger.warn('[WebhookJobHandlers] No library found for movie path, skipping', {
+          service: 'WebhookJobHandlers',
+          handler: 'handleWebhookReceived',
+          webhookJobId: job.id,
+          moviePath: payload.movie.folderPath || payload.movie.path,
+        });
+        return;
+      }
+
       const scanJobId = await this.jobQueue.addJob({
         type: 'scan-movie',
         priority: 3, // HIGH priority (user-triggered by download)
         payload: {
           movie: payload.movie,
           libraryId,
-        },
+        } as any, // Temporary cast until we update payload types
         retry_count: 0,
         max_retries: 3,
       });
@@ -164,8 +166,8 @@ export class WebhookJobHandlers {
         priority: 5, // NORMAL priority
         payload: {
           webhookPayload: payload, // Pass entire webhook payload
-          libraryId, // Pass libraryId for notifications
-        },
+          libraryId: libraryId!, // Non-null asserted - we checked above
+        } as any, // Temporary cast until we update payload types
         retry_count: 0,
         max_retries: 2, // Fewer retries for notifications
       });
@@ -192,15 +194,15 @@ export class WebhookJobHandlers {
    *
    * This handler:
    * 1. Inserts/updates movie in database
-   * 2. Chains to discover-assets job (if scanning workflow enabled)
+   * 2. Chains to enrich-metadata job
    *
    * Payload: {
    *   movie: { id, title, year, path, tmdbId, imdbId, folderPath },
-   *   libraryId?: number
+   *   libraryId: number
    * }
    */
-  private async handleScanMovie(job: Job): Promise<void> {
-    const { movie, libraryId } = job.payload as {
+  private async handleScanMovie(job: Job<'scan-movie'>): Promise<void> {
+    const { movie, libraryId } = (job.payload as any) as {
       movie: { id: number; title: string; year?: number; path: string; tmdbId?: number; imdbId?: string; folderPath?: string };
       libraryId: number;
     };
@@ -241,44 +243,26 @@ export class WebhookJobHandlers {
       logger.info(`[WebhookJobHandlers] Updated movie ${movieId}: ${movie.title} (${movie.year})`);
     }
 
-    // 2. Check if scanning workflow is enabled
-    const scanningEnabled = await this.workflowControl.isEnabled('scanning');
-    if (!scanningEnabled) {
-      logger.info('[WebhookJobHandlers] Scanning workflow disabled, stopping chain', {
-        service: 'WebhookJobHandlers',
-        handler: 'handleScanMovie',
-        jobId: job.id,
-        movieId,
-      });
-      return;
-    }
-
-    // 3. Chain to discover-assets job
-    const discoverJobId = await this.jobQueue.addJob({
-      type: 'discover-assets',
+    // 2. ALWAYS chain to enrich-metadata (no workflow checks)
+    // NOTE: Enrichment phase ALWAYS runs - configuration controls behavior
+    const enrichJobId = await this.jobQueue.addJob({
+      type: 'enrich-metadata',
       priority: 3, // Maintain HIGH priority from webhook
       payload: {
         entityType: 'movie',
         entityId: movieId,
-        directoryPath: movie.path,
-        chainContext: {
-          source: 'webhook',
-          tmdbId: movie.tmdbId,
-          imdbId: movie.imdbId,
-          libraryId,
-        },
       },
       retry_count: 0,
       max_retries: 3,
     });
 
-    logger.info('[WebhookJobHandlers] Movie scan complete, chained to discover-assets', {
+    logger.info('[WebhookJobHandlers] Movie scan complete, chained to enrich-metadata', {
       service: 'WebhookJobHandlers',
       handler: 'handleScanMovie',
       jobId: job.id,
       movieId,
       movieTitle: movie.title,
-      discoverJobId,
+      enrichJobId,
     });
   }
 }

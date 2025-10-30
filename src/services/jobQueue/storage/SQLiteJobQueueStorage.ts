@@ -2,9 +2,7 @@ import { DatabaseConnection } from '../../../types/database.js';
 import {
   IJobQueueStorage,
   Job,
-  JobHistoryRecord,
   JobFilters,
-  JobHistoryFilters,
   QueueStats,
 } from '../types.js';
 import { logger } from '../../../middleware/logging.js';
@@ -293,46 +291,6 @@ export class SQLiteJobQueueStorage implements IJobQueueStorage {
       started_at: job.started_at,
       updated_at: job.updated_at,
       manual: job.manual === 1,
-    }));
-  }
-
-  async getJobHistory(filters?: JobHistoryFilters): Promise<JobHistoryRecord[]> {
-    let query = 'SELECT * FROM job_history WHERE 1=1';
-    const params: SqlParam[] = [];
-
-    if (filters?.type) {
-      query += ' AND type = ?';
-      params.push(filters.type);
-    }
-
-    if (filters?.status) {
-      query += ' AND status = ?';
-      params.push(filters.status);
-    }
-
-    query += ' ORDER BY completed_at DESC';
-
-    if (filters?.limit) {
-      query += ' LIMIT ?';
-      params.push(filters.limit);
-    }
-
-    const records = await this.db.query<any>(query, params);
-
-    return records.map((record) => ({
-      id: record.id,
-      job_id: record.job_id,
-      type: record.type,
-      priority: record.priority,
-      payload: JSON.parse(record.payload),
-      status: record.status,
-      error: record.error,
-      retry_count: record.retry_count,
-      created_at: record.created_at,
-      started_at: record.started_at,
-      completed_at: record.completed_at,
-      duration_ms: record.duration_ms,
-      manual: record.manual === 1,
     }));
   }
 

@@ -16,7 +16,6 @@ import { JobQueueService } from '../jobQueue/JobQueueService.js';
 import { ProviderOrchestrator } from '../providers/ProviderOrchestrator.js';
 import { ProviderRegistry } from '../providers/ProviderRegistry.js';
 import { ProviderConfigService } from '../providerConfigService.js';
-import { WorkflowControlService } from '../workflowControlService.js';
 import { websocketBroadcaster } from '../websocketBroadcaster.js';
 import { getDirectoryPath } from '../pathMappingService.js';
 import { logger } from '../../middleware/logging.js';
@@ -241,40 +240,9 @@ export class MovieWorkflowService {
         throw new Error('Movie not found');
       }
 
-      const movie = movies[0];
-
-      // Get directory path
-      const directoryPath = getDirectoryPath(movie.file_path);
-
-      // Queue verify-movie job
-      if (!this.jobQueue) {
-        throw new Error('Job queue not available. Cannot trigger verify job.');
-      }
-
-      const jobId = await this.jobQueue.addJob({
-        type: 'verify-movie',
-        priority: 3, // HIGH priority (manual trigger)
-        payload: {
-          entityType: 'movie',
-          entityId: movieId,
-          directoryPath,
-        },
-        retry_count: 0,
-        max_retries: 3,
-        manual: true, // User-initiated - always allowed (maintenance operation)
-      });
-
-      logger.info('Verify job queued', {
-        movieId,
-        jobId,
-        directoryPath,
-      });
-
-      return {
-        success: true,
-        jobId,
-        message: 'Verify job queued successfully',
-      };
+      // NOTE: Verification job system is being redesigned
+      // TODO: Implement new verification workflow
+      throw new Error('Movie verification is not yet implemented in the new workflow system');
     } catch (error) {
       logger.error('Failed to trigger verify job', createErrorLogContext(error, {
         movieId
@@ -285,7 +253,7 @@ export class MovieWorkflowService {
 
   /**
    * Trigger enrichment job for movie
-   * Queues fetch-provider-assets job using ProviderOrchestrator with priority 3
+   * Queues enrich-metadata job using EnrichmentService (5-phase workflow)
    *
    * User-initiated action: ALWAYS runs regardless of workflow phase settings.
    * When enrichment phase is disabled, the system is in "manual mode" - the user
@@ -315,19 +283,17 @@ export class MovieWorkflowService {
         throw new Error('Movie must be identified (have TMDB ID) before enrichment. Use Identify first.');
       }
 
-      // Queue fetch-provider-assets job with orchestrator
+      // Queue enrich-metadata job (5-phase enrichment workflow)
       if (!this.jobQueue) {
         throw new Error('Job queue not available. Cannot trigger enrichment job.');
       }
 
       const jobId = await this.jobQueue.addJob({
-        type: 'fetch-provider-assets',
+        type: 'enrich-metadata',
         priority: 3, // HIGH priority (manual trigger)
         payload: {
           entityType: 'movie',
           entityId: movieId,
-          provider: 'orchestrator', // Use ProviderOrchestrator for multi-provider fetch
-          providerId: movie.tmdb_id,
         },
         retry_count: 0,
         max_retries: 3,
@@ -395,12 +361,6 @@ export class MovieWorkflowService {
         payload: {
           entityType: 'movie',
           entityId: movieId,
-          libraryPath: directoryPath,
-          mediaFilename: movie.title,
-          chainContext: {
-            source: 'manual',
-            libraryId: movie.library_id,
-          },
         },
         retry_count: 0,
         max_retries: 3,

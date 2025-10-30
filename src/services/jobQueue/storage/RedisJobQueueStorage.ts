@@ -1,9 +1,7 @@
 import {
   IJobQueueStorage,
   Job,
-  JobHistoryRecord,
   JobFilters,
-  JobHistoryFilters,
   QueueStats,
 } from '../types.js';
 import { logger } from '../../../middleware/logging.js';
@@ -74,14 +72,6 @@ export class RedisJobQueueStorage implements IJobQueueStorage {
     logger.error('[RedisJobQueueStorage] Not implemented', {
       service: 'RedisJobQueueStorage',
       operation: 'listJobs',
-    });
-    throw new Error('Redis storage not yet implemented. Use SQLiteJobQueueStorage for now.');
-  }
-
-  async getJobHistory(_filters?: JobHistoryFilters): Promise<JobHistoryRecord[]> {
-    logger.error('[RedisJobQueueStorage] Not implemented', {
-      service: 'RedisJobQueueStorage',
-      operation: 'getJobHistory',
     });
     throw new Error('Redis storage not yet implemented. Use SQLiteJobQueueStorage for now.');
   }

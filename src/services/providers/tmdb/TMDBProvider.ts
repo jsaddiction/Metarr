@@ -161,17 +161,17 @@ export class TMDBProvider extends BaseProvider {
           externalSource: 'imdb_id',
         });
 
-        return findResult.movie_results.slice(0, limit).map((movie) => ({
+        return findResult.movie_results.slice(0, limit).map((movie): SearchResult => ({
           providerId: 'tmdb',
           providerResultId: movie.id.toString(),
           externalIds: {
             tmdb: movie.id,
           },
           title: movie.title,
-          originalTitle: movie.original_title,
-          releaseDate: movie.release_date ? new Date(movie.release_date) : undefined,
-          overview: movie.overview,
-          posterUrl: movie.poster_path ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` : undefined,
+          ...(movie.original_title && { originalTitle: movie.original_title }),
+          ...(movie.release_date && { releaseDate: new Date(movie.release_date) }),
+          ...(movie.overview && { overview: movie.overview }),
+          ...(movie.poster_path && { posterUrl: `https://image.tmdb.org/t/p/w500${movie.poster_path}` }),
           confidence: 1.0, // Exact match via IMDB ID
         }));
       }
@@ -183,17 +183,17 @@ export class TMDBProvider extends BaseProvider {
 
         const searchResult = await this.tmdbClient.searchMovies(searchOptions);
 
-        return searchResult.results.slice(0, limit).map((movie) => ({
+        return searchResult.results.slice(0, limit).map((movie): SearchResult => ({
           providerId: 'tmdb',
           providerResultId: movie.id.toString(),
           externalIds: {
             tmdb: movie.id,
           },
           title: movie.title,
-          originalTitle: movie.original_title,
-          releaseDate: movie.release_date ? new Date(movie.release_date) : undefined,
-          overview: movie.overview,
-          posterUrl: movie.poster_path ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` : undefined,
+          ...(movie.original_title && { originalTitle: movie.original_title }),
+          ...(movie.release_date && { releaseDate: new Date(movie.release_date) }),
+          ...(movie.overview && { overview: movie.overview }),
+          ...(movie.poster_path && { posterUrl: `https://image.tmdb.org/t/p/w500${movie.poster_path}` }),
           confidence: this.calculateSearchConfidence(movie, query, year),
         }));
       }

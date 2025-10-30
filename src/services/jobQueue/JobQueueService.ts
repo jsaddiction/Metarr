@@ -1,4 +1,4 @@
-import { IJobQueueStorage, Job, JobType, JobProgress, QueueStats, JobFilters, JobHistoryFilters, JobHistoryRecord } from './types.js';
+import { IJobQueueStorage, Job, JobType, JobProgress, QueueStats, JobFilters } from './types.js';
 import { logger } from '../../middleware/logging.js';
 import { websocketBroadcaster } from '../websocketBroadcaster.js';
 import { getErrorMessage } from '../../utils/errorHandling.js';
@@ -16,13 +16,14 @@ import { getErrorMessage } from '../../utils/errorHandling.js';
  * 8-10:  LOW (Scheduled tasks, maintenance)
  */
 
-export interface JobHandler {
-  (job: Job): Promise<void>;
+// Generic job handler that accepts any job type
+export interface JobHandler<T extends JobType = JobType> {
+  (job: Job<T>): Promise<void>;
 }
 
 export class JobQueueService {
   private storage: IJobQueueStorage;
-  private handlers: Map<JobType, JobHandler> = new Map();
+  private handlers: Map<JobType, JobHandler<any>> = new Map();
   private isProcessing: boolean = false;
   private processingInterval: NodeJS.Timeout | null = null;
   private readonly POLL_INTERVAL = 1000; // 1 second
@@ -71,9 +72,10 @@ export class JobQueueService {
 
   /**
    * Register a job handler
+   * Supports type-safe handlers: Job<'specific-type'>
    */
-  registerHandler(type: JobType, handler: JobHandler): void {
-    this.handlers.set(type, handler);
+  registerHandler<T extends JobType>(type: T, handler: JobHandler<T>): void {
+    this.handlers.set(type, handler as JobHandler<any>);
     logger.info('[JobQueueService] Registered job handler', {
       service: 'JobQueueService',
       operation: 'registerHandler',
@@ -295,28 +297,8 @@ export class JobQueueService {
     return await this.storage.getStats();
   }
 
-  /**
-   * Get job history
-   */
-  async getJobHistory(filters?: JobHistoryFilters): Promise<JobHistoryRecord[]> {
-    return await this.storage.getJobHistory(filters);
-  }
-
-  /**
-   * Cleanup old history records
-   */
-  async cleanupHistory(retentionDays = { completed: 30, failed: 90 }): Promise<number> {
-    const deletedCount = await this.storage.cleanupHistory(retentionDays);
-
-    logger.info('[JobQueueService] Cleaned up job history', {
-      service: 'JobQueueService',
-      operation: 'cleanupHistory',
-      deletedCount,
-      retentionDays,
-    });
-
-    return deletedCount;
-  }
+  // NOTE: Job history removed - use structured logs for debugging instead
+  // See logs/app.log for job execution history
 
   /**
    * Update job progress and broadcast via WebSocket

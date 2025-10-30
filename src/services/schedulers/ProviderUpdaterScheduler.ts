@@ -101,7 +101,10 @@ export class ProviderUpdaterScheduler {
           const jobId = await this.jobQueueService.addJob({
             type: 'scheduled-provider-update',
             priority: 7, // Normal priority (automated, but important)
-            payload: { libraryId },
+            payload: {
+              taskId: 'provider-refresh',
+              manual: false,
+            },
             retry_count: 0,
             max_retries: 3,
           });
@@ -137,7 +140,10 @@ export class ProviderUpdaterScheduler {
     const jobId = await this.jobQueueService.addJob({
       type: 'scheduled-provider-update',
       priority: 4, // Higher priority for manual triggers
-      payload: { libraryId, manual: true },
+      payload: {
+        taskId: 'provider-refresh',
+        manual: true,
+      },
       retry_count: 0,
       max_retries: 3,
     });

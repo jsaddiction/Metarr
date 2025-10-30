@@ -148,7 +148,7 @@ export class WebhookService {
           imdbId: webhook.movie.imdbId,
           filePath: webhook.movieFile?.path
         }
-      },
+      } as any, // Webhook-specific payload format
       retry_count: 0,
       max_retries: 3
     });
@@ -198,7 +198,7 @@ export class WebhookService {
           path: webhook.episodeFile.path,
           relativePath: webhook.episodeFile.relativePath
         } : undefined
-      },
+      } as any, // Webhook-specific payload format
       retry_count: 0,
       max_retries: 3
     });
@@ -238,7 +238,7 @@ export class WebhookService {
         },
         albums: webhook.albums,
         tracks: webhook.tracks
-      },
+      } as any, // Webhook-specific payload format
       retry_count: 0,
       max_retries: 3
     });

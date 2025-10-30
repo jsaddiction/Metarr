@@ -10,9 +10,7 @@ export type { JobHandler } from './jobQueue/JobQueueService.js';
 export type {
   Job,
   JobType,
-  JobHistoryRecord,
   JobFilters,
-  JobHistoryFilters,
   QueueStats,
   IJobQueueStorage,
 } from './jobQueue/types.js';

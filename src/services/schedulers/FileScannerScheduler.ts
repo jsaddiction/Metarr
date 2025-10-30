@@ -101,7 +101,10 @@ export class FileScannerScheduler {
           const jobId = await this.jobQueueService.addJob({
             type: 'scheduled-file-scan',
             priority: 9, // Low priority (automated maintenance)
-            payload: { libraryId },
+            payload: {
+              taskId: 'file-scan',
+              manual: false,
+            },
             retry_count: 0,
             max_retries: 3,
           });
@@ -137,7 +140,10 @@ export class FileScannerScheduler {
     const jobId = await this.jobQueueService.addJob({
       type: 'scheduled-file-scan',
       priority: 4, // Higher priority for manual triggers
-      payload: { libraryId, manual: true },
+      payload: {
+        taskId: 'file-scan',
+        manual: true,
+      },
       retry_count: 0,
       max_retries: 3,
     });

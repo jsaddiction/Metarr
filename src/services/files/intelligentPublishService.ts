@@ -211,7 +211,6 @@ async function cleanupUnauthorizedFiles(
   entityId: number,
   inventory: LibraryInventory,
   authorizedHashes: Set<string>,
-  mainMovieFile: string,
   changes: PublishChanges
 ): Promise<void> {
   // Get entity to check monitored status
@@ -420,7 +419,6 @@ export async function publishMovie(
       config.entityId,
       inventory,
       authorizedHashes,
-      config.mainMovieFile,
       result.changes
     );
 

@@ -134,7 +134,7 @@ export class ScheduledJobHandlers {
             );
 
             processed++;
-            logger.info(`Created movie ${movieId}: ${title}${year ? ` (${year})` : ''}`);
+            logger.info(`Created movie ${movieId}: ${titleWithoutExt}${year ? ` (${year})` : ''}`);
 
             // Broadcast to frontend that a new movie was added
             websocketBroadcaster.broadcastMoviesAdded([movieId]);
@@ -243,34 +243,20 @@ export class ScheduledJobHandlers {
     });
 
     try {
-      // 1. Cleanup job history
-      const deletedJobs = await this.jobQueue.cleanupHistory({
-        completed: 30, // Keep completed jobs for 30 days
-        failed: 90, // Keep failed jobs for 90 days (debugging)
-      });
-
-      logger.info('[ScheduledJobHandlers] Job history cleanup complete', {
-        service: 'ScheduledJobHandlers',
-        handler: 'handleScheduledCleanup',
-        jobId: job.id,
-        deletedJobs,
-      });
-
-      // 2. No recycle bin cleanup needed (recycle bin removed)
+      // NOTE: Job history cleanup removed - using structured logs instead
+      // See logs/app.log for job execution history
 
       logger.info('[ScheduledJobHandlers] Scheduled cleanup complete', {
         service: 'ScheduledJobHandlers',
         handler: 'handleScheduledCleanup',
         jobId: job.id,
-        deletedJobs,
-        expiredDeleted,
-        pendingCleaned,
+        message: 'Job history cleanup removed - now using structured logs'
       });
 
-      // TODO: Add more cleanup tasks
+      // TODO: Add cleanup tasks
       // - Remove orphaned cache files (no database reference)
       // - Remove temporary download files older than X days
-      // - Cleanup old log files
+      // - Cleanup old log files (rotate logs older than 30 days)
     } catch (error) {
       logger.error('[ScheduledJobHandlers] Scheduled cleanup failed', {
         service: 'ScheduledJobHandlers',
