@@ -151,8 +151,10 @@ export interface AssetCandidate {
   // Provider Recommendations
   isPreferredByProvider?: boolean;
 
-  // Perceptual Hash (for deduplication)
-  perceptualHash?: string;
+  // Multi-hash deduplication (computed after download/analysis)
+  contentHash?: string; // SHA256 - exact file match
+  perceptualHash?: string; // aHash - overall structure similarity
+  differenceHash?: string; // dHash - edge/gradient similarity (better for transparent PNGs)
 
   // Additional Context
   metadata?: Record<string, unknown>;

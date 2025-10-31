@@ -3,10 +3,12 @@
  *
  * Implements the "best N" asset selection algorithm.
  * Scores asset candidates based on resolution, votes, language, provider quality, and aspect ratio.
+ * Uses multi-hash (aHash + dHash + SHA256) for robust duplicate detection.
  */
 
 import { AssetCandidate, AssetType, ProviderId } from '../../types/providers/index.js';
 import { logger } from '../../middleware/logging.js';
+import { ImageProcessor, SimilarityThresholds, DEFAULT_THRESHOLDS } from '../../utils/ImageProcessor.js';
 
 /**
  * Asset selection configuration
@@ -19,7 +21,7 @@ export interface AssetSelectionConfig {
   qualityPreference?: 'any' | 'sd' | 'hd' | '4k';
   preferLanguage?: string;
   allowMultilingual?: boolean;
-  pHashThreshold?: number; // 0-1, for deduplication
+  similarityThresholds?: SimilarityThresholds; // Multi-hash comparison thresholds
   providerPriority?: ProviderId[];
 }
 
@@ -73,7 +75,7 @@ export class AssetSelector {
       ...config,
       preferLanguage: config.preferLanguage || 'en',
       allowMultilingual: config.allowMultilingual ?? true,
-      pHashThreshold: config.pHashThreshold || 0.92,
+      similarityThresholds: config.similarityThresholds || DEFAULT_THRESHOLDS,
     };
 
     // Fixed weights based on research and best practices
@@ -228,7 +230,8 @@ export class AssetSelector {
   }
 
   /**
-   * Deduplicate candidates by perceptual hash
+   * Deduplicate candidates using multi-hash comparison
+   * Uses SHA256, aHash, and dHash for robust duplicate detection
    */
   private deduplicateByPHash(
     scored: Array<{ candidate: AssetCandidate; score: number }>
@@ -237,16 +240,38 @@ export class AssetSelector {
 
     for (const item of scored) {
       const isDuplicate = unique.some(existing => {
-        if (!item.candidate.perceptualHash || !existing.candidate.perceptualHash) {
+        // Need at least one hash type to compare
+        const hasItemHashes = item.candidate.perceptualHash || item.candidate.differenceHash;
+        const hasExistingHashes = existing.candidate.perceptualHash || existing.candidate.differenceHash;
+
+        if (!hasItemHashes || !hasExistingHashes) {
           return false;
         }
 
-        const similarity = this.comparePHash(
-          item.candidate.perceptualHash,
-          existing.candidate.perceptualHash
+        // Use ImageProcessor's multi-hash comparison
+        const comparison = ImageProcessor.compareImages(
+          {
+            ...(item.candidate.contentHash && { contentHash: item.candidate.contentHash }),
+            perceptualHash: item.candidate.perceptualHash || '',
+            differenceHash: item.candidate.differenceHash || '',
+          },
+          {
+            ...(existing.candidate.contentHash && { contentHash: existing.candidate.contentHash }),
+            perceptualHash: existing.candidate.perceptualHash || '',
+            differenceHash: existing.candidate.differenceHash || '',
+          },
+          this.config.similarityThresholds
         );
 
-        return similarity >= this.config.pHashThreshold!;
+        if (comparison.isSimilar) {
+          logger.debug(`Duplicate detected via ${comparison.matchType}`, {
+            url: item.candidate.url,
+            similarity: comparison.similarity.toFixed(3),
+            matchType: comparison.matchType,
+          });
+        }
+
+        return comparison.isSimilar;
       });
 
       if (!isDuplicate) {
@@ -254,31 +279,11 @@ export class AssetSelector {
       } else {
         logger.debug(`Skipping duplicate asset`, {
           url: item.candidate.url,
-          similarity: 'high',
         });
       }
     }
 
     return unique;
-  }
-
-  /**
-   * Compare two perceptual hashes
-   * Returns similarity score (0-1)
-   */
-  private comparePHash(hash1: string, hash2: string): number {
-    if (hash1.length !== hash2.length) {
-      return 0;
-    }
-
-    let matches = 0;
-    for (let i = 0; i < hash1.length; i++) {
-      if (hash1[i] === hash2[i]) {
-        matches++;
-      }
-    }
-
-    return matches / hash1.length;
   }
 
   /**

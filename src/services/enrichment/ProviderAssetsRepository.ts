@@ -54,6 +54,7 @@ export interface UpdateProviderAssetParams {
   duration_seconds?: number | undefined;
   content_hash?: string | undefined;
   perceptual_hash?: string | undefined;
+  difference_hash?: string | undefined;
   mime_type?: string | undefined;
   file_size?: number | undefined;
   score?: number | undefined;
