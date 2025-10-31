@@ -1,9 +1,9 @@
 import fs from 'fs/promises';
 import path from 'path';
 import crypto from 'crypto';
-import sharp from 'sharp';
 import { DatabaseConnection } from '../types/database.js';
 import { logger } from '../middleware/logging.js';
+import { imageProcessor } from '../utils/ImageProcessor.js';
 
 /**
  * Asset Discovery Service
@@ -213,20 +213,20 @@ export class AssetDiscoveryService {
 
   /**
    * Process image asset: extract dimensions, calculate hashes, copy to cache
+   * Uses centralized ImageProcessor for consistency
    */
   private async processImageAsset(candidate: AssetCandidate): Promise<void> {
     const buffer = await fs.readFile(candidate.libraryPath);
 
-    // Get image metadata (dimensions)
-    const metadata = await sharp(buffer).metadata();
-    candidate.width = metadata.width;
-    candidate.height = metadata.height;
+    // Use ImageProcessor for all image analysis (dimensions + hashes)
+    const analysis = await imageProcessor.analyzeBuffer(buffer, candidate.libraryPath);
+
+    candidate.width = analysis.width;
+    candidate.height = analysis.height;
+    candidate.perceptualHash = analysis.perceptualHash;
 
     // Calculate SHA256 content hash
     candidate.contentHash = this.calculateContentHash(buffer);
-
-    // Calculate perceptual hash for duplicate detection
-    candidate.perceptualHash = await this.calculatePerceptualHash(buffer);
 
     // Copy to cache storage (content-addressed by SHA256)
     await this.copyToCache(candidate.contentHash, buffer, path.extname(candidate.libraryPath));
@@ -272,27 +272,12 @@ export class AssetDiscoveryService {
 
   /**
    * Calculate perceptual hash for image similarity detection
-   * Uses 8x8 DCT-based pHash algorithm
+   * DEPRECATED: Now uses centralized ImageProcessor - this method kept for backward compatibility
    */
+  // @ts-expect-error - Kept for backward compatibility, may be used by external code
   private async calculatePerceptualHash(buffer: Buffer): Promise<string> {
-    // Resize to 32x32, convert to grayscale
-    const resized = await sharp(buffer)
-      .resize(32, 32, { fit: 'fill' })
-      .grayscale()
-      .raw()
-      .toBuffer();
-
-    // Simple DCT-based hash (simplified version)
-    // TODO: Integrate full pHash library for production use
-    const pixels = new Uint8Array(resized);
-    let hash = '';
-
-    for (let i = 0; i < pixels.length; i += 128) {
-      const byte = pixels[i] ^ pixels[i + 1];
-      hash += byte.toString(16).padStart(2, '0');
-    }
-
-    return hash.substring(0, 16); // 64-bit hash
+    const analysis = await imageProcessor.analyzeBuffer(buffer);
+    return analysis.perceptualHash;
   }
 
   /**

@@ -20,7 +20,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import crypto from 'crypto';
 import { logger } from '../../middleware/logging.js';
-import { computePerceptualHash } from '../../utils/imageHash.js';
+import { imageProcessor } from '../../utils/ImageProcessor.js';
 import { getErrorMessage } from '../../utils/errorHandling.js';
 
 const CACHE_BASE_PATH = path.join(process.cwd(), 'data', 'cache');
@@ -37,6 +37,9 @@ export interface CacheFileInfo {
   cacheFileName: string;
   fileHash: string;
   perceptualHash: string | null;
+  differenceHash?: string;
+  hasAlpha?: boolean;
+  foregroundRatio?: number;
   fileSize: number;
 }
 
@@ -81,17 +84,25 @@ export async function copyToCache(options: CacheCopyOptions): Promise<CacheFileI
       // Calculate file hash (before rename for efficiency)
       const fileHash = await calculateSHA256(tempPath);
 
-      // Calculate perceptual hash for images only
+      // Calculate image metadata for images only
       let perceptualHash: string | null = null;
+      let differenceHash: string | undefined;
+      let hasAlpha: boolean | undefined;
+      let foregroundRatio: number | undefined;
+
       if (fileType === 'images') {
         try {
-          perceptualHash = await computePerceptualHash(tempPath);
+          const analysis = await imageProcessor.analyzeImage(tempPath);
+          perceptualHash = analysis.perceptualHash;
+          differenceHash = analysis.differenceHash;
+          hasAlpha = analysis.hasAlpha;
+          foregroundRatio = analysis.foregroundRatio;
         } catch (error) {
-          logger.warn('Failed to calculate perceptual hash', {
+          logger.warn('Failed to analyze image', {
             tempPath,
             error: getErrorMessage(error),
           });
-          // Continue without perceptual hash - not critical
+          // Continue without image analysis - not critical
         }
       }
 
@@ -108,7 +119,8 @@ export async function copyToCache(options: CacheCopyOptions): Promise<CacheFileI
         uuid,
         fileHash,
         fileSize,
-        hasPerceptualHash: perceptualHash !== null,
+        hasImageAnalysis: perceptualHash !== null,
+        hasAlpha,
       });
 
       return {
@@ -116,6 +128,9 @@ export async function copyToCache(options: CacheCopyOptions): Promise<CacheFileI
         cacheFileName,
         fileHash,
         perceptualHash,
+        ...(differenceHash !== undefined && { differenceHash }),
+        ...(hasAlpha !== undefined && { hasAlpha }),
+        ...(foregroundRatio !== undefined && { foregroundRatio }),
         fileSize,
       };
     } catch (error) {

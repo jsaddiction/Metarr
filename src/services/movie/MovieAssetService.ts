@@ -5,13 +5,13 @@ import fs from 'fs/promises';
 import * as fsSync from 'fs';
 import path from 'path';
 import crypto from 'crypto';
-import sharp from 'sharp';
 import { hashSmallFile } from '../hash/hashService.js';
 import { cacheService } from '../cacheService.js';
 import { getDefaultMaxCount } from '../../config/assetTypeDefaults.js';
 import https from 'https';
 import http from 'http';
 import { createErrorLogContext, getErrorMessage } from '../../utils/errorHandling.js';
+import { imageProcessor } from '../../utils/ImageProcessor.js';
 
 /**
  * MovieAssetService
@@ -143,14 +143,14 @@ export class MovieAssetService {
 
           await this.downloadFile(asset.url, tempFilePath);
 
-          // Get image dimensions
+          // Get image dimensions using centralized ImageProcessor
           let width: number | undefined;
           let height: number | undefined;
 
           try {
-            const imageMetadata = await sharp(tempFilePath).metadata();
-            width = imageMetadata.width;
-            height = imageMetadata.height;
+            const analysis = await imageProcessor.analyzeImage(tempFilePath);
+            width = analysis.width;
+            height = analysis.height;
           } catch (error) {
             logger.warn('Could not get image dimensions', { assetType, url: asset.url });
           }
@@ -577,10 +577,10 @@ export class MovieAssetService {
       let format: string | undefined;
 
       try {
-        const imageMetadata = await sharp(tempFilePath).metadata();
-        width = imageMetadata.width;
-        height = imageMetadata.height;
-        format = imageMetadata.format;
+        const analysis = await imageProcessor.analyzeImage(tempFilePath);
+        width = analysis.width;
+        height = analysis.height;
+        format = analysis.format;
       } catch (error) {
         logger.warn('Could not get image dimensions', { assetType, url: assetData.url });
       }

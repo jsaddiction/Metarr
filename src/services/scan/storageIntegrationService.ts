@@ -138,6 +138,15 @@ async function storeImages(
       if (cacheInfo.perceptualHash) {
         imageRecord.perceptualHash = cacheInfo.perceptualHash;
       }
+      if (cacheInfo.differenceHash) {
+        imageRecord.differenceHash = cacheInfo.differenceHash;
+      }
+      if (cacheInfo.hasAlpha !== undefined) {
+        imageRecord.hasAlpha = cacheInfo.hasAlpha;
+      }
+      if (cacheInfo.foregroundRatio !== undefined) {
+        imageRecord.foregroundRatio = cacheInfo.foregroundRatio;
+      }
       const cacheId = await insertCacheImageFile(db, imageRecord);
 
       outputArray.push(cacheId);

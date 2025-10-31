@@ -2,10 +2,10 @@ import { DatabaseManager } from '../../database/DatabaseManager.js';
 import { logger } from '../../middleware/logging.js';
 import fs from 'fs/promises';
 import path from 'path';
-import sharp from 'sharp';
 import { hashSmallFile } from '../hash/hashService.js';
 import { WebSocketBroadcaster } from '../websocketBroadcaster.js';
 import { createErrorLogContext } from '../../utils/errorHandling.js';
+import { imageProcessor } from '../../utils/ImageProcessor.js';
 
 /**
  * MovieUnknownFilesService
@@ -184,9 +184,9 @@ export class MovieUnknownFilesService {
     let height: number | undefined;
 
     try {
-      const metadata = await sharp(originalFilePath).metadata();
-      width = metadata.width;
-      height = metadata.height;
+      const analysis = await imageProcessor.analyzeImage(originalFilePath);
+      width = analysis.width;
+      height = analysis.height;
     } catch (error) {
       logger.warn('Failed to get image dimensions', createErrorLogContext(error, {
         filePath: originalFilePath

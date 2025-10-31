@@ -12,12 +12,12 @@
 
 import fs from 'fs/promises';
 import path from 'path';
-import sharp from 'sharp';
 import { logger } from '../../middleware/logging.js';
 import { extractMediaInfo } from '../media/ffprobeService.js';
 import { getErrorMessage } from '../../utils/errorHandling.js';
 import { calculateQuickHash } from '../../utils/fileHash.js';
 import { DatabaseManager } from '../../database/DatabaseManager.js';
+import { imageProcessor } from '../../utils/ImageProcessor.js';
 import {
   FileFacts,
   FilesystemFacts,
@@ -490,19 +490,22 @@ function detectHdrFormat(stream: any): string | undefined {
 }
 
 /**
- * Gather image facts using Sharp
+ * Gather image facts using ImageProcessor
+ * Extracts metadata without computing hashes (for performance during scan)
  */
 export async function gatherImageFacts(filePath: string): Promise<ImageFacts | null> {
   try {
-    const metadata = await sharp(filePath).metadata();
+    // Use ImageProcessor for centralized image handling
+    // Note: This will compute hashes which we may not need during initial scan
+    // but ensures consistency across the codebase
+    const analysis = await imageProcessor.analyzeImage(filePath);
 
     const imageFacts: ImageFacts = {
-      width: metadata.width || 0,
-      height: metadata.height || 0,
-      aspectRatio:
-        metadata.width && metadata.height ? metadata.width / metadata.height : 0,
-      format: metadata.format || 'unknown',
-      hasAlpha: metadata.hasAlpha || false,
+      width: analysis.width,
+      height: analysis.height,
+      aspectRatio: analysis.aspectRatio,
+      format: analysis.format,
+      hasAlpha: analysis.hasAlpha,
     };
 
     return imageFacts;

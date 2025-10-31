@@ -3,7 +3,6 @@ import fs from 'fs-extra';
 import * as fsSync from 'fs'; // For createReadStream
 import * as path from 'path';
 import axios from 'axios';
-import sharp from 'sharp';
 import { logger } from '../middleware/logging.js';
 import {
   cacheImageFile,
@@ -11,6 +10,7 @@ import {
 import { DatabaseConnection } from '../types/database.js';
 import { getErrorMessage } from '../utils/errorHandling.js';
 import { SqlParam } from '../types/database.js';
+import { imageProcessor, ImageProcessor } from '../utils/ImageProcessor.js';
 
 export interface Image {
   id: number;
@@ -176,61 +176,28 @@ export class ImageService {
 
   /**
    * Calculate perceptual hash for duplicate detection
+   * Uses centralized ImageProcessor for consistency
    */
   async calculatePerceptualHash(imagePath: string): Promise<string> {
-    const image = sharp(imagePath);
-
-    // Resize to 8x8 grayscale for pHash
-    const resized = await image.resize(8, 8, { fit: 'fill' }).grayscale().raw().toBuffer();
-
-    // Calculate average pixel value
-    let sum = 0;
-    for (let i = 0; i < resized.length; i++) {
-      sum += resized[i];
-    }
-    const avg = sum / resized.length;
-
-    // Generate hash: 1 if pixel > avg, 0 otherwise
-    let hash = '';
-    for (let i = 0; i < resized.length; i++) {
-      hash += resized[i] > avg ? '1' : '0';
-    }
-
-    // Convert binary string to hex
-    const hex = BigInt('0b' + hash)
-      .toString(16)
-      .padStart(16, '0');
-    return hex;
+    const analysis = await imageProcessor.analyzeImage(imagePath);
+    return analysis.perceptualHash;
   }
 
   /**
    * Compare two perceptual hashes (0.0 = completely different, 1.0 = identical)
+   * Uses centralized ImageProcessor for consistency
    */
   compareHashes(hash1: string, hash2: string): number {
-    const bin1 = BigInt('0x' + hash1)
-      .toString(2)
-      .padStart(64, '0');
-    const bin2 = BigInt('0x' + hash2)
-      .toString(2)
-      .padStart(64, '0');
-
-    let distance = 0;
-    for (let i = 0; i < bin1.length; i++) {
-      if (bin1[i] !== bin2[i]) distance++;
-    }
-
-    const maxDistance = bin1.length;
-    return 1 - distance / maxDistance;
+    return ImageProcessor.hammingSimilarity(hash1, hash2);
   }
 
   /**
    * Get image dimensions
+   * Uses centralized ImageProcessor for consistency
    */
   async getImageDimensions(imagePath: string): Promise<{ width: number; height: number }> {
-    const metadata = await sharp(imagePath).metadata();
-    const width = metadata.width || 0;
-    const height = metadata.height || 0;
-    return { width, height };
+    const analysis = await imageProcessor.analyzeImage(imagePath);
+    return { width: analysis.width, height: analysis.height };
   }
 
   /**

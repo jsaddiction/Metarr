@@ -8,10 +8,10 @@
 import fs from 'fs/promises';
 import path from 'path';
 import crypto from 'crypto';
-import sharp from 'sharp';
 import { DatabaseConnection } from '../../types/database.js';
 import { logger } from '../../middleware/logging.js';
 import { getErrorMessage, getErrorCode } from '../../utils/errorHandling.js';
+import { imageProcessor } from '../../utils/ImageProcessor.js';
 
 // ============================================================
 // UTILITY FUNCTIONS
@@ -85,10 +85,13 @@ export interface CacheImageFileRecord {
   fileSize: number;
   fileHash: string;
   perceptualHash?: string;
+  differenceHash?: string;
   imageType: 'poster' | 'fanart' | 'banner' | 'clearlogo' | 'clearart' | 'discart' | 'landscape' | 'keyart' | 'thumb' | 'actor_thumb' | 'unknown';
   width: number;
   height: number;
   format: string;
+  hasAlpha?: boolean;
+  foregroundRatio?: number;
   sourceType?: 'provider' | 'local' | 'user';
   sourceUrl?: string;
   providerName?: string;
@@ -173,10 +176,11 @@ export async function insertCacheImageFile(
   const result = await db.execute(
     `INSERT INTO cache_image_files (
       entity_type, entity_id, file_path, file_name, file_size, file_hash,
-      perceptual_hash, image_type, width, height, format,
+      perceptual_hash, difference_hash, image_type, width, height, format,
+      has_alpha, foreground_ratio,
       source_type, source_url, provider_name, classification_score,
       is_locked, discovered_at, last_accessed_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
     [
       record.entityType,
       record.entityId,
@@ -185,10 +189,13 @@ export async function insertCacheImageFile(
       record.fileSize,
       record.fileHash,
       record.perceptualHash || null,
+      record.differenceHash || null,
       record.imageType,
       record.width,
       record.height,
       record.format,
+      record.hasAlpha !== undefined ? (record.hasAlpha ? 1 : 0) : null,
+      record.foregroundRatio !== undefined ? record.foregroundRatio : null,
       record.sourceType || null,
       record.sourceUrl || null,
       record.providerName || null,
@@ -277,8 +284,8 @@ export async function cacheImageFile(
     // Copy to temp file first (atomic write pattern)
     await fs.copyFile(sourceFilePath, tempPath);
 
-    // Get image metadata from temp file
-    const metadata = await sharp(tempPath).metadata();
+    // Get image metadata from temp file using centralized ImageProcessor
+    const analysis = await imageProcessor.analyzeImage(tempPath);
 
     // Verify hash matches (data integrity check)
     const tempBuffer = await fs.readFile(tempPath);
@@ -300,9 +307,9 @@ export async function cacheImageFile(
       fileSize: fileBuffer.length,
       fileHash,
       imageType: imageType as any,
-      width: metadata.width!,
-      height: metadata.height!,
-      format: metadata.format!,
+      width: analysis.width,
+      height: analysis.height,
+      format: analysis.format,
       sourceType,
       ...(sourceUrl && { sourceUrl }),
       ...(providerName && { providerName })

@@ -8,11 +8,11 @@
 
 import fs from 'fs/promises';
 import path from 'path';
-import sharp from 'sharp';
 import { logger } from '../../middleware/logging.js';
 import { DatabaseConnection } from '../../types/database.js';
 import { findAssetSpecsByFilename, validateImageDimensions, AssetTypeSpec } from './assetTypeSpecs.js';
 import { getErrorMessage } from '../../utils/errorHandling.js';
+import { imageProcessor } from '../../utils/ImageProcessor.js';
 import {
   cacheImageFile
 } from '../files/unifiedFileService.js';
@@ -99,12 +99,12 @@ export async function discoverAndStoreAssets(
         files: assetCandidates.map(c => c.fileName)
       });
 
-      // Validate dimensions for each candidate
+      // Validate dimensions for each candidate using centralized ImageProcessor
       for (const candidate of assetCandidates) {
         try {
-          const metadata = await sharp(candidate.filePath).metadata();
-          candidate.width = metadata.width;
-          candidate.height = metadata.height;
+          const analysis = await imageProcessor.analyzeImage(candidate.filePath);
+          candidate.width = analysis.width;
+          candidate.height = analysis.height;
         } catch (error) {
           logger.warn('Failed to read image metadata', {
             file: candidate.fileName,
