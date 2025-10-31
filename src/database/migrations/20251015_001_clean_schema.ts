@@ -221,6 +221,7 @@ export class CleanSchemaMigration {
         file_size INTEGER NOT NULL,
         file_hash TEXT,
         perceptual_hash TEXT,
+        difference_hash TEXT,
         image_type TEXT NOT NULL CHECK(image_type IN (
           'poster', 'fanart', 'banner', 'clearlogo', 'clearart', 'discart',
           'landscape', 'keyart', 'thumb', 'actor_thumb', 'unknown'
@@ -228,6 +229,8 @@ export class CleanSchemaMigration {
         width INTEGER NOT NULL,
         height INTEGER NOT NULL,
         format TEXT NOT NULL,
+        has_alpha BOOLEAN DEFAULT NULL,
+        foreground_ratio REAL DEFAULT NULL,
         source_type TEXT CHECK(source_type IN ('provider', 'local', 'user')),
         source_url TEXT,
         provider_name TEXT,
@@ -1569,6 +1572,7 @@ export class CleanSchemaMigration {
         duration_seconds INTEGER,
         content_hash TEXT,
         perceptual_hash TEXT,
+        difference_hash TEXT,
         mime_type TEXT,
         file_size INTEGER,
 
