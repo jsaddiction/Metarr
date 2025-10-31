@@ -21,7 +21,7 @@ import { DatabaseManager } from '../../database/DatabaseManager.js';
 // import { AssetType } from '../../types/providers/capabilities.js'; // Unused currently
 import { EnrichmentPhaseConfig, DEFAULT_PHASE_CONFIG } from '../../config/phaseConfig.js';
 import { hashFile } from '../hash/hashService.js';
-import { computePerceptualHash, hammingDistance } from '../../utils/imageHash.js';
+import { imageProcessor, ImageProcessor } from '../../utils/ImageProcessor.js';
 import { normalizeActorName } from '../../utils/actorNameUtils.js';
 import { extractMediaInfo } from '../media/ffprobeService.js';
 import { websocketBroadcaster } from '../websocketBroadcaster.js';
@@ -157,7 +157,7 @@ export class EnrichmentService {
         assetsScored: phase4Result.assetsScored,
       });
 
-      // Phase 5: Intelligent selection
+      // Phase 5: Intelligent selection (includes cache download)
       // Can be disabled via phaseConfig.autoSelectAssets (user picks manually in UI)
       let phase5Result = { assetsSelected: 0 };
       if (phaseConfig.autoSelectAssets) {
@@ -172,17 +172,6 @@ export class EnrichmentService {
       } else {
         logger.info('[EnrichmentService] Phase 5: Skipped (autoSelectAssets=false - user will select manually)');
       }
-
-      // Phase 5B: Download selected assets to cache (ALWAYS runs)
-      // This ensures selected assets are available for publishing
-      logger.info('[EnrichmentService] Phase 5B: Download selected assets to cache');
-      const phase5BResult = await this.phase5BDownloadSelectedToCache(config);
-      websocketBroadcaster.broadcast('enrichment.phase.complete', {
-        entityType: config.entityType,
-        entityId: config.entityId,
-        phase: '5B',
-        assetsDownloaded: phase5BResult.assetsDownloaded,
-      });
 
       // Phase 5C: Download actor thumbnails to cache (ALWAYS runs for movies)
       // This ensures actor images are available in UI immediately after enrichment
@@ -378,7 +367,8 @@ export class EnrichmentService {
                 vote_average: image.vote_average,
                 vote_count: image.vote_count,
                 likes: image.likes,
-                iso_639_1: image.iso_639_1,
+                language: image.iso_639_1 || null, // Normalize to 'language'
+                iso_639_1: image.iso_639_1, // Keep original for reference
                 is_hd: image.is_hd,
               }),
             });
@@ -396,7 +386,8 @@ export class EnrichmentService {
                 vote_average: image.vote_average,
                 vote_count: image.vote_count,
                 likes: image.likes,
-                iso_639_1: image.iso_639_1,
+                language: image.iso_639_1 || null, // Normalize to 'language'
+                iso_639_1: image.iso_639_1, // Keep original for reference
                 is_hd: image.is_hd,
               }),
             });
@@ -439,8 +430,11 @@ export class EnrichmentService {
         image_type: string;
         file_hash: string | null;
         perceptual_hash: string | null;
+        difference_hash: string | null;
+        has_alpha: number | null;
+        foreground_ratio: number | null;
       }>(
-        `SELECT id, file_path, image_type, file_hash, perceptual_hash
+        `SELECT id, file_path, image_type, file_hash, perceptual_hash, difference_hash, has_alpha, foreground_ratio
          FROM cache_image_files
          WHERE entity_type = ? AND entity_id = ? AND file_path IS NOT NULL`,
         [entityType, entityId]
@@ -454,6 +448,52 @@ export class EnrichmentService {
 
       // Match each cache file to provider assets
       for (const cacheFile of cacheFiles) {
+        // Backfill missing metadata for old manual assets
+        if (cacheFile.perceptual_hash && (!cacheFile.difference_hash || cacheFile.has_alpha === null)) {
+          try {
+            const analysis = await imageProcessor.analyzeImage(cacheFile.file_path);
+
+            // Build dynamic UPDATE statement for fields that need backfilling
+            const updates: string[] = [];
+            const values: any[] = [];
+
+            if (!cacheFile.difference_hash) {
+              updates.push('difference_hash = ?');
+              values.push(analysis.differenceHash);
+              cacheFile.difference_hash = analysis.differenceHash;
+            }
+
+            if (cacheFile.has_alpha === null) {
+              updates.push('has_alpha = ?');
+              values.push(analysis.hasAlpha ? 1 : 0);
+              cacheFile.has_alpha = analysis.hasAlpha ? 1 : 0;
+            }
+
+            if (cacheFile.foreground_ratio === null && analysis.foregroundRatio !== undefined) {
+              updates.push('foreground_ratio = ?');
+              values.push(analysis.foregroundRatio);
+              cacheFile.foreground_ratio = analysis.foregroundRatio;
+            }
+
+            if (updates.length > 0) {
+              values.push(cacheFile.id);
+              await this.db.execute(
+                `UPDATE cache_image_files SET ${updates.join(', ')} WHERE id = ?`,
+                values
+              );
+              logger.debug('[EnrichmentService] Backfilled image metadata for cache file', {
+                cacheFileId: cacheFile.id,
+                fields: updates.length,
+              });
+            }
+          } catch (error) {
+            logger.warn('[EnrichmentService] Failed to backfill image metadata', {
+              cacheFileId: cacheFile.id,
+              error: getErrorMessage(error),
+            });
+          }
+        }
+
         if (!cacheFile.perceptual_hash) {
           logger.debug('[EnrichmentService] Cache file missing perceptual hash, skipping', {
             cacheFileId: cacheFile.id,
@@ -468,16 +508,21 @@ export class EnrichmentService {
           cacheFile.image_type
         );
 
-        // Find best match using perceptual hash
-        let bestMatch: { asset: any; distance: number } | null = null;
+        // Find best match using multi-hash comparison
+        let bestMatch: { asset: any; similarity: number } | null = null;
 
         for (const candidate of candidates) {
           if (!candidate.perceptual_hash) continue;
 
-          const distance = hammingDistance(cacheFile.perceptual_hash, candidate.perceptual_hash);
+          // Use ImageProcessor for multi-hash similarity
+          const similarity = ImageProcessor.hammingSimilarity(
+            cacheFile.perceptual_hash,
+            candidate.perceptual_hash
+          );
 
-          if (distance < 10 && (!bestMatch || distance < bestMatch.distance)) {
-            bestMatch = { asset: candidate, distance };
+          // High similarity (>= 0.85 = ~10 bits difference out of 64)
+          if (similarity >= 0.85 && (!bestMatch || similarity > bestMatch.similarity)) {
+            bestMatch = { asset: candidate, similarity };
           }
         }
 
@@ -503,7 +548,7 @@ export class EnrichmentService {
           logger.debug('[EnrichmentService] Matched cache file to provider asset', {
             cacheFileId: cacheFile.id,
             providerAssetId: bestMatch.asset.id,
-            hammingDistance: bestMatch.distance,
+            similarity: bestMatch.similarity.toFixed(3),
           });
         }
       }
@@ -564,14 +609,23 @@ export class EnrichmentService {
             // Analyze based on asset type
             let metadata: AssetMetadata;
             let perceptualHash: string | undefined;
+            let differenceHash: string | undefined;
 
             if (asset.asset_type === 'trailer' || asset.asset_type === 'sample') {
               // Video analysis
               metadata = await this.analyzeVideo(tempPath);
             } else {
-              // Image analysis
-              metadata = await this.analyzeImage(tempPath);
-              perceptualHash = await computePerceptualHash(tempPath);
+              // Image analysis - use ImageProcessor for all hash computation
+              const analysis = await imageProcessor.analyzeImage(tempPath);
+              metadata = {
+                width: analysis.width,
+                height: analysis.height,
+                mimeType: `image/${analysis.format}`,
+                size: analysis.fileSize || 0,
+                isImage: true,
+              };
+              perceptualHash = analysis.perceptualHash;
+              differenceHash = analysis.differenceHash;
             }
 
             // Calculate content hash
@@ -590,6 +644,7 @@ export class EnrichmentService {
               duration_seconds: metadata.duration ?? undefined,
               content_hash: hashResult.hash,
               perceptual_hash: perceptualHash ?? undefined,
+              difference_hash: differenceHash ?? undefined,
               mime_type: metadata.mimeType,
               file_size: metadata.size,
               analyzed: 1,
@@ -682,14 +737,16 @@ export class EnrichmentService {
   }
 
   /**
-   * Phase 5: Unified intelligent selection (cache + provider assets)
+   * Phase 5: Simplified intelligent selection (provider assets only)
    *
    * Algorithm:
-   * 1. Gather all provider assets and cache assets
-   * 2. Match cache assets to providers via phash to enrich metadata
-   * 3. Deduplicate by phash similarity (keep best scored, evict provider duplicates)
-   * 4. Merge lists, score all assets, select top N
-   * 5. Mark is_selected in provider_assets by phash lookup
+   * 1. Gather all provider assets (ignore scanned cache assets)
+   * 2. Score all provider assets
+   * 3. Sort by score descending
+   * 4. Deduplicate by phash (keep higher-scored)
+   * 5. Select top N, mark is_selected
+   * 6. Download new selections to cache, delete evicted cache
+   * 7. Delete all scanned (local) cache assets
    */
   private async phase5IntelligentSelection(
     config: EnrichmentConfig
@@ -702,7 +759,7 @@ export class EnrichmentService {
       const assetLimits = await assetConfigService.getAllAssetLimits();
 
       let totalSelected = 0;
-      const PHASH_SIMILARITY_THRESHOLD = 90; // 90% similarity = duplicate
+      const PHASH_SIMILARITY_THRESHOLD = 0.90; // 90% similarity = duplicate
       const userPreferredLanguage = 'en'; // TODO: Get from app_settings
 
       // Process each asset type independently
@@ -722,7 +779,7 @@ export class EnrichmentService {
           continue;
         }
 
-        // STEP 1: Gather provider assets and cache assets
+        // STEP 1: Gather all provider assets
         const providerAssets = await this.db.query<{
           id: number;
           asset_type: string;
@@ -731,242 +788,138 @@ export class EnrichmentService {
           provider_metadata: string | null;
           width: number | null;
           height: number | null;
+          content_hash: string | null;
           perceptual_hash: string | null;
-          score: number | null;
+          is_selected: number;
         }>(
           `SELECT id, asset_type, provider_name, provider_url, provider_metadata,
-                  width, height, perceptual_hash, score
+                  width, height, content_hash, perceptual_hash, is_selected
            FROM provider_assets
            WHERE entity_type = ? AND entity_id = ? AND asset_type = ? AND is_rejected = 0`,
           [entityType, entityId, assetType]
         );
 
-        const cacheTable = this.getCacheTableForAssetType(assetType);
-        const cacheAssets = cacheTable
-          ? await this.db.query<{
-              id: number;
-              file_path: string;
-              file_hash: string | null;
-              perceptual_hash: string | null;
-              width: number | null;
-              height: number | null;
-              source_type: string | null;
-              source_url: string | null;
-              provider_name: string | null;
-              classification_score: number | null;
-            }>(
-              `SELECT id, file_path, file_hash, perceptual_hash, width, height,
-                      source_type, source_url, provider_name, classification_score
-               FROM ${cacheTable}
-               WHERE entity_type = ? AND entity_id = ? AND image_type = ?`,
-              [entityType, entityId, assetType]
-            )
-          : [];
+        if (providerAssets.length === 0) {
+          logger.info('[EnrichmentService] No provider assets found', {
+            assetType,
+          });
+          continue;
+        }
 
-        logger.info('[EnrichmentService] Phase 5: Gathered assets', {
+        logger.info('[EnrichmentService] Phase 5: Gathered provider assets', {
           assetType,
           providerCount: providerAssets.length,
-          cacheCount: cacheAssets.length,
         });
 
-        // STEP 2: Match cache assets to providers via phash to enrich metadata
-        interface EnrichedCacheAsset {
-          cacheId: number;
-          filePath: string;
-          fileHash: string | null;
-          perceptualHash: string | null;
-          width: number | null;
-          height: number | null;
-          sourceType: string | null;
-          sourceUrl: string | null;
-          providerName: string | null;
-          classificationScore: number | null;
-          matchedMetadata: any | null; // Enriched from provider if matched
-          score: number; // Calculated score
+        // STEP 2: Score all provider assets
+        interface ScoredAsset {
+          id: number;
+          provider_url: string;
+          provider_name: string;
+          content_hash: string | null;
+          perceptual_hash: string | null;
+          score: number;
         }
 
-        const enrichedCache: EnrichedCacheAsset[] = [];
+        const scoredAssets: ScoredAsset[] = [];
 
-        for (const cacheAsset of cacheAssets) {
-          let matchedMetadata = null;
-
-          // Try to match with provider assets via phash
-          if (cacheAsset.perceptual_hash) {
-            for (const providerAsset of providerAssets) {
-              if (!providerAsset.perceptual_hash) continue;
-
-              const distance = hammingDistance(
-                cacheAsset.perceptual_hash,
-                providerAsset.perceptual_hash
-              );
-              const similarity = ((64 - distance) / 64) * 100;
-
-              if (similarity >= PHASH_SIMILARITY_THRESHOLD) {
-                // Found match! Copy metadata
-                matchedMetadata = {
-                  provider_name: providerAsset.provider_name,
-                  provider_metadata: providerAsset.provider_metadata,
-                  provider_url: providerAsset.provider_url,
-                };
-                break;
-              }
-            }
-          }
-
-          // Build enriched cache asset
-          const enriched: EnrichedCacheAsset = {
-            cacheId: cacheAsset.id,
-            filePath: cacheAsset.file_path,
-            fileHash: cacheAsset.file_hash,
-            perceptualHash: cacheAsset.perceptual_hash,
-            width: cacheAsset.width,
-            height: cacheAsset.height,
-            sourceType: cacheAsset.source_type,
-            sourceUrl: cacheAsset.source_url,
-            providerName: matchedMetadata?.provider_name || cacheAsset.provider_name,
-            classificationScore: cacheAsset.classification_score,
-            matchedMetadata,
-            score: 0, // Will be calculated in step 4
+        for (const provider of providerAssets) {
+          const assetForScoring = {
+            asset_type: assetType,
+            width: provider.width,
+            height: provider.height,
+            provider_name: provider.provider_name,
+            provider_metadata: provider.provider_metadata,
           };
 
-          enrichedCache.push(enriched);
-        }
+          const score = this.calculateAssetScore(assetForScoring, userPreferredLanguage);
 
-        // STEP 3: Deduplicate by phash similarity
-        // Build unified candidate list: cache assets + provider assets (minus duplicates)
-        interface UnifiedCandidate {
-          source: 'cache' | 'provider';
-          cacheId?: number;
-          providerId?: number;
-          perceptualHash: string | null;
-          width: number | null;
-          height: number | null;
-          providerName: string | null;
-          providerMetadata: string | null;
-          score: number;
-          isDuplicate: boolean;
-        }
-
-        const candidates: UnifiedCandidate[] = [];
-
-        // Add cache assets first (they have priority as they're already downloaded)
-        for (const cacheAsset of enrichedCache) {
-          candidates.push({
-            source: 'cache',
-            cacheId: cacheAsset.cacheId,
-            perceptualHash: cacheAsset.perceptualHash,
-            width: cacheAsset.width,
-            height: cacheAsset.height,
-            providerName: cacheAsset.providerName,
-            providerMetadata: cacheAsset.matchedMetadata?.provider_metadata || null,
-            score: 0, // Will be scored in step 4
-            isDuplicate: false,
+          scoredAssets.push({
+            id: provider.id,
+            provider_url: provider.provider_url,
+            provider_name: provider.provider_name,
+            content_hash: provider.content_hash,
+            perceptual_hash: provider.perceptual_hash,
+            score,
           });
         }
 
-        // Add provider assets, marking duplicates
-        for (const providerAsset of providerAssets) {
-          let isDuplicate = false;
+        // STEP 3: Sort by score descending
+        scoredAssets.sort((a, b) => b.score - a.score);
 
-          // Check if this provider asset duplicates a cache asset
-          if (providerAsset.perceptual_hash) {
-            for (const candidate of candidates) {
-              if (candidate.source === 'cache' && candidate.perceptualHash) {
-                const distance = hammingDistance(
-                  providerAsset.perceptual_hash,
-                  candidate.perceptualHash
-                );
-                const similarity = ((64 - distance) / 64) * 100;
+        // STEP 4: Deduplicate by perceptual hash (keep higher-scored)
+        const uniqueAssets: ScoredAsset[] = [];
+        const seenHashes = new Set<string>();
 
-                if (similarity >= PHASH_SIMILARITY_THRESHOLD) {
-                  isDuplicate = true;
-                  break;
-                }
-              }
-            }
-          }
-
-          candidates.push({
-            source: 'provider',
-            providerId: providerAsset.id,
-            perceptualHash: providerAsset.perceptual_hash,
-            width: providerAsset.width,
-            height: providerAsset.height,
-            providerName: providerAsset.provider_name,
-            providerMetadata: providerAsset.provider_metadata,
-            score: 0, // Will be scored in step 4
-            isDuplicate,
-          });
-        }
-
-        // STEP 4: Score all candidates and select top N unique assets
-        for (const candidate of candidates) {
-          // Skip duplicates (they won't be selected)
-          if (candidate.isDuplicate) {
-            candidate.score = -1;
+        for (const asset of scoredAssets) {
+          if (!asset.perceptual_hash) {
+            uniqueAssets.push(asset); // No phash = can't dedupe, include it
             continue;
           }
 
-          // Build asset object for scoring
-          const assetForScoring = {
-            asset_type: assetType,
-            width: candidate.width,
-            height: candidate.height,
-            provider_name: candidate.providerName,
-            provider_metadata: candidate.providerMetadata,
-          };
+          let isDuplicate = false;
 
-          candidate.score = this.calculateAssetScore(assetForScoring, userPreferredLanguage);
+          for (const seenHash of seenHashes) {
+            const similarity = ImageProcessor.hammingSimilarity(asset.perceptual_hash, seenHash);
 
-          // Add source priority tiebreaker: provider assets get +0.5 to win ties
-          // This ensures canonical provider assets are preferred over cache assets
-          // with the same score (e.g., both have 0 votes, same dimensions)
-          if (candidate.source === 'provider') {
-            candidate.score += 0.5;
-          }
-        }
-
-        // Sort by score descending, take top N
-        const sortedCandidates = candidates
-          .filter((c) => !c.isDuplicate && c.score >= 0)
-          .sort((a, b) => b.score - a.score)
-          .slice(0, maxAllowable);
-
-        logger.info('[EnrichmentService] Phase 5: Selected top N candidates', {
-          assetType,
-          totalCandidates: candidates.filter((c) => !c.isDuplicate).length,
-          duplicatesFiltered: candidates.filter((c) => c.isDuplicate).length,
-          selectedCount: sortedCandidates.length,
-        });
-
-        // STEP 5: Mark is_selected in provider_assets
-        // For cache-sourced selections, find matching provider assets by phash
-        const selectedProviderIds: number[] = [];
-
-        for (const selected of sortedCandidates) {
-          if (selected.source === 'provider' && selected.providerId) {
-            selectedProviderIds.push(selected.providerId);
-          } else if (selected.source === 'cache' && selected.perceptualHash) {
-            // Find provider asset(s) matching this phash
-            for (const providerAsset of providerAssets) {
-              if (!providerAsset.perceptual_hash) continue;
-
-              const distance = hammingDistance(
-                selected.perceptualHash,
-                providerAsset.perceptual_hash
-              );
-              const similarity = ((64 - distance) / 64) * 100;
-
-              if (similarity >= PHASH_SIMILARITY_THRESHOLD) {
-                selectedProviderIds.push(providerAsset.id);
-              }
+            if (similarity >= PHASH_SIMILARITY_THRESHOLD) {
+              isDuplicate = true;
+              logger.debug('[EnrichmentService] Duplicate detected, keeping higher-scored', {
+                assetType,
+                url: asset.provider_url,
+                score: asset.score,
+                similarity: (similarity * 100).toFixed(2) + '%',
+              });
+              break;
             }
           }
+
+          if (!isDuplicate) {
+            uniqueAssets.push(asset);
+            seenHashes.add(asset.perceptual_hash);
+          }
         }
 
-        // Mark selected provider assets
-        for (const providerId of selectedProviderIds) {
-          await this.providerAssetsRepo.update(providerId, {
+        // STEP 5: Take top N
+        const topN = uniqueAssets.slice(0, maxAllowable);
+
+        logger.info('[EnrichmentService] Phase 5: Selected top N after deduplication', {
+          assetType,
+          total: scoredAssets.length,
+          unique: uniqueAssets.length,
+          selected: topN.length,
+        });
+
+        // STEP 6: Determine what changed
+        const oldSelectedIds = providerAssets.filter((p) => p.is_selected === 1).map((p) => p.id);
+        const newSelectedIds = topN.map((a) => a.id);
+
+        const arraysEqual = (a: number[], b: number[]) => {
+          if (a.length !== b.length) return false;
+          const sortedA = [...a].sort((x, y) => x - y);
+          const sortedB = [...b].sort((x, y) => x - y);
+          return sortedA.every((val, idx) => val === sortedB[idx]);
+        };
+
+        const noChanges = arraysEqual(oldSelectedIds, newSelectedIds);
+
+        if (noChanges) {
+          logger.info('[EnrichmentService] No selection changes detected, skipping cache updates', {
+            assetType,
+          });
+          continue;
+        }
+
+        // STEP 7: Update is_selected flags (reset all, then set new)
+        await this.db.execute(
+          `UPDATE provider_assets
+           SET is_selected = 0, selected_at = NULL, selected_by = NULL
+           WHERE entity_type = ? AND entity_id = ? AND asset_type = ?`,
+          [entityType, entityId, assetType]
+        );
+
+        for (const asset of topN) {
+          await this.providerAssetsRepo.update(asset.id, {
             is_selected: 1,
             selected_at: new Date(),
             selected_by: 'auto',
@@ -974,60 +927,152 @@ export class EnrichmentService {
           totalSelected++;
         }
 
-        // Deselect all other provider assets for this type
-        await this.providerAssetsRepo.deselectExcept(
-          entityId,
-          entityType,
+        logger.info('[EnrichmentService] Updated is_selected flags', {
           assetType,
-          selectedProviderIds
-        );
+          newSelections: topN.length,
+        });
 
-        // CLEANUP: Remove cache assets that were NOT selected
-        // Extract selected cache IDs from sortedCandidates
-        const selectedCacheIds: number[] = [];
-        for (const selected of sortedCandidates) {
-          if (selected.source === 'cache' && selected.cacheId) {
-            selectedCacheIds.push(selected.cacheId);
+        // STEP 8: Update cache (download new, delete evicted)
+        const cacheTable = this.getCacheTableForAssetType(assetType);
+        if (!cacheTable) {
+          logger.warn('[EnrichmentService] No cache table for asset type, skipping cache updates', {
+            assetType,
+          });
+          continue;
+        }
+
+        const toDownload = newSelectedIds.filter((id) => !oldSelectedIds.includes(id));
+        const toDelete = oldSelectedIds.filter((id) => !newSelectedIds.includes(id));
+
+        // Download new selections to cache
+        for (const id of toDownload) {
+          const asset = topN.find((a) => a.id === id);
+          if (!asset || !asset.content_hash) continue;
+
+          const ext = path.extname(new URL(asset.provider_url).pathname) || '.jpg';
+          const cacheDir = path.join(path.dirname(this.tempDir), 'cache');
+          const cachePath = path.join(
+            cacheDir,
+            assetType,
+            asset.content_hash.slice(0, 2),
+            `${asset.content_hash}${ext}`
+          );
+
+          try {
+            await fs.mkdir(path.dirname(cachePath), { recursive: true });
+            await this.downloadFile(asset.provider_url, cachePath);
+
+            // Get image metadata
+            const metadata = await sharp(cachePath).metadata();
+
+            await this.db.execute(
+              `INSERT INTO ${cacheTable} (
+                entity_type, entity_id, file_path, file_name, file_size,
+                file_hash, perceptual_hash, image_type, width, height, format,
+                source_type, source_url, provider_name, discovered_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+              [
+                entityType,
+                entityId,
+                cachePath,
+                path.basename(cachePath),
+                (await fs.stat(cachePath)).size,
+                asset.content_hash,
+                asset.perceptual_hash,
+                assetType,
+                metadata.width,
+                metadata.height,
+                metadata.format,
+                'provider',
+                asset.provider_url,
+                asset.provider_name,
+              ]
+            );
+
+            logger.debug('[EnrichmentService] Downloaded new selection to cache', {
+              assetType,
+              providerId: id,
+              cachePath,
+            });
+          } catch (error) {
+            logger.error('[EnrichmentService] Failed to download asset to cache', {
+              assetType,
+              providerId: id,
+              url: asset.provider_url,
+              error: getErrorMessage(error),
+            });
           }
         }
 
-        // If we have cache assets for this type, remove unselected ones
-        if (cacheAssets.length > 0 && cacheTable) {
-          const allCacheIds = cacheAssets.map((ca) => ca.id);
-          const deselectedCacheIds = allCacheIds.filter((id) => !selectedCacheIds.includes(id));
+        // Delete evicted cache files
+        for (const id of toDelete) {
+          const provider = providerAssets.find((p) => p.id === id);
+          if (!provider || !provider.content_hash) continue;
 
-          for (const cacheId of deselectedCacheIds) {
-            const cacheAsset = cacheAssets.find((ca) => ca.id === cacheId);
-            if (!cacheAsset) continue;
+          const cacheAsset = await this.db.get(
+            `SELECT id, file_path FROM ${cacheTable}
+             WHERE entity_type = ? AND entity_id = ? AND file_hash = ?`,
+            [entityType, entityId, provider.content_hash]
+          );
 
+          if (cacheAsset) {
             try {
-              // Delete physical file
               await fs.unlink(cacheAsset.file_path);
             } catch (error) {
-              logger.warn('[EnrichmentService] Failed to delete unselected cache file', {
+              logger.warn('[EnrichmentService] Failed to delete evicted cache file', {
                 filePath: cacheAsset.file_path,
                 error: getErrorMessage(error),
               });
             }
 
-            // Delete cache table entry
-            await this.db.execute(`DELETE FROM ${cacheTable} WHERE id = ?`, [cacheId]);
-          }
+            await this.db.execute(`DELETE FROM ${cacheTable} WHERE id = ?`, [cacheAsset.id]);
 
-          if (deselectedCacheIds.length > 0) {
-            logger.info('[EnrichmentService] Removed unselected cache assets', {
+            logger.debug('[EnrichmentService] Deleted evicted cache file', {
               assetType,
-              removed: deselectedCacheIds.length,
+              providerId: id,
+              cachePath: cacheAsset.file_path,
             });
           }
         }
 
-        logger.info('[EnrichmentService] Selected assets for type', {
+        // STEP 9: Delete all scanned assets (source_type = 'local')
+        const scannedAssets = await this.db.query<{ id: number; file_path: string }>(
+          `SELECT id, file_path FROM ${cacheTable}
+           WHERE entity_type = ? AND entity_id = ? AND image_type = ? AND source_type = 'local'`,
+          [entityType, entityId, assetType]
+        );
+
+        for (const scanned of scannedAssets) {
+          try {
+            await fs.unlink(scanned.file_path);
+          } catch (error) {
+            logger.warn('[EnrichmentService] Failed to delete scanned asset', {
+              filePath: scanned.file_path,
+              error: getErrorMessage(error),
+            });
+          }
+
+          await this.db.execute(`DELETE FROM ${cacheTable} WHERE id = ?`, [scanned.id]);
+
+          logger.debug('[EnrichmentService] Deleted scanned asset', {
+            assetType,
+            filePath: scanned.file_path,
+          });
+        }
+
+        if (scannedAssets.length > 0) {
+          logger.info('[EnrichmentService] Deleted scanned assets', {
+            assetType,
+            count: scannedAssets.length,
+          });
+        }
+
+        logger.info('[EnrichmentService] Phase 5 complete for asset type', {
           assetType,
-          selectedCount: sortedCandidates.length,
-          providerIdsMarked: selectedProviderIds.length,
-          cacheAssetsSelected: selectedCacheIds.length,
-          cacheAssetsRemoved: cacheAssets.length - selectedCacheIds.length,
+          selectedCount: topN.length,
+          downloaded: toDownload.length,
+          evicted: toDelete.length,
+          scannedDeleted: scannedAssets.length,
         });
       }
 
@@ -1040,129 +1085,6 @@ export class EnrichmentService {
       return { assetsSelected: totalSelected };
     } catch (error) {
       logger.error('[EnrichmentService] Phase 5 failed', {
-        error: getErrorMessage(error),
-      });
-      throw error;
-    }
-  }
-
-  /**
-   * Phase 5B: Download selected assets to cache
-   *
-   * This phase ensures all selected assets are permanently stored in cache
-   * so they can be published to the library.
-   */
-  private async phase5BDownloadSelectedToCache(
-    config: EnrichmentConfig
-  ): Promise<{ assetsDownloaded: number }> {
-    try {
-      const { entityId, entityType } = config;
-
-      // Get all selected assets that haven't been downloaded yet
-      const assetsToDownload = await this.db.query<{
-        id: number;
-        asset_type: string;
-        provider_name: string;
-        provider_url: string;
-        content_hash: string;
-        width: number;
-        height: number;
-        mime_type: string;
-        file_size: number;
-      }>(
-        `SELECT id, asset_type, provider_name, provider_url, content_hash, width, height, mime_type, file_size
-         FROM provider_assets
-         WHERE entity_type = ? AND entity_id = ? AND is_selected = 1 AND is_downloaded = 0`,
-        [entityType, entityId]
-      );
-
-      if (assetsToDownload.length === 0) {
-        logger.info('[EnrichmentService] Phase 5B: No assets to download (all selected assets already in cache)');
-        return { assetsDownloaded: 0 };
-      }
-
-      logger.info('[EnrichmentService] Phase 5B: Downloading selected assets to cache', {
-        count: assetsToDownload.length,
-      });
-
-      let downloaded = 0;
-
-      for (const asset of assetsToDownload) {
-        try {
-          // Check if asset already exists in cache by content_hash
-          const cacheTable = this.getCacheTableForAssetType(asset.asset_type);
-          if (!cacheTable) {
-            logger.warn('[EnrichmentService] Unknown asset type, skipping', { assetType: asset.asset_type });
-            continue;
-          }
-
-          // Check if already in cache
-          const existing = await this.db.query<{ id: number }>(
-            `SELECT id FROM ${cacheTable} WHERE file_hash = ? LIMIT 1`,
-            [asset.content_hash]
-          );
-
-          if (existing.length > 0) {
-            // Already in cache, just mark as downloaded
-            await this.providerAssetsRepo.update(asset.id, { is_downloaded: 1 });
-            downloaded++;
-            continue;
-          }
-
-          // Download from provider URL to cache
-          const cacheFilePath = await this.downloadAssetToCache(
-            asset.provider_url,
-            asset.asset_type,
-            asset.content_hash,
-            entityType,
-            entityId
-          );
-
-          // Insert into appropriate cache table
-          await this.insertIntoCacheTable(cacheTable, {
-            entity_type: entityType,
-            entity_id: entityId,
-            file_path: cacheFilePath,
-            file_name: path.basename(cacheFilePath),
-            file_size: asset.file_size || 0,
-            file_hash: asset.content_hash,
-            image_type: asset.asset_type,
-            width: asset.width || 0,
-            height: asset.height || 0,
-            format: asset.mime_type || 'unknown',
-            source_type: 'provider',
-            source_url: asset.provider_url,
-            provider_name: asset.provider_name, // Use actual provider from provider_assets
-          });
-
-          // Mark as downloaded
-          await this.providerAssetsRepo.update(asset.id, { is_downloaded: 1 });
-          downloaded++;
-
-          logger.debug('[EnrichmentService] Downloaded asset to cache', {
-            assetId: asset.id,
-            assetType: asset.asset_type,
-            cacheFilePath,
-          });
-        } catch (error) {
-          logger.error('[EnrichmentService] Failed to download asset to cache', {
-            assetId: asset.id,
-            assetType: asset.asset_type,
-            error: getErrorMessage(error),
-          });
-          // Continue with other assets
-        }
-      }
-
-      logger.info('[EnrichmentService] Phase 5B complete', {
-        entityType,
-        entityId,
-        assetsDownloaded: downloaded,
-      });
-
-      return { assetsDownloaded: downloaded };
-    } catch (error) {
-      logger.error('[EnrichmentService] Phase 5B failed', {
         error: getErrorMessage(error),
       });
       throw error;
@@ -1537,8 +1459,8 @@ export class EnrichmentService {
     // ========================================
     // COMMUNITY VOTES SCORE (0-20 points)
     // ========================================
-    const voteAverage = metadata.voteAverage || 0; // 0-10 scale
-    const voteCount = metadata.votes || 0;
+    const voteAverage = metadata.vote_average || metadata.voteAverage || 0; // 0-10 scale
+    const voteCount = metadata.vote_count || metadata.votes || 0;
 
     const normalized = voteAverage / 10; // 0-1 scale
     const weight = Math.min(voteCount / 50, 1.0); // Need 50+ votes for full weight
@@ -1655,15 +1577,18 @@ export class EnrichmentService {
 
   /**
    * Analyze image metadata
+   * DEPRECATED: No longer used - ImageProcessor is called directly
+   * Kept for backward compatibility
    */
+  // @ts-expect-error - Kept for backward compatibility, may be used by external code
   private async analyzeImage(filePath: string): Promise<AssetMetadata> {
-    const metadata = await sharp(filePath).metadata();
+    const analysis = await imageProcessor.analyzeImage(filePath);
     const stats = await fs.stat(filePath);
 
     return {
-      width: metadata.width || 0,
-      height: metadata.height || 0,
-      mimeType: `image/${metadata.format}`,
+      width: analysis.width,
+      height: analysis.height,
+      mimeType: `image/${analysis.format}`,
       size: stats.size,
       isImage: true,
     };
@@ -1740,7 +1665,11 @@ export class EnrichmentService {
 
   /**
    * Download asset from provider URL to cache directory
+   *
+   * NOTE: No longer used in simplified Phase 5 (downloads handled inline).
+   * Keeping for potential future use or can be removed.
    */
+  // @ts-ignore - Unused method
   private async downloadAssetToCache(
     providerUrl: string,
     assetType: string,
@@ -1784,14 +1713,20 @@ export class EnrichmentService {
 
   /**
    * Insert record into cache table
+   *
+   * NOTE: No longer used in simplified Phase 5 (inserts handled inline).
+   * Keeping for potential future use or can be removed.
    */
+  // @ts-ignore - Unused method
   private async insertIntoCacheTable(tableName: string, data: any): Promise<void> {
     if (tableName === 'cache_image_files') {
       await this.db.execute(
         `INSERT INTO cache_image_files (
           entity_type, entity_id, file_path, file_name, file_size, file_hash,
-          image_type, width, height, format, source_type, source_url, provider_name
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          perceptual_hash, difference_hash,
+          image_type, width, height, format, has_alpha, foreground_ratio,
+          source_type, source_url, provider_name
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           data.entity_type,
           data.entity_id,
@@ -1799,10 +1734,14 @@ export class EnrichmentService {
           data.file_name,
           data.file_size,
           data.file_hash,
+          data.perceptual_hash || null,
+          data.difference_hash || null,
           data.image_type,
           data.width,
           data.height,
           data.format,
+          data.has_alpha !== undefined ? (data.has_alpha ? 1 : 0) : null,
+          data.foreground_ratio !== undefined ? data.foreground_ratio : null,
           data.source_type,
           data.source_url,
           data.provider_name,
