@@ -2,76 +2,53 @@
  * Image Hashing Utilities
  *
  * Provides perceptual hashing (pHash) for image deduplication.
- * Uses average hash algorithm with sharp for image processing.
+ * Uses multi-hash approach (aHash + dHash) for robust duplicate detection.
+ *
+ * @deprecated Individual functions - use ImageProcessor for new code
  */
 
-import sharp from 'sharp';
 import crypto from 'crypto';
 import { promises as fs } from 'fs';
+import sharp from 'sharp';
 import { getErrorMessage } from './errorHandling.js';
+import { imageProcessor, ImageAnalysis } from './ImageProcessor.js';
+
+/**
+ * Compute all perceptual hashes for an image
+ *
+ * Returns both aHash and dHash for robust duplicate detection.
+ * Use this for new code instead of computePerceptualHash.
+ *
+ * @param imagePath - Absolute path to image file
+ * @returns Object with perceptualHash (aHash) and differenceHash (dHash)
+ */
+export async function computeImageHashes(
+  imagePath: string
+): Promise<{ perceptualHash: string; differenceHash: string; metadata: ImageAnalysis }> {
+  try {
+    const analysis = await imageProcessor.analyzeImage(imagePath);
+    return {
+      perceptualHash: analysis.perceptualHash,
+      differenceHash: analysis.differenceHash,
+      metadata: analysis,
+    };
+  } catch (error) {
+    throw new Error(`Failed to compute image hashes for ${imagePath}: ${getErrorMessage(error)}`);
+  }
+}
 
 /**
  * Compute perceptual hash (average hash) for an image
  *
- * Algorithm:
- * 1. Resize to 8x8 pixels (ignoring aspect ratio)
- * 2. Convert to grayscale
- * 3. Calculate average pixel value
- * 4. Generate 64-bit hash based on pixels above/below average
+ * @deprecated Use computeImageHashes() instead for better duplicate detection
+ * This function is kept for backward compatibility only.
  *
  * @param imagePath - Absolute path to image file
  * @returns 16-character hex string representing 64-bit hash
  */
 export async function computePerceptualHash(imagePath: string): Promise<string> {
-  try {
-    // Flatten transparent images onto white background before hashing
-    // This prevents transparent PNGs from producing all-zero hashes
-    const { data } = await sharp(imagePath)
-      .flatten({ background: { r: 255, g: 255, b: 255 } }) // Remove alpha channel, use white background
-      .resize(8, 8, { fit: 'fill' })
-      .grayscale()
-      .raw()
-      .toBuffer({ resolveWithObject: true });
-
-    // Calculate average pixel value
-    let sum = 0;
-    for (let i = 0; i < data.length; i++) {
-      sum += data[i];
-    }
-    const average = sum / data.length;
-
-    // Check for zero variance (solid color images)
-    // These produce unreliable hashes, so use a hash based on the color value
-    let hasVariance = false;
-    for (let i = 0; i < data.length; i++) {
-      if (Math.abs(data[i] - average) > 0.5) {
-        hasVariance = true;
-        break;
-      }
-    }
-
-    if (!hasVariance) {
-      // Solid color image - use the average value as the hash
-      // This ensures different solid colors get different hashes
-      // Format: 0x00000000AABBCCDD where AA = average value repeated
-      const colorValue = Math.round(average);
-      const solidHash = BigInt(colorValue) << 32n | BigInt(colorValue) << 16n | BigInt(colorValue);
-      return solidHash.toString(16).padStart(16, '0');
-    }
-
-    // Generate 64-bit hash
-    let hash = 0n;
-    for (let i = 0; i < 64; i++) {
-      if (data[i] > average) {
-        hash |= 1n << BigInt(i);
-      }
-    }
-
-    // Convert to hex string (16 characters for 64 bits)
-    return hash.toString(16).padStart(16, '0');
-  } catch (error) {
-    throw new Error(`Failed to compute perceptual hash for ${imagePath}: ${getErrorMessage(error)}`);
-  }
+  const { perceptualHash } = await computeImageHashes(imagePath);
+  return perceptualHash;
 }
 
 /**

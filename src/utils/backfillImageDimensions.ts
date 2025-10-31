@@ -1,9 +1,9 @@
 import { DatabaseManager } from '../database/DatabaseManager.js';
 import { ConfigManager } from '../config/ConfigManager.js';
-import sharp from 'sharp';
 import { logger } from '../middleware/logging.js';
 import * as fs from 'fs-extra';
 import { getErrorMessage, getErrorStack } from './errorHandling.js';
+import { imageProcessor } from './ImageProcessor.js';
 
 /**
  * Backfill missing image dimensions for all images in the database
@@ -51,10 +51,10 @@ export async function backfillImageDimensions(): Promise<void> {
           continue;
         }
 
-        // Read dimensions with sharp
-        const metadata = await sharp(filePath).metadata();
-        const width = metadata.width;
-        const height = metadata.height;
+        // Read dimensions using centralized ImageProcessor
+        const analysis = await imageProcessor.analyzeImage(filePath);
+        const width = analysis.width;
+        const height = analysis.height;
 
         if (!width || !height) {
           logger.warn(`Could not read dimensions for image ${image.id}: ${filePath}`);
