@@ -444,9 +444,11 @@ for (const asset of analyzedAssets) {
 
 ---
 
-## Phase 5: Unified Intelligent Selection (Cache + Provider Assets)
+## Phase 5: Simplified Intelligent Selection (Provider Assets Only)
 
-**Goal**: Select the top N unique assets per type from a unified pool of cache and provider assets, automatically evicting lower-ranked assets and removing unselected cache files.
+**Goal**: Select the top N unique provider assets per type, automatically evicting lower-ranked assets, downloading selected assets to cache, and removing scanned assets.
+
+**Philosophy**: Provider assets are the canonical source of truth. Scanned assets are temporary discovery artifacts that are always replaced during enrichment.
 
 ### Selection Configuration
 
@@ -467,194 +469,198 @@ const maxAllowable = {
 };
 ```
 
-### Unified Selection Algorithm (5 Steps)
+### Simplified Selection Algorithm (9 Steps)
 
-Phase 5 now considers **both cache assets AND provider assets** together, with deduplication:
+Phase 5 operates **only on provider assets**, ignoring scanned cache assets entirely:
 
-#### Step 1: Gather All Assets
+#### Step 1: Gather Provider Assets
 ```typescript
-// Query provider_assets (remote candidates)
+// Query provider_assets (analyzed in Phase 3)
 const providerAssets = await db.provider_assets.findByType(entityId, entityType, assetType);
-
-// Query cache_image_files (local/downloaded candidates)
-const cacheAssets = await db.cache_image_files.findByType(entityId, entityType, assetType);
 ```
 
-#### Step 2: Enrich Cache Assets with Provider Metadata
+#### Step 2: Score All Provider Assets
 ```typescript
-// Match cache assets to providers via perceptual hash (90% similarity threshold)
-for (const cacheAsset of cacheAssets) {
-  if (cacheAsset.perceptual_hash) {
-    for (const providerAsset of providerAssets) {
-      const similarity = calculateHashSimilarity(
-        cacheAsset.perceptual_hash,
-        providerAsset.perceptual_hash
-      );
+const scoredAssets = [];
 
-      if (similarity >= 90) {
-        // Copy provider metadata to cache asset for scoring
-        cacheAsset.matchedMetadata = {
-          provider_name: providerAsset.provider_name,
-          provider_metadata: providerAsset.provider_metadata, // vote_average, vote_count, language
-        };
-        break;
-      }
-    }
+for (const provider of providerAssets) {
+  const score = calculateAssetScore({
+    asset_type: assetType,
+    width: provider.width,
+    height: provider.height,
+    provider_name: provider.provider_name,
+    provider_metadata: provider.provider_metadata, // votes, language
+  });
+
+  scoredAssets.push({ ...provider, score });
+}
+```
+
+#### Step 3: Sort by Score Descending
+```typescript
+scoredAssets.sort((a, b) => b.score - a.score);
+```
+
+#### Step 4: Deduplicate by Perceptual Hash (Keep Higher-Scored)
+```typescript
+const uniqueAssets = [];
+const seenHashes = new Set();
+
+for (const asset of scoredAssets) {
+  if (!asset.perceptual_hash) {
+    uniqueAssets.push(asset); // No phash = can't dedupe, include it
+    continue;
   }
-}
-```
 
-#### Step 3: Deduplicate by Perceptual Hash
-```typescript
-const candidates = [];
-
-// Add cache assets first (already downloaded = priority)
-for (const cacheAsset of enrichedCache) {
-  candidates.push({ source: 'cache', cacheId: cacheAsset.id, ...cacheAsset });
-}
-
-// Add provider assets, marking duplicates
-for (const providerAsset of providerAssets) {
   let isDuplicate = false;
 
-  // Check if this provider asset duplicates any cache asset (90% similarity)
-  for (const candidate of candidates.filter(c => c.source === 'cache')) {
-    const similarity = calculateHashSimilarity(
-      providerAsset.perceptual_hash,
-      candidate.perceptualHash
-    );
+  for (const seenHash of seenHashes) {
+    const similarity = ImageProcessor.hammingSimilarity(asset.perceptual_hash, seenHash);
 
-    if (similarity >= 90) {
-      isDuplicate = true; // Skip this provider asset
+    if (similarity >= 0.90) {
+      isDuplicate = true; // Duplicate of higher-scored asset
       break;
     }
   }
 
-  candidates.push({ source: 'provider', isDuplicate, ...providerAsset });
-}
-```
-
-#### Step 4: Score and Select Top N
-```typescript
-// Score all non-duplicate candidates
-for (const candidate of candidates.filter(c => !c.isDuplicate)) {
-  candidate.score = calculateAssetScore(candidate); // 0-100 scoring algorithm
-
-  // Add source priority tiebreaker (provider +0.5 to win ties)
-  if (candidate.source === 'provider') {
-    candidate.score += 0.5;
+  if (!isDuplicate) {
+    uniqueAssets.push(asset);
+    seenHashes.add(asset.perceptual_hash);
   }
 }
-
-// Sort by score descending, take top N
-const selected = candidates
-  .filter(c => !c.isDuplicate)
-  .sort((a, b) => b.score - a.score)
-  .slice(0, maxAllowable);
 ```
 
-#### Step 5: Update Database and Clean Cache
+#### Step 5: Select Top N
 ```typescript
-const selectedProviderIds = [];
+const topN = uniqueAssets.slice(0, maxAllowable);
+```
 
-for (const selected of selectedCandidates) {
-  if (selected.source === 'provider') {
-    selectedProviderIds.push(selected.providerId);
-  } else if (selected.source === 'cache') {
-    // Find matching provider asset(s) by phash and mark selected
-    for (const provider of providerAssets) {
-      if (hashSimilarity(selected.perceptualHash, provider.perceptual_hash) >= 90) {
-        selectedProviderIds.push(provider.id);
-      }
-    }
+#### Step 6: Detect Changes
+```typescript
+const oldSelectedIds = providerAssets.filter(p => p.is_selected === 1).map(p => p.id);
+const newSelectedIds = topN.map(a => a.id);
+
+const noChanges = arraysEqual(oldSelectedIds, newSelectedIds);
+
+if (noChanges) {
+  // Skip cache updates - selection unchanged
+  return;
+}
+```
+
+#### Step 7: Update is_selected Flags
+```typescript
+// Reset all to deselected
+await db.provider_assets.deselectAll(entityId, entityType, assetType);
+
+// Mark new selections
+for (const asset of topN) {
+  await db.provider_assets.update(asset.id, {
+    is_selected: 1,
+    selected_at: new Date(),
+    selected_by: 'auto',
+  });
+}
+```
+
+#### Step 8: Update Cache (Download New, Delete Evicted)
+```typescript
+const toDownload = newSelectedIds.filter(id => !oldSelectedIds.includes(id));
+const toDelete = oldSelectedIds.filter(id => !newSelectedIds.includes(id));
+
+// Download new selections to cache
+for (const id of toDownload) {
+  const asset = topN.find(a => a.id === id);
+  const cachePath = `/data/cache/${assetType}/${asset.content_hash.slice(0, 2)}/${asset.content_hash}.jpg`;
+
+  await downloadFile(asset.provider_url, cachePath);
+
+  await db.cache_image_files.create({
+    entity_type: entityType,
+    entity_id: entityId,
+    file_path: cachePath,
+    file_hash: asset.content_hash,
+    perceptual_hash: asset.perceptual_hash,
+    image_type: assetType,
+    source_type: 'provider',
+    source_url: asset.provider_url,
+    provider_name: asset.provider_name,
+  });
+}
+
+// Delete evicted cache files
+for (const id of toDelete) {
+  const provider = providerAssets.find(p => p.id === id);
+  const cache = await db.cache_image_files.findByHash(provider.content_hash);
+
+  if (cache) {
+    await fs.unlink(cache.file_path);
+    await db.cache_image_files.delete(cache.id);
   }
 }
+```
 
-// Mark selected provider assets
-await db.provider_assets.updateMany(selectedProviderIds, { is_selected: 1 });
+#### Step 9: Delete All Scanned Assets
+```typescript
+// Remove all source_type = 'local' cache assets
+const scannedAssets = await db.cache_image_files.findBySource(entityId, entityType, assetType, 'local');
 
-// Deselect all others
-await db.provider_assets.deselectExcept(entityId, entityType, assetType, selectedProviderIds);
-
-// Clean cache: remove unselected cache assets
-const selectedCacheIds = selectedCandidates
-  .filter(c => c.source === 'cache')
-  .map(c => c.cacheId);
-
-const unselectedCacheIds = allCacheIds.filter(id => !selectedCacheIds.includes(id));
-
-for (const cacheId of unselectedCacheIds) {
-  // Delete physical file and cache_image_files entry
-  await fs.unlink(cacheAsset.file_path);
-  await db.cache_image_files.delete(cacheId);
+for (const scanned of scannedAssets) {
+  await fs.unlink(scanned.file_path);
+  await db.cache_image_files.delete(scanned.id);
 }
 ```
 
-### Why Unified Selection?
+### Why Simplified Selection?
 
-**Before**: Only provider assets were considered, cache assets were ignored
-- Problem: Provider assets downloaded → cache → then enrichment re-ran → provider assets re-selected → unselected cache assets orphaned
-- Result: Cache accumulation, UI showed all assets (not just top N)
+**Philosophy**: Provider assets are canonical truth. Scanned assets are temporary discovery artifacts.
 
-**After**: Cache and provider assets compete equally
-- Cache assets can win if they have better quality (resolution, aspect ratio)
-- Provider assets win ties (+0.5 tiebreaker) as canonical sources
-- Deduplication prevents the same image appearing twice
-- Unselected cache assets are cleaned up immediately
+**Benefits**:
+- **80% code reduction**: ~400 lines → ~70 lines
+- **Clear behavior**: Scanned assets never compete, always replaced
+- **Idempotent**: Re-enrichment with no changes skips cache updates entirely
+- **Efficient**: Only downloads new selections, only deletes evicted
+- **Maintainable**: Single flow, easy to understand
+
+**User Control**: Custom assets require explicit locking to survive enrichment. This forces users to be intentional about preservation.
 
 ### Scoring Example
 
-**Local/Generated Poster** (1000x1500, no metadata):
-- Resolution: 30 pts
-- Aspect Ratio: 20 pts
-- Language: 0 pts (no metadata)
-- Votes: 0 pts (no metadata)
-- Provider: 5 pts (unknown)
-- **Total: 55.0 pts**
-
-**TMDB Poster** (2000x3000, 50 votes, 8.5/10):
+**TMDB Poster #1** (2000x3000, 50 votes, 8.5/10, English):
 - Resolution: 30 pts
 - Aspect Ratio: 20 pts
 - Language: 20 pts (en)
 - Votes: 17 pts (normalized)
 - Provider: 10 pts (tmdb)
-- Source: +0.5 pts (tiebreaker)
-- **Total: 97.5 pts** ← Wins
+- **Total: 97.0 pts**
+
+**TMDB Poster #2** (1920x2880, 120 votes, 9.2/10, English):
+- Resolution: 28 pts
+- Aspect Ratio: 20 pts
+- Language: 20 pts (en)
+- Votes: 20 pts (normalized)
+- Provider: 10 pts (tmdb)
+- **Total: 98.0 pts** ← Wins (better votes)
 
 ### Auto-Eviction Behavior
 
 When new assets arrive that score higher than existing selections:
-1. Phase 5 selects new top N (including new high-scorer)
-2. Old asset drops out of top N
-3. `provider_assets.is_selected` set to 0 for evicted asset
-4. If evicted asset is in cache, physical file deleted
-5. UI instantly reflects updated selection
+1. Phase 5 scores all provider assets including new arrivals
+2. Old low-scorer drops out of top N
+3. `provider_assets.is_selected` flags updated
+4. Evicted asset deleted from cache
+5. New top-scorer downloaded to cache
+6. UI instantly reflects updated selection
 
-  // Mark top N as selected
-  await db.provider_assets.updateMany({
-    where: { id: { in: topNIds } },
-    data: {
-      is_selected: 1,
-      selected_at: new Date(),
-      selected_by: 'auto',
-    },
-  });
+### Idempotent Re-Enrichment
 
-  // Deselect all others (auto-eviction of lower-ranked assets)
-  await db.provider_assets.updateMany({
-    where: {
-      entity_id: entityId,
-      entity_type: entityType,
-      asset_type: assetType,
-      id: { notIn: topNIds },
-    },
-    data: {
-      is_selected: 0,
-      selected_at: null,
-      selected_by: null,
-    },
-  });
-}
+**Scenario**: Re-enrichment with no provider changes
+
+```typescript
+// First enrichment: selected IDs = [5, 12, 8]
+// Re-enrichment: same provider URLs, same votes
+// After scoring: top N IDs = [5, 12, 8]  (identical)
+// Result: noChanges = true, skip all cache operations ✅
 ```
 
 ### Manual Selection Lock
@@ -690,129 +696,6 @@ async function manualSelectAsset(assetId: number) {
   });
 }
 ```
-
----
-
-## Phase 5B: Download Selected Assets to Cache
-
-**Goal**: Permanently store selected assets in cache for UI display and future publishing.
-
-**Critical**: This is the NEW phase that makes enrichment cache-complete. After Phase 5 (selection), we now download the selected assets to permanent storage.
-
-### Download Selected to Cache
-
-```typescript
-// Get all selected assets that aren't already in cache
-const selectedAssets = await db.query(`
-  SELECT pa.id, pa.asset_type, pa.provider_url, pa.content_hash,
-         pa.perceptual_hash, pa.width, pa.height, pa.mime_type, pa.file_size
-  FROM provider_assets pa
-  WHERE pa.entity_id = ?
-    AND pa.entity_type = ?
-    AND pa.is_selected = 1
-    AND pa.is_downloaded = 0
-`, [entityId, entityType]);
-
-logger.info('[Enrichment] Downloading selected assets to cache', {
-  count: selectedAssets.length,
-});
-
-for (const asset of selectedAssets) {
-  try {
-    // Determine cache path (content-addressed)
-    const ext = path.extname(new URL(asset.provider_url).pathname) || '.jpg';
-    const cacheDir = `/data/cache/${asset.asset_type}`;
-    const cachePath = path.join(
-      cacheDir,
-      asset.content_hash.slice(0, 2),
-      `${asset.content_hash}${ext}`
-    );
-
-    // Ensure directory exists
-    await fs.mkdir(path.dirname(cachePath), { recursive: true });
-
-    // Download from provider
-    const buffer = await downloadFile(asset.provider_url);
-
-    // Verify hash matches
-    const actualHash = calculateSHA256(buffer);
-    if (actualHash !== asset.content_hash) {
-      logger.error('[Enrichment] Hash mismatch - provider changed asset', {
-        assetId: asset.id,
-        expected: asset.content_hash.slice(0, 8),
-        actual: actualHash.slice(0, 8),
-      });
-      continue; // Skip this asset
-    }
-
-    // Write to cache
-    await fs.writeFile(cachePath, buffer);
-
-    // Get image dimensions (if not already accurate)
-    let width = asset.width;
-    let height = asset.height;
-    let format = ext.slice(1);
-
-    if (asset.asset_type !== 'trailer' && asset.asset_type !== 'sample') {
-      const metadata = await sharp(cachePath).metadata();
-      width = metadata.width;
-      height = metadata.height;
-      format = metadata.format;
-    }
-
-    // Insert cache_image_files record
-    const cacheFileId = await db.execute(
-      `INSERT INTO cache_image_files (
-        entity_type, entity_id, file_path, file_name, file_size,
-        file_hash, perceptual_hash, image_type, width, height, format,
-        source_type, source_url, provider_name, discovered_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-      [
-        entityType,
-        entityId,
-        cachePath,
-        path.basename(cachePath),
-        buffer.length,
-        asset.content_hash,
-        asset.perceptual_hash,
-        asset.asset_type,
-        width,
-        height,
-        format,
-        'provider',
-        asset.provider_url,
-        asset.provider_name,
-      ]
-    );
-
-    // Update provider_assets
-    await db.provider_assets.update(asset.id, {
-      is_downloaded: 1,
-    });
-
-    logger.debug('[Enrichment] Asset downloaded to cache', {
-      assetId: asset.id,
-      assetType: asset.asset_type,
-      cachePath,
-    });
-
-  } catch (error) {
-    logger.error('[Enrichment] Failed to download asset to cache', {
-      assetId: asset.id,
-      url: asset.provider_url,
-      error: getErrorMessage(error),
-    });
-    // Continue with other assets
-  }
-}
-
-logger.info('[Enrichment] Phase 5B complete', {
-  assetsDownloaded: selectedAssets.length,
-});
-```
-
-**Output**: Selected assets permanently stored in cache, visible in UI
-
 ---
 
 ## Phase 6: Fetch Actor Data and Download Thumbnails
