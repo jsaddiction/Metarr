@@ -49,7 +49,9 @@ export interface MovieListItem {
   year?: number;
   studio?: string;
   monitored: boolean;
-  identification_status: 'unidentified' | 'identified' | 'enriched';
+  identification_status: 'unidentified' | 'identified' | 'enriched' | 'published';
+  enriched_at?: string;
+  published_at?: string;
   assetCounts: AssetCounts;
   assetStatuses: AssetStatuses;
 }
@@ -122,8 +124,10 @@ export interface MovieDetail {
 
   // Workflow State
   monitored: boolean;
-  identification_status: 'unidentified' | 'identified' | 'enriched';
+  identification_status: 'unidentified' | 'identified' | 'enriched' | 'published';
   enrichment_priority: number; // 1-10
+  enriched_at?: string;
+  published_at?: string;
 
   // Asset Counts & Statuses (for UI badges)
   assetCounts: AssetCounts;

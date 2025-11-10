@@ -1,6 +1,6 @@
 import React from 'react';
 
-type EnrichmentStatus = 'unidentified' | 'identified' | 'enriched';
+type EnrichmentStatus = 'unidentified' | 'identified' | 'enriched' | 'published';
 
 interface EnrichmentStatusBadgeProps {
   status: EnrichmentStatus;
@@ -9,10 +9,11 @@ interface EnrichmentStatusBadgeProps {
 }
 
 /**
- * Badge component showing movie enrichment workflow state
+ * Badge component showing movie workflow state
  * - unidentified: Gray (needs identification)
- * - identified: Yellow (enrichment in progress)
- * - enriched: Green (complete)
+ * - identified: Yellow (ready for enrichment)
+ * - enriched: Blue (ready for publishing)
+ * - published: Green (complete)
  */
 export const EnrichmentStatusBadge: React.FC<EnrichmentStatusBadgeProps> = ({
   status,
@@ -27,13 +28,19 @@ export const EnrichmentStatusBadge: React.FC<EnrichmentStatusBadgeProps> = ({
       dotColor: 'bg-neutral-400',
     },
     identified: {
-      label: 'Enriching',
+      label: 'Identified',
       bgColor: 'bg-yellow-600/20',
       textColor: 'text-yellow-400',
       dotColor: 'bg-yellow-400',
     },
     enriched: {
       label: 'Enriched',
+      bgColor: 'bg-blue-600/20',
+      textColor: 'text-blue-400',
+      dotColor: 'bg-blue-400',
+    },
+    published: {
+      label: 'Published',
       bgColor: 'bg-green-600/20',
       textColor: 'text-green-400',
       dotColor: 'bg-green-400',
