@@ -91,6 +91,18 @@ export interface PlayerSyncConfig {
 }
 
 /**
+ * Workflow Configuration
+ *
+ * Controls job chaining behavior between phases
+ */
+export interface WorkflowConfig {
+  // Auto-publish after enrichment (if false, user must manually trigger publish)
+  // When false: scan → enrich → [USER REVIEW] → manual publish
+  // When true: scan → enrich → auto publish
+  autoPublish: boolean;
+}
+
+/**
  * Complete phase configuration
  */
 export interface PhaseConfiguration {
@@ -98,6 +110,7 @@ export interface PhaseConfiguration {
   enrichment: EnrichmentPhaseConfig;
   publish: PublishConfig;
   playerSync: PlayerSyncConfig;
+  workflow: WorkflowConfig;
 }
 
 /**
@@ -140,5 +153,9 @@ export const DEFAULT_PHASE_CONFIG: PhaseConfiguration = {
     notifyOnPublish: true,
     delaySeconds: 0,
     cleanLibraryFirst: false,
+  },
+
+  workflow: {
+    autoPublish: false, // Default: false (user review gate enabled)
   },
 };

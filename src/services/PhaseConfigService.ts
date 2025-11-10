@@ -82,6 +82,10 @@ export class PhaseConfigService {
         delaySeconds: this.getInt(settings, 'phase.playerSync.delaySeconds', DEFAULT_PHASE_CONFIG.playerSync.delaySeconds),
         cleanLibraryFirst: this.getBool(settings, 'phase.playerSync.cleanFirst', DEFAULT_PHASE_CONFIG.playerSync.cleanLibraryFirst),
       },
+
+      workflow: {
+        autoPublish: this.getBool(settings, 'phase.workflow.autoPublish', DEFAULT_PHASE_CONFIG.workflow.autoPublish),
+      },
     };
 
     // Cache it
