@@ -94,7 +94,7 @@ export class PublishingService {
           }
 
           try {
-            await this.publishAsset(asset, config);
+            await this.publishAsset(asset, config, asset.rank);
             result.assetsPublished++;
           } catch (error) {
             logger.error(`Error publishing asset ${asset.id}:`, error);
@@ -145,6 +145,17 @@ export class PublishingService {
 
       result.success = result.errors.length === 0;
 
+      // Update published_at timestamp and status on success
+      if (result.success) {
+        const table = this.getTableName(config.entityType);
+        if (table) {
+          await this.db.execute(
+            `UPDATE ${table} SET published_at = CURRENT_TIMESTAMP, identification_status = 'published' WHERE id = ?`,
+            [config.entityId]
+          );
+        }
+      }
+
       logger.info(`Published ${config.entityType} ${config.entityId}`, {
         assetsPublished: result.assetsPublished,
         nfoGenerated: result.nfoGenerated,
@@ -170,7 +181,8 @@ export class PublishingService {
       content_hash: string | null;
       provider_url: string;
     },
-    config: PublishJobConfig
+    config: PublishJobConfig,
+    rank: number = 1
   ): Promise<void> {
     // Skip trailers (YouTube URLs, not downloaded)
     if (asset.asset_type === 'trailer' && !asset.content_hash) {
@@ -188,8 +200,8 @@ export class PublishingService {
       throw new Error(`Cache file not found for hash ${asset.content_hash}`);
     }
 
-    // Determine library path with Kodi naming
-    const libraryAssetPath = this.getLibraryAssetPath(config, asset.asset_type, cachePath);
+    // Determine library path with Kodi naming (includes rank for multiple assets)
+    const libraryAssetPath = this.getLibraryAssetPath(config, asset.asset_type, cachePath, rank);
     const tempPath = `${libraryAssetPath}.tmp.${Date.now()}`;
 
     // Copy from cache to library with atomic write pattern
@@ -254,8 +266,14 @@ export class PublishingService {
 
   /**
    * Get library asset path with Kodi naming convention
+   * Supports rank-based numbering for multiple assets of same type
+   *
+   * Examples:
+   * - rank 1: "Movie (2024)-poster.jpg"
+   * - rank 2: "Movie (2024)-poster1.jpg"
+   * - rank 3: "Movie (2024)-poster2.jpg"
    */
-  private getLibraryAssetPath(config: PublishJobConfig, assetType: string, cachePath: string): string {
+  private getLibraryAssetPath(config: PublishJobConfig, assetType: string, cachePath: string, rank: number = 1): string {
     const ext = path.extname(cachePath);
 
     // SECURITY: Sanitize mediaFilename to prevent path traversal attacks
@@ -291,7 +309,18 @@ export class PublishingService {
     };
 
     const suffix = kodiSuffix[assetType] || `-${assetType}`;
-    return path.join(config.libraryPath, `${basename}${suffix}${ext}`);
+
+    // Rank-based naming for multiple assets
+    // Rank 1: no number suffix (e.g., "Movie-poster.jpg")
+    // Rank 2+: numbered starting at 1 (e.g., "Movie-poster1.jpg", "Movie-poster2.jpg")
+    let filename: string;
+    if (rank === 1) {
+      filename = `${basename}${suffix}${ext}`;
+    } else {
+      filename = `${basename}${suffix}${rank - 1}${ext}`;
+    }
+
+    return path.join(config.libraryPath, filename);
   }
 
   /**
@@ -531,11 +560,19 @@ export class PublishingService {
     asset_type: string;
     content_hash: string | null;
     provider_url: string;
+    rank: number;
   }>> {
+    // Query with rank based on score (best = rank 1, second-best = rank 2, etc.)
     return this.db.query(
-      `SELECT id, asset_type, content_hash, provider_url
+      `SELECT
+         id,
+         asset_type,
+         content_hash,
+         provider_url,
+         ROW_NUMBER() OVER (PARTITION BY asset_type ORDER BY score DESC) as rank
        FROM provider_assets
-       WHERE entity_type = ? AND entity_id = ? AND is_selected = 1`,
+       WHERE entity_type = ? AND entity_id = ? AND is_selected = 1
+       ORDER BY asset_type, score DESC`,
       [entityType, entityId]
     );
   }

@@ -1283,7 +1283,7 @@ export class EnrichmentService {
       const values = fields.map(f => updates[f]);
 
       await this.db.execute(
-        `UPDATE movies SET ${setClause}, enriched_at = CURRENT_TIMESTAMP WHERE id = ?`,
+        `UPDATE movies SET ${setClause}, enriched_at = CURRENT_TIMESTAMP, identification_status = 'enriched' WHERE id = ?`,
         [...values, movieId]
       );
 
@@ -1558,7 +1558,7 @@ export class EnrichmentService {
     const table = entityType === 'movie' ? 'movies' : entityType === 'series' ? 'series' : 'episodes';
 
     await this.db.execute(
-      `UPDATE ${table} SET enriched_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      `UPDATE ${table} SET enriched_at = CURRENT_TIMESTAMP, identification_status = 'enriched' WHERE id = ?`,
       [entityId]
     );
   }
