@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -32,6 +33,8 @@ export const LibraryConfigModal: React.FC<LibraryConfigModalProps> = ({
     name: '',
     type: 'movie',
     path: '',
+    auto_enrich: true,
+    auto_publish: false,
   });
 
   const [showBrowser, setShowBrowser] = useState(false);
@@ -76,6 +79,9 @@ export const LibraryConfigModal: React.FC<LibraryConfigModalProps> = ({
         name: library.name,
         type: library.type,
         path: library.path,
+        auto_enrich: library.auto_enrich,
+        auto_publish: library.auto_publish,
+        description: library.description,
       });
       // Validate existing library path on open
       if (library.path) {
@@ -86,6 +92,8 @@ export const LibraryConfigModal: React.FC<LibraryConfigModalProps> = ({
         name: '',
         type: 'movie',
         path: '',
+        auto_enrich: true,
+        auto_publish: false,
       });
       setPathValidation({ status: 'idle' });
       setScanAfterSave(true); // Reset to default (checked) for new libraries
@@ -204,7 +212,7 @@ export const LibraryConfigModal: React.FC<LibraryConfigModalProps> = ({
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 px-6 py-4">
+          <div className="space-y-3 px-6 py-4">
               {/* Name */}
               <div>
                 <Label htmlFor="library-name" className="block text-sm font-medium text-neutral-300 mb-1">
@@ -298,17 +306,44 @@ export const LibraryConfigModal: React.FC<LibraryConfigModalProps> = ({
                 )}
               </div>
 
+              <hr className="border-neutral-700" />
+
+              {/* Auto-Enrich Toggle */}
+              <div className="flex items-center justify-between">
+                <Label htmlFor="auto-enrich" className="text-sm font-medium text-neutral-300 cursor-pointer">
+                  Auto-Enrich
+                </Label>
+                <Switch
+                  id="auto-enrich"
+                  checked={formData.auto_enrich}
+                  onCheckedChange={(checked) => handleChange('auto_enrich', checked)}
+                />
+              </div>
+
+              {/* Auto-Publish Toggle */}
+              <div className="flex items-center justify-between">
+                <Label htmlFor="auto-publish" className="text-sm font-medium text-neutral-300 cursor-pointer">
+                  Auto-Publish
+                </Label>
+                <Switch
+                  id="auto-publish"
+                  checked={formData.auto_publish}
+                  disabled={!formData.auto_enrich}
+                  onCheckedChange={(checked) => handleChange('auto_publish', checked)}
+                />
+              </div>
+
               {/* Scan After Save */}
               {!library && (
-                <div className="flex items-center gap-2">
-                  <Checkbox
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="scanAfterSave" className="text-sm font-medium text-neutral-300 cursor-pointer">
+                    Scan After Save
+                  </Label>
+                  <Switch
                     id="scanAfterSave"
                     checked={scanAfterSave}
                     onCheckedChange={(checked) => setScanAfterSave(checked as boolean)}
                   />
-                  <Label htmlFor="scanAfterSave" className="text-sm text-neutral-300 cursor-pointer">
-                    Scan library after saving
-                  </Label>
                 </div>
               )}
 
