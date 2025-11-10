@@ -242,7 +242,11 @@ export class WebSocketBroadcaster {
     };
 
     this.wsServer!.broadcastToAll(message);
-    logger.debug('Broadcasted movies updated', { count: movieIds.length });
+    logger.info('Broadcasted movies updated WebSocket message', {
+      count: movieIds.length,
+      movieIds,
+      action: 'updated'
+    });
   }
 
   /**
