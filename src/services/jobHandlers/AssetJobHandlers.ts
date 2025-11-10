@@ -4,6 +4,7 @@ import { JobQueueService } from '../jobQueue/JobQueueService.js';
 import { EnrichmentService } from '../enrichment/EnrichmentService.js';
 import { PublishingService } from '../publishingService.js';
 import { PhaseConfigService } from '../PhaseConfigService.js';
+import { websocketBroadcaster } from '../websocketBroadcaster.js';
 import { logger } from '../../middleware/logging.js';
 import path from 'path';
 
@@ -90,7 +91,7 @@ export class AssetJobHandlers {
       phaseConfig,
     });
 
-    logger.info('[AssetJobHandlers] Enrichment complete, chaining to publish', {
+    logger.info('[AssetJobHandlers] Enrichment complete', {
       service: 'AssetJobHandlers',
       handler: 'handleEnrichMetadata',
       jobId: job.id,
@@ -98,26 +99,62 @@ export class AssetJobHandlers {
       entityId,
     });
 
-    // ALWAYS chain to publish (phase always runs)
-    const publishJobId = await this.jobQueue.addJob({
-      type: 'publish',
-      priority: job.priority, // Maintain priority from enrichment
-      payload: {
+    // Broadcast WebSocket update to refresh UI
+    if (entityType === 'movie') {
+      logger.info('[AssetJobHandlers] Broadcasting moviesUpdated WebSocket event', {
         entityType,
         entityId,
-      },
-      retry_count: 0,
-      max_retries: 3,
-    });
+      });
+      websocketBroadcaster.broadcastMoviesUpdated([entityId]);
+    }
 
-    logger.info('[AssetJobHandlers] Chained to publish job', {
-      service: 'AssetJobHandlers',
-      handler: 'handleEnrichMetadata',
-      jobId: job.id,
-      publishJobId,
-      entityType,
-      entityId,
-    });
+    // Get library settings to check auto-publish
+    const entity = await this.getEntityWithLibrary(entityType, entityId);
+    if (!entity) {
+      logger.error('[AssetJobHandlers] Entity not found after enrichment', { entityType, entityId });
+      return;
+    }
+
+    const library = await this.getLibrary(entity.library_id);
+    if (!library) {
+      logger.error('[AssetJobHandlers] Library not found', { libraryId: entity.library_id });
+      return;
+    }
+
+    // Check library-level auto-publish setting
+    const autoPublish = library.auto_publish;
+
+    if (autoPublish) {
+      // Automated workflow: chain to publish
+      const publishJobId = await this.jobQueue.addJob({
+        type: 'publish',
+        priority: job.priority, // Maintain priority from enrichment
+        payload: {
+          entityType,
+          entityId,
+        },
+        retry_count: 0,
+        max_retries: 3,
+      });
+
+      logger.info('[AssetJobHandlers] Library has auto-publish enabled, chained to publish job', {
+        service: 'AssetJobHandlers',
+        handler: 'handleEnrichMetadata',
+        jobId: job.id,
+        publishJobId,
+        libraryId: library.id,
+        libraryName: library.name,
+      });
+    } else {
+      // Manual workflow: stop for user review
+      logger.info('[AssetJobHandlers] Library has auto-publish disabled, waiting for manual trigger', {
+        service: 'AssetJobHandlers',
+        handler: 'handleEnrichMetadata',
+        jobId: job.id,
+        libraryId: library.id,
+        libraryName: library.name,
+      });
+    }
   }
 
   /**
@@ -185,6 +222,15 @@ export class AssetJobHandlers {
       entityId,
     });
 
+    // Broadcast WebSocket update to refresh UI
+    if (entityType === 'movie') {
+      logger.info('[AssetJobHandlers] Broadcasting moviesUpdated WebSocket event after publish', {
+        entityType,
+        entityId,
+      });
+      websocketBroadcaster.broadcastMoviesUpdated([entityId]);
+    }
+
     // TODO: Chain to player-sync job when implemented
     // const playerSyncJobId = await this.jobQueue.addJob({
     //   type: 'player-sync',
@@ -193,6 +239,37 @@ export class AssetJobHandlers {
     //   retry_count: 0,
     //   max_retries: 2,
     // });
+  }
+
+  /**
+   * Get entity with library_id
+   */
+  private async getEntityWithLibrary(
+    entityType: string,
+    entityId: number
+  ): Promise<{ id: number; library_id: number } | null> {
+    const table = `${entityType}s`;
+    const results = await this.db.query<{ id: number; library_id: number }>(
+      `SELECT id, library_id FROM ${table} WHERE id = ?`,
+      [entityId]
+    );
+    return results.length > 0 ? results[0] : null;
+  }
+
+  /**
+   * Get library by ID
+   */
+  private async getLibrary(libraryId: number): Promise<{ id: number; name: string; auto_publish: boolean } | null> {
+    const results = await this.db.query<{ id: number; name: string; auto_publish: number }>(
+      `SELECT id, name, auto_publish FROM libraries WHERE id = ?`,
+      [libraryId]
+    );
+    if (results.length === 0) return null;
+    return {
+      id: results[0].id,
+      name: results[0].name,
+      auto_publish: Boolean(results[0].auto_publish),
+    };
   }
 
   /**
