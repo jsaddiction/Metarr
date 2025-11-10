@@ -62,7 +62,7 @@ export function registerAllJobHandlers(
   deps: HandlerDependencies
 ): void {
   // Instantiate handler classes
-  const scanHandlers = new ScanJobHandlers(deps.db, deps.dbManager);
+  const scanHandlers = new ScanJobHandlers(deps.db, deps.dbManager, deps.jobQueue);
 
   const webhookHandlers = new WebhookJobHandlers(
     deps.db,

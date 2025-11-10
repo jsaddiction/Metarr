@@ -243,26 +243,57 @@ export class WebhookJobHandlers {
       logger.info(`[WebhookJobHandlers] Updated movie ${movieId}: ${movie.title} (${movie.year})`);
     }
 
-    // 2. ALWAYS chain to enrich-metadata (no workflow checks)
-    // NOTE: Enrichment phase ALWAYS runs - configuration controls behavior
-    const enrichJobId = await this.jobQueue.addJob({
-      type: 'enrich-metadata',
-      priority: 3, // Maintain HIGH priority from webhook
-      payload: {
-        entityType: 'movie',
-        entityId: movieId,
-      },
-      retry_count: 0,
-      max_retries: 3,
-    });
+    // 2. Check library auto-enrich setting
+    const library = await this.db.query<{ id: number; name: string; auto_enrich: number }>(
+      `SELECT id, name, auto_enrich FROM libraries WHERE id = ?`,
+      [libraryId]
+    );
 
-    logger.info('[WebhookJobHandlers] Movie scan complete, chained to enrich-metadata', {
-      service: 'WebhookJobHandlers',
-      handler: 'handleScanMovie',
-      jobId: job.id,
-      movieId,
-      movieTitle: movie.title,
-      enrichJobId,
-    });
+    if (library.length === 0) {
+      logger.error('[WebhookJobHandlers] Library not found after movie scan', {
+        service: 'WebhookJobHandlers',
+        handler: 'handleScanMovie',
+        jobId: job.id,
+        libraryId,
+      });
+      return;
+    }
+
+    const autoEnrich = Boolean(library[0].auto_enrich);
+
+    if (autoEnrich) {
+      // Chain to enrich-metadata job
+      const enrichJobId = await this.jobQueue.addJob({
+        type: 'enrich-metadata',
+        priority: 3, // Maintain HIGH priority from webhook
+        payload: {
+          entityType: 'movie',
+          entityId: movieId,
+        },
+        retry_count: 0,
+        max_retries: 3,
+      });
+
+      logger.info('[WebhookJobHandlers] Movie scan complete, library has auto-enrich enabled, chained to enrich-metadata', {
+        service: 'WebhookJobHandlers',
+        handler: 'handleScanMovie',
+        jobId: job.id,
+        movieId,
+        movieTitle: movie.title,
+        libraryId: library[0].id,
+        libraryName: library[0].name,
+        enrichJobId,
+      });
+    } else {
+      logger.info('[WebhookJobHandlers] Movie scan complete, library has auto-enrich disabled, stopping workflow', {
+        service: 'WebhookJobHandlers',
+        handler: 'handleScanMovie',
+        jobId: job.id,
+        movieId,
+        movieTitle: movie.title,
+        libraryId: library[0].id,
+        libraryName: library[0].name,
+      });
+    }
   }
 }

@@ -17,7 +17,8 @@ import { getErrorMessage, getErrorStack } from '../../utils/errorHandling.js';
 export class ScanJobHandlers {
   constructor(
     private db: DatabaseConnection,
-    private dbManager: any // DatabaseManager - using any to avoid circular dependency
+    private dbManager: any, // DatabaseManager - using any to avoid circular dependency
+    private jobQueue: JobQueueService
   ) {}
 
   /**
@@ -117,8 +118,57 @@ export class ScanJobHandlers {
         websocketBroadcaster.broadcastMoviesAdded([scanResult.movieId]);
       }
 
-      // TODO: Queue cache-asset jobs for discovered assets
-      // This will be implemented when we add asset caching logic
+      // Check library auto-enrich setting
+      if (scanResult.movieId) {
+        const movie = await this.db.query<{ id: number; library_id: number }>(
+          `SELECT id, library_id FROM movies WHERE id = ?`,
+          [scanResult.movieId]
+        );
+
+        if (movie.length > 0) {
+          const library = await this.db.query<{ id: number; name: string; auto_enrich: number }>(
+            `SELECT id, name, auto_enrich FROM libraries WHERE id = ?`,
+            [movie[0].library_id]
+          );
+
+          if (library.length > 0) {
+            const autoEnrich = Boolean(library[0].auto_enrich);
+
+            if (autoEnrich) {
+              // Chain to enrich-metadata job
+              const enrichJobId = await this.jobQueue.addJob({
+                type: 'enrich-metadata',
+                priority: job.priority, // Maintain priority from scan
+                payload: {
+                  entityType: 'movie',
+                  entityId: scanResult.movieId,
+                },
+                retry_count: 0,
+                max_retries: 3,
+              });
+
+              logger.info('[ScanJobHandlers] Library has auto-enrich enabled, chained to enrich-metadata', {
+                service: 'ScanJobHandlers',
+                handler: 'handleDirectoryScan',
+                jobId: job.id,
+                movieId: scanResult.movieId,
+                libraryId: library[0].id,
+                libraryName: library[0].name,
+                enrichJobId,
+              });
+            } else {
+              logger.info('[ScanJobHandlers] Library has auto-enrich disabled, stopping workflow', {
+                service: 'ScanJobHandlers',
+                handler: 'handleDirectoryScan',
+                jobId: job.id,
+                movieId: scanResult.movieId,
+                libraryId: library[0].id,
+                libraryName: library[0].name,
+              });
+            }
+          }
+        }
+      }
     } catch (error) {
       logger.error('[ScanJobHandlers] Directory scan failed', {
         service: 'ScanJobHandlers',
