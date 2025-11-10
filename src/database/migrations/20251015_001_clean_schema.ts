@@ -55,6 +55,9 @@ export class CleanSchemaMigration {
         path TEXT NOT NULL,
         type TEXT NOT NULL CHECK(type IN ('movie', 'tv', 'music')),
         enabled BOOLEAN DEFAULT 1,
+        auto_enrich BOOLEAN DEFAULT 1,
+        auto_publish BOOLEAN DEFAULT 0,
+        description TEXT,
         last_scan_at TIMESTAMP,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -63,6 +66,8 @@ export class CleanSchemaMigration {
 
     await db.execute('CREATE INDEX idx_libraries_type ON libraries(type)');
     await db.execute('CREATE INDEX idx_libraries_enabled ON libraries(enabled)');
+    await db.execute('CREATE INDEX idx_libraries_auto_enrich ON libraries(auto_enrich)');
+    await db.execute('CREATE INDEX idx_libraries_auto_publish ON libraries(auto_publish)');
 
     // Media Player Groups
     await db.execute(`
@@ -441,9 +446,10 @@ export class CleanSchemaMigration {
         keyart_locked BOOLEAN DEFAULT 0,
         landscape_locked BOOLEAN DEFAULT 0,
         monitored BOOLEAN NOT NULL DEFAULT 1,
-        identification_status TEXT DEFAULT 'unidentified' CHECK(identification_status IN ('unidentified', 'identified', 'enriched')),
+        identification_status TEXT DEFAULT 'unidentified' CHECK(identification_status IN ('unidentified', 'identified', 'enriched', 'published')),
         enrichment_priority INTEGER DEFAULT 5,
         enriched_at TIMESTAMP,
+        published_at TIMESTAMP,
         deleted_at TIMESTAMP,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -529,7 +535,7 @@ export class CleanSchemaMigration {
         logo_locked BOOLEAN DEFAULT 0,
         clearart_locked BOOLEAN DEFAULT 0,
         thumb_locked BOOLEAN DEFAULT 0,
-        identification_status TEXT DEFAULT 'unidentified' CHECK(identification_status IN ('unidentified', 'identified', 'enriched')),
+        identification_status TEXT DEFAULT 'unidentified' CHECK(identification_status IN ('unidentified', 'identified', 'enriched', 'published')),
         enrichment_priority INTEGER DEFAULT 5,
         deleted_at TIMESTAMP,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -652,7 +658,7 @@ export class CleanSchemaMigration {
         fanart_locked BOOLEAN DEFAULT 0,
         banner_locked BOOLEAN DEFAULT 0,
         logo_locked BOOLEAN DEFAULT 0,
-        identification_status TEXT DEFAULT 'unidentified' CHECK(identification_status IN ('unidentified', 'identified', 'enriched')),
+        identification_status TEXT DEFAULT 'unidentified' CHECK(identification_status IN ('unidentified', 'identified', 'enriched', 'published')),
         enrichment_priority INTEGER DEFAULT 5,
         deleted_at TIMESTAMP,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

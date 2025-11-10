@@ -65,6 +65,9 @@ export class LibraryService {
     name: string;
     type: MediaLibraryType;
     path: string;
+    auto_enrich?: boolean;
+    auto_publish?: boolean;
+    description?: string;
   }): Promise<Library> {
     try {
       // Validate the path exists
@@ -75,9 +78,16 @@ export class LibraryService {
 
       const db = this.dbManager.getConnection();
       const result = await db.execute(
-        `INSERT INTO libraries (name, type, path)
-         VALUES (?, ?, ?)`,
-        [data.name, data.type, data.path]
+        `INSERT INTO libraries (name, type, path, auto_enrich, auto_publish, description)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [
+          data.name,
+          data.type,
+          data.path,
+          data.auto_enrich ?? true,  // Default: auto-enrich enabled
+          data.auto_publish ?? false, // Default: manual publish (user review)
+          data.description || null
+        ]
       );
 
       const insertId = result.insertId;
@@ -90,7 +100,7 @@ export class LibraryService {
         throw new Error('Failed to retrieve created library');
       }
 
-      logger.info(`Created library: ${data.name}`, { id: insertId, type: data.type });
+      logger.info(`Created library: ${data.name}`, { id: insertId, type: data.type, auto_enrich: data.auto_enrich ?? true, auto_publish: data.auto_publish ?? false });
       return created;
     } catch (error) {
       logger.error('Failed to create library', { error: getErrorMessage(error), data });
@@ -107,6 +117,9 @@ export class LibraryService {
       name?: string;
       type?: MediaLibraryType;
       path?: string;
+      auto_enrich?: boolean;
+      auto_publish?: boolean;
+      description?: string;
     }
   ): Promise<Library> {
     try {
@@ -135,6 +148,18 @@ export class LibraryService {
       if (data.path !== undefined) {
         updates.push('path = ?');
         values.push(data.path);
+      }
+      if (data.auto_enrich !== undefined) {
+        updates.push('auto_enrich = ?');
+        values.push(data.auto_enrich ? 1 : 0);
+      }
+      if (data.auto_publish !== undefined) {
+        updates.push('auto_publish = ?');
+        values.push(data.auto_publish ? 1 : 0);
+      }
+      if (data.description !== undefined) {
+        updates.push('description = ?');
+        values.push(data.description || null);
       }
 
       if (updates.length === 0) {
@@ -612,6 +637,9 @@ export class LibraryService {
       name: row.name,
       type: row.type as MediaLibraryType,
       path: row.path,
+      auto_enrich: Boolean(row.auto_enrich),
+      auto_publish: Boolean(row.auto_publish),
+      description: row.description || undefined,
       created_at: new Date(row.created_at),
       updated_at: new Date(row.updated_at),
     };

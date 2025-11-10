@@ -5,6 +5,9 @@ export interface Library {
   name: string;
   type: MediaLibraryType;
   path: string;
+  auto_enrich: boolean;
+  auto_publish: boolean;
+  description?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -13,6 +16,9 @@ export interface LibraryFormData {
   name: string;
   type: MediaLibraryType;
   path: string;
+  auto_enrich?: boolean;
+  auto_publish?: boolean;
+  description?: string;
 }
 
 export interface ScanJob {

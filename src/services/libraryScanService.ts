@@ -40,6 +40,9 @@ export class LibraryScanService extends EventEmitter {
         name: row.name,
         type: row.type,
         path: row.path,
+        auto_enrich: Boolean(row.auto_enrich),
+        auto_publish: Boolean(row.auto_publish),
+        description: row.description || undefined,
         created_at: new Date(row.created_at),
         updated_at: new Date(row.updated_at),
       };

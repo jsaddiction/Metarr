@@ -165,6 +165,9 @@ export interface Library {
   name: string;
   type: MediaLibraryType;
   path: string;
+  auto_enrich: boolean;   // Automatically enrich after scan (default: true)
+  auto_publish: boolean;  // Automatically publish after enrichment (default: false)
+  description?: string;   // Optional library description
   created_at: Date;
   updated_at: Date;
   stats?: {
