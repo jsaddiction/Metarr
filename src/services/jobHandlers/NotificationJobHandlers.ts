@@ -243,14 +243,19 @@ export class NotificationJobHandlers {
       return;
     }
 
-    logger.info('[NotificationJobHandlers] Jellyfin notification (not yet implemented)', {
+    logger.info('[NotificationJobHandlers] Jellyfin notification stubbed - not yet implemented', {
       service: 'NotificationJobHandlers',
       handler: 'handleNotifyJellyfin',
       jobId: job.id,
+      payload: job.payload,
+      note: 'Jellyfin library scan integration will be implemented after Kodi sync is finalized',
     });
 
-    // TODO: Implement Jellyfin notification
-    // Similar pattern to Kodi: get groups, apply path mapping, trigger library scan
+    // FUTURE: Implement Jellyfin notification
+    // 1. Get Jellyfin media player groups for this library
+    // 2. Apply path mapping (Metarr → Jellyfin paths)
+    // 3. Call Jellyfin API: POST /Library/Refresh with path parameter
+    // 4. Handle authentication (API key in X-Emby-Token header)
   }
 
   /**
@@ -272,14 +277,19 @@ export class NotificationJobHandlers {
       return;
     }
 
-    logger.info('[NotificationJobHandlers] Plex notification (not yet implemented)', {
+    logger.info('[NotificationJobHandlers] Plex notification stubbed - not yet implemented', {
       service: 'NotificationJobHandlers',
       handler: 'handleNotifyPlex',
       jobId: job.id,
+      payload: job.payload,
+      note: 'Plex library scan integration will be implemented after Kodi sync is finalized',
     });
 
-    // TODO: Implement Plex notification
-    // Similar pattern to Kodi: get groups, apply path mapping, trigger library scan
+    // FUTURE: Implement Plex notification
+    // 1. Get Plex media player groups for this library
+    // 2. Apply path mapping (Metarr → Plex paths)
+    // 3. Call Plex API: GET /library/sections/{id}/refresh?path={mappedPath}
+    // 4. Handle authentication (X-Plex-Token header)
   }
 
   /**
