@@ -364,6 +364,46 @@ export namespace VideoLibrary {
   export interface GetMovieDetailsResponse {
     moviedetails: Movie;
   }
+
+  // Remove movie from library by ID
+  export interface RemoveMovieParams {
+    movieid: number;
+  }
+
+  // Refresh movie metadata and artwork (forces re-read of NFO and images)
+  export interface RefreshMovieParams {
+    movieid: number;
+    ignorenfo?: boolean; // Default: false (re-read NFO)
+    title?: string; // Override title (empty string = don't override)
+  }
+
+  // Notification event data
+  export interface OnScanStartedData {
+    database?: string; // 'video' or 'music'
+  }
+
+  export interface OnScanFinishedData {
+    database?: string; // 'video' or 'music'
+  }
+
+  export interface OnCleanStartedData {
+    database?: string; // 'video' or 'music'
+  }
+
+  export interface OnCleanFinishedData {
+    database?: string; // 'video' or 'music'
+  }
+
+  export interface OnUpdateData {
+    added?: boolean;
+    id: number;
+    type: 'movie' | 'tvshow' | 'episode' | 'musicvideo';
+  }
+
+  export interface OnRemoveData {
+    id: number;
+    type: 'movie' | 'tvshow' | 'episode' | 'musicvideo';
+  }
 }
 
 // AudioLibrary Methods
@@ -426,6 +466,25 @@ export namespace Files {
       end: number;
       total: number;
     };
+  }
+}
+
+// XBMC Methods (global boolean properties)
+export namespace XBMC {
+  export interface GetInfoBooleansParams {
+    booleans: string[]; // ['Library.IsScanning', 'Player.HasMedia', 'System.CanReboot', etc.]
+  }
+
+  export interface GetInfoBooleansResponse {
+    [key: string]: boolean; // { 'Library.IsScanning': true, 'Player.HasMedia': false }
+  }
+
+  export interface GetInfoLabelsParams {
+    labels: string[]; // ['System.BuildVersion', 'Network.IPAddress', etc.]
+  }
+
+  export interface GetInfoLabelsResponse {
+    [key: string]: string; // { 'System.BuildVersion': '19.5', 'Network.IPAddress': '192.168.1.100' }
   }
 }
 
@@ -496,6 +555,8 @@ export type KodiMethod =
   | 'VideoLibrary.GetMovies'
   | 'VideoLibrary.GetMovieDetails'
   | 'VideoLibrary.SetMovieDetails'
+  | 'VideoLibrary.RemoveMovie'
+  | 'VideoLibrary.RefreshMovie'
   | 'VideoLibrary.GetTVShows'
   | 'VideoLibrary.GetEpisodes'
   | 'Files.GetSources'
@@ -505,6 +566,8 @@ export type KodiMethod =
   | 'System.GetProperties'
   | 'Application.GetProperties'
   | 'Application.SetVolume'
+  | 'XBMC.GetInfoBooleans'
+  | 'XBMC.GetInfoLabels'
   | 'GUI.ShowNotification'; // Display notification to user
 
 // Version Detection Response
