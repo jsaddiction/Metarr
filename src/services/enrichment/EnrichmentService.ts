@@ -20,6 +20,7 @@ import { AssetConfigService } from '../assetConfigService.js';
 import { DatabaseManager } from '../../database/DatabaseManager.js';
 // import { AssetType } from '../../types/providers/capabilities.js'; // Unused currently
 import { EnrichmentPhaseConfig, DEFAULT_PHASE_CONFIG } from '../../config/phaseConfig.js';
+import { PhaseConfigService } from '../PhaseConfigService.js';
 import { hashFile } from '../hash/hashService.js';
 import { imageProcessor, ImageProcessor } from '../../utils/ImageProcessor.js';
 import { normalizeActorName } from '../../utils/actorNameUtils.js';
@@ -61,6 +62,7 @@ export class EnrichmentService {
   private providerAssetsRepo: ProviderAssetsRepository;
   // private providerCacheManager: ProviderCacheManager; // Legacy - keeping for backward compatibility
   private providerCacheOrchestrator: ProviderCacheOrchestrator;
+  private phaseConfigService: PhaseConfigService;
   private tempDir: string;
 
   constructor(
@@ -70,6 +72,7 @@ export class EnrichmentService {
     providerCacheManager?: ProviderCacheManager
   ) {
     this.providerAssetsRepo = new ProviderAssetsRepository(db);
+    this.phaseConfigService = new PhaseConfigService(db);
     this.tempDir = path.join(path.dirname(cacheDir), 'temp');
 
     // Initialize new provider cache orchestrator (multi-provider with timeout)
@@ -712,8 +715,9 @@ export class EnrichmentService {
         return { assetsScored: 0 };
       }
 
-      // TODO: Get user preferred language from app_settings
-      const userPreferredLanguage = 'en';
+      // Get user preferred language from phase config
+      const phaseConfig = await this.phaseConfigService.getConfig('enrichment');
+      const userPreferredLanguage = phaseConfig.preferredLanguage;
 
       // Score each asset
       for (const asset of analyzedAssets) {
@@ -760,7 +764,10 @@ export class EnrichmentService {
 
       let totalSelected = 0;
       const PHASH_SIMILARITY_THRESHOLD = 0.90; // 90% similarity = duplicate
-      const userPreferredLanguage = 'en'; // TODO: Get from app_settings
+
+      // Get user preferred language from phase config
+      const phaseConfig = await this.phaseConfigService.getConfig('enrichment');
+      const userPreferredLanguage = phaseConfig.preferredLanguage;
 
       // Process each asset type independently
       for (const [assetType, maxAllowable] of Object.entries(assetLimits)) {
@@ -1246,27 +1253,49 @@ export class EnrichmentService {
         return;
       }
 
-      // TODO: Implement field lock checking (need field_locks table)
-      // For now, always update unlocked fields
-      // In future: const locks = await this.getFieldLocks(movieId);
-
+      // Check field locks to preserve manual edits
+      const currentMovie = current[0];
       const updates: any = {};
 
-      // Copy basic metadata (only fields that exist in movies table)
-      if (cachedMovie.title) updates.title = cachedMovie.title;
-      if (cachedMovie.original_title) updates.original_title = cachedMovie.original_title;
-      if (cachedMovie.overview) updates.plot = cachedMovie.overview; // TMDB calls it 'overview', we call it 'plot'
-      if (cachedMovie.tagline) updates.tagline = cachedMovie.tagline;
-      if (cachedMovie.release_date) updates.release_date = cachedMovie.release_date;
-      if (cachedMovie.year) updates.year = cachedMovie.year;
-      if (cachedMovie.runtime) updates.runtime = cachedMovie.runtime;
-      if (cachedMovie.content_rating) updates.content_rating = cachedMovie.content_rating;
+      // Copy basic metadata (only if field is not locked)
+      if (cachedMovie.title && !currentMovie.title_locked) {
+        updates.title = cachedMovie.title;
+      }
+      if (cachedMovie.original_title && !currentMovie.title_locked) {
+        updates.original_title = cachedMovie.original_title;
+      }
+      if (cachedMovie.overview && !currentMovie.plot_locked) {
+        updates.plot = cachedMovie.overview; // TMDB calls it 'overview', we call it 'plot'
+      }
+      if (cachedMovie.tagline && !currentMovie.plot_locked) {
+        updates.tagline = cachedMovie.tagline;
+      }
+      if (cachedMovie.release_date && !currentMovie.title_locked) {
+        updates.release_date = cachedMovie.release_date;
+      }
+      if (cachedMovie.year && !currentMovie.title_locked) {
+        updates.year = cachedMovie.year;
+      }
+      if (cachedMovie.runtime && !currentMovie.plot_locked) {
+        updates.runtime = cachedMovie.runtime;
+      }
+      if (cachedMovie.content_rating && !currentMovie.plot_locked) {
+        updates.content_rating = cachedMovie.content_rating;
+      }
 
-      // Copy ratings
-      if (cachedMovie.tmdb_rating !== undefined) updates.tmdb_rating = cachedMovie.tmdb_rating;
-      if (cachedMovie.tmdb_votes !== undefined) updates.tmdb_votes = cachedMovie.tmdb_votes;
-      if (cachedMovie.imdb_rating !== undefined) updates.imdb_rating = cachedMovie.imdb_rating;
-      if (cachedMovie.imdb_votes !== undefined) updates.imdb_votes = cachedMovie.imdb_votes;
+      // Copy ratings (always update unless title_locked - ratings aren't manually editable)
+      if (cachedMovie.tmdb_rating !== undefined && !currentMovie.title_locked) {
+        updates.tmdb_rating = cachedMovie.tmdb_rating;
+      }
+      if (cachedMovie.tmdb_votes !== undefined && !currentMovie.title_locked) {
+        updates.tmdb_votes = cachedMovie.tmdb_votes;
+      }
+      if (cachedMovie.imdb_rating !== undefined && !currentMovie.title_locked) {
+        updates.imdb_rating = cachedMovie.imdb_rating;
+      }
+      if (cachedMovie.imdb_votes !== undefined && !currentMovie.title_locked) {
+        updates.imdb_votes = cachedMovie.imdb_votes;
+      }
 
       // Note: The following fields are in provider_cache_movies but not in movies table:
       // - status, popularity, budget, revenue, homepage, adult
