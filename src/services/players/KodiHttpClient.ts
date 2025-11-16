@@ -6,6 +6,7 @@ import {
   VideoLibrary,
   Player,
   Files,
+  XBMC,
 } from '../../types/jsonrpc.js';
 import { logger } from '../../middleware/logging.js';
 import { getErrorMessage, isError } from '../../utils/errorHandling.js';
@@ -204,6 +205,20 @@ export class KodiHttpClient {
   }
 
   /**
+   * Remove movie from library by ID
+   */
+  async removeMovie(params: VideoLibrary.RemoveMovieParams): Promise<string> {
+    return this.sendRequest<string>('VideoLibrary.RemoveMovie', params);
+  }
+
+  /**
+   * Refresh movie metadata and artwork (forces re-read of NFO and images)
+   */
+  async refreshMovie(params: VideoLibrary.RefreshMovieParams): Promise<string> {
+    return this.sendRequest<string>('VideoLibrary.RefreshMovie', params);
+  }
+
+  /**
    * Get active players
    */
   async getActivePlayers(): Promise<Player.GetActivePlayersResponse[]> {
@@ -267,6 +282,20 @@ export class KodiHttpClient {
       image: params.image || 'info', // 'info', 'warning', 'error', or image path
       displaytime: params.displaytime || 5000,
     });
+  }
+
+  /**
+   * Get boolean info properties (e.g., Library.IsScanning)
+   */
+  async getInfoBooleans(params: XBMC.GetInfoBooleansParams): Promise<XBMC.GetInfoBooleansResponse> {
+    return this.sendRequest<XBMC.GetInfoBooleansResponse>('XBMC.GetInfoBooleans', params);
+  }
+
+  /**
+   * Get string info labels (e.g., System.BuildVersion)
+   */
+  async getInfoLabels(params: XBMC.GetInfoLabelsParams): Promise<XBMC.GetInfoLabelsResponse> {
+    return this.sendRequest<XBMC.GetInfoLabelsResponse>('XBMC.GetInfoLabels', params);
   }
 
   /**
