@@ -76,6 +76,8 @@ export class CleanSchemaMigration {
         name TEXT NOT NULL,
         type TEXT NOT NULL CHECK(type IN ('kodi', 'jellyfin', 'plex')),
         max_members INTEGER NULL,
+        enabled BOOLEAN DEFAULT 1,
+        skip_active BOOLEAN DEFAULT 1,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
