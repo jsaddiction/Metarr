@@ -971,36 +971,87 @@ CREATE TABLE provider_assets (
 
 ## Configuration
 
+### Phase Behavior Configuration
+
+Managed by `PhaseConfigService` and stored in `app_settings` table:
+
 ```typescript
-interface EnrichmentConfig {
-  enabled: boolean; // Global enrichment toggle (workflow.enrichment)
+interface EnrichmentPhaseConfig {
+  // Fetch provider assets (posters, fanart, logos, trailers)
+  fetchProviderAssets: boolean;  // Default: true
 
-  // Provider configuration
-  providers: {
-    tmdb: { enabled: boolean; apiKey?: string };
-    tvdb: { enabled: boolean; apiKey?: string };
-    fanart: { enabled: boolean; apiKey?: string };
-  };
+  // Auto-select best assets (if false, user picks manually in UI)
+  autoSelectAssets: boolean;     // Default: false (manual selection recommended)
 
-  // Asset limits (max selected per type)
-  maxAllowable: {
-    poster: number;    // Default: 3
-    fanart: number;    // Default: 5
-    logo: number;      // Default: 2
-    banner: number;    // Default: 1
-    clearlogo: number; // Default: 1
-    clearart: number;  // Default: 1
-    discart: number;   // Default: 1
-    landscape: number; // Default: 1
-    keyart: number;    // Default: 1
-    thumb: number;     // Default: 1
-    trailer: number;   // Default: 3
-  };
-
-  // Refresh interval
-  cacheRefreshDays: number; // Default: 7
+  // Preferred language for asset scoring (ISO 639-1 code)
+  preferredLanguage: string;     // Default: 'en'
 }
 ```
+
+**Configuration via UI**: Settings → General → Enrichment tab
+**Configuration via API**: `GET/PATCH /api/v1/settings/phase-config`
+
+### Asset Download Limits
+
+Managed by `AssetConfigService` and stored in `app_settings` table with keys like `asset_limit_{assetType}`:
+
+```typescript
+interface AssetTypeConfig {
+  displayName: string;
+  defaultMax: number;      // Recommended default
+  minAllowed: number;      // 0 = can disable type
+  maxAllowed: number;      // Hard limit
+  description: string;
+  mediaTypes: ('movie' | 'tvshow' | 'season' | 'episode' | 'artist' | 'album' | 'song')[];
+}
+
+// Example asset type defaults (from assetTypeDefaults.ts)
+{
+  poster: {
+    displayName: 'Posters',
+    defaultMax: 3,
+    minAllowed: 0,
+    maxAllowed: 10,
+    description: 'Plex/Jellyfin support multiple, Kodi uses first',
+    mediaTypes: ['movie', 'tvshow', 'season']
+  },
+  fanart: {
+    displayName: 'Fanart / Backdrops',
+    defaultMax: 4,
+    minAllowed: 0,
+    maxAllowed: 10,
+    description: 'All players support multiple, Kodi rotates in slideshow',
+    mediaTypes: ['movie', 'tvshow', 'season']
+  },
+  clearlogo: {
+    displayName: 'Clear Logos',
+    defaultMax: 1,
+    minAllowed: 0,
+    maxAllowed: 3,
+    description: 'Transparent logo overlays',
+    mediaTypes: ['movie', 'tvshow', 'artist', 'album']
+  },
+  // ... see assetTypeDefaults.ts for complete list
+}
+```
+
+**Configuration via UI**: Settings → General → Enrichment → Asset Download Limits (grouped by media type)
+**Configuration via API**: `GET/PUT /api/v1/settings/asset-limits/:assetType`
+
+**Note**: Asset limits control how many of each type are downloaded and stored in cache during enrichment. This affects storage usage and UI selection options. Setting a type to 0 disables that asset type entirely.
+
+### Provider Configuration
+
+```typescript
+// Provider configuration (future implementation)
+interface ProviderConfig {
+  tmdb: { enabled: boolean; apiKey?: string };
+  tvdb: { enabled: boolean; apiKey?: string };
+  fanart: { enabled: boolean; apiKey?: string };
+}
+```
+
+**Note**: Currently using embedded API keys for zero-configuration setup. Provider management coming in future release.
 
 ---
 

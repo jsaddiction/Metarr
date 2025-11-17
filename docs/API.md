@@ -245,6 +245,135 @@ Headers:
 Body: Lidarr webhook payload
 ```
 
+### Settings
+
+#### Phase Configuration
+
+```typescript
+// Get all phase configuration
+GET /api/v1/settings/phase-config
+Returns: {
+  enrichment: {
+    fetchProviderAssets: boolean,
+    autoSelectAssets: boolean,
+    preferredLanguage: string
+  },
+  publish: {
+    publishAssets: boolean,
+    publishActors: boolean,
+    publishTrailers: boolean
+  },
+  general: {
+    autoPublish: boolean
+  }
+}
+
+// Get specific phase configuration
+GET /api/v1/settings/phase-config/:phase
+Params:
+  - phase: enrichment | publish | general
+
+// Update multiple phase settings
+PATCH /api/v1/settings/phase-config
+Body: {
+  'enrichment.fetchProviderAssets': boolean,
+  'publish.assets': boolean,
+  'general.autoPublish': boolean
+}
+
+// Update single phase setting
+PATCH /api/v1/settings/phase-config/:key
+Params:
+  - key: dot-notation path (e.g., 'enrichment.language')
+Body: {
+  value: any
+}
+
+// Reset all phase config to defaults
+POST /api/v1/settings/phase-config/reset
+```
+
+#### Asset Limits
+
+```typescript
+// Get all asset limits (simple map)
+GET /api/v1/settings/asset-limits
+Returns: {
+  poster: 3,
+  fanart: 4,
+  clearlogo: 1,
+  // ... etc
+}
+
+// Get all asset limits with metadata
+GET /api/v1/settings/asset-limits/metadata
+Returns: Array<{
+  assetType: string,
+  displayName: string,
+  currentLimit: number,
+  defaultLimit: number,
+  minAllowed: number,
+  maxAllowed: number,
+  description: string,
+  isDefault: boolean,
+  mediaTypes: ('movie' | 'tvshow' | 'season' | 'episode' | 'artist' | 'album' | 'song')[]
+}>
+
+// Get specific asset type limit
+GET /api/v1/settings/asset-limits/:assetType
+Params:
+  - assetType: poster | fanart | clearlogo | etc
+Returns: {
+  limit: number
+}
+
+// Set asset type limit
+PUT /api/v1/settings/asset-limits/:assetType
+Body: {
+  limit: number
+}
+Returns: {
+  message: string,
+  assetType: string,
+  limit: number
+}
+
+// Reset asset type to default
+DELETE /api/v1/settings/asset-limits/:assetType
+Returns: {
+  message: string,
+  assetType: string,
+  limit: number
+}
+
+// Reset all asset limits to defaults
+POST /api/v1/settings/asset-limits/reset-all
+Returns: {
+  message: string,
+  limits: { [assetType: string]: number }
+}
+```
+
+#### Webhook Settings
+
+```typescript
+// Get all webhook configurations
+GET /api/v1/settings/webhooks
+
+// Get specific service webhook config
+GET /api/v1/settings/webhooks/:service
+Params:
+  - service: radarr | sonarr | lidarr
+
+// Update webhook configuration
+PUT /api/v1/settings/webhooks/:service
+Body: {
+  enabled: boolean,
+  api_key?: string,
+  events?: string[]
+}
+```
+
 ## WebSocket Events
 
 ### Connection

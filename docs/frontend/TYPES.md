@@ -571,6 +571,107 @@ export type CompleteMovie = Required<Movie>;
 
 ---
 
+## Implemented Domain Types
+
+### Phase Configuration Types
+**File**: `public/frontend/src/types/phaseConfig.ts`
+**Purpose**: Workflow phase behavior configuration
+
+```typescript
+/**
+ * Phase Configuration Types
+ *
+ * All workflow phases ALWAYS run in sequence.
+ * These configurations control BEHAVIOR, not ENABLEMENT.
+ *
+ * Sequential chain: scan → enrich → publish → player-sync
+ */
+
+/** Enrichment Phase Configuration */
+export interface EnrichmentConfig {
+  fetchProviderAssets: boolean;  // Fetch assets from providers
+  autoSelectAssets: boolean;     // Auto-select vs manual UI selection
+  preferredLanguage: string;     // ISO 639-1 language code
+}
+
+/** Publishing Phase Configuration */
+export interface PublishConfig {
+  publishAssets: boolean;        // Copy images to library
+  publishActors: boolean;        // Create .actors/ folder
+  publishTrailers: boolean;      // Download trailers
+}
+
+/** General Configuration */
+export interface GeneralConfig {
+  autoPublish: boolean;          // Auto-publish after enrichment
+}
+
+/** Complete phase configuration */
+export interface PhaseConfiguration {
+  enrichment: EnrichmentConfig;
+  publish: PublishConfig;
+  general: GeneralConfig;
+}
+```
+
+**Design Notes**:
+- Separates phase behavior from asset limits (different services)
+- All phases always run; config controls what they do
+- Used by Settings → General page
+
+### Asset Configuration Types
+**File**: `public/frontend/src/types/assetConfig.ts`
+**Purpose**: Asset download limits per asset type
+
+```typescript
+/** Media types supported by the system */
+export type MediaType =
+  | 'movie'
+  | 'tvshow'
+  | 'season'
+  | 'episode'
+  | 'artist'
+  | 'album'
+  | 'song';
+
+/** Asset limit configuration with metadata */
+export interface AssetLimit {
+  assetType: string;           // e.g., 'poster', 'fanart', 'clearlogo'
+  displayName: string;         // UI-friendly name
+  currentLimit: number;        // User's configured limit
+  defaultLimit: number;        // Recommended default
+  minAllowed: number;          // Minimum (usually 0)
+  maxAllowed: number;          // Maximum to prevent abuse
+  description: string;         // Help text for UI
+  isDefault: boolean;          // True if using default value
+  mediaTypes: MediaType[];     // Which media types this applies to
+}
+
+/** Map of asset types to limits (simple format) */
+export interface AssetLimitsMap {
+  [assetType: string]: number;
+}
+
+/** API request to set a limit */
+export interface SetAssetLimitRequest {
+  limit: number;
+}
+
+/** API response after setting a limit */
+export interface SetAssetLimitResponse {
+  message: string;
+  assetType: string;
+  limit: number;
+}
+```
+
+**Design Notes**:
+- `mediaTypes` array allows asset types to apply to multiple media categories
+- `isDefault` flag enables UI to show which values are customized
+- Instant persistence pattern (no save button required)
+
+---
+
 ## Related Documentation
 
 - [API Layer](./API_LAYER.md) - Using types in API calls

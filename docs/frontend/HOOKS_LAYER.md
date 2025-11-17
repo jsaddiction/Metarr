@@ -138,6 +138,113 @@ queryClient.removeQueries({ queryKey: ['entity', id] });
 
 ---
 
+## Implemented Hooks
+
+### usePhaseConfig
+**File**: `public/frontend/src/hooks/usePhaseConfig.ts`
+**Purpose**: Manage workflow phase behavior configuration (enrichment, publishing, general settings)
+
+```typescript
+export function usePhaseConfig() {
+  const queryClient = useQueryClient();
+
+  // Fetch phase configuration
+  const { data: config, isLoading: loading, error } = useQuery({
+    queryKey: ['phaseConfig'],
+    queryFn: () => phaseConfigApi.getAll(),
+  });
+
+  // Update configuration mutation
+  const updateMutation = useMutation({
+    mutationFn: (updates: Record<string, any>) => phaseConfigApi.update(updates),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['phaseConfig'] });
+      toast.success('Configuration updated');
+    },
+  });
+
+  // Reset to defaults mutation
+  const resetMutation = useMutation({
+    mutationFn: () => phaseConfigApi.reset(),
+    onSuccess: (data) => {
+      queryClient.setQueryData(['phaseConfig'], data);
+      toast.success('Configuration reset to defaults');
+      return data;
+    },
+  });
+
+  return {
+    config,
+    loading,
+    error: error?.message,
+    saving: updateMutation.isPending || resetMutation.isPending,
+    updateConfig: updateMutation.mutateAsync,
+    resetToDefaults: resetMutation.mutateAsync,
+  };
+}
+```
+
+**Usage**:
+```typescript
+const { config, loading, updateConfig } = usePhaseConfig();
+
+// Update enrichment settings
+await updateConfig({
+  'enrichment.autoSelectAssets': true,
+  'general.autoPublish': false
+});
+```
+
+### useAssetLimits
+**File**: `public/frontend/src/hooks/useAssetLimits.ts`
+**Purpose**: Manage asset download limits with instant persistence
+
+```typescript
+export function useAssetLimits() {
+  const queryClient = useQueryClient();
+
+  // Fetch all limits with metadata
+  const { data: limits, isLoading, error } = useQuery({
+    queryKey: ['assetLimits'],
+    queryFn: () => assetLimitsApi.getAllWithMetadata(),
+  });
+
+  // Update single limit (instant persistence)
+  const updateLimitMutation = useMutation({
+    mutationFn: ({ assetType, limit }: { assetType: string; limit: number }) =>
+      assetLimitsApi.setLimit(assetType, limit),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['assetLimits'] });
+      toast.success(`Updated limit for ${variables.assetType}`);
+    },
+  });
+
+  return {
+    limits: limits || [],
+    isLoading,
+    error: error?.message,
+    updateLimit: updateLimitMutation.mutate,
+    isUpdating: updateLimitMutation.isPending,
+  };
+}
+```
+
+**Usage**:
+```typescript
+const { limits, updateLimit, isUpdating } = useAssetLimits();
+
+// Update poster limit (saves immediately)
+updateLimit({ assetType: 'poster', limit: 5 });
+```
+
+**Key Features**:
+- Instant persistence (no save button required)
+- Toast notifications for user feedback
+- Automatic cache invalidation
+- Includes metadata (min/max allowed, descriptions, media types)
+
+---
+
 ## Component Usage
 
 ```typescript
