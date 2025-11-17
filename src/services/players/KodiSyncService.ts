@@ -17,6 +17,7 @@ import { KodiWebSocketClient } from './KodiWebSocketClient.js';
 import { VideoLibrary } from '../../types/jsonrpc.js';
 import { logger } from '../../middleware/logging.js';
 import { getErrorMessage } from '../../utils/errorHandling.js';
+import { ResourceNotFoundError } from '../../errors/index.js';
 import path from 'path';
 
 export interface KodiPlayer {
@@ -551,7 +552,7 @@ export class KodiSyncService {
           const movieAdded = await this.verifyMovieInKodi(player, libraryPath, movieId);
 
           if (!movieAdded) {
-            throw new Error('Movie not found in Kodi library after scan');
+            throw new ResourceNotFoundError('movie', 'Kodi library scan result');
           }
 
           logger.info('[KodiSync] Movie successfully scanned into Kodi', {

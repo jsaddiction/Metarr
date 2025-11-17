@@ -16,6 +16,7 @@ import {
   ProviderOptions,
 } from '../../types/providers/index.js';
 import { logger } from '../../middleware/logging.js';
+import { ValidationError } from '../../errors/index.js';
 
 /**
  * Type for constructable provider classes (excludes abstract BaseProvider)
@@ -80,7 +81,7 @@ export class ProviderRegistry {
 
     const ProviderClass = this.providerClasses.get(config.providerName as ProviderId);
     if (!ProviderClass) {
-      throw new Error(`Unknown provider: ${config.providerName}`);
+      throw new ValidationError(`Unknown provider: ${config.providerName}`);
     }
 
     // Create instance of concrete provider class

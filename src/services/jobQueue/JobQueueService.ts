@@ -335,7 +335,7 @@ export class JobQueueService {
   async broadcastQueueStats(): Promise<void> {
     try {
       const stats = await this.getStats();
-      websocketBroadcaster.broadcast('queue:stats', stats);
+      websocketBroadcaster.broadcast('queue:stats', stats as unknown as Record<string, unknown>);
     } catch (error) {
       logger.error('[JobQueueService] Failed to broadcast queue stats', {
         service: 'JobQueueService',

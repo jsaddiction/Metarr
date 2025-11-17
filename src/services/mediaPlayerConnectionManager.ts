@@ -1,11 +1,13 @@
 import { EventEmitter } from 'events';
 import { MediaPlayer, PlayerActivityState } from '../types/models.js';
+import { MediaPlayerRow } from '../types/database-models.js';
 import { KodiWebSocketClient, ConnectionState } from './players/KodiWebSocketClient.js';
 import { KodiHttpClient } from './players/KodiHttpClient.js';
 import { logger } from '../middleware/logging.js';
 import { DatabaseManager } from '../database/DatabaseManager.js';
 import { getErrorMessage, getErrorStack } from '../utils/errorHandling.js';
 import { KodiNotification, KodiPlayerNotificationParams, Player } from '../types/jsonrpc.js';
+import { ResourceNotFoundError, NotImplementedError, ConfigurationError } from '../errors/index.js';
 
 export interface MediaPlayerStatus {
   id: number;
@@ -126,7 +128,12 @@ export class MediaPlayerConnectionManager extends EventEmitter {
     );
 
     if (groups.length === 0) {
-      throw new Error(`Media player group ${groupId} not found`);
+      throw new ResourceNotFoundError(
+        'mediaPlayerGroup',
+        groupId,
+        `Media player group ${groupId} not found`,
+        { service: 'MediaPlayerConnectionManager', operation: 'getGroupMaxMembers' }
+      );
     }
 
     const maxMembers = groups[0].max_members;
@@ -147,8 +154,10 @@ export class MediaPlayerConnectionManager extends EventEmitter {
 
     // Check if adding a new member would exceed limit
     if (currentCount >= maxMembers) {
-      throw new Error(
-        `Cannot add player to group ${groupId}: maximum ${maxMembers} member(s) allowed`
+      throw new ConfigurationError(
+        'group.maxMembers',
+        `Cannot add player to group ${groupId}: maximum ${maxMembers} member(s) allowed`,
+        { service: 'MediaPlayerConnectionManager', operation: 'checkGroupLimit', metadata: { groupId, currentCount, maxMembers } }
       );
     }
   }
@@ -159,7 +168,11 @@ export class MediaPlayerConnectionManager extends EventEmitter {
    */
   async connectPlayer(player: MediaPlayer): Promise<void> {
     if (player.type !== 'kodi') {
-      throw new Error(`Unsupported media player type: ${player.type}`);
+      throw new NotImplementedError(
+        'player type',
+        `Unsupported media player type: ${player.type}`,
+        { service: 'MediaPlayerConnectionManager', operation: 'connectPlayer', metadata: { playerType: player.type } }
+      );
     }
 
     if (!player.enabled) {
@@ -292,8 +305,8 @@ export class MediaPlayerConnectionManager extends EventEmitter {
    */
   private async getPlayerById(playerId: number): Promise<MediaPlayer | null> {
     const db = this.dbManager.getConnection();
-    const players = await db.query<MediaPlayer>('SELECT * FROM media_players WHERE id = ?', [playerId]);
-    return players.length > 0 ? players[0] : null;
+    const rows = await db.query<MediaPlayerRow>('SELECT * FROM media_players WHERE id = ?', [playerId]);
+    return rows.length > 0 ? this.mapRowToPlayer(rows[0]) : null;
   }
 
   /**
@@ -360,16 +373,15 @@ export class MediaPlayerConnectionManager extends EventEmitter {
   async reconnectAll(): Promise<void> {
     try {
       const db = this.dbManager.getConnection();
-      const result = await db.query('SELECT * FROM media_players WHERE enabled = true');
+      const rows = await db.query<MediaPlayerRow>('SELECT * FROM media_players WHERE enabled = true');
 
-      const players = Array.isArray(result) ? result : (result as any).rows || [];
-      logger.info(`Reconnecting ${players.length} enabled media players`);
+      logger.info(`Reconnecting ${rows.length} enabled media players`);
 
-      for (const player of players) {
+      for (const row of rows) {
         try {
-          await this.connectPlayer(this.mapRowToPlayer(player));
+          await this.connectPlayer(this.mapRowToPlayer(row));
         } catch (error) {
-          logger.error(`Failed to reconnect player ${player.id}`, { error });
+          logger.error(`Failed to reconnect player ${row.id}`, { error });
         }
       }
     } catch (error) {
@@ -945,34 +957,43 @@ export class MediaPlayerConnectionManager extends EventEmitter {
   /**
    * Map database row to MediaPlayer object
    */
-  private mapRowToPlayer(row: any): MediaPlayer {
+  private mapRowToPlayer(row: MediaPlayerRow): MediaPlayer {
     const player: MediaPlayer = {
       id: row.id,
       name: row.name,
       type: row.type,
       host: row.host,
-      http_port: row.http_port,
-      username: row.username,
-      password: row.password,
-      api_key: row.api_key,
+      http_port: row.http_port || row.port || 8080, // Support both column names with fallback
       enabled: Boolean(row.enabled),
       library_paths: JSON.parse(row.library_paths || '[]'),
-      library_group: row.library_group,
       connection_status: row.connection_status || 'disconnected',
-      json_rpc_version: row.json_rpc_version,
       config: JSON.parse(row.config || '{}'),
       created_at: new Date(row.created_at),
       updated_at: new Date(row.updated_at),
     };
 
+    // Only add optional properties if they have values
+    if (row.username) {
+      player.username = row.username;
+    }
+    if (row.password) {
+      player.password = row.password;
+    }
+    if (row.api_key) {
+      player.api_key = row.api_key;
+    }
+    if (row.library_group) {
+      player.library_group = row.library_group;
+    }
+    if (row.json_rpc_version) {
+      player.json_rpc_version = row.json_rpc_version;
+    }
     if (row.last_connected) {
       player.last_connected = new Date(row.last_connected);
     }
-
     if (row.last_error) {
       player.last_error = row.last_error;
     }
-
     if (row.last_sync) {
       player.last_sync = new Date(row.last_sync);
     }

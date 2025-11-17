@@ -21,6 +21,7 @@ import {
 import { RateLimiter, CircuitBreaker } from './utils/index.js';
 import { logger } from '../../middleware/logging.js';
 import { getErrorMessage, isError } from '../../utils/errorHandling.js';
+import { NotImplementedError } from '../../errors/index.js';
 import {
   RateLimitError,
   NotFoundError,
@@ -76,7 +77,7 @@ export abstract class BaseProvider {
    * Override if provider supports search (capabilities.search.supported = true)
    */
   async search(_request: SearchRequest): Promise<SearchResult[]> {
-    throw new Error(`${this.capabilities.id} does not support search`);
+    throw new NotImplementedError(`${this.capabilities.id} does not support search`);
   }
 
   /**
@@ -84,7 +85,7 @@ export abstract class BaseProvider {
    * Override if provider supports metadata retrieval
    */
   async getMetadata(_request: MetadataRequest): Promise<MetadataResponse> {
-    throw new Error(`${this.capabilities.id} does not support metadata retrieval`);
+    throw new NotImplementedError(`${this.capabilities.id} does not support metadata retrieval`);
   }
 
   /**
@@ -92,7 +93,7 @@ export abstract class BaseProvider {
    * Override if provider supports asset retrieval
    */
   async getAssets(_request: AssetRequest): Promise<AssetCandidate[]> {
-    throw new Error(`${this.capabilities.id} does not support asset retrieval`);
+    throw new NotImplementedError(`${this.capabilities.id} does not support asset retrieval`);
   }
 
   /**

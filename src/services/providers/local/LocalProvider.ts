@@ -35,6 +35,7 @@ import { logger } from '../../../middleware/logging.js';
 import path from 'path';
 import { promises as fs } from 'fs';
 import { getErrorMessage } from '../../../utils/errorHandling.js';
+import { ValidationError, NotImplementedError } from '../../../errors/index.js';
 
 // Extended request types for LocalProvider
 export interface LocalSearchRequest extends SearchRequest {
@@ -177,7 +178,7 @@ export class LocalProvider extends BaseProvider {
     const { directoryPath, entityType } = localRequest;
 
     if (!directoryPath) {
-      throw new Error('Local provider requires directoryPath for search');
+      throw new ValidationError('Local provider requires directoryPath for search');
     }
 
     try {
@@ -237,7 +238,7 @@ export class LocalProvider extends BaseProvider {
    * Not fully implemented - use remote providers for complete metadata
    */
   async getMetadata(_request: MetadataRequest): Promise<MetadataResponse> {
-    throw new Error('Local provider metadata retrieval not yet implemented');
+    throw new NotImplementedError('Local provider metadata retrieval not yet implemented');
     // TODO: Implement full NFO parsing that returns MetadataResponse
     // For now, use search() to get IDs, then use remote providers for metadata
   }
@@ -253,15 +254,15 @@ export class LocalProvider extends BaseProvider {
     // entityType and assetTypes unused until re-implementation
 
     if (!directoryPath) {
-      throw new Error('Local provider requires directoryPath for asset discovery');
+      throw new ValidationError('Local provider requires directoryPath for asset discovery');
     }
 
     if (!entityId) {
-      throw new Error('Local provider requires entityId for asset discovery');
+      throw new ValidationError('Local provider requires entityId for asset discovery');
     }
 
     // TODO: Replace with new AssetDiscoveryService.scanDirectory()
-    throw new Error('LocalProvider.getAssets() temporarily disabled - needs migration to new AssetDiscoveryService');
+    throw new NotImplementedError('LocalProvider.getAssets() temporarily disabled - needs migration to new AssetDiscoveryService');
 
     /* LEGACY CODE - Remove after migration
     try {

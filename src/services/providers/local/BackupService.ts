@@ -17,6 +17,7 @@ import path from 'path';
 import { promises as fs } from 'fs';
 import { getErrorMessage } from '../../../utils/errorHandling.js';
 import { SqlParam } from '../../../types/database.js';
+import { ResourceNotFoundError } from '../../../errors/index.js';
 
 export interface BackupAsset {
   id: number;
@@ -353,7 +354,12 @@ export class BackupService {
     );
 
     if (backup.length === 0) {
-      throw new Error(`Backup not found: ${backupId}`);
+      throw new ResourceNotFoundError(
+        'backup',
+        backupId,
+        'Backup not found',
+        { service: 'BackupService', operation: 'restoreAsset' }
+      );
     }
 
     const asset = backup[0];

@@ -1,9 +1,11 @@
 import { MediaPlayer } from '../types/models.js';
+import { MediaPlayerRow } from '../types/database-models.js';
 import { DatabaseManager } from '../database/DatabaseManager.js';
 import { MediaPlayerConnectionManager } from './mediaPlayerConnectionManager.js';
 import { logger } from '../middleware/logging.js';
 import { getErrorMessage } from '../utils/errorHandling.js';
 import { SqlParam } from '../types/database.js';
+import { ResourceNotFoundError, DatabaseError, ErrorCode } from '../errors/index.js';
 
 export interface CreateMediaPlayerData {
   name: string;
@@ -61,11 +63,16 @@ export class MediaPlayerService {
         ]
       );
 
-      const playerId = (result as any).lastInsertRowid || result.insertId;
+      const playerId = (result as { lastInsertRowid?: number }).lastInsertRowid || result.insertId;
       const player = await this.getById(playerId as number);
 
       if (!player) {
-        throw new Error('Failed to retrieve created media player');
+        throw new DatabaseError(
+          'Failed to retrieve created media player',
+          ErrorCode.DATABASE_QUERY_FAILED,
+          false,
+          { service: 'MediaPlayerService', operation: 'create', metadata: { playerId } }
+        );
       }
 
       // Auto-connect if enabled
@@ -138,7 +145,12 @@ export class MediaPlayerService {
 
       const player = await this.getById(data.id);
       if (!player) {
-        throw new Error('Player not found after update');
+        throw new ResourceNotFoundError(
+          'mediaPlayer',
+          data.id,
+          'Player not found after update',
+          { service: 'MediaPlayerService', operation: 'update' }
+        );
       }
 
       // Reconnect if connection settings changed
@@ -198,9 +210,8 @@ export class MediaPlayerService {
     const db = this.dbManager.getConnection();
 
     try {
-      const result = await db.query('SELECT * FROM media_players ORDER BY created_at DESC');
-      const rows = Array.isArray(result) ? result : (result as any).rows || [];
-      return rows.map(this.mapRowToPlayer);
+      const rows = await db.query<MediaPlayerRow>('SELECT * FROM media_players ORDER BY created_at DESC');
+      return rows.map(row => this.mapRowToPlayer(row));
     } catch (error) {
       logger.error('Failed to get all media players', { error: getErrorMessage(error) });
       throw error;
@@ -214,8 +225,7 @@ export class MediaPlayerService {
     const db = this.dbManager.getConnection();
 
     try {
-      const result = await db.query('SELECT * FROM media_players WHERE id = ?', [id]);
-      const rows = Array.isArray(result) ? result : (result as any).rows || [];
+      const rows = await db.query<MediaPlayerRow>('SELECT * FROM media_players WHERE id = ?', [id]);
       return rows.length > 0 ? this.mapRowToPlayer(rows[0]) : null;
     } catch (error) {
       logger.error('Failed to get media player by ID', { error: getErrorMessage(error) });
@@ -230,12 +240,11 @@ export class MediaPlayerService {
     const db = this.dbManager.getConnection();
 
     try {
-      const result = await db.query(
+      const rows = await db.query<MediaPlayerRow>(
         'SELECT * FROM media_players WHERE library_group = ? ORDER BY name',
         [group]
       );
-      const rows = Array.isArray(result) ? result : (result as any).rows || [];
-      return rows.map(this.mapRowToPlayer);
+      return rows.map(row => this.mapRowToPlayer(row));
     } catch (error) {
       logger.error('Failed to get media players by library group', { error: getErrorMessage(error) });
       throw error;
@@ -266,7 +275,7 @@ export class MediaPlayerService {
   async connect(id: number): Promise<void> {
     const player = await this.getById(id);
     if (!player) {
-      throw new Error('Player not found');
+      throw new ResourceNotFoundError('player', id);
     }
 
     await this.connectionManager.connectPlayer(player);
@@ -302,7 +311,7 @@ export class MediaPlayerService {
 
     for (const groupName of groups) {
       const db = this.dbManager.getConnection();
-      const rows = await db.query<any>(
+      const rows = await db.query<MediaPlayerRow>(
         `SELECT * FROM media_players WHERE library_group = ? ORDER BY name`,
         [groupName]
       );
@@ -316,34 +325,43 @@ export class MediaPlayerService {
   /**
    * Map database row to MediaPlayer object
    */
-  private mapRowToPlayer(row: any): MediaPlayer {
+  private mapRowToPlayer(row: MediaPlayerRow): MediaPlayer {
     const player: MediaPlayer = {
       id: row.id,
       name: row.name,
       type: row.type,
       host: row.host,
-      http_port: row.http_port || row.port, // Support both column names
-      username: row.username,
-      password: row.password,
-      api_key: row.api_key,
+      http_port: row.http_port || row.port || 8080, // Support both column names with fallback
       enabled: Boolean(row.enabled),
       library_paths: JSON.parse(row.library_paths || '[]'),
-      library_group: row.library_group,
       connection_status: row.connection_status || 'disconnected',
-      json_rpc_version: row.json_rpc_version,
       config: JSON.parse(row.config || '{}'),
       created_at: new Date(row.created_at),
       updated_at: new Date(row.updated_at),
     };
 
+    // Only add optional properties if they have values
+    if (row.username) {
+      player.username = row.username;
+    }
+    if (row.password) {
+      player.password = row.password;
+    }
+    if (row.api_key) {
+      player.api_key = row.api_key;
+    }
+    if (row.library_group) {
+      player.library_group = row.library_group;
+    }
+    if (row.json_rpc_version) {
+      player.json_rpc_version = row.json_rpc_version;
+    }
     if (row.last_connected) {
       player.last_connected = new Date(row.last_connected);
     }
-
     if (row.last_error) {
       player.last_error = row.last_error;
     }
-
     if (row.last_sync) {
       player.last_sync = new Date(row.last_sync);
     }

@@ -206,7 +206,7 @@ export class MovieQueryService {
     `;
 
     const [rows, countResult] = await Promise.all([
-      this.db.query<any>(query, params),
+      this.db.query<MovieDatabaseRow>(query, params),
       this.db.query<{ total: number }>(countQuery, params.slice(0, -2)), // Exclude limit/offset from count
     ]);
 
@@ -220,10 +220,10 @@ export class MovieQueryService {
    * Get movie by ID with optional related data
    * Returns raw database row (snake_case) - no mapping needed
    */
-  async getById(movieId: number, include: string[] = ['files']): Promise<any | null> {
+  async getById(movieId: number, include: string[] = ['files']): Promise<Record<string, unknown> | null> {
     // Get base movie data with all fields
     const movieQuery = `SELECT * FROM movies WHERE id = ?`;
-    const movies = await this.db.query<any>(movieQuery, [movieId]);
+    const movies = await this.db.query<Record<string, unknown>>(movieQuery, [movieId]);
 
     if (!movies || movies.length === 0) {
       return null;
@@ -234,14 +234,14 @@ export class MovieQueryService {
 
     // Get related entities (clean schema)
     const [actors, genres, directors, writers, studios] = await Promise.all([
-      this.db.query<any>('SELECT a.*, ma.role, ma.actor_order FROM actors a JOIN movie_actors ma ON a.id = ma.actor_id WHERE ma.movie_id = ? ORDER BY ma.actor_order', [movieId]),
-      this.db.query<any>('SELECT g.* FROM genres g JOIN movie_genres mg ON g.id = mg.genre_id WHERE mg.movie_id = ?', [movieId]),
-      this.db.query<any>('SELECT c.* FROM crew c JOIN movie_crew mc ON c.id = mc.crew_id WHERE mc.movie_id = ? AND mc.role = \'director\'', [movieId]),
-      this.db.query<any>('SELECT c.* FROM crew c JOIN movie_crew mc ON c.id = mc.crew_id WHERE mc.movie_id = ? AND mc.role = \'writer\'', [movieId]),
-      this.db.query<any>('SELECT s.* FROM studios s JOIN movie_studios ms ON s.id = ms.studio_id WHERE ms.movie_id = ?', [movieId]),
+      this.db.query<Record<string, unknown>>('SELECT a.*, ma.role, ma.actor_order FROM actors a JOIN movie_actors ma ON a.id = ma.actor_id WHERE ma.movie_id = ? ORDER BY ma.actor_order', [movieId]),
+      this.db.query<Record<string, unknown>>('SELECT g.* FROM genres g JOIN movie_genres mg ON g.id = mg.genre_id WHERE mg.movie_id = ?', [movieId]),
+      this.db.query<Record<string, unknown>>('SELECT c.* FROM crew c JOIN movie_crew mc ON c.id = mc.crew_id WHERE mc.movie_id = ? AND mc.role = \'director\'', [movieId]),
+      this.db.query<Record<string, unknown>>('SELECT c.* FROM crew c JOIN movie_crew mc ON c.id = mc.crew_id WHERE mc.movie_id = ? AND mc.role = \'writer\'', [movieId]),
+      this.db.query<Record<string, unknown>>('SELECT s.* FROM studios s JOIN movie_studios ms ON s.id = ms.studio_id WHERE ms.movie_id = ?', [movieId]),
     ]);
 
-    const result: any = {
+    const result: Record<string, unknown> = {
       ...movie,
       actors: actors.map(a => ({ name: a.name, role: a.role, order: a.actor_order })),
       genres: genres.map(g => g.name),
@@ -267,7 +267,7 @@ export class MovieQueryService {
     return result;
   }
 
-  async getUnknownFiles(movieId: number): Promise<any[]> {
+  async getUnknownFiles(movieId: number): Promise<Array<Record<string, unknown>>> {
     const query = `
       SELECT
         id,
@@ -282,10 +282,10 @@ export class MovieQueryService {
       ORDER BY file_name ASC
     `;
 
-    return this.db.query<any>(query, [movieId]);
+    return this.db.query<Record<string, unknown>>(query, [movieId]);
   }
 
-  async getImages(movieId: number): Promise<any[]> {
+  async getImages(movieId: number): Promise<Array<Record<string, unknown>>> {
     const conn = this.db.getConnection();
 
     // Query cache_image_files for cache images
@@ -307,7 +307,13 @@ export class MovieQueryService {
    * Get all files for a movie from unified file system
    * Returns aggregated view of all file types (video, image, audio, text, unknown)
    */
-  async getAllFiles(movieId: number): Promise<any> {
+  async getAllFiles(movieId: number): Promise<{
+    video: Array<Record<string, unknown>>;
+    images: Array<Record<string, unknown>>;
+    audio: Array<Record<string, unknown>>;
+    text: Array<Record<string, unknown>>;
+    unknown: Array<Record<string, unknown>>;
+  }> {
     try {
       const conn = this.db.getConnection();
 
@@ -388,13 +394,16 @@ export class MovieQueryService {
   }
 
   private mapToMovie(row: MovieDatabaseRow): Movie {
-    return {
+    const status = row.identification_status || 'unidentified';
+    const validStatus = (status === 'identified' || status === 'unidentified' || status === 'enriched')
+      ? status
+      : 'unidentified';
+
+    const movie: Movie = {
       id: row.id,
       title: row.title || '[Unknown]',
-      year: row.year ?? undefined,
-      studio: row.studio_name ?? undefined,
       monitored: row.monitored === 1,
-      identification_status: row.identification_status || 'unidentified',
+      identification_status: validStatus,
       assetCounts: {
         poster: row.poster_count || 0,
         fanart: row.fanart_count || 0,
@@ -424,6 +433,16 @@ export class MovieQueryService {
         theme: this.getAssetStatus(row.theme_count || 0, 1),
       },
     };
+
+    // Add optional properties explicitly
+    if (row.year !== null && row.year !== undefined) {
+      movie.year = row.year;
+    }
+    if (row.studio_name !== null && row.studio_name !== undefined) {
+      movie.studio = row.studio_name;
+    }
+
+    return movie;
   }
 
   private calculateNFOStatus(row: MovieDatabaseRow): AssetStatus {
@@ -439,9 +458,9 @@ export class MovieQueryService {
       row.plot &&
       (row.tmdb_id || row.imdb_id) &&
       // Array fields must have at least 1
-      row.genre_count > 0 &&
-      row.actor_count > 0 &&
-      row.director_count > 0
+      (row.genre_count ?? 0) > 0 &&
+      (row.actor_count ?? 0) > 0 &&
+      (row.director_count ?? 0) > 0
     );
 
     if (allFieldsPopulated) {

@@ -6,6 +6,13 @@ import { validateDirectory, browseDirectory, getAvailableDrives } from './nfo/nf
 import { cleanupEmptyCacheDirectories } from './files/cacheCleanup.js';
 import { getErrorMessage } from '../utils/errorHandling.js';
 import { SqlParam } from '../types/database.js';
+import {
+  DatabaseError,
+  FileNotFoundError,
+  ResourceNotFoundError,
+  ValidationError,
+  ErrorCode,
+} from '../errors/index.js';
 
 export class LibraryService {
   constructor(private dbManager: DatabaseManager) {}
@@ -16,7 +23,7 @@ export class LibraryService {
   async getAll(): Promise<Library[]> {
     try {
       const db = this.dbManager.getConnection();
-      const rows = await db.query<any[]>('SELECT * FROM libraries ORDER BY name ASC');
+      const rows = await db.query<Record<string, unknown>>('SELECT * FROM libraries ORDER BY name ASC');
 
       // Add stats to each library
       const libraries = await Promise.all(
@@ -30,7 +37,7 @@ export class LibraryService {
       return libraries;
     } catch (error) {
       logger.error('Failed to get libraries', { error: getErrorMessage(error) });
-      throw new Error(`Failed to retrieve libraries: ${getErrorMessage(error)}`);
+      throw error; // Re-throw original error (likely DatabaseError from connection layer)
     }
   }
 
@@ -40,7 +47,7 @@ export class LibraryService {
   async getById(id: number): Promise<Library | null> {
     try {
       const db = this.dbManager.getConnection();
-      const rows = await db.query<any[]>('SELECT * FROM libraries WHERE id = ?', [id]);
+      const rows = await db.query<Record<string, unknown>>('SELECT * FROM libraries WHERE id = ?', [id]);
 
       if (rows.length === 0) {
         return null;
@@ -54,7 +61,7 @@ export class LibraryService {
       return library;
     } catch (error) {
       logger.error(`Failed to get library ${id}`, { error: getErrorMessage(error) });
-      throw new Error(`Failed to retrieve library: ${getErrorMessage(error)}`);
+      throw error; // Re-throw original error (likely DatabaseError from connection layer)
     }
   }
 
@@ -73,7 +80,11 @@ export class LibraryService {
       // Validate the path exists
       const isValid = await validateDirectory(data.path);
       if (!isValid) {
-        throw new Error('Directory does not exist or is not accessible');
+        throw new FileNotFoundError(
+          data.path,
+          'Directory does not exist or is not accessible',
+          { service: 'LibraryService', operation: 'create' }
+        );
       }
 
       const db = this.dbManager.getConnection();
@@ -92,19 +103,29 @@ export class LibraryService {
 
       const insertId = result.insertId;
       if (!insertId) {
-        throw new Error('Failed to create library: no insert ID');
+        throw new DatabaseError(
+          'Failed to create library: no insert ID',
+          ErrorCode.DATABASE_QUERY_FAILED,
+          false,
+          { service: 'LibraryService', operation: 'create' }
+        );
       }
 
       const created = await this.getById(insertId);
       if (!created) {
-        throw new Error('Failed to retrieve created library');
+        throw new DatabaseError(
+          'Failed to retrieve created library',
+          ErrorCode.DATABASE_QUERY_FAILED,
+          false,
+          { service: 'LibraryService', operation: 'create', metadata: { insertId } }
+        );
       }
 
       logger.info(`Created library: ${data.name}`, { id: insertId, type: data.type, auto_enrich: data.auto_enrich ?? true, auto_publish: data.auto_publish ?? false });
       return created;
     } catch (error) {
       logger.error('Failed to create library', { error: getErrorMessage(error), data });
-      throw new Error(`Failed to create library: ${getErrorMessage(error)}`);
+      throw error; // Re-throw original error (DatabaseError, FileNotFoundError, etc.)
     }
   }
 
@@ -126,7 +147,11 @@ export class LibraryService {
       if (data.path) {
         const isValid = await validateDirectory(data.path);
         if (!isValid) {
-          throw new Error('Directory does not exist or is not accessible');
+          throw new FileNotFoundError(
+            data.path,
+            'Directory does not exist or is not accessible',
+            { service: 'LibraryService', operation: 'update' }
+          );
         }
       }
 
@@ -162,7 +187,10 @@ export class LibraryService {
       }
 
       if (updates.length === 0) {
-        throw new Error('No fields to update');
+        throw new ValidationError(
+          'No fields to update',
+          { service: 'LibraryService', operation: 'update', metadata: { id } }
+        );
       }
 
       updates.push('updated_at = CURRENT_TIMESTAMP');
@@ -172,14 +200,19 @@ export class LibraryService {
 
       const updated = await this.getById(id);
       if (!updated) {
-        throw new Error('Library not found after update');
+        throw new ResourceNotFoundError(
+          'library',
+          id,
+          'Library not found after update',
+          { service: 'LibraryService', operation: 'update' }
+        );
       }
 
       logger.info(`Updated library ${id}`, { data });
       return updated;
     } catch (error) {
       logger.error(`Failed to update library ${id}`, { error: getErrorMessage(error), data });
-      throw new Error(`Failed to update library: ${getErrorMessage(error)}`);
+      throw error; // Re-throw original error (DatabaseError, ValidationError, FileNotFoundError, etc.)
     }
   }
 
@@ -194,7 +227,12 @@ export class LibraryService {
       // Check if library exists
       const library = await this.getById(id);
       if (!library) {
-        throw new Error('Library not found');
+        throw new ResourceNotFoundError(
+          'library',
+          id,
+          'Library not found',
+          { service: 'LibraryService', operation: 'delete' }
+        );
       }
 
       logger.info(`Starting deletion of library ${library.name}`, { libraryId: id });
@@ -236,7 +274,7 @@ export class LibraryService {
       logger.info(`Completed deletion of library ${id}`, { name: library.name });
     } catch (error) {
       logger.error(`Failed to delete library ${id}`, { error: getErrorMessage(error) });
-      throw new Error(`Failed to delete library: ${getErrorMessage(error)}`);
+      throw error; // Re-throw original error (DatabaseError, ResourceNotFoundError, etc.)
     }
   }
 
@@ -529,7 +567,7 @@ export class LibraryService {
       }));
     } catch (error) {
       logger.error('Failed to browse path', { path, error: getErrorMessage(error) });
-      throw new Error(`Failed to browse directory: ${getErrorMessage(error)}`);
+      throw error; // Re-throw original error (likely FileSystemError)
     }
   }
 
@@ -630,17 +668,17 @@ export class LibraryService {
   /**
    * Map database row to Library object
    */
-  private mapRowToLibrary(row: any): Library {
+  private mapRowToLibrary(row: Record<string, unknown>): Library {
     return {
-      id: row.id,
-      name: row.name,
+      id: row.id as number,
+      name: row.name as string,
       type: row.type as MediaLibraryType,
-      path: row.path,
+      path: row.path as string,
       auto_enrich: Boolean(row.auto_enrich),
       auto_publish: Boolean(row.auto_publish),
-      description: row.description || undefined,
-      created_at: new Date(row.created_at),
-      updated_at: new Date(row.updated_at),
+      ...(row.description ? { description: row.description as string } : {}),
+      created_at: new Date(row.created_at as string | number),
+      updated_at: new Date(row.updated_at as string | number),
     };
   }
 }

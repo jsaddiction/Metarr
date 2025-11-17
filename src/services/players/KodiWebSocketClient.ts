@@ -10,6 +10,7 @@ import {
 } from '../../types/jsonrpc.js';
 import { logger } from '../../middleware/logging.js';
 import { getErrorMessage } from '../../utils/errorHandling.js';
+import { InvalidStateError } from '../../errors/index.js';
 
 export interface KodiWebSocketClientOptions {
   host: string;
@@ -36,7 +37,7 @@ export class KodiWebSocketClient extends EventEmitter {
   private pendingRequests: Map<
     number | string,
     {
-      resolve: (value: any) => void;
+      resolve: (value: unknown) => void;
       reject: (error: Error) => void;
       timeout: NodeJS.Timeout;
     }
@@ -227,7 +228,7 @@ export class KodiWebSocketClient extends EventEmitter {
    */
   async sendRequest<T = unknown>(method: KodiMethod, params?: unknown, timeout: number = 5000): Promise<T> {
     if (!this.ws || this.state.status !== 'connected') {
-      throw new Error('WebSocket not connected');
+      throw new InvalidStateError('connected', this.state.status, 'WebSocket not connected');
     }
 
     const id = this.requestId++;
@@ -245,7 +246,7 @@ export class KodiWebSocketClient extends EventEmitter {
       }, timeout);
 
       this.pendingRequests.set(id, {
-        resolve,
+        resolve: resolve as (value: unknown) => void,
         reject,
         timeout: timeoutId,
       });

@@ -7,6 +7,7 @@ import { TMDBClient } from './tmdb/TMDBClient.js';
 import { ConfigManager } from '../../config/ConfigManager.js';
 import { logger } from '../../middleware/logging.js';
 import { getErrorMessage } from '../../utils/errorHandling.js';
+import { InvalidStateError } from '../../errors/index.js';
 
 class TMDBService {
   private client: TMDBClient | null = null;
@@ -60,7 +61,7 @@ class TMDBService {
    */
   getClient(): TMDBClient {
     if (!this.enabled || !this.client) {
-      throw new Error('TMDB provider is not enabled or initialized');
+      throw new InvalidStateError('enabled', 'disabled', 'TMDB provider is not enabled or initialized');
     }
     return this.client;
   }

@@ -10,6 +10,7 @@ import {
 } from '../../types/jsonrpc.js';
 import { logger } from '../../middleware/logging.js';
 import { getErrorMessage, isError } from '../../utils/errorHandling.js';
+import { NetworkError, ValidationError } from '../../errors/index.js';
 
 export interface KodiHttpClientOptions {
   host: string;
@@ -69,17 +70,17 @@ export class KodiHttpClient {
       clearTimeout(timeoutId);
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        throw new NetworkError(`HTTP ${response.status}: ${response.statusText}`);
       }
 
       const jsonResponse = (await response.json()) as JsonRpcResponse<T>;
 
       if (jsonResponse.error) {
-        throw new Error(`JSON-RPC Error ${jsonResponse.error.code}: ${jsonResponse.error.message}`);
+        throw new NetworkError(`JSON-RPC Error ${jsonResponse.error.code}: ${jsonResponse.error.message}`);
       }
 
       if (jsonResponse.result === undefined) {
-        throw new Error('Invalid JSON-RPC response: missing result');
+        throw new ValidationError('Invalid JSON-RPC response: missing result');
       }
 
       logger.debug(`Kodi HTTP Response: ${method}`, { result: jsonResponse.result });
@@ -89,7 +90,7 @@ export class KodiHttpClient {
       clearTimeout(timeoutId);
 
       if (isError(error) && error.name === 'AbortError') {
-        throw new Error(`Request timeout after ${this.timeout}ms`);
+        throw new NetworkError(`Request timeout after ${this.timeout}ms`);
       }
 
       logger.error(`Kodi HTTP Error: ${method}`, { error: getErrorMessage(error) });

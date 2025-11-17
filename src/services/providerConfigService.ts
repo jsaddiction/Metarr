@@ -2,6 +2,7 @@ import { DatabaseConnection } from '../types/database.js';
 import { ProviderConfig, UpdateProviderRequest } from '../types/provider.js';
 import { logger } from '../middleware/logging.js';
 import { getDefaultApiKey, hasDefaultApiKey } from '../config/providerDefaults.js';
+import { DatabaseError } from '../errors/index.js';
 
 /**
  * Provider Configuration Service
@@ -179,7 +180,7 @@ export class ProviderConfigService {
 
     const updated = await this.getByName(providerName);
     if (!updated) {
-      throw new Error(`Failed to retrieve provider configuration after upsert: ${providerName}`);
+      throw new DatabaseError(`Failed to retrieve provider configuration after upsert: ${providerName}`);
     }
 
     return updated;

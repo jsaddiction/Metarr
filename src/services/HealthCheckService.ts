@@ -3,6 +3,7 @@ import { logger } from '../middleware/logging.js';
 import { ProviderRegistry } from './providers/ProviderRegistry.js';
 import axios from 'axios';
 import { getErrorMessage, getStatusCode } from '../utils/errorHandling.js';
+import { ValidationError } from '../errors/index.js';
 
 export interface ProviderHealth {
   name: string;
@@ -133,7 +134,7 @@ export class HealthCheckService extends EventEmitter {
       const apiKey = getDefaultApiKey('tmdb');
 
       if (!apiKey) {
-        throw new Error('No API key available');
+        throw new ValidationError('No API key available');
       }
 
       const response = await axios.get('https://api.themoviedb.org/3/configuration', {
@@ -178,7 +179,7 @@ export class HealthCheckService extends EventEmitter {
       const apiKey = getDefaultApiKey('fanart_tv');
 
       if (!apiKey) {
-        throw new Error('No API key available');
+        throw new ValidationError('No API key available');
       }
 
       const response = await axios.get('https://webservice.fanart.tv/v3/movies/latest', {

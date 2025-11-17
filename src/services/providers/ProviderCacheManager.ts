@@ -46,9 +46,12 @@ import { ProviderOrchestrator } from './ProviderOrchestrator.js';
 import { ProviderAssetsRepository } from '../enrichment/ProviderAssetsRepository.js';
 import { logger } from '../../middleware/logging.js';
 import { getErrorMessage } from '../../utils/errorHandling.js';
-import { AssetType, EntityType as CapabilitiesEntityType } from '../../types/providers/capabilities.js';
-import { ProviderAssets, SearchRequest as ProviderSearchRequest } from '../../types/providers/requests.js';
+import { AssetType, EntityType as CapabilitiesEntityType, ProviderId } from '../../types/providers/capabilities.js';
+import { ProviderAssets, SearchRequest as ProviderSearchRequest, AssetCandidate } from '../../types/providers/requests.js';
 import { SearchResult } from '../../types/providers/index.js';
+import type { Movie } from '../../types/models.js';
+import type { ProviderRegistry } from './ProviderRegistry.js';
+import type { ProviderConfigService } from '../providerConfigService.js';
 
 // ============================================================================
 // Request/Response Interfaces
@@ -163,9 +166,14 @@ export class ProviderCacheManager {
       this.providerOrchestrator = providerOrchestrator;
     } else {
       // Fallback: create our own (needs registry from fetchOrchestrator)
+      // Type assertion needed to access private properties
+      const orchestrator = fetchOrchestrator as unknown as {
+        registry: unknown;
+        configService: unknown;
+      };
       this.providerOrchestrator = new ProviderOrchestrator(
-        (fetchOrchestrator as any).registry,
-        (fetchOrchestrator as any).configService
+        orchestrator.registry as ProviderRegistry,
+        orchestrator.configService as ProviderConfigService
       );
     }
   }
@@ -404,13 +412,16 @@ export class ProviderCacheManager {
         ? JSON.parse(asset.provider_metadata)
         : {};
 
-      const assetCandidate: any = {
+      const assetCandidate: AssetCandidate = {
+        providerId: asset.provider_name as ProviderId,
+        providerResultId: '',
+        assetType: asset.asset_type as AssetType,
         url: asset.provider_url,
-        width: asset.width !== null ? asset.width : undefined,
-        height: asset.height !== null ? asset.height : undefined,
-        language: metadata.language !== null ? metadata.language : undefined,
-        votes: metadata.votes !== null ? metadata.votes : undefined,
-        voteAverage: metadata.voteAverage !== null ? metadata.voteAverage : undefined,
+        ...(asset.width !== null && { width: asset.width }),
+        ...(asset.height !== null && { height: asset.height }),
+        ...(metadata.language !== null && { language: metadata.language }),
+        ...(metadata.votes !== null && { votes: metadata.votes }),
+        ...(metadata.voteAverage !== null && { voteAverage: metadata.voteAverage }),
       };
       providers[asset.provider_name].images![asset.asset_type]!.push(assetCandidate);
     }
@@ -436,19 +447,22 @@ export class ProviderCacheManager {
     metadata: FetchAssetsResult['metadata'];
   }> {
     // Build entity object for FetchOrchestrator
-    const entity: any = {
+    const entity = {
       id: params.entityId,
-      tmdb_id: params.externalIds?.tmdb_id || undefined,
-      imdb_id: params.externalIds?.imdb_id || undefined,
-      tvdb_id: params.externalIds?.tvdb_id || undefined,
-      musicbrainz_id: params.externalIds?.musicbrainz_id || undefined,
+      tmdb_id: params.externalIds?.tmdb_id,
+      imdb_id: params.externalIds?.imdb_id,
+      tvdb_id: params.externalIds?.tvdb_id,
+      musicbrainz_id: params.externalIds?.musicbrainz_id,
       title: '', // FetchOrchestrator requires this but doesn't use it for asset fetching
-    };
+    } as unknown as Movie;
 
     // Call FetchOrchestrator
-    const fetchConfig: any = {
+    const fetchConfig: {
+      priority: 'user' | 'background';
+      assetTypes?: AssetType[];
+    } = {
       priority: (params.priority === 'automation' ? 'background' : 'user') as 'user' | 'background',
-      assetTypes: params.assetTypes,
+      ...(params.assetTypes && { assetTypes: params.assetTypes }),
     };
 
     const result = await this.fetchOrchestrator.fetchAllProviders(
@@ -530,16 +544,16 @@ export class ProviderCacheManager {
         for (const [videoType, videoList] of Object.entries(providerData.videos)) {
           if (!Array.isArray(videoList)) continue;
 
-          const videoAssets = videoList.map((video: any) => ({
+          const videoAssets = (videoList as Array<AssetCandidate & Record<string, unknown>>).map((video) => ({
             entity_type: params.entityType,
             entity_id: params.entityId,
             asset_type: videoType,
             provider_name: providerName,
-            provider_url: video.url,
+            provider_url: video.url as string,
             provider_metadata: JSON.stringify({
               type: video.assetType,
-              site: (video as any).site,
-              key: (video as any).key,
+              site: video.site,
+              key: video.key,
             }),
           }));
 

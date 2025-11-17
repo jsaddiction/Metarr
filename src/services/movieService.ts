@@ -10,8 +10,39 @@ import { MovieUnknownFilesService } from './movie/MovieUnknownFilesService.js';
 import { MovieWorkflowService } from './movie/MovieWorkflowService.js';
 import { getErrorMessage } from '../utils/errorHandling.js';
 import { SqlParam } from '../types/database.js';
+import { ResourceNotFoundError } from '../errors/index.js';
 
 export type AssetStatus = 'none' | 'partial' | 'complete';
+
+// Database row type for movie query result
+interface MovieDatabaseRow {
+  id: number;
+  title: string | null;
+  year: number | null;
+  studio_name: string | null;
+  monitored: number;
+  identification_status: string;
+  nfo_parsed_at: string | null;
+  tmdb_id: number | null;
+  imdb_id: string | null;
+  plot: string | null;
+  genre_count: number;
+  actor_count: number;
+  director_count: number;
+  writer_count: number;
+  studio_count: number;
+  poster_count: number;
+  fanart_count: number;
+  landscape_count: number;
+  keyart_count: number;
+  banner_count: number;
+  clearart_count: number;
+  clearlogo_count: number;
+  discart_count: number;
+  trailer_count: number;
+  subtitle_count: number;
+  theme_count: number;
+}
 
 export interface AssetCounts {
   poster: number;
@@ -65,6 +96,46 @@ export interface MovieFilters {
 export interface MovieListResult {
   movies: Movie[];
   total: number;
+}
+
+export interface MovieExtras {
+  trailer: unknown | null;
+  subtitles: unknown[];
+  themeSong: unknown | null;
+}
+
+export interface MovieMetadata {
+  title?: string;
+  original_title?: string;
+  sort_title?: string;
+  year?: number;
+  plot?: string;
+  outline?: string;
+  tagline?: string;
+  mpaa?: string;
+  premiered?: string;
+  user_rating?: number;
+  trailer_url?: string;
+  title_locked?: boolean;
+  original_title_locked?: boolean;
+  sort_title_locked?: boolean;
+  year_locked?: boolean;
+  plot_locked?: boolean;
+  outline_locked?: boolean;
+  tagline_locked?: boolean;
+  mpaa_locked?: boolean;
+  premiered_locked?: boolean;
+  user_rating_locked?: boolean;
+  trailer_url_locked?: boolean;
+}
+
+export interface MovieMetadataUpdateResult {
+  success: boolean;
+  message?: string;
+}
+
+export interface MovieAssetSelections {
+  [key: string]: unknown;
 }
 
 export class MovieService {
@@ -192,14 +263,17 @@ export class MovieService {
     };
   }
 
-  private mapToMovie(row: any): Movie {
-    return {
+  private mapToMovie(row: MovieDatabaseRow): Movie {
+    const status = row.identification_status || 'unidentified';
+    const validStatus = (status === 'identified' || status === 'unidentified' || status === 'enriched')
+      ? status
+      : 'unidentified';
+
+    const movie: Movie = {
       id: row.id,
       title: row.title || '[Unknown]',
-      year: row.year,
-      studio: row.studio_name,
       monitored: row.monitored === 1,
-      identification_status: row.identification_status || 'unidentified',
+      identification_status: validStatus,
       assetCounts: {
         poster: row.poster_count || 0,
         fanart: row.fanart_count || 0,
@@ -229,9 +303,19 @@ export class MovieService {
         theme: this.getAssetStatus(row.theme_count || 0, 1),
       },
     };
+
+    // Add optional properties explicitly
+    if (row.year !== null && row.year !== undefined) {
+      movie.year = row.year;
+    }
+    if (row.studio_name !== null && row.studio_name !== undefined) {
+      movie.studio = row.studio_name;
+    }
+
+    return movie;
   }
 
-  private calculateNFOStatus(row: any): AssetStatus {
+  private calculateNFOStatus(row: MovieDatabaseRow): AssetStatus {
     // Grey: No NFO parsed
     if (!row.nfo_parsed_at) {
       return 'none';
@@ -267,10 +351,10 @@ export class MovieService {
    * Get movie by ID with optional related data
    * Returns raw database row (snake_case) - no mapping needed
    */
-  async getById(movieId: number, include: string[] = ['files']): Promise<any | null> {
+  async getById(movieId: number, include: string[] = ['files']): Promise<Record<string, unknown> | null> {
     // Get base movie data with all fields
     const movieQuery = `SELECT * FROM movies WHERE id = ?`;
-    const movies = await this.db.query<any>(movieQuery, [movieId]);
+    const movies = await this.db.query<Record<string, unknown>>(movieQuery, [movieId]);
 
     if (!movies || movies.length === 0) {
       return null;
@@ -281,14 +365,14 @@ export class MovieService {
 
     // Get related entities (clean schema)
     const [actors, genres, directors, writers, studios] = await Promise.all([
-      this.db.query<any>('SELECT a.*, ma.role, ma.actor_order FROM actors a JOIN movie_actors ma ON a.id = ma.actor_id WHERE ma.movie_id = ? ORDER BY ma.actor_order', [movieId]),
-      this.db.query<any>('SELECT g.* FROM genres g JOIN movie_genres mg ON g.id = mg.genre_id WHERE mg.movie_id = ?', [movieId]),
-      this.db.query<any>('SELECT c.* FROM crew c JOIN movie_crew mc ON c.id = mc.crew_id WHERE mc.movie_id = ? AND mc.role = \'director\'', [movieId]),
-      this.db.query<any>('SELECT c.* FROM crew c JOIN movie_crew mc ON c.id = mc.crew_id WHERE mc.movie_id = ? AND mc.role = \'writer\'', [movieId]),
-      this.db.query<any>('SELECT s.* FROM studios s JOIN movie_studios ms ON s.id = ms.studio_id WHERE ms.movie_id = ?', [movieId]),
+      this.db.query<Record<string, unknown>>('SELECT a.*, ma.role, ma.actor_order FROM actors a JOIN movie_actors ma ON a.id = ma.actor_id WHERE ma.movie_id = ? ORDER BY ma.actor_order', [movieId]),
+      this.db.query<Record<string, unknown>>('SELECT g.* FROM genres g JOIN movie_genres mg ON g.id = mg.genre_id WHERE mg.movie_id = ?', [movieId]),
+      this.db.query<Record<string, unknown>>('SELECT c.* FROM crew c JOIN movie_crew mc ON c.id = mc.crew_id WHERE mc.movie_id = ? AND mc.role = \'director\'', [movieId]),
+      this.db.query<Record<string, unknown>>('SELECT c.* FROM crew c JOIN movie_crew mc ON c.id = mc.crew_id WHERE mc.movie_id = ? AND mc.role = \'writer\'', [movieId]),
+      this.db.query<Record<string, unknown>>('SELECT s.* FROM studios s JOIN movie_studios ms ON s.id = ms.studio_id WHERE ms.movie_id = ?', [movieId]),
     ]);
 
-    const result: any = {
+    const result: Record<string, unknown> = {
       ...movie,
       actors: actors.map(a => ({ name: a.name, role: a.role, order: a.actor_order })),
       genres: genres.map(g => g.name),
@@ -314,7 +398,7 @@ export class MovieService {
     return result;
   }
 
-  async getUnknownFiles(movieId: number): Promise<any[]> {
+  async getUnknownFiles(movieId: number): Promise<Record<string, unknown>[]> {
     const query = `
       SELECT
         id,
@@ -329,10 +413,10 @@ export class MovieService {
       ORDER BY file_name ASC
     `;
 
-    return this.db.query<any>(query, [movieId]);
+    return this.db.query<Record<string, unknown>>(query, [movieId]);
   }
 
-  async getImages(movieId: number): Promise<any[]> {
+  async getImages(movieId: number): Promise<Record<string, unknown>[]> {
     const conn = this.db.getConnection();
 
     // Query cache_image_files for cache images
@@ -354,11 +438,7 @@ export class MovieService {
    * Get extras (trailer, subtitles, theme song)
    * Delegates to MovieWorkflowService
    */
-  async getExtras(movieId: number): Promise<{
-    trailer: any | null;
-    subtitles: any[];
-    themeSong: any | null;
-  }> {
+  async getExtras(movieId: number): Promise<MovieExtras> {
     return this.workflowService.getExtras(movieId);
   }
 
@@ -366,7 +446,7 @@ export class MovieService {
    * Assign an unknown file to a specific asset type
    * Delegates to MovieUnknownFilesService
    */
-  async assignUnknownFile(movieId: number, fileId: number, fileType: string): Promise<any> {
+  async assignUnknownFile(movieId: number, fileId: number, fileType: string): Promise<unknown> {
     return this.unknownFilesService.assignUnknownFile(movieId, fileId, fileType);
   }
 
@@ -374,7 +454,7 @@ export class MovieService {
    * Mark an unknown file as ignored
    * Delegates to MovieUnknownFilesService
    */
-  async ignoreUnknownFile(movieId: number, fileId: number): Promise<any> {
+  async ignoreUnknownFile(movieId: number, fileId: number): Promise<unknown> {
     return this.unknownFilesService.ignoreUnknownFile(movieId, fileId);
   }
 
@@ -409,7 +489,12 @@ export class MovieService {
       }>;
 
       if (results.length === 0) {
-        throw new Error(`Movie not found: ${movieId}`);
+        throw new ResourceNotFoundError(
+          'movie',
+          movieId,
+          `Movie not found: ${movieId}`,
+          { service: 'movieService', operation: 'refreshMovieMetadata' }
+        );
       }
 
       const movie = results[0];
@@ -424,7 +509,7 @@ export class MovieService {
       });
 
       // Build scan context for user-initiated refresh
-      const scanContext: any = {
+      const scanContext: Record<string, unknown> = {
         trigger: 'user_refresh',
       };
 
@@ -461,7 +546,7 @@ export class MovieService {
       throw error;
     }
   }
-  async updateMetadata(movieId: number, metadata: any): Promise<any> {
+  async updateMetadata(movieId: number, metadata: MovieMetadata): Promise<MovieMetadataUpdateResult> {
     const conn = this.db.getConnection();
 
     try {
@@ -499,7 +584,7 @@ export class MovieService {
       for (const field of allowedFields) {
         if (metadata.hasOwnProperty(field)) {
           updateFields.push(`${field} = ?`);
-          updateValues.push(metadata[field]);
+          updateValues.push(metadata[field as keyof MovieMetadata]);
         }
       }
 
@@ -516,7 +601,7 @@ export class MovieService {
 
       logger.info('Movie metadata updated', { movieId, updatedFields: Object.keys(metadata) });
 
-      return await this.getById(movieId);
+      return { success: true, message: 'Movie metadata updated successfully' };
     } catch (error) {
       logger.error('Failed to update movie metadata', {
         movieId,
@@ -530,7 +615,17 @@ export class MovieService {
    * Save asset selections for a movie
    * Delegates to MovieAssetService
    */
-  async saveAssets(movieId: number, selections: any, metadata?: unknown): Promise<any> {
+  async saveAssets(movieId: number, selections: MovieAssetSelections, metadata?: unknown): Promise<{
+    success: boolean;
+    savedAssets: Array<{
+      assetType: string;
+      cacheAssetId: number;
+      cachePath: string;
+      libraryPath: string;
+      isNew: boolean;
+    }>;
+    errors: string[];
+  }> {
     return this.assetService.saveAssets(movieId, selections, metadata);
   }
 
@@ -856,7 +951,12 @@ export class MovieService {
       );
 
       if (!movie || movie.length === 0) {
-        throw new Error('Movie not found');
+        throw new ResourceNotFoundError(
+          'movie',
+          movieId,
+          'Movie not found',
+          { service: 'movieService', operation: 'restoreMovie' }
+        );
       }
 
       const movieData = movie[0];

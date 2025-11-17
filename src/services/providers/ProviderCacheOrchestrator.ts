@@ -22,6 +22,9 @@ import { logger } from '../../middleware/logging.js';
 import {
   MovieLookupParams,
   CachedMovie,
+  CachedPerson,
+  CachedCast,
+  CachedCrew,
   CompleteMovieData,
   FetchOptions,
   FetchResult,
@@ -31,11 +34,113 @@ import {
 import { TMDBCacheAdapter } from './adapters/TMDBCacheAdapter.js';
 import { FanartCacheAdapter } from './adapters/FanartCacheAdapter.js';
 import { TMDBClient } from './tmdb/TMDBClient.js';
+import { TMDBClientOptions } from '../../types/providers/tmdb.js';
 import { FanArtClient } from './fanart/FanArtClient.js';
+import { FanArtClientOptions } from '../../types/providers/fanart.js';
 import { ConfigManager } from '../../config/ConfigManager.js';
 
 const DEFAULT_MAX_AGE = 604800; // 7 days in seconds
 const PROVIDER_FETCH_TIMEOUT = 30000; // 30 seconds total timeout for all providers
+
+// Database row interfaces
+interface MovieCacheRow {
+  id: number;
+  tmdb_id?: number;
+  imdb_id?: string;
+  tvdb_id?: number;
+  title: string;
+  original_title?: string;
+  overview?: string;
+  tagline?: string;
+  release_date?: string;
+  year?: number;
+  runtime?: number;
+  status?: string;
+  content_rating?: string;
+  tmdb_rating?: number;
+  tmdb_votes?: number;
+  imdb_rating?: number;
+  imdb_votes?: number;
+  popularity?: number;
+  budget?: number;
+  revenue?: number;
+  homepage?: string;
+  adult: number;
+  fetched_at: string;
+}
+
+interface CastJoinRow {
+  id: number;
+  movie_cache_id: number;
+  person_cache_id: number;
+  character_name?: string;
+  cast_order?: number;
+  tmdb_person_id?: number;
+  imdb_person_id?: string;
+  name: string;
+  profile_path?: string;
+  popularity?: number;
+  gender?: number;
+  known_for_department?: string;
+  fetched_at: string;
+}
+
+interface CrewJoinRow {
+  id: number;
+  movie_cache_id: number;
+  person_cache_id: number;
+  job: string;
+  department?: string;
+  tmdb_person_id?: number;
+  imdb_person_id?: string;
+  name: string;
+  profile_path?: string;
+  popularity?: number;
+  gender?: number;
+  known_for_department?: string;
+  fetched_at: string;
+}
+
+interface ImageRow {
+  id: number;
+  entity_type: string;
+  entity_cache_id: number;
+  image_type: string;
+  provider_name: string;
+  provider_image_id?: string;
+  file_path: string;
+  width?: number;
+  height?: number;
+  aspect_ratio?: number;
+  vote_average?: number;
+  vote_count?: number;
+  likes?: number;
+  iso_639_1?: string;
+  disc_number?: number;
+  disc_type?: string;
+  season_number?: number;
+  is_hd: number;
+  fetched_at: string;
+}
+
+interface VideoRow {
+  id: number;
+  entity_type: string;
+  entity_cache_id: number;
+  video_type: string;
+  provider_name: string;
+  provider_video_id: string;
+  name: string;
+  site: string;
+  key: string;
+  size?: number;
+  duration_seconds?: number;
+  published_at?: string;
+  official: number;
+  iso_639_1?: string;
+  iso_3166_1?: string;
+  fetched_at: string;
+}
 
 export class ProviderCacheOrchestrator {
   private db: DatabaseConnection;
@@ -55,7 +160,7 @@ export class ProviderCacheOrchestrator {
 
     // Initialize TMDB adapter (required)
     const tmdbConfig = appConfig.providers.tmdb;
-    const tmdbClientOptions: any = {
+    const tmdbClientOptions: TMDBClientOptions = {
       apiKey: tmdbConfig?.apiKey || '',
       language: 'en-US',
       includeAdult: false,
@@ -70,7 +175,7 @@ export class ProviderCacheOrchestrator {
 
     // Initialize Fanart.tv adapter (always enabled with embedded key)
     const fanartConfig = appConfig.providers.fanart_tv;
-    const fanartClientOptions: any = {
+    const fanartClientOptions: FanArtClientOptions = {
       apiKey: fanartConfig?.apiKey || '',
     };
 
@@ -149,7 +254,7 @@ export class ProviderCacheOrchestrator {
     }
 
     // Hydrate with all relationships (merged images from all providers)
-    const result = await this.db.query<any>(
+    const result = await this.db.query<MovieCacheRow>(
       'SELECT * FROM provider_cache_movies WHERE id = ?',
       [fetchResult.movieCacheId]
     );
@@ -340,7 +445,7 @@ export class ProviderCacheOrchestrator {
   private async findMovieInCache(params: MovieLookupParams): Promise<CachedMovie | null> {
     // Try TMDB ID first (most reliable)
     if (params.tmdb_id) {
-      const result = await this.db.query<CachedMovie>(
+      const result = await this.db.query<MovieCacheRow>(
         'SELECT * FROM provider_cache_movies WHERE tmdb_id = ?',
         [params.tmdb_id]
       );
@@ -349,7 +454,7 @@ export class ProviderCacheOrchestrator {
 
     // Try IMDB ID
     if (params.imdb_id) {
-      const result = await this.db.query<CachedMovie>(
+      const result = await this.db.query<MovieCacheRow>(
         'SELECT * FROM provider_cache_movies WHERE imdb_id = ?',
         [params.imdb_id]
       );
@@ -358,7 +463,7 @@ export class ProviderCacheOrchestrator {
 
     // Try TVDB ID
     if (params.tvdb_id) {
-      const result = await this.db.query<CachedMovie>(
+      const result = await this.db.query<MovieCacheRow>(
         'SELECT * FROM provider_cache_movies WHERE tvdb_id = ?',
         [params.tvdb_id]
       );
@@ -420,79 +525,91 @@ export class ProviderCacheOrchestrator {
 
     // Load cast (if requested)
     if (includes.includeCast) {
-      const cast = await this.db.query(
+      const cast = await this.db.query<CastJoinRow>(
         `SELECT mc.*, p.* FROM provider_cache_movie_cast mc
          JOIN provider_cache_people p ON mc.person_cache_id = p.id
          WHERE mc.movie_cache_id = ?
          ORDER BY mc.cast_order`,
         [movie.id]
       );
-      complete.cast = cast.map((row: any) => ({
-        id: row.id,
-        movie_cache_id: row.movie_cache_id,
-        character_name: row.character_name,
-        cast_order: row.cast_order,
-        person: {
+      complete.cast = cast.map((row) => {
+        const person: CachedPerson = {
           id: row.person_cache_id,
-          tmdb_person_id: row.tmdb_person_id,
-          imdb_person_id: row.imdb_person_id,
           name: row.name,
-          profile_path: row.profile_path,
-          popularity: row.popularity,
-          gender: row.gender,
-          known_for_department: row.known_for_department,
           fetched_at: new Date(row.fetched_at),
-        },
-      }));
+        };
+        if (row.tmdb_person_id !== undefined) person.tmdb_person_id = row.tmdb_person_id;
+        if (row.imdb_person_id !== undefined) person.imdb_person_id = row.imdb_person_id;
+        if (row.profile_path !== undefined) person.profile_path = row.profile_path;
+        if (row.popularity !== undefined) person.popularity = row.popularity;
+        if (row.gender !== undefined) person.gender = row.gender;
+        if (row.known_for_department !== undefined) person.known_for_department = row.known_for_department;
+
+        const castMember: CachedCast = {
+          id: row.id,
+          movie_cache_id: row.movie_cache_id,
+          person,
+        };
+        if (row.character_name !== undefined) castMember.character_name = row.character_name;
+        if (row.cast_order !== undefined) castMember.cast_order = row.cast_order;
+
+        return castMember;
+      });
     }
 
     // Load crew (if requested)
     if (includes.includeCrew) {
-      const crew = await this.db.query(
+      const crew = await this.db.query<CrewJoinRow>(
         `SELECT mc.*, p.* FROM provider_cache_movie_crew mc
          JOIN provider_cache_people p ON mc.person_cache_id = p.id
          WHERE mc.movie_cache_id = ?`,
         [movie.id]
       );
-      complete.crew = crew.map((row: any) => ({
-        id: row.id,
-        movie_cache_id: row.movie_cache_id,
-        job: row.job,
-        department: row.department,
-        person: {
+      complete.crew = crew.map((row) => {
+        const person: CachedPerson = {
           id: row.person_cache_id,
-          tmdb_person_id: row.tmdb_person_id,
-          imdb_person_id: row.imdb_person_id,
           name: row.name,
-          profile_path: row.profile_path,
-          popularity: row.popularity,
-          gender: row.gender,
-          known_for_department: row.known_for_department,
           fetched_at: new Date(row.fetched_at),
-        },
-      }));
+        };
+        if (row.tmdb_person_id !== undefined) person.tmdb_person_id = row.tmdb_person_id;
+        if (row.imdb_person_id !== undefined) person.imdb_person_id = row.imdb_person_id;
+        if (row.profile_path !== undefined) person.profile_path = row.profile_path;
+        if (row.popularity !== undefined) person.popularity = row.popularity;
+        if (row.gender !== undefined) person.gender = row.gender;
+        if (row.known_for_department !== undefined) person.known_for_department = row.known_for_department;
+
+        const crewMember: CachedCrew = {
+          id: row.id,
+          movie_cache_id: row.movie_cache_id,
+          job: row.job,
+          person,
+        };
+        if (row.department !== undefined) crewMember.department = row.department;
+
+        return crewMember;
+      });
     }
 
     // Load images (if requested)
     if (includes.includeImages) {
-      const images = await this.db.query<CachedImage>(
+      const images = await this.db.query<ImageRow>(
         `SELECT * FROM provider_cache_images
          WHERE entity_type = 'movie' AND entity_cache_id = ?
          ORDER BY image_type, vote_average DESC, vote_count DESC`,
         [movie.id]
       );
-      complete.images = images.map(this.mapImage);
+      complete.images = images.map((row) => this.mapImage(row));
     }
 
     // Load videos (if requested)
     if (includes.includeVideos) {
-      const videos = await this.db.query<CachedVideo>(
+      const videos = await this.db.query<VideoRow>(
         `SELECT * FROM provider_cache_videos
          WHERE entity_type = 'movie' AND entity_cache_id = ?
          ORDER BY video_type, official DESC, published_at DESC`,
         [movie.id]
       );
-      complete.videos = videos.map(this.mapVideo);
+      complete.videos = videos.map((row) => this.mapVideo(row));
     }
 
     // Load collection (if movie belongs to one)
@@ -519,68 +636,76 @@ export class ProviderCacheOrchestrator {
   /**
    * Map database row to CachedMovie
    */
-  private mapMovie(row: any): CachedMovie {
-    return {
+  private mapMovie(row: MovieCacheRow): CachedMovie {
+    const movie: CachedMovie = {
       id: row.id,
-      tmdb_id: row.tmdb_id,
-      imdb_id: row.imdb_id,
-      tvdb_id: row.tvdb_id,
       title: row.title,
-      original_title: row.original_title,
-      overview: row.overview,
-      tagline: row.tagline,
-      release_date: row.release_date,
-      year: row.year,
-      runtime: row.runtime,
-      status: row.status,
-      content_rating: row.content_rating,
-      tmdb_rating: row.tmdb_rating,
-      tmdb_votes: row.tmdb_votes,
-      imdb_rating: row.imdb_rating,
-      imdb_votes: row.imdb_votes,
-      popularity: row.popularity,
-      budget: row.budget,
-      revenue: row.revenue,
-      homepage: row.homepage,
       adult: Boolean(row.adult),
       fetched_at: new Date(row.fetched_at),
     };
+
+    // Add optional fields only if defined
+    if (row.tmdb_id !== undefined) movie.tmdb_id = row.tmdb_id;
+    if (row.imdb_id !== undefined) movie.imdb_id = row.imdb_id;
+    if (row.tvdb_id !== undefined) movie.tvdb_id = row.tvdb_id;
+    if (row.original_title !== undefined) movie.original_title = row.original_title;
+    if (row.overview !== undefined) movie.overview = row.overview;
+    if (row.tagline !== undefined) movie.tagline = row.tagline;
+    if (row.release_date !== undefined) movie.release_date = row.release_date;
+    if (row.year !== undefined) movie.year = row.year;
+    if (row.runtime !== undefined) movie.runtime = row.runtime;
+    if (row.status !== undefined) movie.status = row.status;
+    if (row.content_rating !== undefined) movie.content_rating = row.content_rating;
+    if (row.tmdb_rating !== undefined) movie.tmdb_rating = row.tmdb_rating;
+    if (row.tmdb_votes !== undefined) movie.tmdb_votes = row.tmdb_votes;
+    if (row.imdb_rating !== undefined) movie.imdb_rating = row.imdb_rating;
+    if (row.imdb_votes !== undefined) movie.imdb_votes = row.imdb_votes;
+    if (row.popularity !== undefined) movie.popularity = row.popularity;
+    if (row.budget !== undefined) movie.budget = row.budget;
+    if (row.revenue !== undefined) movie.revenue = row.revenue;
+    if (row.homepage !== undefined) movie.homepage = row.homepage;
+
+    return movie;
   }
 
   /**
    * Map database row to CachedImage
    */
-  private mapImage(row: any): CachedImage {
-    return {
+  private mapImage(row: ImageRow): CachedImage {
+    const image: CachedImage = {
       id: row.id,
-      entity_type: row.entity_type,
+      entity_type: row.entity_type as CachedImage['entity_type'],
       entity_cache_id: row.entity_cache_id,
       image_type: row.image_type,
       provider_name: row.provider_name,
-      provider_image_id: row.provider_image_id,
       file_path: row.file_path,
-      width: row.width,
-      height: row.height,
-      aspect_ratio: row.aspect_ratio,
-      vote_average: row.vote_average,
-      vote_count: row.vote_count,
-      likes: row.likes,
-      iso_639_1: row.iso_639_1,
-      disc_number: row.disc_number,
-      disc_type: row.disc_type,
-      season_number: row.season_number,
       is_hd: Boolean(row.is_hd),
       fetched_at: new Date(row.fetched_at),
     };
+
+    // Add optional fields only if defined
+    if (row.provider_image_id !== undefined) image.provider_image_id = row.provider_image_id;
+    if (row.width !== undefined) image.width = row.width;
+    if (row.height !== undefined) image.height = row.height;
+    if (row.aspect_ratio !== undefined) image.aspect_ratio = row.aspect_ratio;
+    if (row.vote_average !== undefined) image.vote_average = row.vote_average;
+    if (row.vote_count !== undefined) image.vote_count = row.vote_count;
+    if (row.likes !== undefined) image.likes = row.likes;
+    if (row.iso_639_1 !== undefined) image.iso_639_1 = row.iso_639_1;
+    if (row.disc_number !== undefined) image.disc_number = row.disc_number;
+    if (row.disc_type !== undefined) image.disc_type = row.disc_type;
+    if (row.season_number !== undefined) image.season_number = row.season_number;
+
+    return image;
   }
 
   /**
    * Map database row to CachedVideo
    */
-  private mapVideo(row: any): CachedVideo {
-    return {
+  private mapVideo(row: VideoRow): CachedVideo {
+    const video: CachedVideo = {
       id: row.id,
-      entity_type: row.entity_type,
+      entity_type: row.entity_type as CachedVideo['entity_type'],
       entity_cache_id: row.entity_cache_id,
       video_type: row.video_type,
       provider_name: row.provider_name,
@@ -588,13 +713,17 @@ export class ProviderCacheOrchestrator {
       name: row.name,
       site: row.site,
       key: row.key,
-      size: row.size,
-      duration_seconds: row.duration_seconds,
-      published_at: row.published_at,
       official: Boolean(row.official),
-      iso_639_1: row.iso_639_1,
-      iso_3166_1: row.iso_3166_1,
       fetched_at: new Date(row.fetched_at),
     };
+
+    // Add optional fields only if defined
+    if (row.size !== undefined) video.size = row.size;
+    if (row.duration_seconds !== undefined) video.duration_seconds = row.duration_seconds;
+    if (row.published_at !== undefined) video.published_at = row.published_at;
+    if (row.iso_639_1 !== undefined) video.iso_639_1 = row.iso_639_1;
+    if (row.iso_3166_1 !== undefined) video.iso_3166_1 = row.iso_3166_1;
+
+    return video;
   }
 }

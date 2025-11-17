@@ -28,6 +28,7 @@ import {
   AuthenticationError,
   NetworkError,
 } from '../../errors/providerErrors.js';
+import { ResourceNotFoundError } from '../../errors/index.js';
 import { logger } from '../../middleware/logging.js';
 import type { Movie, Series } from '../../types/models.js';
 import { getErrorMessage } from '../../utils/errorHandling.js';
@@ -286,7 +287,7 @@ export class FetchOrchestrator {
       // Get provider instance
       const providerConfig = await this.configService.getByName(providerName);
       if (!providerConfig) {
-        throw new Error(`Provider configuration not found: ${providerName}`);
+        throw new ResourceNotFoundError('provider', providerName);
       }
 
       const provider = await this.registry.createProvider(providerConfig);

@@ -101,7 +101,7 @@ export class PhaseConfigService {
   /**
    * Update multiple settings at once
    */
-  async updateMultiple(updates: Record<string, any>): Promise<void> {
+  async updateMultiple(updates: Record<string, string | number | boolean | string[]>): Promise<void> {
     for (const [key, value] of Object.entries(updates)) {
       await this.set(key, value);
     }
@@ -134,29 +134,13 @@ export class PhaseConfigService {
   // HELPER METHODS (PRIVATE)
   // ============================================
 
-  private getBool(settings: any[], key: string, defaultValue: boolean): boolean {
+  private getBool(settings: Array<{ key: string; value: string }>, key: string, defaultValue: boolean): boolean {
     const setting = settings.find(s => s.key === key);
     return setting ? setting.value === 'true' : defaultValue;
   }
 
-  private getInt(settings: any[], key: string, defaultValue: number): number {
-    const setting = settings.find(s => s.key === key);
-    return setting ? parseInt(setting.value, 10) : defaultValue;
-  }
-
-  private getString(settings: any[], key: string, defaultValue: string): string {
+  private getString(settings: Array<{ key: string; value: string }>, key: string, defaultValue: string): string {
     const setting = settings.find(s => s.key === key);
     return setting ? setting.value : defaultValue;
-  }
-
-  private getArray(settings: any[], key: string, defaultValue: string[]): string[] {
-    const setting = settings.find(s => s.key === key);
-    if (!setting) return defaultValue;
-
-    try {
-      return JSON.parse(setting.value);
-    } catch {
-      return defaultValue;
-    }
   }
 }

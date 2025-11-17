@@ -21,7 +21,15 @@
 
 import { DatabaseConnection } from '../../../types/database.js';
 import { TMDBClient } from '../tmdb/TMDBClient.js';
-import { TMDBMovie, TMDBImage, TMDBVideo } from '../../../types/providers/tmdb.js';
+import {
+  TMDBMovie,
+  TMDBImage,
+  TMDBVideo,
+  TMDBCastMember,
+  TMDBCrewMember,
+  TMDBMovieCollection,
+  TMDBMovieReleaseDatesResult,
+} from '../../../types/providers/tmdb.js';
 import { logger } from '../../../middleware/logging.js';
 import { MovieLookupParams } from '../../../types/providerCache.js';
 
@@ -328,7 +336,7 @@ export class TMDBCacheAdapter {
   /**
    * Store cast members
    */
-  private async storeCast(movieCacheId: number, cast?: any[]): Promise<void> {
+  private async storeCast(movieCacheId: number, cast?: TMDBCastMember[]): Promise<void> {
     if (!cast || cast.length === 0) return;
 
     // Limit to top 50 cast members
@@ -341,7 +349,7 @@ export class TMDBCacheAdapter {
         actor.name,
         actor.profile_path,
         actor.popularity,
-        actor.gender,
+        actor.gender ?? undefined,
         actor.known_for_department
       );
 
@@ -357,11 +365,11 @@ export class TMDBCacheAdapter {
   /**
    * Store crew members
    */
-  private async storeCrew(movieCacheId: number, crew?: any[]): Promise<void> {
+  private async storeCrew(movieCacheId: number, crew?: TMDBCrewMember[]): Promise<void> {
     if (!crew || crew.length === 0) return;
 
     // Filter to key roles
-    const keyCrew = crew.filter((c: any) =>
+    const keyCrew = crew.filter((c) =>
       ['Director', 'Writer', 'Screenplay', 'Producer', 'Executive Producer', 'Story', 'Cinematography', 'Music'].includes(c.job)
     );
 
@@ -372,7 +380,7 @@ export class TMDBCacheAdapter {
         crewMember.name,
         crewMember.profile_path,
         crewMember.popularity,
-        crewMember.gender,
+        crewMember.gender ?? undefined,
         crewMember.known_for_department
       );
 
@@ -548,7 +556,7 @@ export class TMDBCacheAdapter {
   /**
    * Store collection info (if movie belongs to one)
    */
-  private async storeCollection(movieCacheId: number, collection: any): Promise<void> {
+  private async storeCollection(movieCacheId: number, collection: TMDBMovieCollection | null): Promise<void> {
     if (!collection) return;
 
     // Insert/update collection
@@ -559,7 +567,7 @@ export class TMDBCacheAdapter {
          name = excluded.name,
          overview = excluded.overview,
          fetched_at = CURRENT_TIMESTAMP`,
-      [collection.id, collection.name, collection.overview || null]
+      [collection.id, collection.name, null]
     );
 
     // Get collection ID
@@ -581,15 +589,15 @@ export class TMDBCacheAdapter {
   /**
    * Extract US content rating from release_dates
    */
-  private extractContentRating(releaseDates?: any): string | null {
+  private extractContentRating(releaseDates?: { results: TMDBMovieReleaseDatesResult[] }): string | null {
     if (!releaseDates?.results) return null;
 
     // Find US releases
-    const usRelease = releaseDates.results.find((r: any) => r.iso_3166_1 === 'US');
+    const usRelease = releaseDates.results.find((r) => r.iso_3166_1 === 'US');
     if (!usRelease) return null;
 
     // Find theatrical release (type 3) or primary release (type 2)
-    const theatrical = usRelease.release_dates.find((rd: any) => rd.type === 3 || rd.type === 2);
+    const theatrical = usRelease.release_dates.find((rd) => rd.type === 3 || rd.type === 2);
     return theatrical?.certification || null;
   }
 }
