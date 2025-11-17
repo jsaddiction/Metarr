@@ -15,7 +15,7 @@ export interface VersionCapabilities {
 }
 
 export class KodiVersionAdapter {
-  private version: DetectedVersion;
+  private readonly version: DetectedVersion;
 
   constructor(version: DetectedVersion) {
     this.version = version;

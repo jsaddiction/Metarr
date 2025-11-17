@@ -12,6 +12,23 @@ import { logger } from '../../middleware/logging.js';
 import { getErrorMessage } from '../../utils/errorHandling.js';
 import { InvalidStateError } from '../../errors/index.js';
 
+/**
+ * Kodi WebSocket connection configuration constants
+ */
+const KODI_WEBSOCKET_CONFIG = {
+  /** Default interval between reconnection attempts (milliseconds) */
+  DEFAULT_RECONNECT_INTERVAL_MS: 5000, // 5 seconds
+
+  /** Maximum number of reconnection attempts before giving up */
+  MAX_RECONNECT_ATTEMPTS: 10,
+
+  /** Default interval for WebSocket ping/keepalive (milliseconds) */
+  DEFAULT_PING_INTERVAL_MS: 30000, // 30 seconds
+
+  /** Exponential backoff base for reconnection delays */
+  RECONNECT_BACKOFF_BASE: 2,
+} as const;
+
 export interface KodiWebSocketClientOptions {
   host: string;
   port: number;
@@ -59,9 +76,9 @@ export class KodiWebSocketClient extends EventEmitter {
     super();
 
     this.url = `ws://${options.host}:${options.port}/jsonrpc`;
-    this.reconnectInterval = options.reconnectInterval || 5000;
-    this.maxReconnectAttempts = options.maxReconnectAttempts || 10;
-    this.pingInterval = options.pingInterval || 30000;
+    this.reconnectInterval = options.reconnectInterval || KODI_WEBSOCKET_CONFIG.DEFAULT_RECONNECT_INTERVAL_MS;
+    this.maxReconnectAttempts = options.maxReconnectAttempts || KODI_WEBSOCKET_CONFIG.MAX_RECONNECT_ATTEMPTS;
+    this.pingInterval = options.pingInterval || KODI_WEBSOCKET_CONFIG.DEFAULT_PING_INTERVAL_MS;
 
     if (options.username && options.password) {
       this.auth = Buffer.from(`${options.username}:${options.password}`).toString('base64');
@@ -404,7 +421,7 @@ export class KodiWebSocketClient extends EventEmitter {
     this.clearReconnectTimer();
 
     const delay = Math.min(
-      this.reconnectInterval * Math.pow(2, this.state.reconnectAttempts),
+      this.reconnectInterval * Math.pow(KODI_WEBSOCKET_CONFIG.RECONNECT_BACKOFF_BASE, this.state.reconnectAttempts),
       60000 // Max 60 seconds
     );
 
