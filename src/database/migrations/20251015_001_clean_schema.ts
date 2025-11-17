@@ -1171,8 +1171,8 @@ export class CleanSchemaMigration {
         service TEXT NOT NULL UNIQUE CHECK (service IN ('kodi', 'jellyfin', 'plex', 'discord', 'pushover', 'email')),
         enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0, 1)),
         config TEXT,
-        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
 
