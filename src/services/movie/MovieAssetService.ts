@@ -12,6 +12,14 @@ import https from 'https';
 import http from 'http';
 import { createErrorLogContext, getErrorMessage } from '../../utils/errorHandling.js';
 import { imageProcessor } from '../../utils/ImageProcessor.js';
+import {
+  ResourceNotFoundError,
+  ResourceAlreadyExistsError,
+  ResourceExhaustedError,
+  ValidationError,
+  NetworkError,
+  ErrorCode,
+} from '../../errors/index.js';
 
 /**
  * MovieAssetService
@@ -50,13 +58,29 @@ export class MovieAssetService {
    * @param metadata - Optional metadata updates to apply
    * @returns Results with saved assets and errors
    */
-  async saveAssets(movieId: number, selections: any, metadata?: unknown): Promise<any> {
+  async saveAssets(movieId: number, selections: Record<string, unknown>, metadata?: unknown): Promise<{
+    success: boolean;
+    savedAssets: Array<{
+      assetType: string;
+      cacheAssetId: number;
+      cachePath: string;
+      libraryPath: string;
+      isNew: boolean;
+    }>;
+    errors: string[];
+  }> {
     const conn = this.db.getConnection();
 
     try {
       const results = {
         success: true,
-        savedAssets: [] as any[],
+        savedAssets: [] as Array<{
+          assetType: string;
+          cacheAssetId: number;
+          cachePath: string;
+          libraryPath: string;
+          isNew: boolean;
+        }>,
         errors: [] as string[],
       };
 
@@ -67,7 +91,12 @@ export class MovieAssetService {
       );
 
       if (!movieResults || movieResults.length === 0) {
-        throw new Error('Movie not found');
+        throw new ResourceNotFoundError(
+          'movie',
+          movieId,
+          'Movie not found for asset save operation',
+          { service: 'MovieAssetService', operation: 'saveAssets' }
+        );
       }
 
       const movie = movieResults[0];
@@ -131,17 +160,18 @@ export class MovieAssetService {
       // AFTER: Parallel processing (5 assets = ~1s total)
       const assetPromises = Object.entries(selections).map(async ([assetType, assetData]) => {
         try {
-          const asset = assetData as any;
+          const asset = assetData as Record<string, unknown>;
 
           if (!asset.url) {
             return { error: `Asset ${assetType}: No URL provided` };
           }
 
           // Download asset to temporary location
-          const tempFilePath = path.join(process.cwd(), 'data', 'temp', `${crypto.randomBytes(16).toString('hex')}${path.extname(asset.url)}`);
+          const assetUrl = String(asset.url ?? '');
+          const tempFilePath = path.join(process.cwd(), 'data', 'temp', `${crypto.randomBytes(16).toString('hex')}${path.extname(assetUrl)}`);
           await fs.mkdir(path.dirname(tempFilePath), { recursive: true });
 
-          await this.downloadFile(asset.url, tempFilePath);
+          await this.downloadFile(assetUrl, tempFilePath);
 
           // Get image dimensions using centralized ImageProcessor
           let width: number | undefined;
@@ -156,13 +186,21 @@ export class MovieAssetService {
           }
 
           // Store in cache using CacheService
-          const cacheMetadata: any = {
-            mimeType: asset.metadata?.mimeType || 'image/jpeg',
+          const cacheMetadata: {
+            mimeType: string;
+            sourceType: 'provider';
+            sourceUrl?: string;
+            providerName?: string;
+            width?: number;
+            height?: number;
+          } = {
+            mimeType: (asset.metadata as Record<string, unknown> | undefined)?.mimeType as string || 'image/jpeg',
             sourceType: 'provider' as const,
-            sourceUrl: asset.url,
-            providerName: asset.provider,
           };
 
+          // Add optional properties
+          if (asset.url) cacheMetadata.sourceUrl = String(asset.url);
+          if (asset.provider) cacheMetadata.providerName = String(asset.provider);
           if (width !== undefined) cacheMetadata.width = width;
           if (height !== undefined) cacheMetadata.height = height;
 
@@ -231,10 +269,10 @@ export class MovieAssetService {
                 cacheResult.contentHash,
                 width,
                 height,
-                path.extname(tempFilePath).substring(1),
+                path.extname(tempFilePath).substring(1) || 'jpg',
                 'provider',
-                asset.url,
-                asset.provider
+                String(asset.url ?? ''),
+                String(asset.provider ?? '')
               ]
             );
             cacheFileId = result.insertId!;
@@ -385,7 +423,12 @@ export class MovieAssetService {
       );
 
       if (!movieResults || movieResults.length === 0) {
-        throw new Error('Movie not found');
+        throw new ResourceNotFoundError(
+          'movie',
+          movieId,
+          'Movie not found for asset replacement',
+          { service: 'MovieAssetService', operation: 'replaceAssets', metadata: { assetType } }
+        );
       }
 
       // NOTE: Lock checking removed from service layer - this is the caller's responsibility
@@ -409,7 +452,11 @@ export class MovieAssetService {
 
       // Validate asset count doesn't exceed limit
       if (assets.length > maxLimit) {
-        throw new Error(`Cannot add ${assets.length} ${assetType}(s). Maximum allowed: ${maxLimit}`);
+        throw new ResourceExhaustedError(
+          'asset',
+          `Cannot add ${assets.length} ${assetType}(s). Maximum allowed: ${maxLimit}`,
+          { service: 'MovieAssetService', operation: 'replaceAssets', metadata: { movieId, assetType, assetCount: assets.length, maxLimit } }
+        );
       }
 
       // SIMPLE SNAPSHOT APPROACH: Delete all, then add exactly what user selected
@@ -542,7 +589,12 @@ export class MovieAssetService {
       );
 
       if (!movieResults || movieResults.length === 0) {
-        throw new Error('Movie not found');
+        throw new ResourceNotFoundError(
+          'movie',
+          movieId,
+          'Movie not found for asset addition',
+          { service: 'MovieAssetService', operation: 'addAsset', metadata: { assetType, provider: assetData.provider } }
+        );
       }
 
       // NOTE: Lock checking removed - caller (replaceAssets) is responsible for lock enforcement
@@ -556,7 +608,12 @@ export class MovieAssetService {
       );
 
       if (existing.length > 0) {
-        throw new Error('Asset already exists for this movie');
+        throw new ResourceAlreadyExistsError(
+          'asset',
+          existing[0].id,
+          'Asset already exists for this movie',
+          { service: 'MovieAssetService', operation: 'addAsset', metadata: { movieId, assetType, url: assetData.url, existingId: existing[0].id } }
+        );
       }
 
       // Download asset to temporary location
@@ -685,7 +742,12 @@ export class MovieAssetService {
       );
 
       if (images.length === 0) {
-        throw new Error('Image not found');
+        throw new ResourceNotFoundError(
+          'image',
+          imageFileId,
+          'Image not found for removal',
+          { service: 'MovieAssetService', operation: 'removeAsset', metadata: { movieId } }
+        );
       }
 
       const image = images[0];
@@ -761,7 +823,10 @@ export class MovieAssetService {
       ];
 
       if (!validLockFields.includes(lockField)) {
-        throw new Error(`Invalid asset type: ${assetType}`);
+        throw new ValidationError(
+          `Invalid asset type: ${assetType}`,
+          { service: 'MovieAssetService', operation: 'toggleAssetLock', metadata: { field: 'assetType', value: assetType, validTypes: validLockFields.map(f => f.replace('_locked', '')) } }
+        );
       }
 
       await conn.execute(
@@ -851,7 +916,12 @@ export class MovieAssetService {
         if (response.statusCode !== 200) {
           // Clean up response stream on error
           response.destroy();
-          reject(new Error(`Failed to download: HTTP ${response.statusCode}`));
+          reject(new NetworkError(
+            `Failed to download asset: HTTP ${response.statusCode}`,
+            ErrorCode.NETWORK_CONNECTION_FAILED,
+            url,
+            { service: 'MovieAssetService', operation: 'downloadFile', metadata: { statusCode: response.statusCode } }
+          ));
           return;
         }
 
@@ -885,7 +955,12 @@ export class MovieAssetService {
       // Handle request timeout
       request.setTimeout(30000, () => {
         request.destroy();
-        reject(new Error('Download timeout'));
+        reject(new NetworkError(
+          'Download timeout after 30 seconds',
+          ErrorCode.NETWORK_TIMEOUT,
+          url,
+          { service: 'MovieAssetService', operation: 'downloadFile', metadata: { timeout: 30000 } }
+        ));
       });
     });
   }

@@ -5,6 +5,8 @@ import { logger } from '../../middleware/logging.js';
 import { websocketBroadcaster } from '../websocketBroadcaster.js';
 import { createErrorLogContext } from '../../utils/errorHandling.js';
 import { buildUpdateQuery } from '../../utils/sqlBuilder.js';
+import type { SqlParam } from '../../types/database.js';
+import { ResourceNotFoundError } from '../../errors/index.js';
 
 /**
  * MovieCrudService
@@ -29,7 +31,7 @@ export class MovieCrudService {
    * @param metadata - Object with metadata fields to update
    * @returns Updated movie object
    */
-  async updateMetadata(movieId: number, metadata: any): Promise<any> {
+  async updateMetadata(movieId: number, metadata: Record<string, unknown>): Promise<Record<string, unknown> | null> {
     const conn = this.db.getConnection();
 
     try {
@@ -63,7 +65,7 @@ export class MovieCrudService {
       // Build type-safe UPDATE query using allowlist
       // Addresses Audit Finding 1.4: SQL injection risk
       let query: string;
-      let values: any[];
+      let values: unknown[];
 
       try {
         const result = buildUpdateQuery(
@@ -77,12 +79,12 @@ export class MovieCrudService {
         values = result.values;
       } catch (error) {
         if (error instanceof Error && error.message.includes('No valid columns to update')) {
-          return { success: true, message: 'No fields to update' };
+          return { success: true, message: 'No fields to update' } as Record<string, unknown>;
         }
         throw error;
       }
 
-      await conn.execute(query, values);
+      await conn.execute(query, values as SqlParam[]);
 
       logger.info('Movie metadata updated', { movieId, updatedFields: Object.keys(metadata) });
 
@@ -179,7 +181,15 @@ export class MovieCrudService {
       );
 
       if (!movie || movie.length === 0) {
-        throw new Error('Movie not found');
+        throw new ResourceNotFoundError(
+          'movie',
+          movieId,
+          'Movie not found',
+          {
+            service: 'MovieCrudService',
+            operation: 'restoreMovie'
+          }
+        );
       }
 
       const movieData = movie[0];
@@ -252,7 +262,7 @@ export class MovieCrudService {
    * @param movieId - Movie ID
    * @returns Scan result with counts of discovered items
    */
-  async refreshMovie(movieId: number): Promise<any> {
+  async refreshMovie(movieId: number): Promise<Record<string, unknown>> {
     const conn = this.db.getConnection();
 
     try {
@@ -271,7 +281,15 @@ export class MovieCrudService {
       }>;
 
       if (results.length === 0) {
-        throw new Error(`Movie not found: ${movieId}`);
+        throw new ResourceNotFoundError(
+          'movie',
+          movieId,
+          `Movie not found: ${movieId}`,
+          {
+            service: 'MovieCrudService',
+            operation: 'refreshMovie'
+          }
+        );
       }
 
       const movie = results[0];
@@ -286,7 +304,7 @@ export class MovieCrudService {
       });
 
       // Build scan context for user-initiated refresh
-      const scanContext: any = {
+      const scanContext: Record<string, unknown> = {
         trigger: 'user_refresh',
       };
 

@@ -5,7 +5,7 @@
  * Manages the master catalog of all assets discovered from providers during enrichment.
  */
 
-import { DatabaseConnection } from '../../types/database.js';
+import { DatabaseConnection, SqlParam } from '../../types/database.js';
 import { logger } from '../../middleware/logging.js';
 import { getErrorMessage } from '../../utils/errorHandling.js';
 
@@ -251,7 +251,7 @@ export class ProviderAssetsRepository {
   async update(id: number, params: UpdateProviderAssetParams): Promise<void> {
     try {
       const updates: string[] = [];
-      const values: any[] = [];
+      const values: unknown[] = [];
 
       if (params.provider_metadata !== undefined) {
         updates.push('provider_metadata = ?');
@@ -323,7 +323,7 @@ export class ProviderAssetsRepository {
 
       await this.db.execute(
         `UPDATE provider_assets SET ${updates.join(', ')} WHERE id = ?`,
-        values
+        values as SqlParam[]
       );
     } catch (error) {
       logger.error('[ProviderAssetsRepository] Failed to update provider asset', {

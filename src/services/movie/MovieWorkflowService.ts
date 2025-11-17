@@ -21,6 +21,11 @@ import { getDirectoryPath } from '../pathMappingService.js';
 import { logger } from '../../middleware/logging.js';
 import { createErrorLogContext } from '../../utils/errorHandling.js';
 import { SqlParam } from '../../types/database.js';
+import {
+  ResourceNotFoundError,
+  InvalidStateError,
+  NotImplementedError,
+} from '../../errors/index.js';
 
 export class MovieWorkflowService {
   constructor(
@@ -45,7 +50,12 @@ export class MovieWorkflowService {
       );
 
       if (!movie || movie.length === 0) {
-        throw new Error('Movie not found');
+        throw new ResourceNotFoundError(
+          'movie',
+          movieId,
+          'Movie not found',
+          { service: 'MovieWorkflowService', operation: 'toggleMonitored' }
+        );
       }
 
       const currentMovie = movie[0];
@@ -236,12 +246,21 @@ export class MovieWorkflowService {
       );
 
       if (!movies || movies.length === 0) {
-        throw new Error('Movie not found');
+        throw new ResourceNotFoundError(
+          'movie',
+          movieId,
+          'Movie not found',
+          { service: 'MovieWorkflowService', operation: 'triggerVerify' }
+        );
       }
 
       // NOTE: Verification job system is being redesigned
       // TODO: Implement new verification workflow
-      throw new Error('Movie verification is not yet implemented in the new workflow system');
+      throw new NotImplementedError(
+        'movie verification',
+        'Movie verification is not yet implemented in the new workflow system',
+        { service: 'MovieWorkflowService', operation: 'triggerVerify', metadata: { movieId } }
+      );
     } catch (error) {
       logger.error('Failed to trigger verify job', createErrorLogContext(error, {
         movieId
@@ -272,19 +291,34 @@ export class MovieWorkflowService {
       );
 
       if (!movies || movies.length === 0) {
-        throw new Error('Movie not found');
+        throw new ResourceNotFoundError(
+          'movie',
+          movieId,
+          'Movie not found',
+          { service: 'MovieWorkflowService', operation: 'triggerEnrich' }
+        );
       }
 
       const movie = movies[0];
 
       // Validate TMDB ID exists
       if (!movie.tmdb_id) {
-        throw new Error('Movie must be identified (have TMDB ID) before enrichment. Use Identify first.');
+        throw new InvalidStateError(
+          'Movie',
+          'tmdb_id',
+          'Movie must be identified (have TMDB ID) before enrichment. Use Identify first.',
+          { service: 'MovieWorkflowService', operation: 'triggerEnrich', metadata: { movieId } }
+        );
       }
 
       // Queue enrich-metadata job (5-phase enrichment workflow)
       if (!this.jobQueue) {
-        throw new Error('Job queue not available. Cannot trigger enrichment job.');
+        throw new InvalidStateError(
+          'MovieWorkflowService',
+          'jobQueue',
+          'Job queue not available. Cannot trigger enrichment job.',
+          { service: 'MovieWorkflowService', operation: 'triggerEnrich', metadata: { movieId } }
+        );
       }
 
       const jobId = await this.jobQueue.addJob({
@@ -341,7 +375,12 @@ export class MovieWorkflowService {
       );
 
       if (!movies || movies.length === 0) {
-        throw new Error('Movie not found');
+        throw new ResourceNotFoundError(
+          'movie',
+          movieId,
+          'Movie not found',
+          { service: 'MovieWorkflowService', operation: 'triggerPublish' }
+        );
       }
 
       const movie = movies[0];
@@ -351,7 +390,12 @@ export class MovieWorkflowService {
 
       // Queue publish job
       if (!this.jobQueue) {
-        throw new Error('Job queue not available. Cannot trigger publish job.');
+        throw new InvalidStateError(
+          'MovieWorkflowService',
+          'jobQueue',
+          'Job queue not available. Cannot trigger publish job.',
+          { service: 'MovieWorkflowService', operation: 'triggerPublish', metadata: { movieId } }
+        );
       }
 
       const jobId = await this.jobQueue.addJob({

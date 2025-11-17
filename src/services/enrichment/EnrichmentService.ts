@@ -10,8 +10,7 @@
  */
 
 import { DatabaseConnection } from '../../types/database.js';
-import { ProviderAssetsRepository } from './ProviderAssetsRepository.js';
-import { ProviderCacheManager } from '../providers/ProviderCacheManager.js';
+import { ProviderAssetsRepository, ProviderAsset } from './ProviderAssetsRepository.js';
 import { ProviderCacheOrchestrator } from '../providers/ProviderCacheOrchestrator.js';
 import { AssetConfigService } from '../assetConfigService.js';
 import { DatabaseManager } from '../../database/DatabaseManager.js';
@@ -24,6 +23,8 @@ import { extractMediaInfo } from '../media/ffprobeService.js';
 import { websocketBroadcaster } from '../websocketBroadcaster.js';
 import { logger } from '../../middleware/logging.js';
 import { getErrorMessage } from '../../utils/errorHandling.js';
+import { ResourceNotFoundError } from '../../errors/index.js';
+import { CompleteMovieData } from '../../types/providerCache.js';
 import fs from 'fs/promises';
 import path from 'path';
 import crypto from 'crypto';
@@ -54,6 +55,50 @@ interface AssetMetadata {
   isImage: boolean;
 }
 
+interface MovieDatabaseRow {
+  id: number;
+  title: string;
+  tmdb_id: number | null;
+  imdb_id: string | null;
+  tvdb_id?: number | null;
+  monitored: number;
+  title_locked?: number;
+  plot_locked?: number;
+  [key: string]: unknown;
+}
+
+interface MovieUpdateFields {
+  title?: string;
+  original_title?: string;
+  plot?: string;
+  tagline?: string;
+  release_date?: string;
+  year?: number;
+  runtime?: number;
+  content_rating?: string;
+  tmdb_rating?: number;
+  tmdb_votes?: number;
+  imdb_rating?: number;
+  imdb_votes?: number;
+}
+
+interface AssetForScoring {
+  asset_type: string;
+  width: number | null;
+  height: number | null;
+  provider_name: string;
+  provider_metadata: string | null;
+}
+
+interface ProviderMetadata {
+  vote_average?: number;
+  voteAverage?: number;
+  vote_count?: number;
+  votes?: number;
+  language?: string;
+  [key: string]: unknown;
+}
+
 export class EnrichmentService {
   private providerAssetsRepo: ProviderAssetsRepository;
   private providerCacheOrchestrator: ProviderCacheOrchestrator;
@@ -63,8 +108,7 @@ export class EnrichmentService {
   constructor(
     private db: DatabaseConnection,
     private dbManager: DatabaseManager,
-    cacheDir: string,
-    providerCacheManager?: ProviderCacheManager
+    cacheDir: string
   ) {
     this.providerAssetsRepo = new ProviderAssetsRepository(db);
     this.phaseConfigService = new PhaseConfigService(db);
@@ -294,7 +338,7 @@ export class EnrichmentService {
       // Get entity details
       const entity = await this.getEntity(entityId, entityType);
       if (!entity) {
-        throw new Error(`Entity not found: ${entityType} ${entityId}`);
+        throw new ResourceNotFoundError(entityType, entityId);
       }
 
       // Check if entity is monitored (automated jobs only)
@@ -484,7 +528,7 @@ export class EnrichmentService {
 
             // Build dynamic UPDATE statement for fields that need backfilling
             const updates: string[] = [];
-            const values: any[] = [];
+            const values: (string | number)[] = [];
 
             if (!cacheFile.difference_hash) {
               updates.push('difference_hash = ?');
@@ -537,7 +581,7 @@ export class EnrichmentService {
           cacheFile.image_type
         );
 
-        let bestMatch: { asset: any; similarity: number } | null = null;
+        let bestMatch: { asset: ProviderAsset; similarity: number } | null = null;
 
         for (const candidate of candidates) {
           if (!candidate.perceptual_hash) continue;
@@ -1168,7 +1212,7 @@ export class EnrichmentService {
       });
 
       // Batch database operations to prevent N+1 query pattern
-      const cacheInserts: any[] = [];
+      const cacheInserts: Array<[string, number, string, string, string, string, number, number, number, string, string, string, string]> = [];
       const actorUpdates: { hash: string; cachePath: string; actorId: number }[] = [];
 
       // Process downloads in parallel with concurrency limit
@@ -1286,10 +1330,10 @@ export class EnrichmentService {
    * Copy metadata from provider cache to movies table
    * Respects field locks set by user
    */
-  private async copyMetadataToMovie(movieId: number, cachedMovie: any): Promise<void> {
+  private async copyMetadataToMovie(movieId: number, cachedMovie: CompleteMovieData): Promise<void> {
     try {
       // Get current movie to check what's locked
-      const current = await this.db.query<any>(
+      const current = await this.db.query<MovieDatabaseRow>(
         'SELECT * FROM movies WHERE id = ?',
         [movieId]
       );
@@ -1301,7 +1345,7 @@ export class EnrichmentService {
 
       // Check field locks to preserve manual edits
       const currentMovie = current[0];
-      const updates: any = {};
+      const updates: MovieUpdateFields = {};
 
       // Copy basic metadata (only if field is not locked)
       if (cachedMovie.title && !currentMovie.title_locked) {
@@ -1355,7 +1399,7 @@ export class EnrichmentService {
       }
 
       const setClause = fields.map(f => `${f} = ?`).join(', ');
-      const values = fields.map(f => updates[f]);
+      const values = fields.map(f => updates[f as keyof MovieUpdateFields]);
 
       await this.db.execute(
         `UPDATE movies SET ${setClause}, enriched_at = CURRENT_TIMESTAMP, identification_status = 'enriched' WHERE id = ?`,
@@ -1379,7 +1423,7 @@ export class EnrichmentService {
    * Copy cast from provider cache to actors/movie_actors tables
    * Creates actor records and links them to the movie
    */
-  private async copyCastToActors(movieId: number, cachedMovie: any): Promise<void> {
+  private async copyCastToActors(movieId: number, cachedMovie: CompleteMovieData): Promise<void> {
     try {
       if (!cachedMovie.cast || cachedMovie.cast.length === 0) {
         logger.debug('[EnrichmentService] No cast data to copy', { movieId });
@@ -1470,11 +1514,11 @@ export class EnrichmentService {
   /**
    * Calculate asset score (0-100 points)
    */
-  private calculateAssetScore(asset: any, userPreferredLanguage: string): number {
+  private calculateAssetScore(asset: AssetForScoring, userPreferredLanguage: string): number {
     let score = 0;
 
     // Parse provider metadata
-    const metadata = asset.provider_metadata ? JSON.parse(asset.provider_metadata) : {};
+    const metadata: ProviderMetadata = asset.provider_metadata ? JSON.parse(asset.provider_metadata) : {};
 
     // ========================================
     // RESOLUTION SCORE (0-30 points)
@@ -1609,7 +1653,7 @@ export class EnrichmentService {
       const table = entityType === 'movie' ? 'movies' : entityType === 'series' ? 'series' : 'episodes';
       const lockField = `${assetType}_locked`;
 
-      const result = await this.db.get<any>(
+      const result = await this.db.get<Record<string, unknown>>(
         `SELECT ${lockField} FROM ${table} WHERE id = ?`,
         [entityId]
       );

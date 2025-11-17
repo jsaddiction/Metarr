@@ -6,6 +6,11 @@ import { hashSmallFile } from '../hash/hashService.js';
 import { WebSocketBroadcaster } from '../websocketBroadcaster.js';
 import { createErrorLogContext } from '../../utils/errorHandling.js';
 import { imageProcessor } from '../../utils/ImageProcessor.js';
+import { DatabaseConnection } from '../../types/database.js';
+import {
+  ResourceNotFoundError,
+  ValidationError
+} from '../../errors/index.js';
 
 /**
  * MovieUnknownFilesService
@@ -59,7 +64,16 @@ export class MovieUnknownFilesService {
       );
 
       if (!unknownFileResults || unknownFileResults.length === 0) {
-        throw new Error('Unknown file not found');
+        throw new ResourceNotFoundError(
+          'unknown_file',
+          fileId,
+          'Unknown file not found',
+          {
+            service: 'MovieUnknownFilesService',
+            operation: 'assignUnknownFile',
+            metadata: { movieId, fileType }
+          }
+        );
       }
 
       const unknownFile = unknownFileResults[0];
@@ -72,7 +86,15 @@ export class MovieUnknownFilesService {
       );
 
       if (!movieResults || movieResults.length === 0) {
-        throw new Error('Movie not found');
+        throw new ResourceNotFoundError(
+          'movie',
+          movieId,
+          'Movie not found',
+          {
+            service: 'MovieUnknownFilesService',
+            operation: 'assignUnknownFile'
+          }
+        );
       }
 
       const movie = movieResults[0];
@@ -121,7 +143,14 @@ export class MovieUnknownFilesService {
           movieFileName
         );
       } else {
-        throw new Error(`Unsupported file type: ${fileType}`);
+        throw new ValidationError(
+          `Unsupported file type: ${fileType}`,
+          {
+            service: 'MovieUnknownFilesService',
+            operation: 'assignUnknownFile',
+            metadata: { movieId, fileId, fileType }
+          }
+        );
       }
 
       // Delete from unknown_files table
@@ -157,7 +186,7 @@ export class MovieUnknownFilesService {
     fileType: string,
     movieDir: string,
     movieFileName: string,
-    conn: any
+    conn: DatabaseConnection
   ): Promise<void> {
     const ext = path.extname(originalFilePath);
 
@@ -297,7 +326,7 @@ export class MovieUnknownFilesService {
     originalFilePath: string,
     movieDir: string,
     movieFileName: string,
-    conn: any
+    conn: DatabaseConnection
   ): Promise<void> {
     const ext = path.extname(originalFilePath);
     const newFileName = `${movieFileName}-trailer${ext}`;
@@ -357,7 +386,7 @@ export class MovieUnknownFilesService {
     movieId: number,
     fileId: number,
     originalFilePath: string,
-    conn: any
+    conn: DatabaseConnection
   ): Promise<void> {
     // Handle subtitle assignment
     await conn.execute(
@@ -461,7 +490,16 @@ export class MovieUnknownFilesService {
       );
 
       if (!results || results.length === 0) {
-        throw new Error('Unknown file not found');
+        throw new ResourceNotFoundError(
+          'unknown_file',
+          fileId,
+          'Unknown file not found',
+          {
+            service: 'MovieUnknownFilesService',
+            operation: 'deleteUnknownFile',
+            metadata: { movieId }
+          }
+        );
       }
 
       const filePath = results[0].file_path;
