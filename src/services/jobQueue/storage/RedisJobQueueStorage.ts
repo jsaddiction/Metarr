@@ -23,7 +23,7 @@ import { logger } from '../../../middleware/logging.js';
  * - Distributed support (multiple workers)
  */
 export class RedisJobQueueStorage implements IJobQueueStorage {
-  constructor(_redis: any) {
+  constructor(_redis: unknown) {
     // Redis client (ioredis or node-redis)
     // Intentionally unused - stored for future implementation
   }
@@ -44,7 +44,7 @@ export class RedisJobQueueStorage implements IJobQueueStorage {
     throw new Error('Redis storage not yet implemented. Use SQLiteJobQueueStorage for now.');
   }
 
-  async completeJob(_jobId: number, _result?: any): Promise<void> {
+  async completeJob(_jobId: number, _result?: unknown): Promise<void> {
     logger.error('[RedisJobQueueStorage] Not implemented', {
       service: 'RedisJobQueueStorage',
       operation: 'completeJob',

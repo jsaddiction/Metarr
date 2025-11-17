@@ -102,19 +102,19 @@ export type JobPayloadMap = {
 
   'notify-discord': {
     message: string;
-    metadata?: Record<string, any>;
+    metadata?: Record<string, unknown>;
   };
 
   'notify-pushover': {
     message: string;
     priority?: number;
-    metadata?: Record<string, any>;
+    metadata?: Record<string, unknown>;
   };
 
   'notify-email': {
     subject: string;
     message: string;
-    metadata?: Record<string, any>;
+    metadata?: Record<string, unknown>;
   };
 
   // Scheduled tasks
@@ -148,7 +148,7 @@ export type JobPayloadMap = {
   'webhook-received': {
     source: string;
     eventType: string;
-    data: any;
+    data: unknown; // Webhook data structure varies by source
   };
 };
 
@@ -234,7 +234,7 @@ export interface IJobQueueStorage {
    * @param jobId Job ID
    * @param result Optional result data (for in-memory tracking)
    */
-  completeJob(jobId: number, result?: any): Promise<void>;
+  completeJob(jobId: number, result?: unknown): Promise<void>;
 
   /**
    * Mark job as failed
