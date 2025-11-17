@@ -6,10 +6,12 @@
  */
 
 import { logger } from '../../../middleware/logging.js';
+import { ProviderUnavailableError } from '../../../errors/index.js';
 
 export interface CircuitBreakerConfig {
   threshold: number; // Number of consecutive failures before opening
   resetTimeoutMs: number; // Time to wait before attempting recovery
+  providerName?: string; // Provider name for error context
   onOpen?: () => void; // Callback when circuit opens
   onClose?: () => void; // Callback when circuit closes
   onHalfOpen?: () => void; // Callback when entering half-open state
@@ -30,6 +32,7 @@ export class CircuitBreaker {
 
   private readonly threshold: number;
   private readonly resetTimeoutMs: number;
+  private readonly providerName: string;
   private readonly onOpen: (() => void) | undefined;
   private readonly onClose: (() => void) | undefined;
   private readonly onHalfOpen: (() => void) | undefined;
@@ -37,6 +40,7 @@ export class CircuitBreaker {
   constructor(config: CircuitBreakerConfig) {
     this.threshold = config.threshold;
     this.resetTimeoutMs = config.resetTimeoutMs;
+    this.providerName = config.providerName || 'unknown';
     this.onOpen = config.onOpen;
     this.onClose = config.onClose;
     this.onHalfOpen = config.onHalfOpen;
@@ -51,7 +55,22 @@ export class CircuitBreaker {
       if (this.shouldAttemptReset()) {
         this.transitionToHalfOpen();
       } else {
-        throw new Error('Circuit breaker is open');
+        throw new ProviderUnavailableError(
+          this.providerName,
+          `Circuit breaker is open for ${this.providerName}`,
+          {
+            service: 'CircuitBreaker',
+            operation: 'execute',
+            metadata: {
+              state: this.state,
+              failureCount: this.failureCount,
+              threshold: this.threshold,
+              resetIn: this.lastFailureTime
+                ? Math.max(0, this.resetTimeoutMs - (Date.now() - this.lastFailureTime))
+                : 0,
+            },
+          }
+        );
       }
     }
 
