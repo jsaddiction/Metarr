@@ -70,9 +70,6 @@ export class WebhookProcessingService {
     // Log to activity_log
     await this.logWebhookActivity(db, 'radarr', 'Grab', payload);
 
-    // TODO: Check if movie is currently playing on any player
-    // If playing, emit notification to user
-    // For now, just log
     logger.info('Download queued', {
       movieTitle: payload.movie.title,
       tmdbId: payload.movie.tmdbId,
@@ -228,7 +225,6 @@ export class WebhookProcessingService {
         throw new Error(`No library found for path: ${mappedPath}`);
       }
 
-      // Create background job if job queue available
       if (this.jobQueue) {
         const jobId = await this.jobQueue.addJob({
           type: 'scan-movie',
@@ -326,7 +322,6 @@ export class WebhookProcessingService {
         title: payload.movie.title,
       });
 
-      // TODO: Emit notification event 'movie.file.deleted'
       return undefined; // No job created
     } catch (error) {
       logger.error('Failed to process MovieFileDelete webhook', {
@@ -414,7 +409,6 @@ export class WebhookProcessingService {
       logger.error('Failed to log HealthIssue webhook', { error: getErrorMessage(error) });
     }
 
-    // TODO: Emit notification event for user alerts (Stage 7+)
     logger.info('Health issue logged', {
       type: payload.type,
       severity,
@@ -439,7 +433,6 @@ export class WebhookProcessingService {
     // Log to activity_log
     await this.logWebhookActivity(db, 'radarr', 'HealthRestored', payload);
 
-    // TODO: Emit notification event for user alerts (Stage 7+)
     logger.info('Health restored', { message: payload.message });
 
     return undefined; // No job created
@@ -506,7 +499,6 @@ export class WebhookProcessingService {
       logger.error('Failed to log ManualInteractionRequired webhook', { error: getErrorMessage(error) });
     }
 
-    // TODO: Emit notification event for user alerts (Stage 7+)
     logger.info('Manual interaction logged', {
       movieTitle: payload.movie?.title,
       message: payload.message,
@@ -551,7 +543,6 @@ export class WebhookProcessingService {
     try {
       const db = this.dbManager.getConnection();
 
-      // Get library path for path mapping
       const libraries = await db.query<{ path: string }>(
         'SELECT path FROM libraries WHERE id = ?',
         [libraryId]

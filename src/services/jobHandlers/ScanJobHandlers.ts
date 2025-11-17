@@ -1,4 +1,5 @@
 import { DatabaseConnection } from '../../types/database.js';
+import { DatabaseManager } from '../../database/DatabaseManager.js';
 import { Job, JobQueueService } from '../jobQueueService.js';
 import { websocketBroadcaster } from '../websocketBroadcaster.js';
 import { logger } from '../../middleware/logging.js';
@@ -17,7 +18,7 @@ import { getErrorMessage, getErrorStack } from '../../utils/errorHandling.js';
 export class ScanJobHandlers {
   constructor(
     private db: DatabaseConnection,
-    private dbManager: any, // DatabaseManager - using any to avoid circular dependency
+    private dbManager: DatabaseManager,
     private jobQueue: JobQueueService
   ) {}
 
@@ -49,7 +50,6 @@ export class ScanJobHandlers {
       libraryId: number;
       directoryPath: string;
     };
-    // const { options } = job.payload; // TODO: Use options when implementing skip flags
 
     logger.info('[ScanJobHandlers] Starting directory scan', {
       service: 'ScanJobHandlers',
@@ -113,7 +113,6 @@ export class ScanJobHandlers {
         assetsFound: scanResult.assetsFound,
       });
 
-      // Broadcast to frontend when new movie is added for real-time UI updates
       if (scanResult.isNewMovie && scanResult.movieId) {
         websocketBroadcaster.broadcastMoviesAdded([scanResult.movieId]);
       }
@@ -135,7 +134,6 @@ export class ScanJobHandlers {
             const autoEnrich = Boolean(library[0].auto_enrich);
 
             if (autoEnrich) {
-              // Chain to enrich-metadata job
               const enrichJobId = await this.jobQueue.addJob({
                 type: 'enrich-metadata',
                 priority: job.priority, // Maintain priority from scan
