@@ -193,6 +193,20 @@ export class ImageController {
 
       res.setHeader('Content-Type', result.contentType);
       res.setHeader('Cache-Control', 'public, max-age=31536000'); // Cache for 1 year
+
+      // Handle stream errors to prevent leaks
+      result.stream.on('error', (streamError) => {
+        result.stream.destroy();
+        if (!res.headersSent) {
+          next(streamError);
+        }
+      });
+
+      // Clean up stream when response finishes
+      res.on('close', () => {
+        result.stream.destroy();
+      });
+
       result.stream.pipe(res);
     } catch (error) {
       next(error);

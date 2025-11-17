@@ -210,9 +210,9 @@ export class ActorController {
 
       // Stream the file
       const stream = fs.createReadStream(actor.image_cache_path);
-      stream.pipe(res);
 
       stream.on('error', (error) => {
+        stream.destroy();
         logger.error('Error streaming actor image', {
           actorId,
           error: error.message,
@@ -221,6 +221,13 @@ export class ActorController {
           res.status(500).send('Error serving image');
         }
       });
+
+      // Clean up stream when response finishes
+      res.on('close', () => {
+        stream.destroy();
+      });
+
+      stream.pipe(res);
     } catch (error) {
       logger.error('Failed to serve actor image', {
         actorId: req.params.id,
