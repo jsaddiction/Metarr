@@ -28,6 +28,13 @@ import {
   ErrorCode,
 } from '../../../errors/index.js';
 
+/**
+ * Time conversion factors
+ */
+const TIME_CONVERSION = {
+  MILLISECONDS_TO_SECONDS: 1000,
+} as const;
+
 export class MusicBrainzProvider extends BaseProvider {
   private mbClient: MusicBrainzClient;
 
@@ -256,7 +263,7 @@ export class MusicBrainzProvider extends BaseProvider {
       } else if (entityType === 'track') {
         const track = await this.mbClient.getRecording(mbid);
         fields.title = track.title;
-        if (track.length) fields.duration = Math.floor(track.length / 1000); // Convert to seconds
+        if (track.length) fields.duration = Math.floor(track.length / TIME_CONVERSION.MILLISECONDS_TO_SECONDS); // Convert to seconds
         if (track.artistCredit && track.artistCredit.length > 0) {
           fields.artist = track.artistCredit[0].artist.name;
         }

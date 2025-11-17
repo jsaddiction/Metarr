@@ -84,9 +84,9 @@ export interface MusicBrainzRecording {
 }
 
 export class MusicBrainzClient {
-  private client: AxiosInstance;
-  private circuitBreaker: CircuitBreaker;
-  private retryStrategy: RetryStrategy;
+  private readonly client: AxiosInstance;
+  private readonly circuitBreaker: CircuitBreaker;
+  private readonly retryStrategy: RetryStrategy;
   private baseUrl = 'https://musicbrainz.org/ws/2';
   private appName: string;
   private appVersion: string;

@@ -58,11 +58,11 @@ export interface TheAudioDBAlbum {
 }
 
 export class TheAudioDBClient {
-  private client: AxiosInstance;
-  private circuitBreaker: CircuitBreaker;
-  private retryStrategy: RetryStrategy;
+  private readonly client: AxiosInstance;
+  private readonly circuitBreaker: CircuitBreaker;
+  private readonly retryStrategy: RetryStrategy;
   private baseUrl = 'https://www.theaudiodb.com/api/v1/json';
-  private apiKey: string;
+  private readonly apiKey: string;
 
   constructor(apiKey: string = '1') {
     // Default to test API key
