@@ -6,7 +6,18 @@
 import axios, { AxiosInstance, AxiosError } from 'axios';
 import { logger } from '../../../middleware/logging.js';
 import { RateLimiter } from './RateLimiter.js';
-import { getErrorMessage } from '../../../utils/errorHandling.js';
+import { CircuitBreaker } from '../utils/CircuitBreaker.js';
+import {
+  AuthenticationError,
+  ResourceNotFoundError,
+  RateLimitError,
+  ProviderServerError,
+  NetworkError,
+  ValidationError,
+  ErrorCode,
+  NETWORK_RETRY_POLICY,
+  RetryStrategy,
+} from '../../../errors/index.js';
 import {
   TMDBClientOptions,
   TMDBMovie,
@@ -29,14 +40,13 @@ import {
 export class TMDBClient {
   private client: AxiosInstance;
   private rateLimiter: RateLimiter;
+  private circuitBreaker: CircuitBreaker;
+  private retryStrategy: RetryStrategy;
   private apiKey: string;
   private baseUrl: string;
   private imageBaseUrl: string;
   private language: string;
   private includeAdult: boolean;
-  private circuitBreakerFailures: number = 0;
-  private readonly CIRCUIT_BREAKER_THRESHOLD = 5;
-  private circuitBreakerResetTime: number | null = null;
 
   constructor(options: TMDBClientOptions) {
     this.apiKey = options.apiKey;
@@ -47,6 +57,25 @@ export class TMDBClient {
 
     // Initialize rate limiter (40 requests per 10 seconds)
     this.rateLimiter = new RateLimiter(40, 10);
+
+    // Initialize circuit breaker
+    this.circuitBreaker = new CircuitBreaker({
+      threshold: 5,
+      resetTimeoutMs: 5 * 60 * 1000, // 5 minutes
+      providerName: 'TMDB',
+    });
+
+    // Initialize retry strategy with network-specific policy
+    this.retryStrategy = new RetryStrategy({
+      ...NETWORK_RETRY_POLICY,
+      onRetry: (error, attemptNumber, delayMs) => {
+        logger.info('Retrying TMDB request', {
+          error: error.message,
+          attemptNumber,
+          delayMs,
+        });
+      },
+    });
 
     // Initialize axios client
     this.client = axios.create({
@@ -225,7 +254,7 @@ export class TMDBClient {
       // If the movie doesn't exist or changes endpoint fails, assume we should re-scrape
       logger.warn('TMDB changes check failed, assuming changes exist', {
         tmdbId,
-        error: getErrorMessage(error),
+        error: error instanceof Error ? error.message : String(error),
       });
 
       return {
@@ -241,7 +270,7 @@ export class TMDBClient {
    */
   getImageUrl(path: string, size: TMDBImageSize = 'original'): string {
     if (!path) {
-      throw new Error('Image path is required');
+      throw new ValidationError('Image path is required');
     }
     // Remove leading slash if present
     const cleanPath = path.startsWith('/') ? path.substring(1) : path;
@@ -304,149 +333,119 @@ export class TMDBClient {
    */
   private async request<T>(
     endpoint: string,
-    config: Record<string, unknown> = {},
-    retries: number = 3
+    config: Record<string, unknown> = {}
   ): Promise<T> {
-    // Check circuit breaker
-    if (this.isCircuitBreakerOpen()) {
-      throw new Error('TMDB API circuit breaker is open - too many consecutive failures');
-    }
+    // Execute through circuit breaker
+    return this.circuitBreaker.execute(async () => {
+      // Execute through retry strategy
+      return this.retryStrategy.execute(async () => {
+        // Execute through rate limiter
+        return this.rateLimiter.execute(async () => {
+          try {
+            const response = await this.client.get<T>(endpoint, config);
 
-    return this.rateLimiter.execute(async () => {
-      try {
-        const response = await this.client.get<T>(endpoint, config);
+            logger.debug('TMDB API request successful', {
+              endpoint,
+              status: response.status,
+              rateLimiter: this.getRateLimiterStats(),
+            });
 
-        // Success - reset circuit breaker
-        this.circuitBreakerFailures = 0;
-        this.circuitBreakerResetTime = null;
-
-        logger.debug('TMDB API request successful', {
-          endpoint,
-          status: response.status,
-          rateLimiter: this.getRateLimiterStats(),
+            return response.data as T;
+          } catch (error) {
+            throw this.convertToApplicationError(error, endpoint);
+          }
         });
-
-        return response.data;
-      } catch (error) {
-        return this.handleError(error, endpoint, config, retries);
-      }
+      }, `TMDB ${endpoint}`);
     });
   }
 
   /**
-   * Handle API errors with retry logic
+   * Convert Axios errors to ApplicationError types
    */
-  private async handleError(
-    error: any,
-    endpoint: string,
-    config: any,
-    retriesLeft: number
-  ): Promise<any> {
+  private convertToApplicationError(error: unknown, endpoint: string): Error {
     const axiosError = error as AxiosError<TMDBError>;
+    const context = {
+      service: 'TMDBClient',
+      operation: 'request',
+      metadata: { endpoint },
+    };
 
-    // Log error details
-    logger.error('TMDB API request failed', {
-      endpoint,
-      status: axiosError.response?.status,
-      message: axiosError.response?.data?.status_message || axiosError.message,
-      retriesLeft,
-    });
-
-    // Handle specific HTTP status codes
+    // Handle HTTP response errors
     if (axiosError.response) {
       const status = axiosError.response.status;
+      const message = axiosError.response.data?.status_message || axiosError.message;
 
       switch (status) {
         case 401:
-          // Invalid API key - don't retry
-          this.incrementCircuitBreaker();
-          throw new Error('TMDB API authentication failed - check API key');
+          // Invalid API key - not retryable
+          return new AuthenticationError(
+            `TMDB authentication failed: ${message}`,
+            { ...context, metadata: { ...context.metadata, status } },
+            axiosError
+          );
 
         case 404:
-          // Resource not found - don't retry
-          throw new Error(`TMDB resource not found: ${endpoint}`);
+          // Resource not found - not retryable
+          return new ResourceNotFoundError(
+            'TMDB resource',
+            endpoint,
+            `Resource not found: ${message}`,
+            { ...context, metadata: { ...context.metadata, status } }
+          );
 
         case 429:
-          // Rate limit exceeded - wait and retry
-          if (retriesLeft > 0) {
-            logger.warn('TMDB rate limit exceeded, waiting before retry');
-            await this.delay(5000); // Wait 5 seconds
-            return this.request(endpoint, config, retriesLeft - 1);
-          }
-          throw new Error('TMDB rate limit exceeded');
+          // Rate limit - retryable with delay
+          const retryAfter = axiosError.response.headers?.['retry-after'];
+          return new RateLimitError(
+            'TMDB',
+            parseInt(retryAfter as string) || 60,
+            `Rate limit exceeded: ${message}`,
+            { ...context, metadata: { ...context.metadata, status, retryAfter } }
+          );
 
         case 500:
         case 502:
         case 503:
         case 504:
-          // Server error - retry with exponential backoff
-          if (retriesLeft > 0) {
-            const backoffMs = Math.pow(2, 3 - retriesLeft) * 1000; // 1s, 2s, 4s
-            logger.warn('TMDB server error, retrying with backoff', { backoffMs });
-            await this.delay(backoffMs);
-            return this.request(endpoint, config, retriesLeft - 1);
-          }
-          this.incrementCircuitBreaker();
-          throw new Error('TMDB server error');
+          // Server errors - retryable
+          return new ProviderServerError(
+            'TMDB',
+            status,
+            `Server error: ${message}`,
+            { ...context, metadata: { ...context.metadata, status } },
+            axiosError
+          );
 
         default:
-          // Unknown error
-          this.incrementCircuitBreaker();
-          throw new Error(`TMDB API error: ${axiosError.response.data?.status_message}`);
+          // Other HTTP errors
+          return new ProviderServerError(
+            'TMDB',
+            status,
+            `API error (${status}): ${message}`,
+            { ...context, metadata: { ...context.metadata, status } },
+            axiosError
+          );
       }
     }
 
-    // Network error or timeout - retry
-    if (retriesLeft > 0) {
-      const backoffMs = Math.pow(2, 3 - retriesLeft) * 1000;
-      logger.warn('TMDB network error, retrying', { backoffMs });
-      await this.delay(backoffMs);
-      return this.request(endpoint, config, retriesLeft - 1);
+    // Network errors (timeout, connection refused, etc.) - retryable
+    if (axiosError.code === 'ECONNABORTED' || axiosError.code === 'ETIMEDOUT') {
+      return new NetworkError(
+        `TMDB request timeout: ${endpoint}`,
+        ErrorCode.NETWORK_TIMEOUT,
+        endpoint,
+        { ...context, metadata: { ...context.metadata, code: axiosError.code } },
+        axiosError
+      );
     }
 
-    this.incrementCircuitBreaker();
-    throw new Error(`TMDB network error: ${getErrorMessage(error)}`);
-  }
-
-  /**
-   * Circuit breaker: track consecutive failures
-   */
-  private incrementCircuitBreaker(): void {
-    this.circuitBreakerFailures++;
-
-    if (this.circuitBreakerFailures >= this.CIRCUIT_BREAKER_THRESHOLD) {
-      // Open circuit breaker for 5 minutes
-      this.circuitBreakerResetTime = Date.now() + 5 * 60 * 1000;
-      logger.error('TMDB circuit breaker opened due to consecutive failures', {
-        failures: this.circuitBreakerFailures,
-        resetTime: new Date(this.circuitBreakerResetTime),
-      });
-    }
-  }
-
-  /**
-   * Check if circuit breaker is open
-   */
-  private isCircuitBreakerOpen(): boolean {
-    if (this.circuitBreakerResetTime && Date.now() < this.circuitBreakerResetTime) {
-      return true;
-    }
-
-    // Reset circuit breaker after timeout
-    if (this.circuitBreakerResetTime && Date.now() >= this.circuitBreakerResetTime) {
-      logger.info('TMDB circuit breaker reset');
-      this.circuitBreakerFailures = 0;
-      this.circuitBreakerResetTime = null;
-    }
-
-    return false;
-  }
-
-  /**
-   * Delay helper
-   */
-  private delay(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new NetworkError(
+      `TMDB network error: ${axiosError.message}`,
+      ErrorCode.NETWORK_CONNECTION_FAILED,
+      endpoint,
+      { ...context, metadata: { ...context.metadata, code: axiosError.code } },
+      axiosError
+    );
   }
 
   /**

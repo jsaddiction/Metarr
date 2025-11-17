@@ -5,7 +5,18 @@
 
 import axios, { AxiosInstance, AxiosError } from 'axios';
 import { logger } from '../../../middleware/logging.js';
-import { getErrorMessage } from '../../../utils/errorHandling.js';
+import { CircuitBreaker } from '../utils/CircuitBreaker.js';
+import {
+  AuthenticationError,
+  ResourceNotFoundError,
+  RateLimitError,
+  ProviderServerError,
+  NetworkError,
+  ValidationError,
+  ErrorCode,
+  NETWORK_RETRY_POLICY,
+  RetryStrategy,
+} from '../../../errors/index.js';
 import {
   TVDBClientOptions,
   TVDBLoginResponse,
@@ -22,6 +33,8 @@ import {
 
 export class TVDBClient {
   private client: AxiosInstance;
+  private circuitBreaker: CircuitBreaker;
+  private retryStrategy: RetryStrategy;
   private apiKey: string;
   private baseUrl: string;
   private imageBaseUrl: string;
@@ -34,6 +47,25 @@ export class TVDBClient {
     this.baseUrl = options.baseUrl || 'https://api4.thetvdb.com/v4';
     this.imageBaseUrl = options.imageBaseUrl || 'https://artworks.thetvdb.com';
     this.tokenRefreshBuffer = options.tokenRefreshBuffer || 2; // Refresh 2 hours before expiry
+
+    // Initialize circuit breaker
+    this.circuitBreaker = new CircuitBreaker({
+      threshold: 5,
+      resetTimeoutMs: 5 * 60 * 1000, // 5 minutes
+      providerName: 'TVDB',
+    });
+
+    // Initialize retry strategy with network-specific policy
+    this.retryStrategy = new RetryStrategy({
+      ...NETWORK_RETRY_POLICY,
+      onRetry: (error, attemptNumber, delayMs) => {
+        logger.info('Retrying TVDB request', {
+          error: error.message,
+          attemptNumber,
+          delayMs,
+        });
+      },
+    });
 
     // Initialize axios client
     this.client = axios.create({
@@ -66,8 +98,18 @@ export class TVDBClient {
         expiresAt: new Date(this.tokenExpiry),
       });
     } catch (error) {
-      logger.error('TVDB login failed', { error: getErrorMessage(error) });
-      throw new Error(`TVDB authentication failed: ${getErrorMessage(error)}`);
+      const axiosError = error as AxiosError<TVDBError>;
+      const message = axiosError.response?.data?.message || axiosError.message;
+
+      throw new AuthenticationError(
+        `TVDB authentication failed: ${message}`,
+        {
+          service: 'TVDBClient',
+          operation: 'login',
+          metadata: { status: axiosError.response?.status },
+        },
+        axiosError instanceof Error ? axiosError : undefined
+      );
     }
   }
 
@@ -89,108 +131,125 @@ export class TVDBClient {
   }
 
   /**
-   * Make authenticated request
+   * Make authenticated request with retry and circuit breaker
    */
   private async request<T>(
     method: 'get' | 'post',
     endpoint: string,
-    data?: unknown,
-    retries = 3
+    data?: unknown
   ): Promise<T> {
-    await this.ensureValidToken();
+    // Execute through circuit breaker
+    return this.circuitBreaker.execute(async () => {
+      // Execute through retry strategy
+      return this.retryStrategy.execute(async () => {
+        await this.ensureValidToken();
 
-    try {
-      const response = await this.client.request<TVDBResponse<T>>({
-        method,
-        url: endpoint,
-        headers: {
-          Authorization: `Bearer ${this.token}`,
-        },
-        data,
-      });
+        try {
+          const response = await this.client.request<TVDBResponse<T>>({
+            method,
+            url: endpoint,
+            headers: {
+              Authorization: `Bearer ${this.token}`,
+            },
+            data,
+          });
 
-      return response.data.data;
-    } catch (error) {
-      return this.handleError(error, method, endpoint, data, retries);
-    }
+          return response.data.data as T;
+        } catch (error) {
+          throw this.convertToApplicationError(error, endpoint);
+        }
+      }, `TVDB ${method.toUpperCase()} ${endpoint}`);
+    });
   }
 
   /**
-   * Handle API errors with retry logic
+   * Convert Axios errors to ApplicationError types
    */
-  private async handleError(
-    error: any,
-    method: 'get' | 'post',
-    endpoint: string,
-    data: any,
-    retriesLeft: number
-  ): Promise<any> {
+  private convertToApplicationError(error: unknown, endpoint: string): Error {
     const axiosError = error as AxiosError<TVDBError>;
+    const context = {
+      service: 'TVDBClient',
+      operation: 'request',
+      metadata: { endpoint },
+    };
 
-    logger.error('TVDB API request failed', {
-      endpoint,
-      status: axiosError.response?.status,
-      message: axiosError.response?.data?.message || axiosError.message,
-      retriesLeft,
-    });
-
+    // Handle HTTP response errors
     if (axiosError.response) {
       const status = axiosError.response.status;
+      const message = axiosError.response.data?.message || axiosError.message;
 
       switch (status) {
         case 401:
-          // Token expired, try to re-login once
-          if (retriesLeft > 0) {
-            logger.warn('TVDB token expired, re-authenticating');
-            this.token = null;
-            this.tokenExpiry = null;
-            await this.ensureValidToken();
-            return this.request(method as 'get' | 'post', endpoint, data, retriesLeft - 1);
-          }
-          throw new Error('TVDB authentication failed');
+          // Token expired - invalidate and let retry logic handle re-auth
+          this.token = null;
+          this.tokenExpiry = null;
+          return new AuthenticationError(
+            `TVDB authentication failed: ${message}`,
+            { ...context, metadata: { ...context.metadata, status } },
+            axiosError
+          );
 
         case 404:
-          throw new Error(`TVDB resource not found: ${endpoint}`);
+          // Resource not found - not retryable
+          return new ResourceNotFoundError(
+            'TVDB resource',
+            endpoint,
+            `Resource not found: ${message}`,
+            { ...context, metadata: { ...context.metadata, status } }
+          );
 
         case 429:
-          // Rate limit exceeded
-          if (retriesLeft > 0) {
-            const delay = 5000; // Wait 5 seconds
-            logger.warn('TVDB rate limit exceeded, waiting', { delay });
-            await this.delay(delay);
-            return this.request(method as 'get' | 'post', endpoint, data, retriesLeft - 1);
-          }
-          throw new Error('TVDB rate limit exceeded');
+          // Rate limit - retryable with delay
+          return new RateLimitError(
+            'TVDB',
+            60, // Default 60 seconds
+            `Rate limit exceeded: ${message}`,
+            { ...context, metadata: { ...context.metadata, status } }
+          );
 
         case 500:
         case 502:
         case 503:
         case 504:
-          // Server error - retry with backoff
-          if (retriesLeft > 0) {
-            const backoffMs = Math.pow(2, 3 - retriesLeft) * 1000;
-            logger.warn('TVDB server error, retrying', { backoffMs });
-            await this.delay(backoffMs);
-            return this.request(method as 'get' | 'post', endpoint, data, retriesLeft - 1);
-          }
-          throw new Error('TVDB server error');
+          // Server errors - retryable
+          return new ProviderServerError(
+            'TVDB',
+            status,
+            `Server error: ${message}`,
+            { ...context, metadata: { ...context.metadata, status } },
+            axiosError
+          );
 
         default:
-          throw new Error(
-            `TVDB API error: ${axiosError.response.data?.message || 'Unknown error'}`
+          // Other HTTP errors
+          return new ProviderServerError(
+            'TVDB',
+            status,
+            `API error (${status}): ${message}`,
+            { ...context, metadata: { ...context.metadata, status } },
+            axiosError
           );
       }
     }
 
-    // Network error or timeout - retry
-    if (retriesLeft > 0) {
-      const backoffMs = Math.pow(2, 3 - retriesLeft) * 1000;
-      logger.warn('TVDB network error, retrying', { backoffMs });
-      await this.delay(backoffMs);
-      return this.request(method as 'get' | 'post', endpoint, data, retriesLeft - 1);
+    // Network errors (timeout, connection refused, etc.) - retryable
+    if (axiosError.code === 'ECONNABORTED' || axiosError.code === 'ETIMEDOUT') {
+      return new NetworkError(
+        `TVDB request timeout: ${endpoint}`,
+        ErrorCode.NETWORK_TIMEOUT,
+        endpoint,
+        { ...context, metadata: { ...context.metadata, code: axiosError.code } },
+        axiosError
+      );
     }
 
-    throw new Error(`TVDB network error: ${getErrorMessage(error)}`);
+    return new NetworkError(
+      `TVDB network error: ${axiosError.message}`,
+      ErrorCode.NETWORK_CONNECTION_FAILED,
+      endpoint,
+      { ...context, metadata: { ...context.metadata, code: axiosError.code } },
+      axiosError
+    );
   }
 
   // ============================================
@@ -273,7 +332,10 @@ export class TVDBClient {
    */
   getImageUrl(path: string): string {
     if (!path) {
-      throw new Error('Image path is required');
+      throw new ValidationError(
+        'Image path is required',
+        { service: 'TVDBClient', operation: 'getImageUrl', metadata: { path } }
+      );
     }
     // TVDB paths can be full URLs or paths
     if (path.startsWith('http')) {
@@ -282,13 +344,6 @@ export class TVDBClient {
     // Remove leading slash if present
     const cleanPath = path.startsWith('/') ? path.substring(1) : path;
     return `${this.imageBaseUrl}/${cleanPath}`;
-  }
-
-  /**
-   * Delay helper
-   */
-  private delay(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   /**

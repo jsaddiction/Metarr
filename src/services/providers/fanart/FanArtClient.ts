@@ -5,6 +5,16 @@
 
 import axios, { AxiosInstance, AxiosError } from 'axios';
 import { logger } from '../../../middleware/logging.js';
+import { CircuitBreaker } from '../utils/CircuitBreaker.js';
+import {
+  AuthenticationError,
+  RateLimitError,
+  ProviderServerError,
+  NetworkError,
+  ErrorCode,
+  NETWORK_RETRY_POLICY,
+  RetryStrategy,
+} from '../../../errors/index.js';
 import {
   FanArtClientOptions,
   FanArtMovieImages,
@@ -14,6 +24,8 @@ import {
 
 export class FanArtClient {
   private client: AxiosInstance;
+  private circuitBreaker: CircuitBreaker;
+  private retryStrategy: RetryStrategy;
   private apiKey: string;
   private personalApiKey?: string;
   private baseUrl: string;
@@ -29,6 +41,25 @@ export class FanArtClient {
 
     // Personal API key allows 2 req/sec, free key allows 1 req/sec
     this.requestDelay = this.personalApiKey ? 500 : 1000;
+
+    // Initialize circuit breaker
+    this.circuitBreaker = new CircuitBreaker({
+      threshold: 5,
+      resetTimeoutMs: 5 * 60 * 1000, // 5 minutes
+      providerName: 'FanArt.tv',
+    });
+
+    // Initialize retry strategy
+    this.retryStrategy = new RetryStrategy({
+      ...NETWORK_RETRY_POLICY,
+      onRetry: (error, attemptNumber, delayMs) => {
+        logger.info('Retrying FanArt.tv request', {
+          error: error.message,
+          attemptNumber,
+          delayMs,
+        });
+      },
+    });
 
     // Initialize axios client
     this.client = axios.create({
@@ -58,94 +89,120 @@ export class FanArtClient {
   }
 
   /**
-   * Make API request with rate limiting
+   * Make API request with rate limiting, retry and circuit breaker
    */
-  private async request<T>(endpoint: string, retries = 3): Promise<T> {
-    await this.enforceRateLimit();
+  private async request<T>(endpoint: string): Promise<T | null> {
+    // Execute through circuit breaker
+    return this.circuitBreaker.execute(async () => {
+      // Execute through retry strategy
+      return this.retryStrategy.execute(async () => {
+        await this.enforceRateLimit();
 
-    try {
-      const url = `${endpoint}?api_key=${this.apiKey}${
-        this.personalApiKey ? `&client_key=${this.personalApiKey}` : ''
-      }`;
+        const url = `${endpoint}?api_key=${this.apiKey}${
+          this.personalApiKey ? `&client_key=${this.personalApiKey}` : ''
+        }`;
 
-      const response = await this.client.get<T>(url);
+        try {
+          const response = await this.client.get<T>(url);
 
-      logger.debug('FanArt.tv API request successful', {
-        endpoint,
-        status: response.status,
-        hasPersonalKey: !!this.personalApiKey,
-      });
+          logger.debug('FanArt.tv API request successful', {
+            endpoint,
+            status: response.status,
+            hasPersonalKey: !!this.personalApiKey,
+          });
 
-      return response.data;
-    } catch (error) {
-      return this.handleError(error, endpoint, retries);
-    }
+          return response.data;
+        } catch (error) {
+          throw this.convertToApplicationError(error, endpoint);
+        }
+      }, `FanArt.tv ${endpoint}`);
+    });
   }
 
   /**
-   * Handle API errors with retry logic
+   * Convert Axios errors to ApplicationError types
+   * Note: For 404 errors, returns null instead of throwing (FanArt.tv often doesn't have artwork)
    */
-  private async handleError(error: unknown, endpoint: string, retriesLeft: number): Promise<any> {
+  private convertToApplicationError(error: unknown, endpoint: string): Error | null {
     const axiosError = error as AxiosError<FanArtError>;
+    const context = {
+      service: 'FanArtClient',
+      operation: 'request',
+      metadata: { endpoint },
+    };
 
-    logger.error('FanArt.tv API request failed', {
-      endpoint,
-      status: axiosError.response?.status,
-      message: axiosError.response?.data?.error?.message || axiosError.message,
-      retriesLeft,
-    });
-
+    // Handle HTTP response errors
     if (axiosError.response) {
       const status = axiosError.response.status;
+      const message = axiosError.response.data?.error?.message || axiosError.message;
 
       switch (status) {
         case 401:
-          throw new Error('FanArt.tv API key invalid');
+          // Invalid API key - not retryable
+          return new AuthenticationError(
+            `FanArt.tv authentication failed: ${message}`,
+            { ...context, metadata: { ...context.metadata, status } },
+            axiosError
+          );
 
         case 404:
           // Resource not found - this is common for FanArt.tv (not all content has fanart)
+          // Return null instead of throwing
           logger.debug('FanArt.tv resource not found', { endpoint });
-          return null; // Return null instead of throwing
+          return null;
 
         case 429:
-          // Rate limit exceeded
-          if (retriesLeft > 0) {
-            const delay = 5000; // Wait 5 seconds
-            logger.warn('FanArt.tv rate limit exceeded, waiting', { delay });
-            await this.delay(delay);
-            return this.request(endpoint, retriesLeft - 1);
-          }
-          throw new Error('FanArt.tv rate limit exceeded');
+          // Rate limit - retryable with delay
+          return new RateLimitError(
+            'FanArt.tv',
+            60, // Default 60 seconds
+            `Rate limit exceeded: ${message}`,
+            { ...context, metadata: { ...context.metadata, status } }
+          );
 
         case 500:
         case 502:
         case 503:
         case 504:
-          // Server error - retry with backoff
-          if (retriesLeft > 0) {
-            const backoffMs = Math.pow(2, 3 - retriesLeft) * 1000;
-            logger.warn('FanArt.tv server error, retrying', { backoffMs });
-            await this.delay(backoffMs);
-            return this.request(endpoint, retriesLeft - 1);
-          }
-          throw new Error('FanArt.tv server error');
+          // Server errors - retryable
+          return new ProviderServerError(
+            'FanArt.tv',
+            status,
+            `Server error: ${message}`,
+            { ...context, metadata: { ...context.metadata, status } },
+            axiosError
+          );
 
         default:
-          throw new Error(
-            `FanArt.tv API error: ${axiosError.response.data?.error?.message || 'Unknown error'}`
+          // Other HTTP errors
+          return new ProviderServerError(
+            'FanArt.tv',
+            status,
+            `API error (${status}): ${message}`,
+            { ...context, metadata: { ...context.metadata, status } },
+            axiosError
           );
       }
     }
 
-    // Network error or timeout - retry
-    if (retriesLeft > 0) {
-      const backoffMs = Math.pow(2, 3 - retriesLeft) * 1000;
-      logger.warn('FanArt.tv network error, retrying', { backoffMs });
-      await this.delay(backoffMs);
-      return this.request(endpoint, retriesLeft - 1);
+    // Network errors (timeout, connection refused, etc.) - retryable
+    if (axiosError.code === 'ECONNABORTED' || axiosError.code === 'ETIMEDOUT') {
+      return new NetworkError(
+        `FanArt.tv request timeout: ${endpoint}`,
+        ErrorCode.NETWORK_TIMEOUT,
+        endpoint,
+        { ...context, metadata: { ...context.metadata, code: axiosError.code } },
+        axiosError
+      );
     }
 
-    throw new Error(`FanArt.tv network error: ${(error as { message?: string }).message}`);
+    return new NetworkError(
+      `FanArt.tv network error: ${axiosError.message}`,
+      ErrorCode.NETWORK_CONNECTION_FAILED,
+      endpoint,
+      { ...context, metadata: { ...context.metadata, code: axiosError.code } },
+      axiosError
+    );
   }
 
   // ============================================
@@ -181,7 +238,7 @@ export class FanArtClient {
   }
 
   /**
-   * Delay helper
+   * Delay helper for rate limiting
    */
   private delay(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));

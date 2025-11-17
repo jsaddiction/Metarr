@@ -23,7 +23,10 @@
 import axios, { AxiosInstance } from 'axios';
 import * as cheerio from 'cheerio';
 import { logger } from '../../../middleware/logging.js';
-import { getErrorMessage, getStatusCode } from '../../../utils/errorHandling.js';
+import { getErrorMessage } from '../../../utils/errorHandling.js';
+import { CircuitBreaker } from '../utils/CircuitBreaker.js';
+import { RetryStrategy, NETWORK_RETRY_POLICY } from '../../../errors/index.js';
+import { NetworkError, ProviderError, ErrorCode } from '../../../errors/index.js';
 
 export interface IMDbSearchResult {
   imdbId: string;
@@ -64,9 +67,28 @@ export interface IMDbSeriesDetails extends Omit<IMDbMovieDetails, 'runtime'> {
 
 export class IMDbClient {
   private client: AxiosInstance;
+  private circuitBreaker: CircuitBreaker;
+  private retryStrategy: RetryStrategy;
   private baseUrl = 'https://www.imdb.com';
 
   constructor() {
+    this.circuitBreaker = new CircuitBreaker({
+      threshold: 5,
+      resetTimeoutMs: 5 * 60 * 1000,
+      providerName: 'IMDb',
+    });
+
+    this.retryStrategy = new RetryStrategy({
+      ...NETWORK_RETRY_POLICY,
+      onRetry: (error, attemptNumber, delayMs) => {
+        logger.info('Retrying IMDb request', {
+          error: error.message,
+          attemptNumber,
+          delayMs,
+        });
+      },
+    });
+
     this.client = axios.create({
       baseURL: this.baseUrl,
       timeout: 30000,
@@ -91,10 +113,63 @@ export class IMDbClient {
   }
 
   /**
+   * Convert Axios errors to ApplicationError types
+   */
+  private convertToApplicationError(
+    error: unknown,
+    operation: string,
+    metadata: Record<string, unknown>
+  ): NetworkError | ProviderError {
+    if (axios.isAxiosError(error)) {
+      const statusCode = error.response?.status;
+
+      if (statusCode === 429) {
+        return new ProviderError(
+          `Rate limit exceeded`,
+          'IMDb',
+          ErrorCode.PROVIDER_RATE_LIMIT,
+          429,
+          true,
+          { service: 'IMDbClient', operation, metadata }
+        );
+      }
+
+      if (statusCode && statusCode >= 500) {
+        return new ProviderError(
+          `Server error: ${statusCode}`,
+          'IMDb',
+          ErrorCode.PROVIDER_SERVER_ERROR,
+          statusCode,
+          true,
+          { service: 'IMDbClient', operation, metadata }
+        );
+      }
+
+      return new NetworkError(
+        `Request failed: ${error.message}`,
+        ErrorCode.NETWORK_CONNECTION_FAILED,
+        undefined,
+        { service: 'IMDbClient', operation, metadata },
+        error
+      );
+    }
+
+    return new NetworkError(
+      `Unexpected error: ${getErrorMessage(error)}`,
+      ErrorCode.NETWORK_CONNECTION_FAILED,
+      undefined,
+      { service: 'IMDbClient', operation, metadata },
+      error instanceof Error ? error : undefined
+    );
+  }
+
+  /**
    * Search for movies/series by title
    */
   async search(query: string, type?: 'movie' | 'tv'): Promise<IMDbSearchResult[]> {
-    try {
+    return this.circuitBreaker.execute(async () => {
+      return this.retryStrategy.execute(async () => {
+        try {
       const params = new URLSearchParams({
         q: query,
         s: 'tt', // Search titles only
@@ -149,24 +224,23 @@ export class IMDbClient {
         });
       });
 
-      logger.debug(`IMDb search for "${query}" returned ${results.length} results`);
-      return results;
-    } catch (error) {
-      logger.error('IMDb search failed', {
-        query,
-        error: getErrorMessage(error),
-        status: getStatusCode(error),
-      });
-      throw new Error(`IMDb search failed: ${getErrorMessage(error)}`);
-    }
+          logger.debug(`IMDb search for "${query}" returned ${results.length} results`);
+          return results;
+        } catch (error) {
+          throw this.convertToApplicationError(error, 'search', { query, type });
+        }
+      }, 'IMDb search');
+    });
   }
 
   /**
    * Get detailed movie information
    */
   async getMovieDetails(imdbId: string): Promise<IMDbMovieDetails> {
-    try {
-      const response = await this.client.get(`/title/${imdbId}/`);
+    return this.circuitBreaker.execute(async () => {
+      return this.retryStrategy.execute(async () => {
+        try {
+          const response = await this.client.get(`/title/${imdbId}/`);
       const $ = cheerio.load(response.data);
 
       // Extract title
@@ -334,16 +408,13 @@ export class IMDbClient {
         ...(studios.length > 0 && { studios }),
       };
 
-      logger.debug(`Scraped IMDb details for ${imdbId}`, { title });
-      return details;
-    } catch (error) {
-      logger.error('IMDb details scraping failed', {
-        imdbId,
-        error: getErrorMessage(error),
-        status: getStatusCode(error),
-      });
-      throw new Error(`Failed to scrape IMDb details for ${imdbId}: ${getErrorMessage(error)}`);
-    }
+          logger.debug(`Scraped IMDb details for ${imdbId}`, { title });
+          return details;
+        } catch (error) {
+          throw this.convertToApplicationError(error, 'getMovieDetails', { imdbId });
+        }
+      }, 'IMDb movie details scraping');
+    });
   }
 
   /**
