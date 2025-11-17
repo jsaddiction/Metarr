@@ -77,8 +77,6 @@ export {
 // Retry strategies
 export {
   RetryStrategy,
-  RetryPolicy,
-  RetryResult,
   DEFAULT_RETRY_POLICY,
   AGGRESSIVE_RETRY_POLICY,
   CONSERVATIVE_RETRY_POLICY,
@@ -89,6 +87,12 @@ export {
   withNetworkRetry,
   withDatabaseRetry,
   extractRetryAfter,
+} from './RetryStrategy.js';
+
+// Retry strategy types (type-only exports)
+export type {
+  RetryPolicy,
+  RetryResult,
 } from './RetryStrategy.js';
 
 // ============================================
