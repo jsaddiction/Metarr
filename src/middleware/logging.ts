@@ -3,51 +3,82 @@ import morgan from 'morgan';
 import winston from 'winston';
 import { ConfigManager } from '../config/ConfigManager.js';
 
-const config = ConfigManager.getInstance().getConfig();
-
-// Custom winston logger
+// Create logger with default config first to avoid circular dependency
+// Will be configured properly during initializeLogger()
 export const logger = winston.createLogger({
-  level: config.logging.level,
+  level: 'info',
   format: winston.format.combine(
     winston.format.timestamp(),
     winston.format.errors({ stack: true }),
     winston.format.json()
   ),
-  transports: [],
-});
-
-// Add file transport if enabled
-if (config.logging.file.enabled) {
-  logger.add(
-    new winston.transports.File({
-      filename: `${config.logging.file.path}/error.log`,
-      level: 'error',
-      maxsize: parseInt(config.logging.file.maxSize) * 1024 * 1024,
-      maxFiles: config.logging.file.maxFiles,
-      options: { flags: 'a' }, // Append mode without exclusive lock (Windows compatibility)
-    })
-  );
-
-  logger.add(
-    new winston.transports.File({
-      filename: `${config.logging.file.path}/app.log`,
-      maxsize: parseInt(config.logging.file.maxSize) * 1024 * 1024,
-      maxFiles: config.logging.file.maxFiles,
-      options: { flags: 'a' }, // Append mode without exclusive lock (Windows compatibility)
-    })
-  );
-}
-
-// Add console transport if enabled
-if (config.logging.console.enabled) {
-  logger.add(
+  transports: [
+    // Default console transport for early initialization logs
     new winston.transports.Console({
       format: winston.format.combine(
-        winston.format.colorize({ all: config.logging.console.colorize }),
+        winston.format.colorize({ all: true }),
         winston.format.simple()
       ),
-    })
-  );
+    }),
+  ],
+});
+
+// Flag to track if logger has been initialized
+let isInitialized = false;
+
+/**
+ * Initialize logger with configuration from ConfigManager
+ * Must be called after ConfigManager is fully initialized
+ */
+export function initializeLogger(): void {
+  if (isInitialized) {
+    return;
+  }
+
+  const config = ConfigManager.getInstance().getConfig();
+
+  // Update log level
+  logger.level = config.logging.level;
+
+  // Clear default transports
+  logger.clear();
+
+  // Add file transport if enabled
+  if (config.logging.file.enabled) {
+    logger.add(
+      new winston.transports.File({
+        filename: `${config.logging.file.path}/error.log`,
+        level: 'error',
+        maxsize: parseInt(config.logging.file.maxSize) * 1024 * 1024,
+        maxFiles: config.logging.file.maxFiles,
+        options: { flags: 'a' }, // Append mode without exclusive lock (Windows compatibility)
+      })
+    );
+
+    logger.add(
+      new winston.transports.File({
+        filename: `${config.logging.file.path}/app.log`,
+        maxsize: parseInt(config.logging.file.maxSize) * 1024 * 1024,
+        maxFiles: config.logging.file.maxFiles,
+        options: { flags: 'a' }, // Append mode without exclusive lock (Windows compatibility)
+      })
+    );
+  }
+
+  // Add console transport if enabled
+  if (config.logging.console.enabled) {
+    logger.add(
+      new winston.transports.Console({
+        format: winston.format.combine(
+          winston.format.colorize({ all: config.logging.console.colorize }),
+          winston.format.simple()
+        ),
+      })
+    );
+  }
+
+  isInitialized = true;
+  logger.info('Logger initialized with configuration');
 }
 
 // Morgan middleware for HTTP request logging

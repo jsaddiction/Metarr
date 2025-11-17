@@ -22,7 +22,7 @@ import { ProviderUpdaterScheduler } from './services/schedulers/ProviderUpdaterS
 import { HealthCheckService } from './services/HealthCheckService.js';
 import { ProviderRegistry } from './services/providers/ProviderRegistry.js';
 import { securityMiddleware, rateLimitByIp } from './middleware/security.js';
-import { requestLoggingMiddleware, errorLoggingMiddleware, logger } from './middleware/logging.js';
+import { requestLoggingMiddleware, errorLoggingMiddleware, logger, initializeLogger } from './middleware/logging.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { WEBSOCKET, RATE_LIMITS, DATABASE, JOB_QUEUE } from './config/constants.js';
 import { InvalidStateError } from './errors/index.js';
@@ -189,6 +189,9 @@ export class App {
 
   public async start(): Promise<void> {
     try {
+      // Initialize logger with proper configuration (must be first to avoid circular dependency)
+      initializeLogger();
+
       // Validate configuration
       ConfigManager.getInstance().validate();
 
