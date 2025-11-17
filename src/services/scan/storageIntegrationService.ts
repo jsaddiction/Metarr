@@ -18,6 +18,7 @@ import {
   type CacheImageFileRecord,
   type CacheVideoFileRecord,
 } from '../files/unifiedFileService.js';
+import { cacheAudioFile } from '../files/videoTextAudioCacheFunctions.js';
 import { logger } from '../../middleware/logging.js';
 import { getErrorMessage } from '../../utils/errorHandling.js';
 
@@ -86,11 +87,10 @@ export async function storeClassificationResults(
   // Store subtitles
   await storeSubtitles(db, classificationResult.text.subtitles, movieId, entityType, stored.subtitles);
 
-  // TODO: Re-enable audio storage when insertCacheAudioFile is implemented
   // Store audio (theme songs, etc.)
-  // if (classificationResult.audio?.themes) {
-  //   await storeAudioFiles(db, classificationResult.audio.themes, movieId, entityType, 'theme', stored.audio);
-  // }
+  if (classificationResult.audio?.themes) {
+    await storeAudioFiles(db, classificationResult.audio.themes, movieId, entityType, 'theme', stored.audio);
+  }
 
   logger.info('Classification results stored successfully', {
     entityType,
@@ -283,8 +283,46 @@ async function storeSubtitles(
   }
 }
 
-// TODO: Re-implement storeAudioFiles when insertCacheAudioFile is available
-// async function storeAudioFiles(...) { ... }
+/**
+ * Store audio files (theme songs) in cache
+ */
+async function storeAudioFiles(
+  db: DatabaseConnection,
+  audioFiles: ClassifiedFile[],
+  entityId: number,
+  entityType: 'movie' | 'episode',
+  audioType: string,
+  outputArray: number[]
+): Promise<void> {
+  for (const audio of audioFiles) {
+    try {
+      // Use cacheAudioFile which handles copying and database insertion
+      const cacheId = await cacheAudioFile(
+        db,
+        null, // libraryFileId is null for discovered files
+        audio.facts.filesystem.absolutePath,
+        entityType,
+        entityId,
+        audioType,
+        'local'
+      );
+
+      outputArray.push(cacheId);
+
+      logger.debug('Stored audio in cache', {
+        audioType,
+        originalPath: audio.facts.filesystem.absolutePath,
+        cacheId,
+      });
+    } catch (error) {
+      logger.error('Failed to store audio', {
+        audioType,
+        filePath: audio.facts.filesystem.absolutePath,
+        error: getErrorMessage(error),
+      });
+    }
+  }
+}
 
 /**
  * Update movie asset references (poster_id, fanart_id, etc.)
