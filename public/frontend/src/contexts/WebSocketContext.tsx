@@ -83,8 +83,16 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({ children }
       setConnectionState(globalConnectionState);
     }
 
-    // No cleanup - WebSocket persists for app lifetime
-    // Only disconnect when user closes tab/navigates away (handled by browser)
+    // Cleanup function to prevent memory leaks
+    return () => {
+      // Clear any pending enrichment batch timers
+      if (enrichmentTimerRef.current) {
+        clearTimeout(enrichmentTimerRef.current);
+        enrichmentTimerRef.current = null;
+      }
+      // Note: WebSocket persists for app lifetime (singleton pattern)
+      // Only disconnect when user closes tab/navigates away (handled by browser)
+    };
   }, []);
 
   /**
