@@ -104,6 +104,15 @@ export class JobController {
    * For job execution history, check logs/app.log with job ID filtering.
    * The getActive endpoint now returns recently completed/failed jobs (last hour).
    */
+  /**
+   * GET /api/jobs/history
+   * Deprecated endpoint - job history table removed
+   *
+   * Alternative: Use GET /api/jobs?limit=100 for recent jobs
+   * Or check logs/app.log for full execution history
+   *
+   * The getActive endpoint now returns recently completed/failed jobs (last hour).
+   */
   getHistory = async (_req: Request, res: Response): Promise<void> => {
     res.status(410).json({
       error: 'Job history endpoint removed',
@@ -111,67 +120,6 @@ export class JobController {
       alternative: 'GET /api/jobs?limit=100'
     });
   };
-
-  // Commented out methods that aren't implemented yet in JobQueueService
-  // TODO: Implement these methods when needed
-
-  // /**
-  //  * GET /api/jobs/recent
-  //  * Get recent jobs (default 50)
-  //  */
-  // getRecent = async (req: Request, res: Response): Promise<void> => {
-  //   try {
-  //     const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
-  //     const jobs = await this.jobQueue.getRecentJobs(limit);
-  //     res.json({ jobs });
-  //   } catch (error) {
-  //     logger.error('Error getting recent jobs:', error);
-  //     res.status(500).json({ error: getErrorMessage(error) });
-  //   }
-  // };
-
-  // /**
-  //  * GET /api/jobs/by-type/:type
-  //  * Get jobs by type
-  //  */
-  // getByType = async (req: Request, res: Response): Promise<void> => {
-  //   try {
-  //     const { type } = req.params;
-  //     const { state, limit } = req.query;
-
-  //     const jobs = await this.jobQueue.getJobsByType(
-  //       type as any,
-  //       state as any,
-  //       limit ? parseInt(limit as string) : 50
-  //     );
-
-  //     res.json({ jobs });
-  //   } catch (error) {
-  //     logger.error('Error getting jobs by type:', error);
-  //     res.status(500).json({ error: getErrorMessage(error) });
-  //   }
-  // };
-
-  // /**
-  //  * POST /api/jobs/:jobId/retry
-  //  * Retry a failed job
-  //  */
-  // retry = async (req: Request, res: Response): Promise<void> => {
-  //   try {
-  //     const { jobId } = req.params;
-
-  //     const success = await this.jobQueue.retryJob(parseInt(jobId));
-
-  //     if (success) {
-  //       res.json({ success: true, message: 'Job marked for retry' });
-  //     } else {
-  //       res.status(400).json({ success: false, message: 'Job not found or not failed' });
-  //     }
-  //   } catch (error) {
-  //     logger.error('Error retrying job:', error);
-  //     res.status(500).json({ error: getErrorMessage(error) });
-  //   }
-  // };
 
   // /**
   //  * DELETE /api/jobs/:jobId
