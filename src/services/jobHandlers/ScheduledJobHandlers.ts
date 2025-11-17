@@ -146,7 +146,7 @@ export class ScheduledJobHandlers {
           }
 
         } catch (error) {
-          logger.error(`Error processing directory ${dir.name}:`, error);
+          logger.error(`Error processing directory ${dir.name}`, { error: getErrorMessage(error) });
           errors++;
         }
       }
@@ -154,7 +154,7 @@ export class ScheduledJobHandlers {
       logger.info(`Library scan complete for ${libraryId}: ${processed} processed, ${errors} errors`);
 
     } catch (error) {
-      logger.error(`Error scanning library ${libraryId}:`, error);
+      logger.error(`Error scanning library ${libraryId}`, { error: getErrorMessage(error) });
       throw error;
     }
   }

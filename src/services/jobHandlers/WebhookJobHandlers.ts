@@ -18,8 +18,8 @@ import { logger } from '../../middleware/logging.js';
  */
 export class WebhookJobHandlers {
   constructor(
-    private db: DatabaseConnection,
-    private jobQueue: JobQueueService,
+    private readonly db: DatabaseConnection,
+    private readonly jobQueue: JobQueueService,
     private notificationConfig: NotificationConfigService
   ) {}
 

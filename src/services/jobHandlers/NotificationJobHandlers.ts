@@ -21,7 +21,7 @@ import { getErrorMessage } from '../../utils/errorHandling.js';
  */
 export class NotificationJobHandlers {
   constructor(
-    private db: DatabaseConnection,
+    private readonly db: DatabaseConnection,
     private notificationConfig: NotificationConfigService,
     private mediaPlayerManager: MediaPlayerConnectionManager
   ) {}

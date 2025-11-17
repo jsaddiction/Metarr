@@ -17,9 +17,9 @@ import { getErrorMessage, getErrorStack } from '../../utils/errorHandling.js';
  */
 export class ScanJobHandlers {
   constructor(
-    private db: DatabaseConnection,
-    private dbManager: DatabaseManager,
-    private jobQueue: JobQueueService
+    private readonly db: DatabaseConnection,
+    private readonly dbManager: DatabaseManager,
+    private readonly jobQueue: JobQueueService
   ) {}
 
   /**
