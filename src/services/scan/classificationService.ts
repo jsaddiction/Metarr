@@ -24,6 +24,53 @@ import {
 } from '../../types/classification.js';
 
 /**
+ * Confidence scores for classification decisions
+ * All scores ≥80 are considered "confident enough" for automatic processing
+ */
+const CONFIDENCE_SCORES = {
+  // Text files (NFO, subtitles)
+  NFO_VERIFIED: 90,
+  NFO_DISC_STRUCTURE_EXPECTED: 100,
+  SUBTITLE_VERIFIED: 90,
+
+  // Audio files
+  THEME_EXACT_MATCH: 100,
+
+  // Video file selection
+  EXCLUSION_KEYWORD_DETECTED: 100,
+  WEBHOOK_HINT: 100,
+  ONLY_VIDEO_FILE: 100,
+  SINGLE_CANDIDATE_AFTER_EXCLUSION: 95,
+  LONGEST_DURATION: 90,
+
+  // Image classification
+  EXACT_FILENAME_MATCH_VALID_DIMENSIONS: 100,
+  EXACT_FILENAME_MATCH_INVALID_DIMENSIONS: 85,
+  KEYWORD_MATCH_BASE: 60,
+  KEYWORD_MATCH_VALID_DIMENSIONS_BOOST: 20,
+
+  // Legacy directories
+  LEGACY_DIRECTORY: 80,
+
+  // Classification threshold
+  MINIMUM_THRESHOLD: 80,
+} as const;
+
+/**
+ * Dimension validation tolerance
+ * Assets within 90% of minimum dimensions are still considered valid
+ */
+const DIMENSION_TOLERANCE = 0.9;
+
+/**
+ * Time conversion factors
+ */
+const TIME_CONVERSION = {
+  SECONDS_TO_MINUTES: 60,
+  MILLISECONDS_TO_SECONDS: 1000,
+} as const;
+
+/**
  * Asset type specifications for dimension validation
  * Based on Kodi/MediaElch standards
  */
@@ -165,12 +212,12 @@ export function classifyTextFiles(
       // Check content verification
       if (file.text.looksLikeNfo) {
         // For disc structures, check if it's in the expected location
-        let confidence: ConfidenceScore = 90;
+        let confidence: ConfidenceScore = CONFIDENCE_SCORES.NFO_VERIFIED;
         let reasoning = 'NFO extension with verified content (XML or provider IDs)';
 
         if (isDiscStructure && expectedDiscNfoPath) {
           if (file.filesystem.absolutePath === expectedDiscNfoPath) {
-            confidence = 100;
+            confidence = CONFIDENCE_SCORES.NFO_DISC_STRUCTURE_EXPECTED;
             reasoning = 'Disc structure NFO in expected location';
           }
         }
@@ -205,7 +252,7 @@ export function classifyTextFiles(
         subtitles.push({
           facts: file,
           classificationType: 'subtitle',
-          confidence: 90,
+          confidence: CONFIDENCE_SCORES.SUBTITLE_VERIFIED,
           reasoning: `Subtitle extension (${ext}) with verified content (timestamp patterns)`,
           userProvided: false,
         });
@@ -263,7 +310,7 @@ export function classifyAudioFiles(audioFiles: FileFacts[]): AudioClassification
       themes.push({
         facts: file,
         classificationType: 'theme',
-        confidence: 100,
+        confidence: CONFIDENCE_SCORES.THEME_EXACT_MATCH,
         reasoning: 'Exact match for theme music filename',
         userProvided: false,
       });
@@ -313,7 +360,7 @@ export function classifyMainMovie(
       trailers.push({
         facts: file,
         classificationType: classificationType as any,
-        confidence: 100,
+        confidence: CONFIDENCE_SCORES.EXCLUSION_KEYWORD_DETECTED,
         reasoning: `Exclusion keyword detected: ${exclusionCheck.matchedKeywords.join(', ')}`,
         userProvided: false,
       });
@@ -332,14 +379,14 @@ export function classifyMainMovie(
         mainMovie: {
           facts: webhookMatch,
           classificationType: 'main_movie',
-          confidence: 100,
+          confidence: CONFIDENCE_SCORES.WEBHOOK_HINT,
           reasoning: 'Webhook provided exact filename',
           userProvided: false,
         },
         trailers,
         extras,
         unknown,
-        mainMovieConfidence: 100,
+        mainMovieConfidence: CONFIDENCE_SCORES.WEBHOOK_HINT,
         mainMovieStatus: 'Identified via webhook hint',
       };
     }
@@ -377,14 +424,14 @@ export function classifyMainMovie(
       mainMovie: {
         facts: onlyFile,
         classificationType: 'main_movie',
-        confidence: 100,
+        confidence: CONFIDENCE_SCORES.ONLY_VIDEO_FILE,
         reasoning: 'Only video file in directory',
         userProvided: false,
       },
       trailers,
       extras,
       unknown,
-      mainMovieConfidence: 100,
+      mainMovieConfidence: CONFIDENCE_SCORES.ONLY_VIDEO_FILE,
       mainMovieStatus: 'Single video file (no alternatives)',
     };
   }
@@ -395,14 +442,14 @@ export function classifyMainMovie(
       mainMovie: {
         facts: candidates[0],
         classificationType: 'main_movie',
-        confidence: 95,
+        confidence: CONFIDENCE_SCORES.SINGLE_CANDIDATE_AFTER_EXCLUSION,
         reasoning: 'Only remaining candidate after excluding trailers/extras',
         userProvided: false,
       },
       trailers,
       extras,
       unknown,
-      mainMovieConfidence: 95,
+      mainMovieConfidence: CONFIDENCE_SCORES.SINGLE_CANDIDATE_AFTER_EXCLUSION,
       mainMovieStatus: 'Single candidate after exclusion',
     };
   }
@@ -438,14 +485,14 @@ export function classifyMainMovie(
       mainMovie: {
         facts: longest,
         classificationType: 'main_movie',
-        confidence: 90,
-        reasoning: `Longest duration (${Math.round(longestDuration / 60)} min) among ${candidates.length} candidates`,
+        confidence: CONFIDENCE_SCORES.LONGEST_DURATION,
+        reasoning: `Longest duration (${Math.round(longestDuration / TIME_CONVERSION.SECONDS_TO_MINUTES)} min) among ${candidates.length} candidates`,
         userProvided: false,
       },
       trailers,
       extras,
       unknown,
-      mainMovieConfidence: 90,
+      mainMovieConfidence: CONFIDENCE_SCORES.LONGEST_DURATION,
       mainMovieStatus: 'Longest duration among candidates',
     };
   }
@@ -596,9 +643,9 @@ function validateDimensions(
   const aspectRatioValid =
     aspectRatio >= spec.aspectRatio.min && aspectRatio <= spec.aspectRatio.max;
 
-  // Check minimum dimensions (with 10% tolerance)
-  const minWidthWithTolerance = spec.minWidth * 0.9;
-  const minHeightWithTolerance = spec.minHeight * 0.9;
+  // Check minimum dimensions (with tolerance)
+  const minWidthWithTolerance = spec.minWidth * DIMENSION_TOLERANCE;
+  const minHeightWithTolerance = spec.minHeight * DIMENSION_TOLERANCE;
   const dimensionsValid = width >= minWidthWithTolerance && height >= minHeightWithTolerance;
 
   if (aspectRatioValid && dimensionsValid) {
@@ -612,6 +659,67 @@ function validateDimensions(
     valid: false,
     details: `Invalid ${assetType}: ${width}x${height}, ratio ${aspectRatio.toFixed(2)} (expected ratio ${spec.aspectRatio.min}-${spec.aspectRatio.max})`,
   };
+}
+
+/**
+ * Helper function to classify an image by pattern matching
+ * Reduces code duplication by unifying exact and keyword match logic
+ *
+ * @param imageFile - The image file to classify
+ * @param assetType - The asset type configuration (type, patterns, arrayKey)
+ * @param patterns - Patterns to match against
+ * @param lowerFilename - Lowercase filename for comparison
+ * @param matchType - 'exact' for exact filename match, 'keyword' for keyword in filename
+ * @returns ClassifiedFile if match meets confidence threshold, null otherwise
+ */
+function classifyImageByPattern(
+  imageFile: FileFacts,
+  assetType: { type: string; patterns: string[]; arrayKey: string },
+  patterns: string[],
+  lowerFilename: string,
+  matchType: 'exact' | 'keyword'
+): ClassifiedFile | null {
+  // For exact matches, check each pattern
+  if (matchType === 'exact') {
+    for (const pattern of patterns) {
+      if (lowerFilename === pattern.toLowerCase()) {
+        const dimensionCheck = validateDimensions(imageFile, assetType.type);
+        const confidence: ConfidenceScore = dimensionCheck.valid
+          ? CONFIDENCE_SCORES.EXACT_FILENAME_MATCH_VALID_DIMENSIONS
+          : CONFIDENCE_SCORES.EXACT_FILENAME_MATCH_INVALID_DIMENSIONS;
+
+        return {
+          facts: imageFile,
+          classificationType: assetType.type as any,
+          confidence,
+          reasoning: `Exact filename match: ${pattern}${dimensionCheck.valid ? ' (dimensions validated)' : ''}`,
+          userProvided: false,
+        };
+      }
+    }
+    return null;
+  }
+
+  // For keyword matches, apply lower base confidence
+  if (matchType === 'keyword') {
+    const dimensionCheck = validateDimensions(imageFile, assetType.type);
+    const confidence: ConfidenceScore = dimensionCheck.valid
+      ? (CONFIDENCE_SCORES.KEYWORD_MATCH_BASE + CONFIDENCE_SCORES.KEYWORD_MATCH_VALID_DIMENSIONS_BOOST) as ConfidenceScore
+      : (CONFIDENCE_SCORES.KEYWORD_MATCH_BASE as ConfidenceScore);
+
+    // Only classify if confidence meets threshold
+    if (confidence >= CONFIDENCE_SCORES.MINIMUM_THRESHOLD) {
+      return {
+        facts: imageFile,
+        classificationType: assetType.type as any,
+        confidence,
+        reasoning: `Keyword match: "${assetType.type}" in filename${dimensionCheck.valid ? ' (dimensions validated)' : ''}`,
+        userProvided: false,
+      };
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -636,68 +744,55 @@ export function classifyImageFiles(
     totalUnknown: 0,
   };
 
+  // Asset type configurations for classification
+  const assetTypes = [
+    { type: 'poster', patterns: expectedPatterns.posters, arrayKey: 'posters' },
+    { type: 'fanart', patterns: expectedPatterns.fanarts, arrayKey: 'fanarts' },
+    { type: 'banner', patterns: expectedPatterns.banners, arrayKey: 'banners' },
+    { type: 'clearlogo', patterns: expectedPatterns.clearlogos, arrayKey: 'clearlogos' },
+    { type: 'clearart', patterns: expectedPatterns.cleararts, arrayKey: 'cleararts' },
+    { type: 'disc', patterns: expectedPatterns.discs, arrayKey: 'discs' },
+    { type: 'landscape', patterns: expectedPatterns.landscapes, arrayKey: 'landscapes' },
+    { type: 'thumb', patterns: expectedPatterns.thumbs, arrayKey: 'thumbs' },
+    { type: 'keyart', patterns: expectedPatterns.keyarts, arrayKey: 'keyarts' },
+  ];
+
   for (const imageFile of imageFiles) {
     const filename = imageFile.filesystem.filename;
     const lowerFilename = filename.toLowerCase();
     let classified = false;
 
-    // Try to match against each asset type
-    const assetTypes = [
-      { type: 'poster', patterns: expectedPatterns.posters, arrayKey: 'posters' },
-      { type: 'fanart', patterns: expectedPatterns.fanarts, arrayKey: 'fanarts' },
-      { type: 'banner', patterns: expectedPatterns.banners, arrayKey: 'banners' },
-      { type: 'clearlogo', patterns: expectedPatterns.clearlogos, arrayKey: 'clearlogos' },
-      { type: 'clearart', patterns: expectedPatterns.cleararts, arrayKey: 'cleararts' },
-      { type: 'disc', patterns: expectedPatterns.discs, arrayKey: 'discs' },
-      { type: 'landscape', patterns: expectedPatterns.landscapes, arrayKey: 'landscapes' },
-      { type: 'thumb', patterns: expectedPatterns.thumbs, arrayKey: 'thumbs' },
-      { type: 'keyart', patterns: expectedPatterns.keyarts, arrayKey: 'keyarts' },
-    ];
-
     for (const assetType of assetTypes) {
       if (classified) break;
 
-      // Check for exact filename match
-      for (const pattern of assetType.patterns) {
-        if (lowerFilename === pattern.toLowerCase()) {
-          const dimensionCheck = validateDimensions(imageFile, assetType.type);
-          const confidence: ConfidenceScore = dimensionCheck.valid ? 100 : 85;
+      // Try exact filename match
+      const exactMatch = classifyImageByPattern(
+        imageFile,
+        assetType,
+        assetType.patterns,
+        lowerFilename,
+        'exact'
+      );
 
-          const classifiedFile: ClassifiedFile = {
-            facts: imageFile,
-            classificationType: assetType.type as any,
-            confidence,
-            reasoning: `Exact filename match: ${pattern}${dimensionCheck.valid ? ' (dimensions validated)' : ''}`,
-            userProvided: false,
-          };
-
-          (result[assetType.arrayKey as keyof ImageClassification] as ClassifiedFile[]).push(classifiedFile);
-
-          classified = true;
-          result.totalClassified++;
-          break;
-        }
+      if (exactMatch) {
+        (result[assetType.arrayKey as keyof ImageClassification] as ClassifiedFile[]).push(exactMatch);
+        classified = true;
+        result.totalClassified++;
+        continue;
       }
 
-      // Check for keyword in filename (lower confidence)
-      if (!classified && lowerFilename.includes(assetType.type)) {
-        const dimensionCheck = validateDimensions(imageFile, assetType.type);
-        const baseConfidence = 60;
-        const confidence: ConfidenceScore = dimensionCheck.valid
-          ? baseConfidence + 20
-          : baseConfidence;
+      // Try keyword match (lower confidence)
+      if (lowerFilename.includes(assetType.type)) {
+        const keywordMatch = classifyImageByPattern(
+          imageFile,
+          assetType,
+          [assetType.type],
+          lowerFilename,
+          'keyword'
+        );
 
-        if (confidence >= 80) {
-          const classifiedFile: ClassifiedFile = {
-            facts: imageFile,
-            classificationType: assetType.type as any,
-            confidence,
-            reasoning: `Keyword match: "${assetType.type}" in filename${dimensionCheck.valid ? ' (dimensions validated)' : ''}`,
-            userProvided: false,
-          };
-
-          (result[assetType.arrayKey as keyof ImageClassification] as ClassifiedFile[]).push(classifiedFile);
-
+        if (keywordMatch) {
+          (result[assetType.arrayKey as keyof ImageClassification] as ClassifiedFile[]).push(keywordMatch);
           classified = true;
           result.totalClassified++;
         }
@@ -744,7 +839,7 @@ export function classifyLegacyDirectoryFiles(
         extrafanarts.push({
           facts: file,
           classificationType: 'fanart',
-          confidence: 80,
+          confidence: CONFIDENCE_SCORES.LEGACY_DIRECTORY,
           reasoning: 'From legacy extrafanarts directory',
           userProvided: false,
         });
@@ -763,7 +858,7 @@ export function classifyLegacyDirectoryFiles(
         extrathumbs.push({
           facts: file,
           classificationType: 'thumb',
-          confidence: 80,
+          confidence: CONFIDENCE_SCORES.LEGACY_DIRECTORY,
           reasoning: 'From legacy extrathumbs directory',
           userProvided: false,
         });

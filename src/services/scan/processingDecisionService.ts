@@ -44,56 +44,61 @@ export function canProcessDirectory(
     missingRequirements.push('TMDB ID not found in NFO');
   }
 
-  // Build processing decision
-  let canProcess: boolean;
-  let processingStatus: ClassificationStatus;
-  let confidence: number;
-  let reason: string;
-
-  if (hasMainMovie && hasTmdbId && !hasUnknownFiles) {
-    // Perfect - everything classified
-    canProcess = true;
-    processingStatus = 'CAN_PROCESS';
-    confidence = 100;
-    reason = 'All requirements met. All files classified successfully.';
-
-    logger.info('Directory can be processed (perfect classification)', {
-      mainMovie: videos.mainMovie?.facts.filesystem.filename,
-      tmdbId: text.tmdbId,
-      totalFiles: classificationResult.totalFiles,
-    });
-  } else if (hasMainMovie && hasTmdbId && hasUnknownFiles) {
-    // Good enough - has requirements but some unknowns
-    canProcess = true;
-    processingStatus = 'CAN_PROCESS_WITH_UNKNOWNS';
-    confidence = 80;
-    reason = `All requirements met. ${totalUnknown} unknown file(s) will be flagged for recycling at publish time.`;
-
-    logger.info('Directory can be processed (with unknowns)', {
-      mainMovie: videos.mainMovie?.facts.filesystem.filename,
-      tmdbId: text.tmdbId,
-      unknownCount: totalUnknown,
-    });
-  } else {
-    // Cannot process - missing critical requirements
-    canProcess = false;
-    processingStatus = 'MANUAL_REQUIRED';
-    confidence = 0;
-    reason = `Cannot process automatically. Missing: ${missingRequirements.join(', ')}`;
-
+  // Early return: Cannot process - missing critical requirements
+  if (!hasMainMovie || !hasTmdbId) {
     logger.warn('Directory cannot be processed automatically', {
       missingRequirements,
       hasMainMovie,
       hasTmdbId,
       unknownCount: totalUnknown,
     });
+
+    return {
+      canProcess: false,
+      status: 'MANUAL_REQUIRED',
+      confidence: 0,
+      reason: `Cannot process automatically. Missing: ${missingRequirements.join(', ')}`,
+      missingRequirements,
+      hasMainMovie,
+      hasTmdbId,
+      hasUnknownFiles,
+      unknownFileCount: totalUnknown,
+    };
   }
 
+  // Early return: Perfect - everything classified
+  if (!hasUnknownFiles) {
+    logger.info('Directory can be processed (perfect classification)', {
+      mainMovie: videos.mainMovie?.facts.filesystem.filename,
+      tmdbId: text.tmdbId,
+      totalFiles: classificationResult.totalFiles,
+    });
+
+    return {
+      canProcess: true,
+      status: 'CAN_PROCESS',
+      confidence: 100,
+      reason: 'All requirements met. All files classified successfully.',
+      missingRequirements,
+      hasMainMovie,
+      hasTmdbId,
+      hasUnknownFiles,
+      unknownFileCount: totalUnknown,
+    };
+  }
+
+  // Default: Good enough - has requirements but some unknowns
+  logger.info('Directory can be processed (with unknowns)', {
+    mainMovie: videos.mainMovie?.facts.filesystem.filename,
+    tmdbId: text.tmdbId,
+    unknownCount: totalUnknown,
+  });
+
   return {
-    canProcess,
-    status: processingStatus,
-    confidence,
-    reason,
+    canProcess: true,
+    status: 'CAN_PROCESS_WITH_UNKNOWNS',
+    confidence: 80,
+    reason: `All requirements met. ${totalUnknown} unknown file(s) will be flagged for recycling at publish time.`,
     missingRequirements,
     hasMainMovie,
     hasTmdbId,
