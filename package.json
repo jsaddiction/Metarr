@@ -1,7 +1,7 @@
 {
   "name": "metarr",
   "version": "1.0.0",
-  "description": "Metadata management application bridging downloaders and media players",
+  "description": "Intelligent media metadata manager with automated enrichment, protected asset cache, field-level locking, and disaster recovery. Bridges *arr stack downloaders with Kodi/Jellyfin/Plex media players.",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
@@ -22,7 +22,7 @@
     "migrate": "tsx src/database/migrate.ts",
     "test-media:create": "tsx scripts/createTestMedia.ts"
   },
-  "keywords": [],
+  "keywords": ["metadata", "media", "kodi", "jellyfin", "plex", "radarr", "sonarr", "lidarr", "tmdb", "tvdb", "fanart"],
   "author": "",
   "license": "ISC",
   "type": "module",
