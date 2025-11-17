@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { assetLimitsApi } from '../utils/api';
 import { AssetLimit } from '../types/assetConfig';
-import { toast } from 'sonner';
+import { showErrorToast, showSuccessToast } from '../utils/errorHandling';
 
 /**
  * Hook for managing asset download limits
@@ -25,10 +25,10 @@ export function useAssetLimits() {
       assetLimitsApi.setLimit(assetType, limit),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['assetLimits'] });
-      toast.success(`Updated limit for ${variables.assetType}`);
+      showSuccessToast(`Updated limit for ${variables.assetType}`);
     },
     onError: (error: Error) => {
-      toast.error(`Failed to update limit: ${error.message}`);
+      showErrorToast(error, 'Update limit');
     },
   });
 
@@ -37,10 +37,10 @@ export function useAssetLimits() {
     mutationFn: (assetType: string) => assetLimitsApi.resetLimit(assetType),
     onSuccess: (_, assetType) => {
       queryClient.invalidateQueries({ queryKey: ['assetLimits'] });
-      toast.success(`Reset ${assetType} to default`);
+      showSuccessToast(`Reset ${assetType} to default`);
     },
     onError: (error: Error) => {
-      toast.error(`Failed to reset limit: ${error.message}`);
+      showErrorToast(error, 'Reset limit');
     },
   });
 
@@ -49,10 +49,10 @@ export function useAssetLimits() {
     mutationFn: () => assetLimitsApi.resetAll(),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['assetLimits'] });
-      toast.success('Reset all limits to defaults');
+      showSuccessToast('Reset all limits to defaults');
     },
     onError: (error: Error) => {
-      toast.error(`Failed to reset all limits: ${error.message}`);
+      showErrorToast(error, 'Reset all limits');
     },
   });
 
