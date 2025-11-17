@@ -1130,33 +1130,9 @@ export class CleanSchemaMigration {
     await db.execute('CREATE INDEX idx_job_deps_job ON job_dependencies(job_id)');
     await db.execute('CREATE INDEX idx_job_deps_depends ON job_dependencies(depends_on_job_id)');
 
-    // Job History (completed/failed jobs archive)
-    await db.execute(`
-      CREATE TABLE job_history (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        job_id INTEGER NOT NULL,
-        type TEXT NOT NULL,
-        priority INTEGER NOT NULL,
-        payload TEXT NOT NULL,
-        status TEXT NOT NULL CHECK (status IN ('completed', 'failed')),
-        error TEXT,
-        retry_count INTEGER NOT NULL DEFAULT 0,
-        manual INTEGER DEFAULT 0,
-        created_at DATETIME NOT NULL,
-        started_at DATETIME NOT NULL,
-        completed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        duration_ms INTEGER
-      )
-    `);
-
-    await db.execute('CREATE INDEX idx_job_history_type_date ON job_history(type, completed_at DESC)');
-    await db.execute('CREATE INDEX idx_job_history_cleanup ON job_history(status, completed_at)');
-    await db.execute('CREATE INDEX idx_job_history_manual ON job_history(manual, type, completed_at DESC)');
-
-    // Additional index for "get recent jobs" query (all types, sorted by date)
-    // Note: Cannot use partial index with datetime() in WHERE clause (non-deterministic)
-    // Audit Finding 5.5: Optimizes dashboard/activity views
-    await db.execute('CREATE INDEX idx_job_history_recent ON job_history(completed_at DESC, status, type)');
+    // NOTE: job_history table removed in favor of structured logging
+    // Completed/failed jobs simply removed from job_queue
+    // Use logs/app.log for job execution history
 
     // Job queue pickup indexes - optimized for worker polling
     // Covers: WHERE status IN ('pending', 'retrying') AND (status = 'pending' OR next_retry_at <= ?) ORDER BY priority, created_at
@@ -1668,31 +1644,21 @@ export class CleanSchemaMigration {
 
     // Insert default phase configuration settings
     // All phases ALWAYS run - configuration controls BEHAVIOR not ENABLEMENT
+    // NOTE: Only settings actually consumed by backend are included here
     await db.execute(`
       INSERT INTO app_settings (key, value) VALUES
-        -- Scan Phase
-        ('phase.scan.ignorePatterns', '["**/@eaDir/**","**/.DS_Store","**/Thumbs.db","**/.thumbnails/**"]'),
-        ('phase.scan.maxFileSizeGB', '100'),
-        ('phase.scan.ffprobeTimeoutSeconds', '30'),
-        ('phase.scan.videoExtensions', '[".mkv",".mp4",".avi",".m4v",".mov",".wmv",".flv",".webm"]'),
-        ('phase.scan.imageExtensions', '[".jpg",".jpeg",".png",".webp",".gif"]'),
-
-        -- Enrichment Phase
+        -- Enrichment Phase (only settings actually used by EnrichmentService)
         ('phase.enrichment.fetchProviderAssets', 'true'),
         ('phase.enrichment.autoSelectAssets', 'true'),
-        ('phase.enrichment.maxAssetsPerType', '{"poster":3,"fanart":5,"logo":2,"trailer":1}'),
-        ('phase.enrichment.preferredLanguage', 'en'),
-        ('phase.enrichment.minAssetResolution', '720'),
+        ('phase.enrichment.language', 'en'),
 
-        -- Publish Phase
-        ('phase.publish.publishAssets', 'true'),
-        ('phase.publish.publishActors', 'true'),
-        ('phase.publish.publishTrailers', 'false'),
+        -- Publishing Phase (all three settings used by PublishingService)
+        ('phase.publish.assets', 'true'),
+        ('phase.publish.actors', 'true'),
+        ('phase.publish.trailers', 'false'),
 
-        -- Player Sync Phase
-        ('phase.playerSync.notifyOnPublish', 'true'),
-        ('phase.playerSync.delaySeconds', '0'),
-        ('phase.playerSync.cleanLibraryFirst', 'false'),
+        -- General Configuration (applies across all phases)
+        ('phase.general.autoPublish', 'false'),
 
         -- Other Settings
         ('recycle_bin.retention_days', '30'),

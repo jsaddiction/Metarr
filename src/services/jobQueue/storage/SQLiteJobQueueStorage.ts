@@ -13,9 +13,8 @@ import { SqlParam } from '../../../types/database.js';
  *
  * Implements persistent job queue with:
  * - Active queue (job_queue table): pending and processing jobs
- * - History (job_history table): completed and failed jobs
  * - Crash recovery: Reset processing jobs on startup
- * - Automatic archival: Completed jobs removed from queue
+ * - Simple completion: Completed jobs removed from queue (use logs for history)
  */
 export class SQLiteJobQueueStorage implements IJobQueueStorage {
   constructor(private db: DatabaseConnection) {}
@@ -101,7 +100,7 @@ export class SQLiteJobQueueStorage implements IJobQueueStorage {
   }
 
   async completeJob(jobId: number, _result?: any): Promise<void> {
-    // Get job data
+    // Get job data for logging
     const jobs = await this.db.query<any>('SELECT * FROM job_queue WHERE id = ?', [jobId]);
 
     if (jobs.length === 0) {
@@ -120,34 +119,10 @@ export class SQLiteJobQueueStorage implements IJobQueueStorage {
       ? Date.now() - new Date(job.started_at).getTime()
       : 0;
 
-    // Archive to history - let SQLite calculate duration using its own datetime functions
-    await this.db.execute(
-      `INSERT INTO job_history (
-        job_id, type, priority, payload, status, error, retry_count, manual,
-        created_at, started_at, completed_at, duration_ms
-      ) VALUES (
-        ?, ?, ?, ?, 'completed', NULL, ?, ?,
-        ?, ?,
-        CURRENT_TIMESTAMP,
-        CAST((julianday(CURRENT_TIMESTAMP) - julianday(?)) * 86400000 AS INTEGER)
-      )`,
-      [
-        jobId,
-        job.type,
-        job.priority,
-        job.payload,
-        job.retry_count,
-        job.manual || 0,
-        job.created_at,
-        job.started_at,
-        job.started_at, // Used for duration calculation
-      ]
-    );
-
-    // Remove from active queue
+    // Simply remove from active queue (no history archival)
     await this.db.execute('DELETE FROM job_queue WHERE id = ?', [jobId]);
 
-    logger.info('[SQLiteJobQueueStorage] Job completed and archived', {
+    logger.info('[SQLiteJobQueueStorage] Job completed and removed from queue', {
       service: 'SQLiteJobQueueStorage',
       operation: 'completeJob',
       jobId,
@@ -191,36 +166,10 @@ export class SQLiteJobQueueStorage implements IJobQueueStorage {
         error,
       });
     } else {
-      // No retries left: Archive and remove
-      const startedAtValue = job.started_at || new Date().toISOString();
-
-      await this.db.execute(
-        `INSERT INTO job_history (
-          job_id, type, priority, payload, status, error, retry_count, manual,
-          created_at, started_at, completed_at, duration_ms
-        ) VALUES (
-          ?, ?, ?, ?, 'failed', ?, ?, ?,
-          ?, ?,
-          CURRENT_TIMESTAMP,
-          CAST((julianday(CURRENT_TIMESTAMP) - julianday(?)) * 86400000 AS INTEGER)
-        )`,
-        [
-          jobId,
-          job.type,
-          job.priority,
-          job.payload,
-          error,
-          newRetryCount,
-          job.manual || 0,
-          job.created_at,
-          startedAtValue,
-          startedAtValue, // Used for duration calculation
-        ]
-      );
-
+      // No retries left: Simply remove from queue (logged but not archived)
       await this.db.execute('DELETE FROM job_queue WHERE id = ?', [jobId]);
 
-      logger.error('[SQLiteJobQueueStorage] Job permanently failed and archived', {
+      logger.error('[SQLiteJobQueueStorage] Job permanently failed and removed from queue', {
         service: 'SQLiteJobQueueStorage',
         operation: 'failJob',
         jobId,
@@ -319,46 +268,9 @@ export class SQLiteJobQueueStorage implements IJobQueueStorage {
     return count;
   }
 
-  async cleanupHistory(retentionDays: {
-    completed: number;
-    failed: number;
-  }): Promise<number> {
-    const completedCutoff = new Date();
-    completedCutoff.setDate(completedCutoff.getDate() - retentionDays.completed);
-
-    const failedCutoff = new Date();
-    failedCutoff.setDate(failedCutoff.getDate() - retentionDays.failed);
-
-    const result1 = await this.db.execute(
-      `DELETE FROM job_history
-       WHERE status = 'completed' AND completed_at < ?`,
-      [completedCutoff.toISOString()]
-    );
-
-    const result2 = await this.db.execute(
-      `DELETE FROM job_history
-       WHERE status = 'failed' AND completed_at < ?`,
-      [failedCutoff.toISOString()]
-    );
-
-    const totalDeleted = (result1.affectedRows || 0) + (result2.affectedRows || 0);
-
-    if (totalDeleted > 0) {
-      logger.info('[SQLiteJobQueueStorage] Cleaned up job history', {
-        service: 'SQLiteJobQueueStorage',
-        operation: 'cleanupHistory',
-        deleted: totalDeleted,
-        retentionDays,
-      });
-    }
-
-    return totalDeleted;
-  }
 
   async getStats(): Promise<QueueStats> {
-    const oneHourAgo = new Date(Date.now() - 3600000).toISOString();
-
-    // Get active queue stats
+    // Get active queue stats only (no history table)
     const queueStats = await this.db.query<any>(
       `SELECT
         SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
@@ -369,80 +281,23 @@ export class SQLiteJobQueueStorage implements IJobQueueStorage {
        FROM job_queue`
     );
 
-    // Get recent history stats (last hour)
-    const historyStats = await this.db.query<any>(
-      `SELECT
-        SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
-        SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed
-       FROM job_history
-       WHERE completed_at > ?`,
-      [oneHourAgo]
-    );
-
     const queueRow = queueStats[0];
-    const historyRow = historyStats[0];
 
     return {
       pending: queueRow.pending || 0,
       processing: queueRow.processing || 0,
       totalActive: (queueRow.pending || 0) + (queueRow.processing || 0),
       oldestPendingAge: queueRow.oldest_pending_age || null,
-      completed: historyRow.completed || 0,
-      failed: historyRow.failed || 0,
+      // completed/failed stats removed - use logs for historical data
     };
   }
 
   /**
-   * Get recent jobs (active + recently completed/failed)
+   * Get recent jobs (active jobs only, no history)
    * Used by frontend to show current job activity
    */
   async getRecentJobs(): Promise<Job[]> {
-    const oneHourAgo = new Date(Date.now() - 3600000).toISOString();
-
-    // Get all active jobs
-    const activeJobs = await this.listJobs();
-
-    // Get recent history (last hour)
-    const recentHistory = await this.db.query<any>(
-      `SELECT * FROM job_history
-       WHERE completed_at > ?
-       ORDER BY completed_at DESC
-       LIMIT 50`,
-      [oneHourAgo]
-    );
-
-    // Convert history records to Job format (for frontend compatibility)
-    const historyAsJobs: Job[] = recentHistory.map((record) => ({
-      id: record.job_id,
-      type: record.type,
-      priority: record.priority,
-      payload: JSON.parse(record.payload),
-      status: record.status === 'completed' ? 'completed' : 'failed',
-      error: record.error,
-      retry_count: record.retry_count,
-      max_retries: 0, // History records don't retry
-      created_at: record.created_at,
-      started_at: record.started_at,
-      updated_at: record.completed_at,
-    })) as any;
-
-    // Combine and sort by priority (active first) then by created_at
-    return [...activeJobs, ...historyAsJobs].sort((a, b) => {
-      // Active jobs first
-      const aIsActive = a.status === 'pending' || a.status === 'processing';
-      const bIsActive = b.status === 'pending' || b.status === 'processing';
-      if (aIsActive && !bIsActive) return -1;
-      if (!aIsActive && bIsActive) return 1;
-
-      // Then by priority
-      if (a.priority !== b.priority) return a.priority - b.priority;
-
-      // Then by created_at (newest first for completed, oldest first for active)
-      if (aIsActive) {
-        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-      } else {
-        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-      }
-    });
+    // Simply return all active jobs (no history table)
+    return await this.listJobs();
   }
 }
