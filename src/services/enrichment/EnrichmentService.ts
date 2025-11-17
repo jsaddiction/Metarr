@@ -13,12 +13,8 @@ import { DatabaseConnection } from '../../types/database.js';
 import { ProviderAssetsRepository } from './ProviderAssetsRepository.js';
 import { ProviderCacheManager } from '../providers/ProviderCacheManager.js';
 import { ProviderCacheOrchestrator } from '../providers/ProviderCacheOrchestrator.js';
-// import { FetchOrchestrator } from '../providers/FetchOrchestrator.js'; // Legacy - no longer used
-// import { ProviderRegistry } from '../providers/ProviderRegistry.js'; // Legacy - no longer used
-// import { ProviderConfigService } from '../providerConfigService.js'; // Legacy - no longer used
 import { AssetConfigService } from '../assetConfigService.js';
 import { DatabaseManager } from '../../database/DatabaseManager.js';
-// import { AssetType } from '../../types/providers/capabilities.js'; // Unused currently
 import { EnrichmentPhaseConfig, DEFAULT_PHASE_CONFIG } from '../../config/phaseConfig.js';
 import { PhaseConfigService } from '../PhaseConfigService.js';
 import { hashFile } from '../hash/hashService.js';
@@ -60,7 +56,6 @@ interface AssetMetadata {
 
 export class EnrichmentService {
   private providerAssetsRepo: ProviderAssetsRepository;
-  // private providerCacheManager: ProviderCacheManager; // Legacy - keeping for backward compatibility
   private providerCacheOrchestrator: ProviderCacheOrchestrator;
   private phaseConfigService: PhaseConfigService;
   private tempDir: string;
@@ -77,16 +72,48 @@ export class EnrichmentService {
 
     // Initialize new provider cache orchestrator (multi-provider with timeout)
     this.providerCacheOrchestrator = new ProviderCacheOrchestrator(dbManager);
-
-    // Legacy support - ProviderCacheManager no longer used in Phase 1
-    // Keeping parameter for backward compatibility
-    if (providerCacheManager) {
-      // Injected but not used
-    }
   }
 
   /**
    * Main enrichment workflow - orchestrates all 5 phases
+   *
+   * Executes the complete enrichment pipeline for a media entity:
+   * 1. **Fetch Provider Assets** - Retrieve metadata and asset URLs from TMDB/Fanart.tv
+   * 2. **Match Cache Assets** - Link existing cached files to provider assets via perceptual hashing
+   * 3. **Download & Analyze** - Download unanalyzed assets to temp, extract metadata (dimensions, hashes)
+   * 4. **Calculate Scores** - Score assets 0-100 based on resolution, aspect ratio, language, votes
+   * 5. **Intelligent Selection** - Auto-select top N assets per type, evict lower-ranked
+   *
+   * @param config - Enrichment configuration
+   * @param config.entityId - Database ID of the entity (movie/episode/series)
+   * @param config.entityType - Type of entity ('movie' | 'episode' | 'series')
+   * @param config.manual - Whether triggered manually (true) or automated (false). Manual bypasses monitoring checks.
+   * @param config.forceRefresh - Force fetch from providers even if cached < 7 days
+   * @param config.phaseConfig - Optional phase configuration. Defaults to global settings if not provided.
+   *
+   * @returns Promise resolving to enrichment result with success status, asset count, and errors
+   *
+   * @example
+   * ```typescript
+   * // Manual enrichment with force refresh
+   * const result = await enrichmentService.enrich({
+   *   entityId: 123,
+   *   entityType: 'movie',
+   *   manual: true,
+   *   forceRefresh: true
+   * });
+   *
+   * console.log(`Selected ${result.assetsSelected} assets`);
+   * ```
+   *
+   * @remarks
+   * - Respects field locks: Won't overwrite manually edited metadata
+   * - Emits WebSocket events for real-time progress updates
+   * - Phase 1 & 5 can be disabled via phaseConfig (user picks assets manually in UI)
+   * - Downloads actor thumbnails automatically for movies
+   * - All operations are idempotent - safe to run multiple times
+   *
+   * @throws Error if database connection fails or entity not found
    */
   async enrich(config: EnrichmentConfig): Promise<EnrichmentResult> {
     const startTime = Date.now();
@@ -288,7 +315,7 @@ export class EnrichmentService {
       });
 
       // Build lookup params (only include defined IDs)
-      const lookupParams: any = {};
+      const lookupParams: { tmdb_id?: number; imdb_id?: string; tvdb_id?: number } = {};
       if (entity.tmdb_id) lookupParams.tmdb_id = entity.tmdb_id;
       if (entity.imdb_id) lookupParams.imdb_id = entity.imdb_id;
       if (entity.tvdb_id) lookupParams.tvdb_id = entity.tvdb_id;
@@ -426,7 +453,6 @@ export class EnrichmentService {
       const { entityId, entityType } = config;
       let assetsMatched = 0;
 
-      // Get all cached image files for this entity
       const cacheFiles = await this.db.query<{
         id: number;
         file_path: string;
@@ -511,7 +537,6 @@ export class EnrichmentService {
           cacheFile.image_type
         );
 
-        // Find best match using multi-hash comparison
         let bestMatch: { asset: any; similarity: number } | null = null;
 
         for (const candidate of candidates) {
@@ -1142,40 +1167,42 @@ export class EnrichmentService {
         count: actors.length,
       });
 
-      for (const actor of actors) {
-        try {
-          // Build full TMDB URL
-          const tmdbUrl = `https://image.tmdb.org/t/p/original${actor.profile_path}`;
+      // Batch database operations to prevent N+1 query pattern
+      const cacheInserts: any[] = [];
+      const actorUpdates: { hash: string; cachePath: string; actorId: number }[] = [];
 
-          // Download image
-          const response = await axios.get(tmdbUrl, { responseType: 'arraybuffer' });
-          const imageBuffer = Buffer.from(response.data);
+      // Process downloads in parallel with concurrency limit
+      await pMap(
+        actors,
+        async (actor) => {
+          try {
+            // Build full TMDB URL
+            const tmdbUrl = `https://image.tmdb.org/t/p/original${actor.profile_path}`;
 
-          // Calculate hash
-          const hash = crypto.createHash('sha256').update(imageBuffer).digest('hex');
+            // Download image
+            const response = await axios.get(tmdbUrl, { responseType: 'arraybuffer' });
+            const imageBuffer = Buffer.from(response.data);
 
-          // Determine extension
-          const ext = path.extname(actor.profile_path) || '.jpg';
+            // Calculate hash
+            const hash = crypto.createHash('sha256').update(imageBuffer).digest('hex');
 
-          // Create cache directory using frontend expected structure: actors/{first2}/{next2}/
-          // This matches what the frontend expects: /cache/actors/{first2}/{next2}/{hash}.jpg
-          const first2 = hash.substring(0, 2);
-          const next2 = hash.substring(2, 4);
-          const cacheDir = path.join(path.dirname(this.tempDir), 'cache', 'actors', first2, next2);
-          await fs.mkdir(cacheDir, { recursive: true });
+            // Determine extension
+            const ext = path.extname(actor.profile_path) || '.jpg';
 
-          // Save to cache with just hash as filename
-          const cachePath = path.join(cacheDir, `${hash}${ext}`);
-          await fs.writeFile(cachePath, imageBuffer);
+            // Create cache directory using frontend expected structure: actors/{first2}/{next2}/
+            // This matches what the frontend expects: /cache/actors/{first2}/{next2}/{hash}.jpg
+            const first2 = hash.substring(0, 2);
+            const next2 = hash.substring(2, 4);
+            const cacheDir = path.join(path.dirname(this.tempDir), 'cache', 'actors', first2, next2);
+            await fs.mkdir(cacheDir, { recursive: true });
 
-          // Insert into cache_image_files table
-          const format = ext.substring(1); // Remove leading dot
-          await this.db.execute(
-            `INSERT INTO cache_image_files (
-              entity_type, entity_id, image_type, file_path, file_name,
-              file_hash, file_size, width, height, format, source_type, source_url, provider_name
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [
+            // Save to cache with just hash as filename
+            const cachePath = path.join(cacheDir, `${hash}${ext}`);
+            await fs.writeFile(cachePath, imageBuffer);
+
+            // Queue database operations for batching
+            const format = ext.substring(1); // Remove leading dot
+            cacheInserts.push([
               'actor',
               actor.actor_id,
               'actor_thumb',
@@ -1189,29 +1216,48 @@ export class EnrichmentService {
               'provider',
               tmdbUrl,
               'tmdb',
-            ]
-          );
+            ]);
 
-          // Update actor record with image hash (for frontend) and cache path
+            actorUpdates.push({ hash, cachePath, actorId: actor.actor_id });
+            downloaded++;
+
+            logger.debug('[EnrichmentService] Downloaded actor thumbnail', {
+              actorId: actor.actor_id,
+              name: actor.name,
+              cachePath,
+            });
+          } catch (error) {
+            logger.error('[EnrichmentService] Failed to download actor thumbnail', {
+              actorId: actor.actor_id,
+              name: actor.name,
+              error: getErrorMessage(error),
+            });
+            // Continue with other actors
+          }
+        },
+        { concurrency: 5 } // Download 5 actor images at a time
+      );
+
+      // Batch insert all cache records (much faster than individual INSERTs)
+      if (cacheInserts.length > 0) {
+        const placeholders = cacheInserts.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ');
+        const values = cacheInserts.flat();
+        await this.db.execute(
+          `INSERT INTO cache_image_files (
+            entity_type, entity_id, image_type, file_path, file_name,
+            file_hash, file_size, width, height, format, source_type, source_url, provider_name
+          ) VALUES ${placeholders}`,
+          values
+        );
+      }
+
+      // Batch update all actor records (much faster than individual UPDATEs)
+      if (actorUpdates.length > 0) {
+        for (const update of actorUpdates) {
           await this.db.execute(
             `UPDATE actors SET image_hash = ?, image_cache_path = ? WHERE id = ?`,
-            [hash, cachePath, actor.actor_id]
+            [update.hash, update.cachePath, update.actorId]
           );
-
-          downloaded++;
-
-          logger.debug('[EnrichmentService] Downloaded actor thumbnail', {
-            actorId: actor.actor_id,
-            name: actor.name,
-            cachePath,
-          });
-        } catch (error) {
-          logger.error('[EnrichmentService] Failed to download actor thumbnail', {
-            actorId: actor.actor_id,
-            name: actor.name,
-            error: getErrorMessage(error),
-          });
-          // Continue with other actors
         }
       }
 
@@ -1604,24 +1650,6 @@ export class EnrichmentService {
     await fs.writeFile(destPath, response.data);
   }
 
-  /**
-   * Analyze image metadata
-   * DEPRECATED: No longer used - ImageProcessor is called directly
-   * Kept for backward compatibility
-   */
-  // @ts-expect-error - Kept for backward compatibility, may be used by external code
-  private async analyzeImage(filePath: string): Promise<AssetMetadata> {
-    const analysis = await imageProcessor.analyzeImage(filePath);
-    const stats = await fs.stat(filePath);
-
-    return {
-      width: analysis.width,
-      height: analysis.height,
-      mimeType: `image/${analysis.format}`,
-      size: stats.size,
-      isImage: true,
-    };
-  }
 
   /**
    * Analyze video metadata
@@ -1692,115 +1720,6 @@ export class EnrichmentService {
     return null;
   }
 
-  /**
-   * Download asset from provider URL to cache directory
-   *
-   * NOTE: No longer used in simplified Phase 5 (downloads handled inline).
-   * Keeping for potential future use or can be removed.
-   */
-  // @ts-ignore - Unused method
-  private async downloadAssetToCache(
-    providerUrl: string,
-    assetType: string,
-    contentHash: string,
-    entityType: string,
-    entityId: number
-  ): Promise<string> {
-    // Determine file extension from URL or asset type
-    const urlExt = path.extname(new URL(providerUrl).pathname);
-    const ext = urlExt || (assetType === 'trailer' ? '.mp4' : '.jpg');
-
-    // Build cache path: cache/{images|videos}/{entity_type}/{entity_id}/{hash}{ext}
-    const cacheSubdir = assetType === 'trailer' || assetType === 'sample' ? 'videos' : 'images';
-    const cacheDir = path.join(path.dirname(this.tempDir), 'cache', cacheSubdir, entityType, entityId.toString());
-
-    // Ensure cache directory exists
-    await fs.mkdir(cacheDir, { recursive: true });
-
-    const cacheFilePath = path.join(cacheDir, `${contentHash}${ext}`);
-
-    // Check if already exists (deduplication)
-    try {
-      await fs.access(cacheFilePath);
-      logger.debug('[EnrichmentService] Asset already exists in cache', { cacheFilePath });
-      return cacheFilePath;
-    } catch {
-      // File doesn't exist, download it
-    }
-
-    // Download from provider URL
-    logger.debug('[EnrichmentService] Downloading asset to cache', {
-      providerUrl,
-      cacheFilePath,
-    });
-
-    const response = await axios.get(providerUrl, { responseType: 'arraybuffer' });
-    await fs.writeFile(cacheFilePath, response.data);
-
-    return cacheFilePath;
-  }
-
-  /**
-   * Insert record into cache table
-   *
-   * NOTE: No longer used in simplified Phase 5 (inserts handled inline).
-   * Keeping for potential future use or can be removed.
-   */
-  // @ts-ignore - Unused method
-  private async insertIntoCacheTable(tableName: string, data: any): Promise<void> {
-    if (tableName === 'cache_image_files') {
-      await this.db.execute(
-        `INSERT INTO cache_image_files (
-          entity_type, entity_id, file_path, file_name, file_size, file_hash,
-          perceptual_hash, difference_hash,
-          image_type, width, height, format, has_alpha, foreground_ratio,
-          source_type, source_url, provider_name
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          data.entity_type,
-          data.entity_id,
-          data.file_path,
-          data.file_name,
-          data.file_size,
-          data.file_hash,
-          data.perceptual_hash || null,
-          data.difference_hash || null,
-          data.image_type,
-          data.width,
-          data.height,
-          data.format,
-          data.has_alpha !== undefined ? (data.has_alpha ? 1 : 0) : null,
-          data.foreground_ratio !== undefined ? data.foreground_ratio : null,
-          data.source_type,
-          data.source_url,
-          data.provider_name,
-        ]
-      );
-    } else if (tableName === 'cache_video_files') {
-      await this.db.execute(
-        `INSERT INTO cache_video_files (
-          entity_type, entity_id, file_path, file_name, file_size, file_hash,
-          video_type, duration_seconds, width, height, format, source_type, source_url, provider_name
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          data.entity_type,
-          data.entity_id,
-          data.file_path,
-          data.file_name,
-          data.file_size,
-          data.file_hash,
-          data.image_type, // video_type uses same field
-          data.duration || 0,
-          data.width,
-          data.height,
-          data.format,
-          data.source_type,
-          data.source_url,
-          data.provider_name,
-        ]
-      );
-    }
-  }
 
   /**
    * Map provider image types to our asset types

@@ -47,6 +47,52 @@ export class PublishingService {
 
   /**
    * Publish entity to library directory
+   *
+   * Deploys selected assets and metadata from protected cache to the library directory
+   * for media player scanning. Uses Kodi naming conventions for maximum compatibility.
+   *
+   * **Publishing Steps:**
+   * 1. Copy selected image assets (poster, fanart, etc.) to library using Kodi naming
+   * 2. Copy trailer files if enabled
+   * 3. Generate NFO file with complete metadata (title, plot, cast, ratings, etc.)
+   * 4. Update published_nfo_hash to track changes
+   * 5. Set last_published_at timestamp
+   *
+   * @param config - Publishing configuration
+   * @param config.entityType - Type of entity ('movie' | 'series' | 'episode')
+   * @param config.entityId - Database ID of the entity
+   * @param config.libraryPath - Library directory path (e.g., "/media/movies/Movie (2023)/")
+   * @param config.mediaFilename - Base filename for assets (e.g., "Movie Name (2023)")
+   * @param config.phaseConfig - Optional phase configuration. Controls what gets published:
+   *   - publishAssets: Enable/disable image publishing (poster, fanart, etc.)
+   *   - publishActors: Enable/disable actor thumb publishing
+   *   - publishTrailers: Enable/disable trailer publishing
+   *   - generateNFO: Enable/disable NFO file generation
+   *
+   * @returns Promise resolving to publish result with asset counts and errors
+   *
+   * @example
+   * ```typescript
+   * // Publish all assets for a movie
+   * const result = await publishingService.publish({
+   *   entityType: 'movie',
+   *   entityId: 456,
+   *   libraryPath: '/media/movies/Inception (2010)/',
+   *   mediaFilename: 'Inception (2010)'
+   * });
+   *
+   * console.log(`Published ${result.assetsPublished} assets, NFO: ${result.nfoGenerated}`);
+   * ```
+   *
+   * @remarks
+   * - **Idempotent**: Safe to run multiple times - overwrites existing files with latest
+   * - **Kodi Compatible**: Uses official Kodi naming (movie-poster.jpg, movie-fanart.jpg)
+   * - **NFO Generation**: Creates complete movie.nfo with all metadata
+   * - **Selective Publishing**: Phase config allows publishing only specific asset types
+   * - **Cache Protected**: Source files in cache remain untouched
+   * - **Library Sync**: Updates library directory only, doesn't touch cache
+   *
+   * @see {@link https://kodi.wiki/view/NFO_files/Movies | Kodi NFO Documentation}
    */
   async publish(config: PublishJobConfig): Promise<PublishResult> {
     const result: PublishResult = {
@@ -233,28 +279,24 @@ export class PublishingService {
    * Searches across all cache file tables (images, videos, audio, text)
    */
   private async getCachePath(fileHash: string): Promise<string | null> {
-    // Try cache_image_files first (most common)
     let result = await this.db.query<{ file_path: string }>(
       `SELECT file_path FROM cache_image_files WHERE file_hash = ? LIMIT 1`,
       [fileHash]
     );
     if (result.length > 0) return result[0].file_path;
 
-    // Try cache_video_files
     result = await this.db.query<{ file_path: string }>(
       `SELECT file_path FROM cache_video_files WHERE file_hash = ? LIMIT 1`,
       [fileHash]
     );
     if (result.length > 0) return result[0].file_path;
 
-    // Try cache_audio_files
     result = await this.db.query<{ file_path: string }>(
       `SELECT file_path FROM cache_audio_files WHERE file_hash = ? LIMIT 1`,
       [fileHash]
     );
     if (result.length > 0) return result[0].file_path;
 
-    // Try cache_text_files
     result = await this.db.query<{ file_path: string }>(
       `SELECT file_path FROM cache_text_files WHERE file_hash = ? LIMIT 1`,
       [fileHash]

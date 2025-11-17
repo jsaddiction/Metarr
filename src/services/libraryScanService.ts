@@ -19,7 +19,53 @@ export class LibraryScanService extends EventEmitter {
 
   /**
    * Start a library scan
-   * Creates a scan job and processes it asynchronously
+   *
+   * Initiates a multi-phase library scan that discovers, processes, and optionally enriches media files.
+   * The scan runs asynchronously via the job queue system with real-time progress updates via WebSocket.
+   *
+   * **Scan Phases (Movie Libraries):**
+   * 1. **Discovery** - Find all subdirectories in library path
+   * 2. **Directory Scanning** - Queue directory-scan jobs for parallel processing
+   * 3. **File Processing** - Parse NFO, extract metadata, match against database
+   * 4. **Asset Caching** - Download posters/fanart to protected cache (if auto_enrich enabled)
+   * 5. **Enrichment** - Fetch metadata from providers (if auto_enrich enabled)
+   *
+   * @param libraryId - Database ID of the library to scan
+   *
+   * @returns Promise resolving to the created ScanJob with initial status
+   *
+   * @example
+   * ```typescript
+   * // Start a library scan
+   * const scanJob = await libraryScanService.startScan(1);
+   * console.log(`Scan started: ${scanJob.id}, status: ${scanJob.status}`);
+   *
+   * // Listen for progress events
+   * libraryScanService.on('scanProgress', (event) => {
+   *   console.log(`Progress: ${event.progressCurrent}/${event.progressTotal}`);
+   * });
+   *
+   * // Listen for completion
+   * libraryScanService.on('scanCompleted', (event) => {
+   *   console.log(`Scan completed: ${event.stats.added} added, ${event.stats.updated} updated`);
+   * });
+   * ```
+   *
+   * @remarks
+   * - **Idempotent**: Safe to run multiple times - updates existing movies, adds new ones
+   * - **One Active Scan**: Prevents multiple simultaneous scans per library
+   * - **Cancellable**: Scan can be cancelled mid-process via {@link cancelScan}
+   * - **Real-time Updates**: Broadcasts progress via WebSocket to connected clients
+   * - **Job Queue Integration**: Uses JobQueueService for parallel directory processing
+   * - **Auto-enrichment**: Respects library.auto_enrich setting for metadata fetching
+   * - **Graceful Failures**: Individual directory failures don't stop entire scan
+   *
+   * @throws Error if library not found
+   * @throws Error if scan already running for this library
+   * @throws Error if database connection fails
+   *
+   * @see {@link cancelScan} for cancelling running scans
+   * @see {@link getScanJob} for retrieving scan status
    */
   async startScan(libraryId: number): Promise<ScanJob> {
     try {
@@ -74,7 +120,6 @@ export class LibraryScanService extends EventEmitter {
 
       logger.info(`Started scan for library ${library.name}`, { libraryId, scanJobId });
 
-      // Broadcast initial scan status via WebSocket
       websocketBroadcaster.broadcastScanStatus(
         scanJobId,
         libraryId,
@@ -99,6 +144,29 @@ export class LibraryScanService extends EventEmitter {
 
   /**
    * Get scan job by ID
+   *
+   * Retrieves detailed information about a scan job including phase progress,
+   * statistics, and current operation status.
+   *
+   * @param scanJobId - Database ID of the scan job
+   *
+   * @returns Promise resolving to ScanJob object or null if not found
+   *
+   * @example
+   * ```typescript
+   * // Check scan progress
+   * const scanJob = await libraryScanService.getScanJob(123);
+   * if (scanJob) {
+   *   console.log(`Status: ${scanJob.status}`);
+   *   console.log(`Progress: ${scanJob.directoriesScanned}/${scanJob.directoriesTotal}`);
+   *   console.log(`Movies found: ${scanJob.moviesFound} (${scanJob.moviesNew} new)`);
+   * }
+   * ```
+   *
+   * @remarks
+   * - Returns complete scan job state including all phase counters
+   * - Useful for polling scan progress in UI
+   * - Returns null if scan job doesn't exist
    */
   async getScanJob(scanJobId: number): Promise<ScanJob | null> {
     try {
@@ -118,6 +186,28 @@ export class LibraryScanService extends EventEmitter {
 
   /**
    * Get all active scan jobs
+   *
+   * Retrieves all currently running scan jobs across all libraries,
+   * ordered by start time (newest first).
+   *
+   * @returns Promise resolving to array of active ScanJob objects (empty array if none)
+   *
+   * @example
+   * ```typescript
+   * // Check for any running scans
+   * const activeScans = await libraryScanService.getActiveScanJobs();
+   * if (activeScans.length > 0) {
+   *   console.log(`${activeScans.length} scans currently running`);
+   *   activeScans.forEach(scan => {
+   *     console.log(`  - Library ${scan.libraryId}: ${scan.status}`);
+   *   });
+   * }
+   * ```
+   *
+   * @remarks
+   * - Only returns jobs with status = 'running'
+   * - Useful for system health checks and UI dashboards
+   * - Returns empty array if no scans running or on database error
    */
   async getActiveScanJobs(): Promise<ScanJob[]> {
     try {
@@ -136,6 +226,35 @@ export class LibraryScanService extends EventEmitter {
 
   /**
    * Cancel a running scan job
+   *
+   * Gracefully cancels an active library scan by setting a cancellation flag.
+   * The scan will stop between directory processing operations (not immediately).
+   * Already queued jobs in the job queue will continue processing.
+   *
+   * @param scanJobId - Database ID of the scan job to cancel
+   *
+   * @returns Promise resolving to true if cancellation requested, false if scan not found/not running
+   *
+   * @example
+   * ```typescript
+   * // Cancel a long-running scan
+   * const cancelled = await libraryScanService.cancelScan(123);
+   * if (cancelled) {
+   *   console.log('Scan cancellation requested - will stop after current directory');
+   * } else {
+   *   console.log('Scan not found or already completed');
+   * }
+   * ```
+   *
+   * @remarks
+   * - **Graceful Shutdown**: Scan completes current operation before stopping
+   * - **Not Immediate**: May take time to fully stop if processing large directory
+   * - **Job Queue**: Queued directory-scan jobs will still execute
+   * - **Status Update**: Scan job status set to 'cancelled' when stopped
+   * - **WebSocket Event**: Broadcasts scanCancelled event to connected clients
+   * - **No Effect**: Returns false if scan already completed/failed/cancelled
+   *
+   * @see {@link startScan} for starting scans
    */
   async cancelScan(scanJobId: number): Promise<boolean> {
     try {
@@ -187,7 +306,6 @@ export class LibraryScanService extends EventEmitter {
         path: library.path,
       });
 
-      // Execute the scan and capture statistics
       let stats = { added: 0, updated: 0, deleted: 0, failed: 0 };
 
       if (library.type === 'movie') {
