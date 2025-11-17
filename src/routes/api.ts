@@ -9,7 +9,6 @@ import { MovieFieldLockController } from '../controllers/movie/MovieFieldLockCon
 import { MovieUnknownFilesController } from '../controllers/movie/MovieUnknownFilesController.js';
 import { IgnorePatternController } from '../controllers/ignorePatternController.js';
 import { ImageController } from '../controllers/imageController.js';
-// import { AssetController } from '../controllers/assetController.js'; // DELETED: Legacy unused controller
 import { JobController } from '../controllers/jobController.js';
 import { DatabaseManager } from '../database/DatabaseManager.js';
 import { MediaPlayerConnectionManager } from '../services/mediaPlayerConnectionManager.js';
@@ -20,9 +19,7 @@ import { MovieService } from '../services/movieService.js';
 import { IgnorePatternService } from '../services/ignorePatternService.js';
 import { ImageService } from '../services/imageService.js';
 import { JobQueueService } from '../services/jobQueue/JobQueueService.js';
-// import { AssetSelectionService } from '../services/assetSelectionService.js'; // TODO: Refactor to use ProviderAssetsRepository
 import { ActorController } from '../controllers/actorController.js';
-// import { tmdbService } from '../services/providers/TMDBService.js'; // TODO: Re-enable if needed
 import { ProviderConfigService } from '../services/providerConfigService.js';
 import { ProviderConfigController } from '../controllers/providerConfigController.js';
 import { ProviderCacheManager } from '../services/providers/ProviderCacheManager.js';
@@ -105,11 +102,6 @@ export const createApiRouter = (
   // Initialize image service
   imageService.initialize().catch(err => logger.error('Failed to initialize image service:', err));
 
-  // Note: Job queue is now initialized in app.ts and passed through connectionManager
-  // This is legacy code that should be removed when routes are refactored
-  // TODO: Remove this after refactoring routes to not need jobQueue locally
-
-
   // Initialize priority config service and controller
   const priorityConfigService = new PriorityConfigService(db);
   const priorityConfigController = new PriorityConfigController(priorityConfigService);
@@ -130,9 +122,6 @@ export const createApiRouter = (
   // Initialize phase config service and settings controller
   const phaseConfigService = new PhaseConfigService(db);
   const settingsController = new SettingsController(phaseConfigService);
-
-  // DELETED: Legacy AssetController (unused - replaced by movie-specific endpoints)
-  // const assetController = new AssetController(db);
 
   // Initialize actor controller
   const actorController = new ActorController(dbManager);
