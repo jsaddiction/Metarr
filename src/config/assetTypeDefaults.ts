@@ -19,6 +19,8 @@ export interface AssetTypeConfig {
   maxAllowed: number;
   /** Description of how this asset type is used */
   description: string;
+  /** Media types this asset applies to (empty = applies to all) */
+  mediaTypes: ('movie' | 'tvshow' | 'season' | 'episode' | 'artist' | 'album' | 'song')[];
 }
 
 /**
@@ -30,47 +32,56 @@ export interface AssetTypeConfig {
  * - Jellyfin: Supports multiple posters/backdrops, user selects via UI
  */
 export const ASSET_TYPE_DEFAULTS: Record<string, AssetTypeConfig> = {
+  // ========================================
+  // MOVIES & TV SHOWS (Common Assets)
+  // ========================================
   poster: {
     displayName: 'Posters',
     defaultMax: 3,
     minAllowed: 0,
     maxAllowed: 10,
     description: 'Plex/Jellyfin support multiple, Kodi uses first',
+    mediaTypes: ['movie', 'tvshow', 'season'],
   },
   fanart: {
-    displayName: 'Fanart',
+    displayName: 'Fanart / Backdrops',
     defaultMax: 4,
     minAllowed: 0,
     maxAllowed: 10,
     description: 'All players support multiple, Kodi rotates in slideshow',
+    mediaTypes: ['movie', 'tvshow', 'season'],
   },
   banner: {
     displayName: 'Banners',
     defaultMax: 1,
     minAllowed: 0,
     maxAllowed: 3,
-    description: 'Rarely used, single instance typical',
+    description: 'Wide format banner for TV shows',
+    mediaTypes: ['tvshow', 'season'],
   },
   clearlogo: {
     displayName: 'Clear Logos',
     defaultMax: 1,
     minAllowed: 0,
     maxAllowed: 3,
-    description: 'Allow language variants',
+    description: 'Transparent logo overlays',
+    mediaTypes: ['movie', 'tvshow', 'artist', 'album'],
   },
   clearart: {
     displayName: 'Clear Art',
     defaultMax: 1,
     minAllowed: 0,
     maxAllowed: 3,
-    description: 'Allow language variants',
+    description: 'Transparent character/title art',
+    mediaTypes: ['movie', 'tvshow'],
   },
   landscape: {
     displayName: 'Landscapes',
     defaultMax: 1,
     minAllowed: 0,
     maxAllowed: 3,
-    description: 'Uncommon, rarely needs multiple',
+    description: 'Horizontal orientation images',
+    mediaTypes: ['movie', 'tvshow'],
   },
   keyart: {
     displayName: 'Key Art',
@@ -78,27 +89,75 @@ export const ASSET_TYPE_DEFAULTS: Record<string, AssetTypeConfig> = {
     minAllowed: 0,
     maxAllowed: 3,
     description: 'Poster without text, pairs with clearlogo',
-  },
-  thumb: {
-    displayName: 'Thumbnails',
-    defaultMax: 1,
-    minAllowed: 0,
-    maxAllowed: 3,
-    description: 'Single instance typical',
+    mediaTypes: ['movie'],
   },
   discart: {
     displayName: 'Disc Art',
     defaultMax: 1,
     minAllowed: 0,
     maxAllowed: 5,
-    description: 'For multi-disc releases (Extended Editions)',
+    description: 'For multi-disc releases',
+    mediaTypes: ['movie'],
   },
+
+  // ========================================
+  // TV EPISODES
+  // ========================================
+  thumb: {
+    displayName: 'Thumbnails',
+    defaultMax: 1,
+    minAllowed: 0,
+    maxAllowed: 1,
+    description: 'Episode screenshots',
+    mediaTypes: ['episode'],
+  },
+
+  // ========================================
+  // MUSIC
+  // ========================================
+  artist_thumb: {
+    displayName: 'Artist Photos',
+    defaultMax: 3,
+    minAllowed: 0,
+    maxAllowed: 10,
+    description: 'Artist promotional photos',
+    mediaTypes: ['artist'],
+  },
+  artist_fanart: {
+    displayName: 'Artist Fanart',
+    defaultMax: 4,
+    minAllowed: 0,
+    maxAllowed: 10,
+    description: 'Artist background images',
+    mediaTypes: ['artist'],
+  },
+  album_cover: {
+    displayName: 'Album Covers',
+    defaultMax: 1,
+    minAllowed: 0,
+    maxAllowed: 3,
+    description: 'Album cover art',
+    mediaTypes: ['album'],
+  },
+  cdart: {
+    displayName: 'CD Art',
+    defaultMax: 1,
+    minAllowed: 0,
+    maxAllowed: 5,
+    description: 'For multi-disc albums',
+    mediaTypes: ['album'],
+  },
+
+  // ========================================
+  // ACTORS (Cross-media)
+  // ========================================
   actor_thumb: {
-    displayName: 'Actor Thumbnails',
+    displayName: 'Actor Headshots',
     defaultMax: 1,
     minAllowed: 0,
     maxAllowed: 1,
     description: 'Always 1 per actor',
+    mediaTypes: [], // Applies to actors, not media items
   },
 };
 
@@ -149,4 +208,47 @@ export function getSingleAssetTypes(): string[] {
   return Object.entries(ASSET_TYPE_DEFAULTS)
     .filter(([_, config]) => config.defaultMax === 1)
     .map(([type, _]) => type);
+}
+
+/**
+ * Get asset types for a specific media type
+ */
+export function getAssetTypesForMediaType(
+  mediaType: 'movie' | 'tvshow' | 'season' | 'episode' | 'artist' | 'album' | 'song'
+): string[] {
+  return Object.entries(ASSET_TYPE_DEFAULTS)
+    .filter(([_, config]) => config.mediaTypes.includes(mediaType))
+    .map(([type, _]) => type);
+}
+
+/**
+ * Get asset types grouped by media type category
+ */
+export function getAssetTypesByMediaCategory(): Record<string, { displayName: string; assetTypes: string[] }> {
+  return {
+    movies: {
+      displayName: 'Movies',
+      assetTypes: getAssetTypesForMediaType('movie'),
+    },
+    tvshows: {
+      displayName: 'TV Shows',
+      assetTypes: getAssetTypesForMediaType('tvshow'),
+    },
+    seasons: {
+      displayName: 'Seasons',
+      assetTypes: getAssetTypesForMediaType('season'),
+    },
+    episodes: {
+      displayName: 'Episodes',
+      assetTypes: getAssetTypesForMediaType('episode'),
+    },
+    artists: {
+      displayName: 'Music Artists',
+      assetTypes: getAssetTypesForMediaType('artist'),
+    },
+    albums: {
+      displayName: 'Albums',
+      assetTypes: getAssetTypesForMediaType('album'),
+    },
+  };
 }

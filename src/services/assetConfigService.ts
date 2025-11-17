@@ -109,6 +109,7 @@ export class AssetConfigService {
       maxAllowed: number;
       description: string;
       isDefault: boolean;
+      mediaTypes: string[];
     }>
   > {
     const db = this.dbManager.getConnection();
@@ -140,6 +141,7 @@ export class AssetConfigService {
         maxAllowed: config.maxAllowed,
         description: config.description,
         isDefault,
+        mediaTypes: config.mediaTypes,
       };
     });
   }
