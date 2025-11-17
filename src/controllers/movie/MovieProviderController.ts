@@ -71,8 +71,8 @@ export class MovieProviderController {
         entityType: 'movie',
         entityId: movieId,
         externalIds: {
-          tmdb_id: movie.tmdb_id || undefined,
-          imdb_id: movie.imdb_id || undefined,
+          tmdb_id: typeof movie.tmdb_id === 'number' ? movie.tmdb_id : undefined,
+          imdb_id: typeof movie.imdb_id === 'string' ? movie.imdb_id : undefined,
         },
         assetTypes: assetTypes || undefined,
         force,
@@ -186,8 +186,8 @@ export class MovieProviderController {
 
       logger.info('Asset save complete', {
         movieId,
-        savedCount: result.savedAssets?.length || 0,
-        errorCount: result.errors?.length || 0,
+        savedCount: Array.isArray(result.savedAssets) ? result.savedAssets.length : 0,
+        errorCount: Array.isArray(result.errors) ? result.errors.length : 0,
       });
     } catch (error) {
       logger.error('Asset save failed', {

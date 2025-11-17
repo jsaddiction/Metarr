@@ -14,15 +14,17 @@ export class WebhookController {
   private webhookService: WebhookProcessingService;
   private db: DatabaseManager;
 
-  constructor(dbManager: DatabaseManager, connectionManager: MediaPlayerConnectionManager, jobQueue?: any) {
-    this.webhookService = new WebhookProcessingService(dbManager, connectionManager, jobQueue);
+  constructor(dbManager: DatabaseManager, connectionManager: MediaPlayerConnectionManager, jobQueue?: unknown) {
+    // Type guard: ensure jobQueue is JobQueueService or undefined
+    const typedJobQueue = jobQueue as import('../services/jobQueue/JobQueueService.js').JobQueueService | undefined;
+    this.webhookService = new WebhookProcessingService(dbManager, connectionManager, typedJobQueue);
     this.db = dbManager;
   }
 
   /**
    * Load webhook configuration from database
    */
-  private async getWebhookConfig(service: 'radarr' | 'sonarr' | 'lidarr'): Promise<any> {
+  private async getWebhookConfig(service: 'radarr' | 'sonarr' | 'lidarr'): Promise<Record<string, unknown>> {
     const conn = this.db.getConnection();
     const config = await conn.get(
       'SELECT * FROM webhook_config WHERE service = ?',
@@ -104,7 +106,7 @@ export class WebhookController {
           return;
         }
 
-        const isValid = this.validateBasicAuth(authHeader, config.auth_username, config.auth_password);
+        const isValid = this.validateBasicAuth(authHeader, String(config.auth_username ?? ''), String(config.auth_password ?? ''));
 
         if (!isValid) {
           logger.warn('Sonarr webhook rejected: Invalid credentials');
@@ -172,7 +174,7 @@ export class WebhookController {
           return;
         }
 
-        const isValid = this.validateBasicAuth(authHeader, config.auth_username, config.auth_password);
+        const isValid = this.validateBasicAuth(authHeader, String(config.auth_username ?? ''), String(config.auth_password ?? ''));
 
         if (!isValid) {
           logger.warn('Radarr webhook rejected: Invalid credentials');
@@ -267,7 +269,7 @@ export class WebhookController {
           return;
         }
 
-        const isValid = this.validateBasicAuth(authHeader, config.auth_username, config.auth_password);
+        const isValid = this.validateBasicAuth(authHeader, String(config.auth_username ?? ''), String(config.auth_password ?? ''));
 
         if (!isValid) {
           logger.warn('Lidarr webhook rejected: Invalid credentials');

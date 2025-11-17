@@ -12,6 +12,13 @@ import { logger } from '../middleware/logging.js';
 import { tmdbService } from '../services/providers/TMDBService.js';
 import fs from 'fs/promises';
 import { getErrorMessage, getStatusCode } from '../utils/errorHandling.js';
+import {
+  ValidationError,
+  AuthenticationError,
+  ProviderError,
+  FileSystemError,
+  ErrorCode,
+} from '../errors/index.js';
 
 /**
  * Provider Configuration Controller
@@ -296,7 +303,14 @@ export class ProviderConfigController {
     console.log('[TMDB Test] Using key (first 20 chars):', keyToUse ? keyToUse.substring(0, 20) + '...' : 'NONE');
 
     if (!keyToUse) {
-      throw new Error('TMDB API key is required and no default key is available');
+      throw new ValidationError(
+        'TMDB API key is required and no default key is available',
+        {
+          service: 'ProviderConfigController',
+          operation: 'testTMDBConnection',
+          metadata: { provider: 'tmdb' }
+        }
+      );
     }
 
     // Create temporary client
@@ -316,9 +330,28 @@ export class ProviderConfigController {
       const status = getStatusCode(error);
       console.error('[TMDB Test] API call failed:', status, getErrorMessage(error));
       if (status === 401) {
-        throw new Error('Invalid TMDB API key. Please check your credentials.');
+        throw new AuthenticationError(
+          'Invalid TMDB API key. Please check your credentials.',
+          {
+            service: 'ProviderConfigController',
+            operation: 'testTMDBConnection',
+            metadata: { provider: 'tmdb', statusCode: status }
+          }
+        );
       }
-      throw new Error(`TMDB API test failed: ${getErrorMessage(error)}`);
+      throw new ProviderError(
+        `TMDB API test failed: ${getErrorMessage(error)}`,
+        'tmdb',
+        ErrorCode.PROVIDER_INVALID_RESPONSE,
+        500,
+        true,
+        {
+          service: 'ProviderConfigController',
+          operation: 'testTMDBConnection',
+          metadata: { statusCode: status }
+        },
+        error instanceof Error ? error : undefined
+      );
     }
   }
 
@@ -333,7 +366,14 @@ export class ProviderConfigController {
     const keyToUse = apiKey || getDefaultApiKey('tvdb');
 
     if (!keyToUse) {
-      throw new Error('TVDB API key is required and no default key is available');
+      throw new ValidationError(
+        'TVDB API key is required and no default key is available',
+        {
+          service: 'ProviderConfigController',
+          operation: 'testTVDBConnection',
+          metadata: { provider: 'tvdb' }
+        }
+      );
     }
 
     // Create temporary client
@@ -346,10 +386,30 @@ export class ProviderConfigController {
     try {
       await testClient.login();
     } catch (error) {
-      if (getStatusCode(error) === 401) {
-        throw new Error('Invalid TVDB API key. Please check your credentials.');
+      const status = getStatusCode(error);
+      if (status === 401) {
+        throw new AuthenticationError(
+          'Invalid TVDB API key. Please check your credentials.',
+          {
+            service: 'ProviderConfigController',
+            operation: 'testTVDBConnection',
+            metadata: { provider: 'tvdb', statusCode: status }
+          }
+        );
       }
-      throw new Error(`TVDB API test failed: ${getErrorMessage(error)}`);
+      throw new ProviderError(
+        `TVDB API test failed: ${getErrorMessage(error)}`,
+        'tvdb',
+        ErrorCode.PROVIDER_INVALID_RESPONSE,
+        500,
+        true,
+        {
+          service: 'ProviderConfigController',
+          operation: 'testTVDBConnection',
+          metadata: { statusCode: status }
+        },
+        error instanceof Error ? error : undefined
+      );
     }
   }
 
@@ -377,13 +437,32 @@ export class ProviderConfigController {
     } catch (error) {
       const status = getStatusCode(error);
       if (status === 401 || status === 403) {
-        throw new Error('Invalid FanArt.tv API key. Please check your credentials.');
+        throw new AuthenticationError(
+          'Invalid FanArt.tv API key. Please check your credentials.',
+          {
+            service: 'ProviderConfigController',
+            operation: 'testFanArtConnection',
+            metadata: { provider: 'fanart_tv', statusCode: status }
+          }
+        );
       }
       if (status === 404) {
         // 404 is acceptable - means API is accessible but no images found
         return;
       }
-      throw new Error(`FanArt.tv API test failed: ${getErrorMessage(error)}`);
+      throw new ProviderError(
+        `FanArt.tv API test failed: ${getErrorMessage(error)}`,
+        'fanart_tv',
+        ErrorCode.PROVIDER_INVALID_RESPONSE,
+        500,
+        true,
+        {
+          service: 'ProviderConfigController',
+          operation: 'testFanArtConnection',
+          metadata: { statusCode: status }
+        },
+        error instanceof Error ? error : undefined
+      );
     }
   }
 
@@ -400,9 +479,33 @@ export class ProviderConfigController {
     } catch (error) {
       const status = getStatusCode(error);
       if (status === 403 || status === 429) {
-        throw new Error('IMDb blocked the request. You may be rate-limited or your IP may be banned.');
+        throw new ProviderError(
+          'IMDb blocked the request. You may be rate-limited or your IP may be banned.',
+          'imdb',
+          ErrorCode.PROVIDER_RATE_LIMIT,
+          429,
+          true,
+          {
+            service: 'ProviderConfigController',
+            operation: 'testIMDbConnection',
+            metadata: { provider: 'imdb', statusCode: status }
+          },
+          error instanceof Error ? error : undefined
+        );
       }
-      throw new Error(`IMDb connection test failed: ${getErrorMessage(error)}`);
+      throw new ProviderError(
+        `IMDb connection test failed: ${getErrorMessage(error)}`,
+        'imdb',
+        ErrorCode.PROVIDER_INVALID_RESPONSE,
+        500,
+        true,
+        {
+          service: 'ProviderConfigController',
+          operation: 'testIMDbConnection',
+          metadata: { statusCode: status }
+        },
+        error instanceof Error ? error : undefined
+      );
     }
   }
 
@@ -421,10 +524,35 @@ export class ProviderConfigController {
     try {
       await testClient.searchArtists('The Beatles', 1); // Method is searchArtists, not searchArtist
     } catch (error) {
-      if (getStatusCode(error) === 503) {
-        throw new Error('MusicBrainz rate limit exceeded. Please wait before testing again.');
+      const status = getStatusCode(error);
+      if (status === 503) {
+        throw new ProviderError(
+          'MusicBrainz rate limit exceeded. Please wait before testing again.',
+          'musicbrainz',
+          ErrorCode.PROVIDER_RATE_LIMIT,
+          503,
+          true,
+          {
+            service: 'ProviderConfigController',
+            operation: 'testMusicBrainzConnection',
+            metadata: { provider: 'musicbrainz', statusCode: status }
+          },
+          error instanceof Error ? error : undefined
+        );
       }
-      throw new Error(`MusicBrainz API test failed: ${getErrorMessage(error)}`);
+      throw new ProviderError(
+        `MusicBrainz API test failed: ${getErrorMessage(error)}`,
+        'musicbrainz',
+        ErrorCode.PROVIDER_INVALID_RESPONSE,
+        500,
+        true,
+        {
+          service: 'ProviderConfigController',
+          operation: 'testMusicBrainzConnection',
+          metadata: { statusCode: status }
+        },
+        error instanceof Error ? error : undefined
+      );
     }
   }
 
@@ -433,7 +561,14 @@ export class ProviderConfigController {
    */
   private async testTheAudioDBConnection(apiKey?: string): Promise<void> {
     if (!apiKey) {
-      throw new Error('TheAudioDB API key is required');
+      throw new ValidationError(
+        'TheAudioDB API key is required',
+        {
+          service: 'ProviderConfigController',
+          operation: 'testTheAudioDBConnection',
+          metadata: { provider: 'theaudiodb' }
+        }
+      );
     }
 
     const testClient = new TheAudioDBClient(apiKey); // Constructor takes string, not object
@@ -444,12 +579,43 @@ export class ProviderConfigController {
     } catch (error) {
       const status = getStatusCode(error);
       if (status === 401 || status === 403) {
-        throw new Error('Invalid TheAudioDB API key. Please check your credentials.');
+        throw new AuthenticationError(
+          'Invalid TheAudioDB API key. Please check your credentials.',
+          {
+            service: 'ProviderConfigController',
+            operation: 'testTheAudioDBConnection',
+            metadata: { provider: 'theaudiodb', statusCode: status }
+          }
+        );
       }
       if (status === 429) {
-        throw new Error('TheAudioDB rate limit exceeded. Free tier allows 30 requests per minute.');
+        throw new ProviderError(
+          'TheAudioDB rate limit exceeded. Free tier allows 30 requests per minute.',
+          'theaudiodb',
+          ErrorCode.PROVIDER_RATE_LIMIT,
+          429,
+          true,
+          {
+            service: 'ProviderConfigController',
+            operation: 'testTheAudioDBConnection',
+            metadata: { provider: 'theaudiodb', statusCode: status }
+          },
+          error instanceof Error ? error : undefined
+        );
       }
-      throw new Error(`TheAudioDB API test failed: ${getErrorMessage(error)}`);
+      throw new ProviderError(
+        `TheAudioDB API test failed: ${getErrorMessage(error)}`,
+        'theaudiodb',
+        ErrorCode.PROVIDER_INVALID_RESPONSE,
+        500,
+        true,
+        {
+          service: 'ProviderConfigController',
+          operation: 'testTheAudioDBConnection',
+          metadata: { statusCode: status }
+        },
+        error instanceof Error ? error : undefined
+      );
     }
   }
 
@@ -469,7 +635,18 @@ export class ProviderConfigController {
         await fs.access(testPath);
       }
     } catch (error) {
-      throw new Error(`Local filesystem access test failed: ${getErrorMessage(error)}. Ensure data directories exist.`);
+      throw new FileSystemError(
+        `Local filesystem access test failed: ${getErrorMessage(error)}. Ensure data directories exist.`,
+        ErrorCode.FS_READ_FAILED,
+        testPaths.join(', '),
+        true,
+        {
+          service: 'ProviderConfigController',
+          operation: 'testLocalConnection',
+          metadata: { provider: 'local', testPaths }
+        },
+        error instanceof Error ? error : undefined
+      );
     }
   }
 }

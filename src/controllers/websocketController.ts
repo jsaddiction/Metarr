@@ -18,6 +18,8 @@ import {
   CancelLibraryScanMessage,
   AckMessage,
 } from '../types/websocket.js';
+import { ApplicationError, DatabaseError, ErrorCode } from '../errors/index.js';
+import { getErrorMessage } from '../utils/errorHandling.js';
 
 /**
  * WebSocket Controller
@@ -35,16 +37,18 @@ export class WebSocketController {
     dbManager: DatabaseManager,
     connectionManager: MediaPlayerConnectionManager,
     wsServer: MetarrWebSocketServer,
-    jobQueue?: any // JobQueueService - optional for backward compatibility
+    jobQueue?: unknown // JobQueueService - optional for backward compatibility
   ) {
-    this.movieService = new MovieService(dbManager, jobQueue);
+    // Type guard: ensure jobQueue is JobQueueService or undefined
+    const typedJobQueue = jobQueue as import('../services/jobQueue/JobQueueService.js').JobQueueService | undefined;
+    this.movieService = new MovieService(dbManager, typedJobQueue);
     this.mediaPlayerService = new MediaPlayerService(dbManager, connectionManager);
     this.libraryService = new LibraryService(dbManager);
     // Note: LibraryScanService requires jobQueue but websocketController may not have it
     // This is a known limitation - library scans via websocket won't work until jobQueue is passed
-    this.libraryScanService = jobQueue
-      ? new LibraryScanService(dbManager, jobQueue)
-      : null as any; // Type assertion to avoid breaking changes
+    this.libraryScanService = typedJobQueue
+      ? new LibraryScanService(dbManager, typedJobQueue)
+      : null as unknown as LibraryScanService; // Type assertion to avoid breaking changes
     this.imageService = new ImageService(dbManager);
     this.wsServer = wsServer;
   }
@@ -170,7 +174,24 @@ export class WebSocketController {
         scope,
         error: error instanceof Error ? error.message : String(error),
       });
-      throw error;
+
+      // Let ApplicationError instances propagate
+      if (error instanceof ApplicationError) {
+        throw error;
+      }
+
+      // Wrap unknown errors
+      throw new DatabaseError(
+        `Failed to handle resync: ${getErrorMessage(error)}`,
+        ErrorCode.DATABASE_QUERY_FAILED,
+        true,
+        {
+          service: 'WebSocketController',
+          operation: 'handleResync',
+          metadata: { clientId, scope }
+        },
+        error instanceof Error ? error : undefined
+      );
     }
   }
 
@@ -216,7 +237,24 @@ export class WebSocketController {
         movieId: message.movieId,
         error: error instanceof Error ? error.message : String(error),
       });
-      throw error;
+
+      // Let ApplicationError instances propagate
+      if (error instanceof ApplicationError) {
+        throw error;
+      }
+
+      // Wrap unknown errors
+      throw new DatabaseError(
+        `Failed to update movie: ${getErrorMessage(error)}`,
+        ErrorCode.DATABASE_QUERY_FAILED,
+        true,
+        {
+          service: 'WebSocketController',
+          operation: 'handleUpdateMovie',
+          metadata: { clientId, movieId: message.movieId }
+        },
+        error instanceof Error ? error : undefined
+      );
     }
   }
 
@@ -248,7 +286,24 @@ export class WebSocketController {
         imageId: message.imageId,
         error: error instanceof Error ? error.message : String(error),
       });
-      throw error;
+
+      // Let ApplicationError instances propagate
+      if (error instanceof ApplicationError) {
+        throw error;
+      }
+
+      // Wrap unknown errors
+      throw new DatabaseError(
+        `Failed to delete image: ${getErrorMessage(error)}`,
+        ErrorCode.DATABASE_QUERY_FAILED,
+        true,
+        {
+          service: 'WebSocketController',
+          operation: 'handleDeleteImage',
+          metadata: { clientId, imageId: message.imageId, entityType: message.entityType }
+        },
+        error instanceof Error ? error : undefined
+      );
     }
   }
 
@@ -291,7 +346,24 @@ export class WebSocketController {
         playerId: message.playerId,
         error: error instanceof Error ? error.message : String(error),
       });
-      throw error;
+
+      // Let ApplicationError instances propagate
+      if (error instanceof ApplicationError) {
+        throw error;
+      }
+
+      // Wrap unknown errors
+      throw new DatabaseError(
+        `Failed to update player: ${getErrorMessage(error)}`,
+        ErrorCode.DATABASE_QUERY_FAILED,
+        true,
+        {
+          service: 'WebSocketController',
+          operation: 'handleUpdatePlayer',
+          metadata: { clientId, playerId: message.playerId }
+        },
+        error instanceof Error ? error : undefined
+      );
     }
   }
 
@@ -338,7 +410,24 @@ export class WebSocketController {
         libraryId: message.libraryId,
         error: error instanceof Error ? error.message : String(error),
       });
-      throw error;
+
+      // Let ApplicationError instances propagate
+      if (error instanceof ApplicationError) {
+        throw error;
+      }
+
+      // Wrap unknown errors
+      throw new DatabaseError(
+        `Failed to start library scan: ${getErrorMessage(error)}`,
+        ErrorCode.DATABASE_QUERY_FAILED,
+        true,
+        {
+          service: 'WebSocketController',
+          operation: 'handleStartLibraryScan',
+          metadata: { clientId, libraryId: message.libraryId }
+        },
+        error instanceof Error ? error : undefined
+      );
     }
   }
 
@@ -385,7 +474,24 @@ export class WebSocketController {
         scanId: message.scanId,
         error: error instanceof Error ? error.message : String(error),
       });
-      throw error;
+
+      // Let ApplicationError instances propagate
+      if (error instanceof ApplicationError) {
+        throw error;
+      }
+
+      // Wrap unknown errors
+      throw new DatabaseError(
+        `Failed to cancel library scan: ${getErrorMessage(error)}`,
+        ErrorCode.DATABASE_QUERY_FAILED,
+        true,
+        {
+          service: 'WebSocketController',
+          operation: 'handleCancelLibraryScan',
+          metadata: { clientId, scanId: message.scanId }
+        },
+        error instanceof Error ? error : undefined
+      );
     }
   }
 
