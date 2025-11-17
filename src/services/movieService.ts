@@ -141,11 +141,11 @@ export interface MovieAssetSelections {
 export class MovieService {
   // @ts-expect-error - Property reserved for future use
   private _jobQueue: JobQueueService | undefined;
-  private assetService: MovieAssetService;
-  private unknownFilesService: MovieUnknownFilesService;
-  private workflowService: MovieWorkflowService;
+  private readonly assetService: MovieAssetService;
+  private readonly unknownFilesService: MovieUnknownFilesService;
+  private readonly workflowService: MovieWorkflowService;
 
-  constructor(private db: DatabaseManager, jobQueue?: JobQueueService) {
+  constructor(private readonly db: DatabaseManager, jobQueue?: JobQueueService) {
     this._jobQueue = jobQueue;
     this.assetService = new MovieAssetService(db);
     this.unknownFilesService = new MovieUnknownFilesService(db);

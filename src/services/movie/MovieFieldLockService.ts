@@ -36,7 +36,7 @@ export const LOCKABLE_FIELDS = [
  * - Locks persist across all operations until explicitly unlocked
  */
 export class MovieFieldLockService {
-  constructor(private db: DatabaseManager) {}
+  constructor(private readonly db: DatabaseManager) {}
 
   /**
    * Lock a specific field to prevent automation from modifying it

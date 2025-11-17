@@ -21,7 +21,7 @@ import { ResourceNotFoundError } from '../../errors/index.js';
  * - Refresh movie by rescanning directory
  */
 export class MovieCrudService {
-  constructor(private db: DatabaseManager) {}
+  constructor(private readonly db: DatabaseManager) {}
 
   /**
    * Update movie metadata fields

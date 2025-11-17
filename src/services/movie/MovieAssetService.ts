@@ -22,6 +22,17 @@ import {
 } from '../../errors/index.js';
 
 /**
+ * Asset quality thresholds for warning detection
+ */
+const ASSET_QUALITY_THRESHOLDS = {
+  /** Minimum width for acceptable poster quality */
+  POSTER_MIN_WIDTH: 500,
+
+  /** Minimum width for acceptable fanart quality */
+  FANART_MIN_WIDTH: 1280,
+} as const;
+
+/**
  * MovieAssetService
  *
  * Handles the complete asset pipeline for movies:
@@ -42,7 +53,7 @@ import {
  * - Automated jobs: MUST check locks before calling these methods
  */
 export class MovieAssetService {
-  constructor(private db: DatabaseManager) {}
+  constructor(private readonly db: DatabaseManager) {}
 
   /**
    * Save asset selections for a movie
@@ -516,10 +527,10 @@ export class MovieAssetService {
       for (const asset of assets) {
         if (asset.width && asset.height) {
           // Example: Warn about low resolution posters
-          if (assetType === 'poster' && asset.width < 500) {
+          if (assetType === 'poster' && asset.width < ASSET_QUALITY_THRESHOLDS.POSTER_MIN_WIDTH) {
             result.warnings.push(`Poster from ${asset.provider} has low resolution (${asset.width}x${asset.height}). Consider selecting a higher quality image.`);
           }
-          if (assetType === 'fanart' && asset.width < 1280) {
+          if (assetType === 'fanart' && asset.width < ASSET_QUALITY_THRESHOLDS.FANART_MIN_WIDTH) {
             result.warnings.push(`Fanart from ${asset.provider} has low resolution (${asset.width}x${asset.height}). HD fanart is typically 1920x1080 or higher.`);
           }
         }

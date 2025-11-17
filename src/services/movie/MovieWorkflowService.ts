@@ -29,7 +29,7 @@ import {
 
 export class MovieWorkflowService {
   constructor(
-    private db: DatabaseManager,
+    private readonly db: DatabaseManager,
     private jobQueue?: JobQueueService
   ) {}
 

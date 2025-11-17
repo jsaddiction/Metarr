@@ -103,7 +103,7 @@ interface MovieDatabaseRow {
  * This service is pure data access layer - no mutations.
  */
 export class MovieQueryService {
-  constructor(private db: DatabaseManager) {}
+  constructor(private readonly db: DatabaseManager) {}
 
   async getAll(filters?: MovieFilters): Promise<MovieListResult> {
     const whereClauses: string[] = ['1=1'];

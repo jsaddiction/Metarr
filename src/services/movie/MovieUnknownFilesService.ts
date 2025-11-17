@@ -39,7 +39,7 @@ import {
  * - sharp: Image dimension extraction
  */
 export class MovieUnknownFilesService {
-  constructor(private db: DatabaseManager) {}
+  constructor(private readonly db: DatabaseManager) {}
 
   /**
    * Assign an unknown file to a specific asset type
