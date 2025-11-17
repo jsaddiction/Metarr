@@ -56,7 +56,7 @@ interface ActorDatabaseRow {
 }
 
 export class ActorService {
-  constructor(private db: DatabaseManager) {}
+  constructor(private readonly db: DatabaseManager) {}
 
   /**
    * Get all actors with optional filters

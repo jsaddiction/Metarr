@@ -41,10 +41,10 @@ export interface ProviderImage {
 }
 
 export class ImageService {
-  private cacheDir: string;
-  private tempDir: string;
+  private readonly cacheDir: string;
+  private readonly tempDir: string;
 
-  constructor(private dbManager: DatabaseManager) {
+  constructor(private readonly dbManager: DatabaseManager) {
     this.cacheDir = path.join(process.cwd(), 'data', 'cache', 'images');
     this.tempDir = path.join(process.cwd(), 'data', 'temp', 'images');
   }
@@ -243,7 +243,7 @@ export class ImageService {
           ...dimensions,
         });
       } catch (error) {
-        logger.error(`Failed to download candidate image: ${candidate.url}`, error);
+        logger.error(`Failed to download candidate image: ${candidate.url}`, { error: getErrorMessage(error) });
       }
     }
 

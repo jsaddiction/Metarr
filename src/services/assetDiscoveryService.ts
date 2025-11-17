@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import { DatabaseConnection } from '../types/database.js';
 import { logger } from '../middleware/logging.js';
 import { imageProcessor } from '../utils/ImageProcessor.js';
+import { getErrorMessage } from '../utils/errorHandling.js';
 
 /**
  * Asset Discovery Service
@@ -41,8 +42,8 @@ export interface DiscoveryResult {
 }
 
 export class AssetDiscoveryService {
-  private db: DatabaseConnection;
-  private cacheDir: string;
+  private readonly db: DatabaseConnection;
+  private readonly cacheDir: string;
 
   // Kodi naming patterns for asset discovery
   private readonly ASSET_PATTERNS = {
@@ -150,13 +151,13 @@ export class AssetDiscoveryService {
           result.cached++;
 
         } catch (error) {
-          logger.error(`Error processing asset ${filePath}:`, error);
+          logger.error(`Error processing asset ${filePath}`, { error: getErrorMessage(error) });
           result.errors++;
         }
       }
 
     } catch (error) {
-      logger.error(`Error scanning directory ${directoryPath}:`, error);
+      logger.error(`Error scanning directory ${directoryPath}`, { error: getErrorMessage(error) });
       result.errors++;
     }
 

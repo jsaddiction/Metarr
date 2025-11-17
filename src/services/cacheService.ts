@@ -13,7 +13,7 @@ import { InvalidStateError } from '../errors/index.js';
  */
 export class CacheService {
   private static instance: CacheService | null = null;
-  private cacheBasePath: string;
+  private readonly cacheBasePath: string;
   private db: DatabaseConnection | null = null;
 
   private constructor(cacheBasePath?: string) {

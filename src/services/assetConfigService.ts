@@ -16,7 +16,7 @@ import { logger } from '../middleware/logging.js';
 import { ValidationError } from '../errors/index.js';
 
 export class AssetConfigService {
-  constructor(private dbManager: DatabaseManager) {}
+  constructor(private readonly dbManager: DatabaseManager) {}
 
   /**
    * Get the maximum count for a specific asset type
