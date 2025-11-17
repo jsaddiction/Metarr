@@ -2,6 +2,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { logger } from '../../middleware/logging.js';
 import { getErrorMessage } from '../../utils/errorHandling.js';
+import { FileSystemError, ErrorCode } from '../../errors/index.js';
 
 export interface NFOFile {
   path: string;
@@ -234,6 +235,13 @@ export async function browseDirectory(dirPath: string): Promise<{ name: string; 
     return directories;
   } catch (error) {
     logger.error(`Failed to browse directory ${dirPath}`, { error: getErrorMessage(error) });
-    throw new Error(`Cannot read directory: ${getErrorMessage(error)}`);
+    throw new FileSystemError(
+      `Cannot read directory: ${getErrorMessage(error)}`,
+      ErrorCode.FS_READ_FAILED,
+      dirPath,
+      true,
+      { service: 'nfoDiscovery', operation: 'browseDirectory', metadata: { dirPath } },
+      error instanceof Error ? error : undefined
+    );
   }
 }

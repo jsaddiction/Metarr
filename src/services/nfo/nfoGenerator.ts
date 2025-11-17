@@ -4,6 +4,11 @@ import { Builder } from 'xml2js';
 import { logger } from '../../middleware/logging.js';
 import { DatabaseConnection } from '../../types/database.js';
 import { getErrorMessage } from '../../utils/errorHandling.js';
+import {
+  FileSystemError,
+  ResourceNotFoundError,
+  ErrorCode,
+} from '../../errors/index.js';
 
 /**
  * NFO Generation Service
@@ -287,7 +292,14 @@ export async function generateMovieNFO(movieDir: string, data: MovieNFOData): Pr
       movieDir,
       error: getErrorMessage(error),
     });
-    throw new Error(`NFO generation failed: ${getErrorMessage(error)}`);
+    throw new FileSystemError(
+      `NFO generation failed: ${getErrorMessage(error)}`,
+      ErrorCode.FS_WRITE_FAILED,
+      path.join(movieDir, 'movie.nfo'),
+      true,
+      { service: 'nfoGenerator', operation: 'generateMovieNFO', metadata: { movieDir } },
+      error instanceof Error ? error : undefined
+    );
   }
 }
 
@@ -399,7 +411,14 @@ export async function generateTVShowNFO(seriesDir: string, data: TVShowNFOData):
       seriesDir,
       error: getErrorMessage(error),
     });
-    throw new Error(`NFO generation failed: ${getErrorMessage(error)}`);
+    throw new FileSystemError(
+      `NFO generation failed: ${getErrorMessage(error)}`,
+      ErrorCode.FS_WRITE_FAILED,
+      path.join(seriesDir, 'tvshow.nfo'),
+      true,
+      { service: 'nfoGenerator', operation: 'generateTVShowNFO', metadata: { seriesDir } },
+      error instanceof Error ? error : undefined
+    );
   }
 }
 
@@ -483,7 +502,16 @@ export async function generateEpisodeNFO(
       episodeFilePath,
       error: getErrorMessage(error),
     });
-    throw new Error(`NFO generation failed: ${getErrorMessage(error)}`);
+    const parsedPath = path.parse(episodeFilePath);
+    const nfoPath = path.join(parsedPath.dir, `${parsedPath.name}.nfo`);
+    throw new FileSystemError(
+      `NFO generation failed: ${getErrorMessage(error)}`,
+      ErrorCode.FS_WRITE_FAILED,
+      nfoPath,
+      true,
+      { service: 'nfoGenerator', operation: 'generateEpisodeNFO', metadata: { episodeFilePath } },
+      error instanceof Error ? error : undefined
+    );
   }
 }
 
@@ -500,7 +528,12 @@ export async function generateMovieNFOFromDatabase(
     const movieResults = await db.query(`SELECT * FROM movies WHERE id = ?`, [movieId]);
 
     if (movieResults.length === 0) {
-      throw new Error(`Movie not found: ${movieId}`);
+      throw new ResourceNotFoundError(
+        'movie',
+        movieId,
+        `Movie not found: ${movieId}`,
+        { service: 'nfoGenerator', operation: 'generateMovieNFOFromDatabase' }
+      );
     }
 
     const movie = movieResults[0];
@@ -704,7 +737,19 @@ export async function generateMovieNFOFromDatabase(
       movieId,
       error: getErrorMessage(error),
     });
-    throw new Error(`NFO generation from database failed: ${getErrorMessage(error)}`);
+    // Re-throw ResourceNotFoundError as-is
+    if (error instanceof ResourceNotFoundError) {
+      throw error;
+    }
+    // Wrap other errors as FileSystemError
+    throw new FileSystemError(
+      `NFO generation from database failed: ${getErrorMessage(error)}`,
+      ErrorCode.FS_WRITE_FAILED,
+      path.join(movieDir, 'movie.nfo'),
+      true,
+      { service: 'nfoGenerator', operation: 'generateMovieNFOFromDatabase', metadata: { movieId, movieDir } },
+      error instanceof Error ? error : undefined
+    );
   }
 }
 
@@ -721,7 +766,12 @@ export async function generateTVShowNFOFromDatabase(
     const seriesResults = await db.query(`SELECT * FROM series WHERE id = ?`, [seriesId]);
 
     if (seriesResults.length === 0) {
-      throw new Error(`Series not found: ${seriesId}`);
+      throw new ResourceNotFoundError(
+        'series',
+        seriesId,
+        `Series not found: ${seriesId}`,
+        { service: 'nfoGenerator', operation: 'generateTVShowNFOFromDatabase' }
+      );
     }
 
     const series = seriesResults[0];
@@ -799,7 +849,19 @@ export async function generateTVShowNFOFromDatabase(
       seriesId,
       error: getErrorMessage(error),
     });
-    throw new Error(`NFO generation from database failed: ${getErrorMessage(error)}`);
+    // Re-throw ResourceNotFoundError as-is
+    if (error instanceof ResourceNotFoundError) {
+      throw error;
+    }
+    // Wrap other errors as FileSystemError
+    throw new FileSystemError(
+      `NFO generation from database failed: ${getErrorMessage(error)}`,
+      ErrorCode.FS_WRITE_FAILED,
+      path.join(seriesDir, 'tvshow.nfo'),
+      true,
+      { service: 'nfoGenerator', operation: 'generateTVShowNFOFromDatabase', metadata: { seriesId, seriesDir } },
+      error instanceof Error ? error : undefined
+    );
   }
 }
 
@@ -816,7 +878,12 @@ export async function generateEpisodeNFOFromDatabase(
     const episodeResults = await db.query(`SELECT * FROM episodes WHERE id = ?`, [episodeId]);
 
     if (episodeResults.length === 0) {
-      throw new Error(`Episode not found: ${episodeId}`);
+      throw new ResourceNotFoundError(
+        'episode',
+        episodeId,
+        `Episode not found: ${episodeId}`,
+        { service: 'nfoGenerator', operation: 'generateEpisodeNFOFromDatabase' }
+      );
     }
 
     const episode = episodeResults[0];
@@ -874,6 +941,20 @@ export async function generateEpisodeNFOFromDatabase(
       episodeId,
       error: getErrorMessage(error),
     });
-    throw new Error(`NFO generation from database failed: ${getErrorMessage(error)}`);
+    // Re-throw ResourceNotFoundError as-is
+    if (error instanceof ResourceNotFoundError) {
+      throw error;
+    }
+    // Wrap other errors as FileSystemError
+    const parsedPath = path.parse(episodeFilePath);
+    const nfoPath = path.join(parsedPath.dir, `${parsedPath.name}.nfo`);
+    throw new FileSystemError(
+      `NFO generation from database failed: ${getErrorMessage(error)}`,
+      ErrorCode.FS_WRITE_FAILED,
+      nfoPath,
+      true,
+      { service: 'nfoGenerator', operation: 'generateEpisodeNFOFromDatabase', metadata: { episodeId, episodeFilePath } },
+      error instanceof Error ? error : undefined
+    );
   }
 }

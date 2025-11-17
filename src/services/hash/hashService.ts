@@ -3,6 +3,11 @@ import crypto from 'crypto';
 import path from 'path';
 import { logger } from '../../middleware/logging.js';
 import { getErrorMessage } from '../../utils/errorHandling.js';
+import {
+  FileSystemError,
+  ValidationError,
+  ErrorCode,
+} from '../../errors/index.js';
 
 /**
  * Hybrid Hash Service
@@ -83,7 +88,14 @@ export async function hashDirectoryFingerprint(dirPath: string): Promise<Directo
       dirPath,
       error: getErrorMessage(error),
     });
-    throw new Error(`Directory fingerprint failed: ${getErrorMessage(error)}`);
+    throw new FileSystemError(
+      `Directory fingerprint failed: ${getErrorMessage(error)}`,
+      ErrorCode.FS_READ_FAILED,
+      dirPath,
+      true,
+      { service: 'hashService', operation: 'hashDirectoryFingerprint', metadata: { dirPath } },
+      error instanceof Error ? error : undefined
+    );
   }
 }
 
@@ -100,7 +112,10 @@ export async function hashSmallFile(filePath: string): Promise<FileHashResult> {
     const stats = await fs.stat(filePath);
 
     if (stats.size >= SIZE_10MB) {
-      throw new Error(`File too large for full hash: ${stats.size} bytes (max 10MB)`);
+      throw new ValidationError(
+        `File too large for full hash: ${stats.size} bytes (max 10MB)`,
+        { service: 'hashService', operation: 'hashSmallFile', metadata: { filePath, fileSize: stats.size } }
+      );
     }
 
     const content = await fs.readFile(filePath);
@@ -126,7 +141,18 @@ export async function hashSmallFile(filePath: string): Promise<FileHashResult> {
       filePath,
       error: getErrorMessage(error),
     });
-    throw new Error(`Small file hash failed: ${getErrorMessage(error)}`);
+    // Re-throw ValidationError as-is
+    if (error instanceof ValidationError) {
+      throw error;
+    }
+    throw new FileSystemError(
+      `Small file hash failed: ${getErrorMessage(error)}`,
+      ErrorCode.FS_READ_FAILED,
+      filePath,
+      true,
+      { service: 'hashService', operation: 'hashSmallFile', metadata: { filePath } },
+      error instanceof Error ? error : undefined
+    );
   }
 }
 
@@ -143,11 +169,17 @@ export async function hashMediumFile(filePath: string): Promise<FileHashResult> 
     const fileSize = stats.size;
 
     if (fileSize < SIZE_10MB) {
-      throw new Error(`File too small for partial hash: ${fileSize} bytes (use full hash)`);
+      throw new ValidationError(
+        `File too small for partial hash: ${fileSize} bytes (use full hash)`,
+        { service: 'hashService', operation: 'hashMediumFile', metadata: { filePath, fileSize } }
+      );
     }
 
     if (fileSize > SIZE_1GB) {
-      throw new Error(`File too large for partial hash: ${fileSize} bytes (use optimized hash)`);
+      throw new ValidationError(
+        `File too large for partial hash: ${fileSize} bytes (use optimized hash)`,
+        { service: 'hashService', operation: 'hashMediumFile', metadata: { filePath, fileSize } }
+      );
     }
 
     const chunkSize = 1024 * 1024; // 1MB
@@ -196,7 +228,18 @@ export async function hashMediumFile(filePath: string): Promise<FileHashResult> 
       filePath,
       error: getErrorMessage(error),
     });
-    throw new Error(`Medium file hash failed: ${getErrorMessage(error)}`);
+    // Re-throw ValidationError as-is
+    if (error instanceof ValidationError) {
+      throw error;
+    }
+    throw new FileSystemError(
+      `Medium file hash failed: ${getErrorMessage(error)}`,
+      ErrorCode.FS_READ_FAILED,
+      filePath,
+      true,
+      { service: 'hashService', operation: 'hashMediumFile', metadata: { filePath } },
+      error instanceof Error ? error : undefined
+    );
   }
 }
 
@@ -214,7 +257,10 @@ export async function hashLargeFile(filePath: string): Promise<FileHashResult> {
     const fileSize = stats.size;
 
     if (fileSize < SIZE_1GB) {
-      throw new Error(`File too small for optimized hash: ${fileSize} bytes (use partial hash)`);
+      throw new ValidationError(
+        `File too small for optimized hash: ${fileSize} bytes (use partial hash)`,
+        { service: 'hashService', operation: 'hashLargeFile', metadata: { filePath, fileSize } }
+      );
     }
 
     const headerSize = 4 * 1024 * 1024; // 4MB
@@ -272,7 +318,18 @@ export async function hashLargeFile(filePath: string): Promise<FileHashResult> {
       filePath,
       error: getErrorMessage(error),
     });
-    throw new Error(`Large file hash failed: ${getErrorMessage(error)}`);
+    // Re-throw ValidationError as-is
+    if (error instanceof ValidationError) {
+      throw error;
+    }
+    throw new FileSystemError(
+      `Large file hash failed: ${getErrorMessage(error)}`,
+      ErrorCode.FS_READ_FAILED,
+      filePath,
+      true,
+      { service: 'hashService', operation: 'hashLargeFile', metadata: { filePath } },
+      error instanceof Error ? error : undefined
+    );
   }
 }
 
@@ -298,7 +355,18 @@ export async function hashFile(filePath: string): Promise<FileHashResult> {
       filePath,
       error: getErrorMessage(error),
     });
-    throw new Error(`File hash failed: ${getErrorMessage(error)}`);
+    // Re-throw ApplicationError instances as-is
+    if (error instanceof ValidationError || error instanceof FileSystemError) {
+      throw error;
+    }
+    throw new FileSystemError(
+      `File hash failed: ${getErrorMessage(error)}`,
+      ErrorCode.FS_READ_FAILED,
+      filePath,
+      true,
+      { service: 'hashService', operation: 'hashFile', metadata: { filePath } },
+      error instanceof Error ? error : undefined
+    );
   }
 }
 

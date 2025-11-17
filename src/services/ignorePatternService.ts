@@ -2,6 +2,12 @@ import { DatabaseManager } from '../database/DatabaseManager.js';
 import { minimatch } from 'minimatch';
 import { logger } from '../middleware/logging.js';
 import { getErrorMessage } from '../utils/errorHandling.js';
+import {
+  DatabaseError,
+  ResourceNotFoundError,
+  ValidationError,
+  ErrorCode,
+} from '../errors/index.js';
 
 export interface IgnorePattern {
   id: number;
@@ -29,7 +35,13 @@ export class IgnorePatternService {
       return patterns;
     } catch (error) {
       logger.error('Failed to get ignore patterns', { error: getErrorMessage(error) });
-      throw new Error(`Failed to get ignore patterns: ${getErrorMessage(error)}`);
+      throw new DatabaseError(
+        `Failed to get ignore patterns: ${getErrorMessage(error)}`,
+        ErrorCode.DATABASE_QUERY_FAILED,
+        true,
+        { service: 'IgnorePatternService', operation: 'getAllPatterns' },
+        error instanceof Error ? error : undefined
+      );
     }
   }
 
@@ -45,7 +57,13 @@ export class IgnorePatternService {
       return patterns;
     } catch (error) {
       logger.error('Failed to get enabled patterns', { error: getErrorMessage(error) });
-      throw new Error(`Failed to get enabled patterns: ${getErrorMessage(error)}`);
+      throw new DatabaseError(
+        `Failed to get enabled patterns: ${getErrorMessage(error)}`,
+        ErrorCode.DATABASE_QUERY_FAILED,
+        true,
+        { service: 'IgnorePatternService', operation: 'getEnabledPatterns' },
+        error instanceof Error ? error : undefined
+      );
     }
   }
 
@@ -73,7 +91,13 @@ export class IgnorePatternService {
       return newPatterns[0];
     } catch (error) {
       logger.error('Failed to add pattern', { pattern, error: getErrorMessage(error) });
-      throw new Error(`Failed to add pattern: ${getErrorMessage(error)}`);
+      throw new DatabaseError(
+        `Failed to add pattern: ${getErrorMessage(error)}`,
+        ErrorCode.DATABASE_QUERY_FAILED,
+        true,
+        { service: 'IgnorePatternService', operation: 'addPattern', metadata: { pattern } },
+        error instanceof Error ? error : undefined
+      );
     }
   }
 
@@ -91,7 +115,13 @@ export class IgnorePatternService {
       logger.info('Toggled pattern', { id, enabled });
     } catch (error) {
       logger.error('Failed to toggle pattern', { id, error: getErrorMessage(error) });
-      throw new Error(`Failed to toggle pattern: ${getErrorMessage(error)}`);
+      throw new DatabaseError(
+        `Failed to toggle pattern: ${getErrorMessage(error)}`,
+        ErrorCode.DATABASE_QUERY_FAILED,
+        true,
+        { service: 'IgnorePatternService', operation: 'togglePattern', metadata: { id, enabled } },
+        error instanceof Error ? error : undefined
+      );
     }
   }
 
@@ -108,11 +138,19 @@ export class IgnorePatternService {
       );
 
       if (patterns.length === 0) {
-        throw new Error('Pattern not found');
+        throw new ResourceNotFoundError(
+          'ignorePattern',
+          id,
+          'Pattern not found',
+          { service: 'IgnorePatternService', operation: 'deletePattern' }
+        );
       }
 
       if (patterns[0].is_system) {
-        throw new Error('Cannot delete system patterns');
+        throw new ValidationError(
+          'Cannot delete system patterns',
+          { service: 'IgnorePatternService', operation: 'deletePattern', metadata: { id, is_system: true } }
+        );
       }
 
       await db.execute(`DELETE FROM ignore_patterns WHERE id = ?`, [id]);
@@ -120,7 +158,17 @@ export class IgnorePatternService {
       logger.info('Deleted pattern', { id });
     } catch (error) {
       logger.error('Failed to delete pattern', { id, error: getErrorMessage(error) });
-      throw new Error(`Failed to delete pattern: ${getErrorMessage(error)}`);
+      // Re-throw ApplicationError instances as-is
+      if (error instanceof ResourceNotFoundError || error instanceof ValidationError) {
+        throw error;
+      }
+      throw new DatabaseError(
+        `Failed to delete pattern: ${getErrorMessage(error)}`,
+        ErrorCode.DATABASE_QUERY_FAILED,
+        true,
+        { service: 'IgnorePatternService', operation: 'deletePattern', metadata: { id } },
+        error instanceof Error ? error : undefined
+      );
     }
   }
 
@@ -227,7 +275,13 @@ export class IgnorePatternService {
       return matchingIds.length;
     } catch (error) {
       logger.error('Failed to delete matching unknown files', { pattern, error: getErrorMessage(error) });
-      throw new Error(`Failed to delete matching unknown files: ${getErrorMessage(error)}`);
+      throw new DatabaseError(
+        `Failed to delete matching unknown files: ${getErrorMessage(error)}`,
+        ErrorCode.DATABASE_QUERY_FAILED,
+        true,
+        { service: 'IgnorePatternService', operation: 'deleteMatchingUnknownFiles', metadata: { pattern } },
+        error instanceof Error ? error : undefined
+      );
     }
   }
 }
