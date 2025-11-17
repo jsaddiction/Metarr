@@ -13,8 +13,8 @@ import { logger } from '../../middleware/logging.js';
  * Fetches metadata + assets in ONE API call per provider (efficient).
  */
 export class ProviderUpdaterScheduler {
-  private schedulerConfigService: LibrarySchedulerConfigService;
-  private jobQueueService: JobQueueService;
+  private readonly schedulerConfigService: LibrarySchedulerConfigService;
+  private readonly jobQueueService: JobQueueService;
   private intervalId: NodeJS.Timeout | null = null;
   private checkIntervalMs: number;
   private isRunning = false;

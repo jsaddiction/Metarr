@@ -13,8 +13,8 @@ import { logger } from '../../middleware/logging.js';
  * Does NOT make any provider API calls.
  */
 export class FileScannerScheduler {
-  private schedulerConfigService: LibrarySchedulerConfigService;
-  private jobQueueService: JobQueueService;
+  private readonly schedulerConfigService: LibrarySchedulerConfigService;
+  private readonly jobQueueService: JobQueueService;
   private intervalId: NodeJS.Timeout | null = null;
   private checkIntervalMs: number;
   private isRunning = false;
