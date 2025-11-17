@@ -835,10 +835,12 @@ export class MovieAssetService {
     return new Promise((resolve, reject) => {
       const protocol = url.startsWith('https') ? https : http;
 
-      protocol.get(url, (response) => {
+      const request = protocol.get(url, (response) => {
         if (response.statusCode === 301 || response.statusCode === 302) {
           // Handle redirect
           if (response.headers.location) {
+            // Clean up response stream before recursing
+            response.destroy();
             this.downloadFile(response.headers.location, destPath)
               .then(resolve)
               .catch(reject);
@@ -847,6 +849,8 @@ export class MovieAssetService {
         }
 
         if (response.statusCode !== 200) {
+          // Clean up response stream on error
+          response.destroy();
           reject(new Error(`Failed to download: HTTP ${response.statusCode}`));
           return;
         }
@@ -860,12 +864,28 @@ export class MovieAssetService {
         });
 
         fileStream.on('error', (err: Error) => {
+          fileStream.close();
+          response.destroy(); // Clean up response stream
+          fs.unlink(destPath).catch(() => {});
+          reject(err);
+        });
+
+        response.on('error', (err: Error) => {
+          fileStream.close();
+          response.destroy();
           fs.unlink(destPath).catch(() => {});
           reject(err);
         });
 
       }).on('error', (err) => {
+        // Request error - no stream to clean up yet
         reject(err);
+      });
+
+      // Handle request timeout
+      request.setTimeout(30000, () => {
+        request.destroy();
+        reject(new Error('Download timeout'));
       });
     });
   }

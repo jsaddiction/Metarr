@@ -118,7 +118,6 @@ export class NotificationJobHandlers {
       return;
     }
 
-    // Trigger scan for each Kodi group
     for (const group of groups) {
       try {
         await this.triggerKodiGroupScan(group.id, libraryPath);
@@ -181,7 +180,6 @@ export class NotificationJobHandlers {
       mappedPath = libraryPath;
     }
 
-    // Try each player until one succeeds (fallback)
     for (const player of players) {
       try {
         const httpClient = this.mediaPlayerManager.getHttpClient(player.id);

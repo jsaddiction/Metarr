@@ -168,7 +168,6 @@ export class IgnorePatternService {
   generatePatternFromFilename(fileName: string): string {
     const lowerName = fileName.toLowerCase();
 
-    // Check for common patterns
     if (lowerName.includes('sample')) {
       return '*.sample.*';
     }

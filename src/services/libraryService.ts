@@ -123,7 +123,6 @@ export class LibraryService {
     }
   ): Promise<Library> {
     try {
-      // If path is being updated, validate it
       if (data.path) {
         const isValid = await validateDirectory(data.path);
         if (!isValid) {

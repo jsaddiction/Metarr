@@ -331,6 +331,13 @@ export class MediaPlayerConnectionManager extends EventEmitter {
       // Disconnect WebSocket if exists
       if (state.wsClient) {
         try {
+          // Remove all event listeners to prevent memory leaks
+          state.wsClient.removeAllListeners('disconnected');
+          state.wsClient.removeAllListeners('error');
+          state.wsClient.removeAllListeners('stateChange');
+          state.wsClient.removeAllListeners('notification');
+          state.wsClient.removeAllListeners('connected');
+
           await state.wsClient.disconnect();
         } catch (error) {
           // Ignore disconnect errors
@@ -397,7 +404,6 @@ export class MediaPlayerConnectionManager extends EventEmitter {
       };
     }
 
-    // For HTTP-only mode, return basic status based on last poll
     return {
       id: playerId,
       name: '',
@@ -470,7 +476,6 @@ export class MediaPlayerConnectionManager extends EventEmitter {
     } catch (wsError: unknown) {
       logger.info('WebSocket test failed, trying HTTP', { error: (wsError as { message?: string }).message });
 
-      // Fallback to HTTP
       try {
         const httpClient = new KodiHttpClient({
           host: player.host,
@@ -536,6 +541,15 @@ export class MediaPlayerConnectionManager extends EventEmitter {
     if (!player) return;
 
     logger.info(`WebSocket disconnected for '${player.name}' - returning to HTTP polling`);
+
+    // Remove event listeners before clearing the WebSocket client
+    if (state.wsClient) {
+      state.wsClient.removeAllListeners('disconnected');
+      state.wsClient.removeAllListeners('error');
+      state.wsClient.removeAllListeners('stateChange');
+      state.wsClient.removeAllListeners('notification');
+      state.wsClient.removeAllListeners('connected');
+    }
 
     // Clear the WebSocket client
     delete state.wsClient;
@@ -998,7 +1012,6 @@ export class MediaPlayerConnectionManager extends EventEmitter {
       return { success: false, error: 'No enabled players in group' };
     }
 
-    // Try each player until one responds
     for (const player of players) {
       try {
         const httpClient = new KodiHttpClient({
@@ -1071,7 +1084,6 @@ export class MediaPlayerConnectionManager extends EventEmitter {
       return { success: false, error: 'No enabled players in group' };
     }
 
-    // Try each player until one succeeds
     for (const player of players) {
       try {
         const state = this.connections.get(player.id);

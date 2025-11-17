@@ -45,7 +45,6 @@ export class MetarrWebSocketServer {
       this.handleConnection(ws, req);
     });
 
-    // Start heartbeat
     this.startHeartbeat();
 
     logger.info('WebSocket server attached and listening on /ws');
@@ -55,7 +54,6 @@ export class MetarrWebSocketServer {
    * Handle new WebSocket connection
    */
   private handleConnection(ws: WebSocket, req: IncomingMessage): void {
-    // Check max connections
     if (this.config.maxConnections > 0 && this.clients.size >= this.config.maxConnections) {
       logger.warn('Max WebSocket connections reached, rejecting connection');
       ws.close(1008, 'Maximum connections reached');
@@ -80,10 +78,8 @@ export class MetarrWebSocketServer {
       totalClients: this.clients.size,
     });
 
-    // Send welcome message
     this.sendWelcomeMessage(clientId);
 
-    // Setup event handlers
     ws.on('message', (data: Buffer) => {
       this.handleMessage(clientId, data);
     });
@@ -171,7 +167,6 @@ export class MetarrWebSocketServer {
 
     this.sendToClient(clientId, pongMsg);
 
-    // Update last ping time
     const client = this.clients.get(clientId);
     if (client) {
       client.lastPing = new Date();
@@ -227,9 +222,7 @@ export class MetarrWebSocketServer {
       const deadClients: string[] = [];
 
       this.clients.forEach((client, clientId) => {
-        // Check if client is still alive
         if (client.ws.readyState === WebSocket.OPEN) {
-          // Check if client has responded to previous ping
           if (client.lastPong) {
             const timeSinceLastPong = now.getTime() - client.lastPong.getTime();
             if (timeSinceLastPong > this.config.pingInterval + this.config.pingTimeout) {
@@ -395,7 +388,6 @@ export class MetarrWebSocketServer {
   public async shutdown(): Promise<void> {
     logger.info('Shutting down WebSocket server');
 
-    // Stop heartbeat
     this.stopHeartbeat();
 
     // Close all client connections

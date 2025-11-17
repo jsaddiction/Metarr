@@ -53,7 +53,6 @@ export class MovieUnknownFilesService {
     const conn = this.db.getConnection();
 
     try {
-      // Get the unknown file record
       const unknownFileResults = await conn.query(
         'SELECT * FROM unknown_files WHERE id = ? AND entity_id = ? AND entity_type = ?',
         [fileId, movieId, 'movie']
@@ -167,7 +166,6 @@ export class MovieUnknownFilesService {
     // 2. Library copy must follow Kodi naming convention for media player scans
     // 3. Cache is source of truth for rebuild operations
 
-    // Hash the original file
     let fileHash: string | undefined;
     try {
       const hashResult = await hashSmallFile(originalFilePath);
@@ -457,7 +455,6 @@ export class MovieUnknownFilesService {
     const conn = this.db.getConnection();
 
     try {
-      // Get the file path
       const results = await conn.query(
         'SELECT file_path FROM unknown_files WHERE id = ? AND entity_id = ? AND entity_type = ?',
         [fileId, movieId, 'movie']
@@ -469,7 +466,6 @@ export class MovieUnknownFilesService {
 
       const filePath = results[0].file_path;
 
-      // Delete the file from filesystem
       try {
         await fs.unlink(filePath);
         logger.info('Deleted unknown file from filesystem', {

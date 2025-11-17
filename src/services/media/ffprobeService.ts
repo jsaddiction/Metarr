@@ -73,6 +73,39 @@ export interface MediaInfo {
 }
 
 /**
+ * FFprobe stream object types (raw output from ffprobe)
+ */
+interface FFprobeStream {
+  index: number;
+  codec_type: string;
+  codec_name?: string;
+  codec_long_name?: string;
+  profile?: string;
+  width?: number;
+  height?: number;
+  display_aspect_ratio?: string;
+  r_frame_rate?: string;
+  bit_rate?: string;
+  pix_fmt?: string;
+  color_range?: string;
+  color_space?: string;
+  color_transfer?: string;
+  color_primaries?: string;
+  channels?: number;
+  channel_layout?: string;
+  sample_rate?: string;
+  tags?: {
+    language?: string;
+    title?: string;
+  };
+  disposition?: {
+    default?: number;
+    forced?: number;
+    hearing_impaired?: number;
+  };
+}
+
+/**
  * Extract media information from video file using FFprobe
  */
 export async function extractMediaInfo(filePath: string): Promise<MediaInfo> {
@@ -137,7 +170,7 @@ export async function extractMediaInfo(filePath: string): Promise<MediaInfo> {
 /**
  * Extract video stream information
  */
-function extractVideoStream(stream: any): VideoStream {
+function extractVideoStream(stream: FFprobeStream): VideoStream {
   const videoStream: VideoStream = {
     streamIndex: stream.index,
   };
@@ -194,7 +227,7 @@ function extractVideoStream(stream: any): VideoStream {
 /**
  * Extract audio stream information
  */
-function extractAudioStream(stream: any): AudioStream {
+function extractAudioStream(stream: FFprobeStream): AudioStream {
   const audioStream: AudioStream = {
     streamIndex: stream.index,
   };
@@ -230,7 +263,7 @@ function extractAudioStream(stream: any): AudioStream {
 /**
  * Extract embedded subtitle stream information
  */
-function extractSubtitleStream(stream: any): SubtitleStream {
+function extractSubtitleStream(stream: FFprobeStream): SubtitleStream {
   const subtitleStream: SubtitleStream = {
     streamIndex: stream.index,
     sourceType: 'embedded',

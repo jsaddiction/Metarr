@@ -33,6 +33,27 @@ export interface ActorListResult {
   total: number;
 }
 
+/**
+ * Database row type for actor queries
+ */
+interface ActorDatabaseRow {
+  id: number;
+  name: string;
+  name_normalized: string;
+  tmdb_id: number | null;
+  imdb_id: string | null;
+  image_cache_path: string | null;
+  image_hash: string | null;
+  image_ctime: number | null;
+  identification_status: 'identified' | 'enriched' | null;
+  enrichment_priority: number | null;
+  name_locked: number;
+  image_locked: number;
+  movie_count: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export class ActorService {
   constructor(private db: DatabaseManager) {}
 
@@ -151,12 +172,9 @@ export class ActorService {
         }
       }
 
-      // Handle field locking - if name is being updated by user, lock it
       if (data.name !== undefined) {
         updateFields.push('name_locked = 1');
       }
-
-      // Handle image locking via separate method (uploadActorImage)
 
       if (updateFields.length === 0) {
         return await this.getById(actorId);
@@ -332,16 +350,16 @@ export class ActorService {
   /**
    * Map database row to Actor interface
    */
-  private mapActor(row: any): Actor {
+  private mapActor(row: ActorDatabaseRow): Actor {
     return {
       id: row.id,
       name: row.name,
       name_normalized: row.name_normalized,
-      tmdb_id: row.tmdb_id,
-      imdb_id: row.imdb_id,
-      image_cache_path: row.image_cache_path,
-      image_hash: row.image_hash,
-      image_ctime: row.image_ctime,
+      tmdb_id: row.tmdb_id ?? undefined,
+      imdb_id: row.imdb_id ?? undefined,
+      image_cache_path: row.image_cache_path ?? undefined,
+      image_hash: row.image_hash ?? undefined,
+      image_ctime: row.image_ctime ?? undefined,
       identification_status: row.identification_status || 'identified',
       enrichment_priority: row.enrichment_priority || 5,
       name_locked: Boolean(row.name_locked),

@@ -49,7 +49,6 @@ export class AssetConfigService {
       logger.error('Failed to get asset limit from database', { assetType, error });
     }
 
-    // Fallback to default
     return getDefaultMaxCount(assetType);
   }
 

@@ -7,6 +7,7 @@
  */
 
 import { DatabaseConnection } from '../../types/database.js';
+import { DatabaseManager } from '../../database/DatabaseManager.js';
 import { JobQueueService } from '../jobQueueService.js';
 import { NotificationConfigService } from '../notificationConfigService.js';
 import { MediaPlayerConnectionManager } from '../mediaPlayerConnectionManager.js';
@@ -24,13 +25,13 @@ import { ScheduledJobHandlers } from './ScheduledJobHandlers.js';
  */
 export interface HandlerDependencies {
   db: DatabaseConnection;
-  dbManager: any; // DatabaseManager - using any to avoid circular dependency
+  dbManager: DatabaseManager;
   jobQueue: JobQueueService;
   phaseConfig: PhaseConfigService;
   cacheDir: string;
   notificationConfig: NotificationConfigService;
   mediaPlayerManager: MediaPlayerConnectionManager;
-  tmdbClient?: any;
+  tmdbClient?: unknown; // TMDB client type not defined, using unknown instead of any
 }
 
 /**

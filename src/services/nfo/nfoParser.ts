@@ -238,7 +238,6 @@ function extractIdsFromUrls(content: string): NFOIds {
         }
       }
     } catch {
-      // Not a valid URL, skip this line
       continue;
     }
   }

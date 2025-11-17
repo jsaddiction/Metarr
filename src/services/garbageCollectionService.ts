@@ -143,7 +143,6 @@ export class GarbageCollectionService {
 
       logger.info(`Found ${expiredMovies.length} expired movies to permanently delete`);
 
-      // Delete each movie (CASCADE will handle related records)
       for (const movie of expiredMovies) {
         await db.execute(`DELETE FROM movies WHERE id = ?`, [movie.id]);
 
@@ -154,7 +153,6 @@ export class GarbageCollectionService {
           deletedAt: movie.deleted_at,
         });
 
-        // Log to activity_log
         await db.execute(
           `INSERT INTO activity_log (
             event_type,
@@ -250,7 +248,6 @@ export class GarbageCollectionService {
       let deletedCount = 0;
       const cacheDir = path.join(process.cwd(), 'data', 'cache');
 
-      // Check if cache directory exists
       try {
         await fs.access(cacheDir);
       } catch {
@@ -268,7 +265,6 @@ export class GarbageCollectionService {
           if (entry.isDirectory()) {
             await walkDirectory(fullPath);
           } else if (entry.isFile()) {
-            // Check if this file is referenced in database
             if (!referencedPaths.has(fullPath)) {
               try {
                 await fs.unlink(fullPath);

@@ -58,6 +58,37 @@ export interface MovieListResult {
 }
 
 /**
+ * Database row type for movie queries
+ * Represents the raw structure returned from database queries
+ */
+interface MovieDatabaseRow {
+  id: number;
+  title: string | null;
+  year: number | null;
+  studio_name: string | null;
+  monitored: number;
+  identification_status: 'unidentified' | 'identified' | 'enriched';
+  poster_count: number | null;
+  fanart_count: number | null;
+  landscape_count: number | null;
+  keyart_count: number | null;
+  banner_count: number | null;
+  clearart_count: number | null;
+  clearlogo_count: number | null;
+  discart_count: number | null;
+  trailer_count: number | null;
+  subtitle_count: number | null;
+  theme_count: number | null;
+  actor_count: number | null;
+  nfo_parsed_at: string | null;
+  plot: string | null;
+  tmdb_id: number | null;
+  imdb_id: string | null;
+  genre_count: number | null;
+  director_count: number | null;
+}
+
+/**
  * MovieQueryService
  *
  * Read-only query operations for movies.
@@ -356,12 +387,12 @@ export class MovieQueryService {
     }
   }
 
-  private mapToMovie(row: any): Movie {
+  private mapToMovie(row: MovieDatabaseRow): Movie {
     return {
       id: row.id,
       title: row.title || '[Unknown]',
-      year: row.year,
-      studio: row.studio_name,
+      year: row.year ?? undefined,
+      studio: row.studio_name ?? undefined,
       monitored: row.monitored === 1,
       identification_status: row.identification_status || 'unidentified',
       assetCounts: {
@@ -395,7 +426,7 @@ export class MovieQueryService {
     };
   }
 
-  private calculateNFOStatus(row: any): AssetStatus {
+  private calculateNFOStatus(row: MovieDatabaseRow): AssetStatus {
     // Grey: No NFO parsed
     if (!row.nfo_parsed_at) {
       return 'none';

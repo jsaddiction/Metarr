@@ -102,7 +102,6 @@ export class ProviderConfigService {
 
         logger.debug(`Using default API key for provider: ${providerName}`);
 
-        // Return a default config with the default API key
         return {
           id: 0, // Temporary ID for default configs
           providerName,

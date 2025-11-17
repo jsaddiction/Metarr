@@ -95,7 +95,6 @@ export class ProviderUpdaterScheduler {
         count: libraryIds.length,
       });
 
-      // Queue a job for each library
       for (const libraryId of libraryIds) {
         try {
           const jobId = await this.jobQueueService.addJob({

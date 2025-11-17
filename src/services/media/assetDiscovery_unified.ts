@@ -297,7 +297,6 @@ function calculateScore(candidate: AssetCandidate, assetType: string): number {
   else if (pixels > 1000000) score += 15; // > 1MP
   else score += 10;
 
-  // Format (10 points)
   const ext = path.extname(candidate.fileName).toLowerCase();
   if (ext === '.jpg' || ext === '.jpeg') score += 10;
   else if (ext === '.png') score += 8;

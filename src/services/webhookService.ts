@@ -132,9 +132,8 @@ export class WebhookService {
       return -1;
     }
 
-    // Create job with priority 1 (critical)
     const jobId = await this.jobQueue.addJob({
-      type: 'webhook-received', // Updated to new job type
+      type: 'webhook-received',
       priority: 1,
       payload: {
         source: 'radarr',
@@ -173,9 +172,8 @@ export class WebhookService {
       return -1;
     }
 
-    // Create job with priority 1 (critical)
     const jobId = await this.jobQueue.addJob({
-      type: 'webhook-received', // Updated to new job type
+      type: 'webhook-received',
       priority: 1,
       payload: {
         source: 'sonarr',
@@ -223,9 +221,8 @@ export class WebhookService {
       return -1;
     }
 
-    // Create job with priority 1 (critical)
     const jobId = await this.jobQueue.addJob({
-      type: 'webhook-received', // Updated to new job type
+      type: 'webhook-received',
       priority: 1,
       payload: {
         source: 'lidarr',
@@ -275,7 +272,6 @@ export class WebhookService {
    */
   private validateHMACSignature(payload: string, providedSignature: string, secret: string): boolean {
     try {
-      // Create HMAC-SHA256 hash
       const hmac = crypto.createHmac('sha256', secret);
       hmac.update(payload);
       const calculatedSignature = hmac.digest('hex');

@@ -50,7 +50,6 @@ export class MovieWorkflowService {
 
       const currentMovie = movie[0];
 
-      // Toggle the status
       const newMonitoredStatus = currentMovie.monitored === 1 ? 0 : 1;
 
       // Update database

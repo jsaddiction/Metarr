@@ -75,8 +75,8 @@ export class MovieCrudService {
         );
         query = result.query;
         values = result.values;
-      } catch (error: any) {
-        if (error.message.includes('No valid columns to update')) {
+      } catch (error) {
+        if (error instanceof Error && error.message.includes('No valid columns to update')) {
           return { success: true, message: 'No fields to update' };
         }
         throw error;
@@ -86,10 +86,8 @@ export class MovieCrudService {
 
       logger.info('Movie metadata updated', { movieId, updatedFields: Object.keys(metadata) });
 
-      // Broadcast update via WebSocket
       websocketBroadcaster.broadcastMoviesUpdated([movieId]);
 
-      // Return the updated movie
       const movies = await conn.query('SELECT * FROM movies WHERE id = ?', [movieId]);
       return movies.length > 0 ? movies[0] : null;
     } catch (error) {

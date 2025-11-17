@@ -1,4 +1,5 @@
 import { DatabaseConnection } from '../../types/database.js';
+import { DatabaseManager } from '../../database/DatabaseManager.js';
 import { Job } from '../jobQueue/types.js';
 import { JobQueueService } from '../jobQueue/JobQueueService.js';
 import { EnrichmentService } from '../enrichment/EnrichmentService.js';
@@ -25,7 +26,7 @@ export class AssetJobHandlers {
     jobQueue: JobQueueService,
     phaseConfig: PhaseConfigService,
     cacheDir: string,
-    dbManager?: any
+    dbManager?: DatabaseManager
   ) {
     this.db = db;
     this.jobQueue = jobQueue;

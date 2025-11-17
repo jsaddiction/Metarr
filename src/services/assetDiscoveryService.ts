@@ -228,7 +228,6 @@ export class AssetDiscoveryService {
     // Calculate SHA256 content hash
     candidate.contentHash = this.calculateContentHash(buffer);
 
-    // Copy to cache storage (content-addressed by SHA256)
     await this.copyToCache(candidate.contentHash, buffer, path.extname(candidate.libraryPath));
 
     // Cache path is stored in cache_inventory via insertCacheInventory() call in insertAssetCandidate()
@@ -246,7 +245,6 @@ export class AssetDiscoveryService {
     // TODO: Extract video duration using ffprobe (Phase 3)
     // For now, leave durationSeconds undefined
 
-    // Copy to cache storage
     await this.copyToCache(candidate.contentHash, buffer, path.extname(candidate.libraryPath));
   }
 
@@ -259,7 +257,6 @@ export class AssetDiscoveryService {
     // Calculate SHA256 content hash
     candidate.contentHash = this.calculateContentHash(buffer);
 
-    // Copy to cache storage
     await this.copyToCache(candidate.contentHash, buffer, path.extname(candidate.libraryPath));
   }
 
@@ -285,7 +282,6 @@ export class AssetDiscoveryService {
    */
   private async copyToCache(contentHash: string, buffer: Buffer, extension: string): Promise<string> {
     // Content-addressed path: cache/{type}/{hash.substring(0,2)}/{hash}{ext}
-    // For now, store in cache/assets/ (will organize by type in Phase 3)
     const subdir = contentHash.substring(0, 2);
     const cacheSubdir = path.join(this.cacheDir, 'assets', subdir);
 

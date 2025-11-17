@@ -1,4 +1,5 @@
 import { DatabaseConnection } from '../../types/database.js';
+import { DatabaseManager } from '../../database/DatabaseManager.js';
 import { Job, JobQueueService } from '../jobQueueService.js';
 import { logger } from '../../middleware/logging.js';
 import { websocketBroadcaster } from '../websocketBroadcaster.js';
@@ -22,7 +23,7 @@ export class ScheduledJobHandlers {
 
   constructor(
     db: DatabaseConnection,
-    _dbManager: any, // DatabaseManager - kept for interface compatibility
+    _dbManager: DatabaseManager, // Kept for interface compatibility
     jobQueue: JobQueueService
   ) {
     this.db = db;

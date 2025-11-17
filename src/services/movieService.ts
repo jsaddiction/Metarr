@@ -516,7 +516,6 @@ export class MovieService {
 
       logger.info('Movie metadata updated', { movieId, updatedFields: Object.keys(metadata) });
 
-      // Return the updated movie
       return await this.getById(movieId);
     } catch (error) {
       logger.error('Failed to update movie metadata', {

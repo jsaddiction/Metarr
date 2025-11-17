@@ -124,7 +124,6 @@ export class ImageService {
   ): Promise<number> {
     const db = this.dbManager.getConnection() as DatabaseConnection;
 
-    // Download to temp location
     const response = await axios.get(url, { responseType: 'arraybuffer' });
     const buffer = Buffer.from(response.data);
 
@@ -136,7 +135,6 @@ export class ImageService {
       ext = url.match(/\.(png|jpg|jpeg)$/i)![0];
     }
 
-    // Save to temp file
     const tempPath = path.join(
       this.tempDir,
       `provider_${Date.now()}_${Math.random().toString(36).substr(2, 9)}${ext}`
@@ -360,7 +358,6 @@ export class ImageService {
   ): Promise<number> {
     const db = this.dbManager.getConnection() as DatabaseConnection;
 
-    // Save to temp first
     const ext = path.extname(filename);
     const tempPath = path.join(
       this.tempDir,
@@ -420,12 +417,10 @@ export class ImageService {
     const image = await this.getImageById(imageId);
     if (!image) throw new Error('Image not found');
 
-    // Delete file from disk
     if (image.file_path && (await fs.pathExists(image.file_path))) {
       await fs.remove(image.file_path);
     }
 
-    // Delete from cache (CASCADE will handle library entries automatically)
     await this.dbManager.execute('DELETE FROM cache_image_files WHERE id = ?', [imageId]);
     logger.info('Deleted cache image file record', { imageId });
   }
@@ -447,7 +442,6 @@ export class ImageService {
       toPath: libraryPath
     });
 
-    // Create library file entry linked to cache
     const db = this.dbManager.getConnection();
 
     // Check if library entry already exists
