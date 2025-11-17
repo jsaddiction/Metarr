@@ -25,6 +25,8 @@ export interface ProviderConfig {
     baseUrl: string;
     rateLimit: number;
     rateLimitWindow: number;
+    language?: string;
+    includeAdult?: boolean;
   };
   tvdb?: {
     apiKey?: string | undefined;

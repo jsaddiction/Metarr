@@ -36,8 +36,8 @@ class TMDBService {
       this.client = new TMDBClient({
         apiKey: tmdbConfig.apiKey,
         baseUrl: tmdbConfig.baseUrl,
-        language: 'en-US', // TODO: Make configurable
-        includeAdult: false, // TODO: Make configurable
+        language: tmdbConfig.language || 'en-US',
+        includeAdult: tmdbConfig.includeAdult ?? false,
       });
 
       this.enabled = true;

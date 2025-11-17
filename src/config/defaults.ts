@@ -20,6 +20,8 @@ export const defaultConfig: AppConfig = {
       baseUrl: 'https://api.themoviedb.org/3',
       rateLimit: 40,
       rateLimitWindow: 10, // 40 requests per 10 seconds
+      language: 'en-US',
+      includeAdult: false,
     },
     tvdb: {
       baseUrl: 'https://api4.thetvdb.com/v4',

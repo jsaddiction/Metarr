@@ -57,6 +57,8 @@ export class ConfigManager {
     // Environment variables are optional - defaults provided for zero-config setup
     if (config.providers.tmdb) {
       config.providers.tmdb.apiKey = process.env.TMDB_API_KEY || getDefaultApiKey('tmdb');
+      config.providers.tmdb.language = this.getString('TMDB_LANGUAGE', config.providers.tmdb.language);
+      config.providers.tmdb.includeAdult = this.getBoolean('TMDB_INCLUDE_ADULT', config.providers.tmdb.includeAdult ?? false);
     }
     if (config.providers.tvdb) {
       config.providers.tvdb.apiKey = process.env.TVDB_API_KEY || getDefaultApiKey('tvdb');

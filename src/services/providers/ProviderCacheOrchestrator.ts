@@ -162,8 +162,8 @@ export class ProviderCacheOrchestrator {
     const tmdbConfig = appConfig.providers.tmdb;
     const tmdbClientOptions: TMDBClientOptions = {
       apiKey: tmdbConfig?.apiKey || '',
-      language: 'en-US',
-      includeAdult: false,
+      language: tmdbConfig?.language || 'en-US',
+      includeAdult: tmdbConfig?.includeAdult ?? false,
     };
 
     if (tmdbConfig?.baseUrl) {
