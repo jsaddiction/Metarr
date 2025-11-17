@@ -195,6 +195,219 @@ async function enrichMovie(id: number): Promise<void> {
 }
 ```
 
+### Service Instantiation Patterns
+
+Metarr uses three distinct service instantiation patterns based on the service's characteristics:
+
+#### **Pattern 1: Global Singleton** (Rare - Only 3 services)
+
+**When to use**:
+- Service manages a single global resource (cache directory, websocket hub, provider registry)
+- Requires exactly one instance across the entire application
+- State must be shared globally
+
+**Implementation**:
+```typescript
+export class CacheService {
+  private static instance: CacheService | null = null;
+  private constructor() {} // Private constructor
+
+  static getInstance(): CacheService {
+    if (!this.instance) {
+      this.instance = new CacheService();
+    }
+    return this.instance;
+  }
+
+  async initialize(db: DatabaseManager): Promise<void> {
+    // Deferred initialization with dependencies
+  }
+}
+
+// Export singleton instance for convenience
+export const cacheService = CacheService.getInstance();
+```
+
+**Current Global Singletons**:
+- `CacheService` - Single cache directory, asset deduplication
+- `WebSocketBroadcaster` - Single broadcast hub for all connections
+- `ProviderRegistry` - Global provider catalog and capability cache
+
+#### **Pattern 2: Application-Scoped Service** (Injectable, created once in app.ts)
+
+**When to use**:
+- Service manages application-wide resources (job queue, connection pools, schedulers)
+- Requires explicit lifecycle management (start/stop)
+- State is shared but needs controlled initialization
+- Background processing or event emitters
+
+**Implementation**:
+```typescript
+export class JobQueueService {
+  private handlers: Map<string, JobHandler> = new Map();
+  private processingInterval: NodeJS.Timeout | null = null;
+
+  constructor(private storage: IJobQueueStorage) {
+    // Dependencies injected via constructor
+  }
+
+  start(): void {
+    // Explicit lifecycle management
+  }
+
+  stop(): void {
+    // Cleanup resources
+  }
+}
+
+// In app.ts
+export class MetarrApp {
+  private jobQueueService: JobQueueService;
+
+  async start() {
+    this.jobQueueService = new JobQueueService(storage);
+    await this.jobQueueService.start();
+  }
+}
+```
+
+**Current Application-Scoped Services**:
+- `JobQueueService` - Job processing, handlers, circuit breaker state
+- `DatabaseManager` - Connection pool, transaction management
+- `MediaPlayerConnectionManager` - Active media player connections
+- `HealthCheckService` - Provider health polling, cache state
+- `MetarrWebSocketServer` - WebSocket server, client connection management
+- `FileScannerScheduler` - Periodic library scanning
+- `ProviderUpdaterScheduler` - Periodic provider data updates
+- `GarbageCollectionService` - Periodic cleanup operations
+
+#### **Pattern 3: Request-Scoped Service** (Injectable, created per-request/operation)
+
+**When to use**:
+- Stateless data access services (CRUD, queries)
+- Orchestrators that coordinate other services
+- Services that operate on specific data contexts
+- No shared state between calls
+
+**Implementation**:
+```typescript
+export class MovieCrudService {
+  constructor(private readonly db: DatabaseManager) {}
+
+  async findById(id: number): Promise<Movie> {
+    // Stateless operation using injected DB
+    return this.db.getConnection().query('SELECT * FROM movies WHERE id = ?', [id]);
+  }
+}
+
+// In controllers/routes
+function createMovieRoutes(db: DatabaseManager) {
+  const movieService = new MovieCrudService(db); // Created per route context
+
+  router.get('/movies/:id', async (req, res) => {
+    const movie = await movieService.findById(req.params.id);
+    res.json(movie);
+  });
+}
+```
+
+**Current Request-Scoped Services**:
+- **Data Access**: `MovieCrudService`, `MovieQueryService`, `MovieAssetService`, `LibraryService`
+- **Configuration**: `NotificationConfigService`, `PhaseConfigService`, `ProviderConfigService`
+- **Orchestrators**: `FetchOrchestrator`, `EnrichmentService`, `PublishingService`
+- **Providers**: `TMDBProvider`, `TVDBProvider`, `FanArtProvider` (created via ProviderRegistry)
+- **Utilities**: All function-based services (`unifiedScanService`, `cacheCopyService`, `actorService`)
+
+#### **Pattern Decision Tree**
+
+```
+Does the service manage a SINGLE GLOBAL RESOURCE?
+  (cache directory, global registry, broadcast hub)
+  ├─ YES → Global Singleton (Pattern 1)
+  └─ NO  → Continue...
+
+Does the service need LIFECYCLE MANAGEMENT?
+  (start/stop, background processing, event emitters)
+  ├─ YES → Application-Scoped (Pattern 2)
+  └─ NO  → Continue...
+
+Is the service STATELESS or operates on SPECIFIC DATA?
+  (CRUD, queries, orchestration, utilities)
+  ├─ YES → Request-Scoped (Pattern 3)
+  └─ NO  → Reconsider - might need Application-Scoped
+```
+
+#### **Anti-Patterns to Avoid**
+
+❌ **Multiple Singletons for Stateless Services**
+```typescript
+// Bad - Unnecessary singleton for stateless service
+export const movieService = MovieCrudService.getInstance();
+```
+
+❌ **Creating Application Services Per-Request**
+```typescript
+// Bad - Creates new job queue per request
+router.post('/jobs', (req, res) => {
+  const queue = new JobQueueService(storage); // Wrong!
+});
+```
+
+❌ **Global State in Request-Scoped Services**
+```typescript
+// Bad - Shared state in per-request service
+export class MovieService {
+  private cache: Map<number, Movie> = new Map(); // Wrong!
+}
+```
+
+#### **Testing Implications**
+
+**Singletons**:
+- Harder to test (shared state)
+- Use dependency injection in `initialize()` for testability
+- Consider factory methods for test instances
+
+**Injectable Services**:
+- Easy to test with mocked dependencies
+- Constructor injection enables full control
+- Each test gets fresh instance
+
+**Example**:
+```typescript
+// Easy to test
+describe('MovieCrudService', () => {
+  it('should find movie by id', async () => {
+    const mockDb = createMockDatabase();
+    const service = new MovieCrudService(mockDb);
+
+    const movie = await service.findById(1);
+    expect(movie.id).toBe(1);
+  });
+});
+```
+
+#### **Migration Guide**
+
+If you need to change a service's pattern:
+
+1. **To Singleton**: Only if managing global resource
+   - Add `getInstance()` static method
+   - Make constructor private
+   - Export singleton instance
+   - Update all imports
+
+2. **To Application-Scoped**: For background services
+   - Add to app.ts constructor/start method
+   - Store as class property
+   - Add explicit start/stop lifecycle
+
+3. **To Request-Scoped**: For stateless services
+   - Remove getInstance() if present
+   - Make constructor public
+   - Create per-request in routes/controllers
+   - Remove any shared state
+
 ### Database Patterns
 
 **Repository Pattern**
