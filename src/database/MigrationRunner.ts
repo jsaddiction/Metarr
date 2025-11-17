@@ -1,5 +1,7 @@
 import { DatabaseConnection } from '../types/database.js';
 import { CleanSchemaMigration } from './migrations/20251015_001_clean_schema.js';
+import { DatabaseError, ErrorCode } from '../errors/index.js';
+import { getErrorMessage } from '../utils/errorHandling.js';
 
 interface MigrationRecord {
   version: string;
@@ -81,7 +83,17 @@ export class MigrationRunner {
           console.log(`Migration completed: ${migration.version}`);
         } catch (error) {
           await this.db.rollback();
-          throw new Error(`Migration failed: ${migration.version} - ${error}`);
+          throw new DatabaseError(
+            `Migration failed: ${migration.version} - ${getErrorMessage(error)}`,
+            ErrorCode.DATABASE_TRANSACTION_FAILED,
+            false, // Migrations are not retryable mid-flight
+            {
+              service: 'MigrationRunner',
+              operation: 'migrate',
+              metadata: { migrationVersion: migration.version, migrationName: migration.name }
+            },
+            error instanceof Error ? error : undefined
+          );
         }
       }
     }
@@ -112,7 +124,17 @@ export class MigrationRunner {
         console.log(`Rollback completed: ${migration.version}`);
       } catch (error) {
         await this.db.rollback();
-        throw new Error(`Rollback failed: ${migration.version} - ${error}`);
+        throw new DatabaseError(
+          `Rollback failed: ${migration.version} - ${getErrorMessage(error)}`,
+          ErrorCode.DATABASE_TRANSACTION_FAILED,
+          false, // Rollbacks are not retryable mid-flight
+          {
+            service: 'MigrationRunner',
+            operation: 'rollback',
+            metadata: { migrationVersion: migration.version, migrationName: migration.name }
+          },
+          error instanceof Error ? error : undefined
+        );
       }
     }
   }

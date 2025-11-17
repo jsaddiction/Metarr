@@ -3,6 +3,7 @@ import { SqliteConnection } from './connections/SqliteConnection.js';
 import { PostgresConnection } from './connections/PostgresConnection.js';
 import { MySqlConnection } from './connections/MySqlConnection.js';
 import { logger } from '../middleware/logging.js';
+import { DatabaseError, ErrorCode } from '../errors/index.js';
 
 export class DatabaseManager {
   private connection: DatabaseConnection | null = null;
@@ -33,7 +34,16 @@ export class DatabaseManager {
         this.connection = new MySqlConnection(this.config);
         break;
       default:
-        throw new Error(`Unsupported database type: ${this.config.type}`);
+        throw new DatabaseError(
+          `Unsupported database type: ${this.config.type}`,
+          ErrorCode.DATABASE_CONNECTION_FAILED,
+          false,
+          {
+            service: 'DatabaseManager',
+            operation: 'connect',
+            metadata: { requestedType: this.config.type }
+          }
+        );
     }
 
     await this.connection.connect?.();
@@ -151,7 +161,16 @@ export class DatabaseManager {
         });
         this.reconnectAttempts = 0; // Reset counter on success
       } else {
-        throw new Error('Connection validation failed after reconnect');
+        throw new DatabaseError(
+          'Connection validation failed after reconnect',
+          ErrorCode.DATABASE_CONNECTION_FAILED,
+          true, // Can retry reconnection
+          {
+            service: 'DatabaseManager',
+            operation: 'reconnect',
+            metadata: { attempt: this.reconnectAttempts }
+          }
+        );
       }
     } catch (error) {
       logger.error('Database reconnection failed', {
@@ -170,7 +189,15 @@ export class DatabaseManager {
 
   getConnection(): DatabaseConnection {
     if (!this.connection) {
-      throw new Error('Database not connected. Call connect() first.');
+      throw new DatabaseError(
+        'Database not connected. Call connect() first.',
+        ErrorCode.DATABASE_CONNECTION_FAILED,
+        false,
+        {
+          service: 'DatabaseManager',
+          operation: 'getConnection'
+        }
+      );
     }
     return this.connection;
   }
