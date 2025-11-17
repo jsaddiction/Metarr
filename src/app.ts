@@ -24,6 +24,7 @@ import { ProviderRegistry } from './services/providers/ProviderRegistry.js';
 import { securityMiddleware, rateLimitByIp } from './middleware/security.js';
 import { requestLoggingMiddleware, errorLoggingMiddleware, logger } from './middleware/logging.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
+import { WEBSOCKET, RATE_LIMITS, DATABASE, JOB_QUEUE } from './config/constants.js';
 
 // Import routes
 import { createWebhookRouter } from './routes/webhooks.js';
@@ -56,8 +57,8 @@ export class App {
 
     // Initialize WebSocket server
     this.wsServer = new MetarrWebSocketServer({
-      pingInterval: 30000, // 30 seconds
-      pingTimeout: 5000, // 5 seconds
+      pingInterval: WEBSOCKET.PING_INTERVAL,
+      pingTimeout: WEBSOCKET.PING_TIMEOUT,
     });
 
     // Initialize WebSocket controller
@@ -107,8 +108,8 @@ export class App {
 
     // Rate limiting
     // Increased limit to accommodate static asset requests (images, etc.)
-    this.express.use('/api', rateLimitByIp(60000, 1000)); // 1000 requests per minute
-    this.express.use('/webhooks', rateLimitByIp(60000, 30)); // 30 webhook requests per minute
+    this.express.use('/api', rateLimitByIp(RATE_LIMITS.API_WINDOW, RATE_LIMITS.API_MAX_REQUESTS));
+    this.express.use('/webhooks', rateLimitByIp(RATE_LIMITS.WEBHOOK_WINDOW, RATE_LIMITS.WEBHOOK_MAX_REQUESTS));
 
     // Static files
     this.express.use(express.static(path.join(__dirname, '../public')));
@@ -185,7 +186,7 @@ export class App {
       logger.info('Database connected successfully');
 
       // Start database health checks (every 30 seconds)
-      this.dbManager.startHealthCheck(30000);
+      this.dbManager.startHealthCheck(DATABASE.HEALTH_CHECK_INTERVAL);
       logger.info('Database health checks started');
 
       // Run migrations
@@ -246,7 +247,7 @@ export class App {
       this.fileScannerScheduler = new FileScannerScheduler(
         this.dbManager,
         this.jobQueueService,
-        60000 // Check every 60 seconds
+        JOB_QUEUE.HEALTH_CHECK_INTERVAL
       );
       this.fileScannerScheduler.start();
       logger.info('File scanner scheduler started');
@@ -254,7 +255,7 @@ export class App {
       this.providerUpdaterScheduler = new ProviderUpdaterScheduler(
         this.dbManager,
         this.jobQueueService,
-        300000 // Check every 5 minutes
+        JOB_QUEUE.VERIFICATION_INTERVAL
       );
       this.providerUpdaterScheduler.start();
       logger.info('Provider updater scheduler started');

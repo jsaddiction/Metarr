@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import helmet from 'helmet';
+import { RATE_LIMITS } from '../config/constants.js';
 
 export const securityMiddleware = [
   // Basic security headers
@@ -23,7 +24,6 @@ export const securityMiddleware = [
 
 export const rateLimitByIp = (windowMs: number, maxRequests: number) => {
   const requests = new Map<string, number[]>();
-  const MAX_IPS = 10000; // Maximum IPs to track before cleanup
 
   // Periodic cleanup of old IPs (every 2x window duration)
   const cleanupInterval = setInterval(() => {
@@ -39,7 +39,7 @@ export const rateLimitByIp = (windowMs: number, maxRequests: number) => {
     }
 
     // Additional safety: if we still have too many IPs, remove oldest entries
-    if (requests.size > MAX_IPS) {
+    if (requests.size > RATE_LIMITS.MAX_TRACKED_IPS) {
       const sortedEntries = Array.from(requests.entries())
         .sort((a, b) => {
           const aLast = a[1][a[1].length - 1] || 0;
