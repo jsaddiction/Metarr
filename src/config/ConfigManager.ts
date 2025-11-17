@@ -2,6 +2,7 @@ import dotenv from 'dotenv';
 import { AppConfig, DatabaseConfig, ServerConfig } from './types.js';
 import { defaultConfig } from './defaults.js';
 import { getDefaultApiKey } from './providerDefaults.js';
+import { ConfigurationError, ValidationError } from '../errors/index.js';
 
 export class ConfigManager {
   private static instance: ConfigManager;
@@ -122,7 +123,11 @@ export class ConfigManager {
   private getString(key: string, defaultValue?: string): string {
     const value = process.env[key];
     if (!value && !defaultValue) {
-      throw new Error(`Required environment variable ${key} is not set`);
+      throw new ConfigurationError(
+        key,
+        `Required environment variable ${key} is not set`,
+        { service: 'ConfigManager', operation: 'getString' }
+      );
     }
     return value || defaultValue!;
   }
@@ -131,13 +136,20 @@ export class ConfigManager {
     const value = process.env[key];
     if (!value) {
       if (defaultValue === undefined) {
-        throw new Error(`Required environment variable ${key} is not set`);
+        throw new ConfigurationError(
+          key,
+          `Required environment variable ${key} is not set`,
+          { service: 'ConfigManager', operation: 'getNumber' }
+        );
       }
       return defaultValue;
     }
     const parsed = parseInt(value, 10);
     if (isNaN(parsed)) {
-      throw new Error(`Environment variable ${key} must be a valid number`);
+      throw new ValidationError(
+        `Environment variable ${key} must be a valid number`,
+        { service: 'ConfigManager', operation: 'getNumber', metadata: { key, value } }
+      );
     }
     return parsed;
   }
@@ -146,7 +158,11 @@ export class ConfigManager {
     const value = process.env[key];
     if (!value) {
       if (defaultValue === undefined) {
-        throw new Error(`Required environment variable ${key} is not set`);
+        throw new ConfigurationError(
+          key,
+          `Required environment variable ${key} is not set`,
+          { service: 'ConfigManager', operation: 'getBoolean' }
+        );
       }
       return defaultValue;
     }
@@ -170,7 +186,10 @@ export class ConfigManager {
       return defaultValue;
     }
     if (!validValues.includes(value)) {
-      throw new Error(`Environment variable ${key} must be one of: ${validValues.join(', ')}`);
+      throw new ValidationError(
+        `Environment variable ${key} must be one of: ${validValues.join(', ')}`,
+        { service: 'ConfigManager', operation: 'getEnum', metadata: { key, value, validValues } }
+      );
     }
     return value;
   }
@@ -212,7 +231,11 @@ export class ConfigManager {
     }
 
     if (errors.length > 0) {
-      throw new Error(`Configuration validation failed:\n${errors.join('\n')}`);
+      throw new ConfigurationError(
+        'validation',
+        `Configuration validation failed:\n${errors.join('\n')}`,
+        { service: 'ConfigManager', operation: 'validate', metadata: { errors } }
+      );
     }
   }
 }

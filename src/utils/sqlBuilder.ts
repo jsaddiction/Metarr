@@ -8,14 +8,16 @@
  * by enforcing compile-time type checking on column names.
  */
 
+import { ValidationError, DatabaseError, ErrorCode } from '../errors/index.js';
+
 export interface UpdateColumn {
   column: string;
-  value: any;
+  value: unknown;
 }
 
 export interface UpdateBuilderResult {
   query: string;
-  values: any[];
+  values: unknown[];
 }
 
 /**
@@ -44,12 +46,12 @@ export interface UpdateBuilderResult {
 export function buildUpdateQuery(
   table: string,
   allowedColumns: readonly string[],
-  updates: Record<string, any>,
+  updates: Record<string, unknown>,
   whereClause: string,
-  whereValues: any[]
+  whereValues: unknown[]
 ): UpdateBuilderResult {
   const updateColumns: string[] = [];
-  const updateValues: any[] = [];
+  const updateValues: unknown[] = [];
 
   // Build SET clause - only include columns in allowlist
   for (const column of Object.keys(updates)) {
@@ -63,12 +65,28 @@ export function buildUpdateQuery(
   }
 
   if (updateColumns.length === 0) {
-    throw new Error('No valid columns to update - no provided fields match the allowlist');
+    throw new ValidationError(
+      'No valid columns to update - no provided fields match the allowlist',
+      {
+        service: 'sqlBuilder',
+        operation: 'buildUpdateQuery',
+        metadata: { table, providedFields: Object.keys(updates), allowedColumns: [...allowedColumns] }
+      }
+    );
   }
 
   // Validate WHERE clause contains placeholders
   if (!whereClause.includes('?')) {
-    throw new Error('WHERE clause must use parameterized placeholders (?)');
+    throw new DatabaseError(
+      'WHERE clause must use parameterized placeholders (?)',
+      ErrorCode.DATABASE_QUERY_FAILED,
+      false, // This is a programming error, not retryable
+      {
+        service: 'sqlBuilder',
+        operation: 'buildUpdateQuery',
+        metadata: { table, whereClause }
+      }
+    );
   }
 
   // Build complete query
@@ -97,9 +115,9 @@ export function buildUpdateQuery(
 export class UpdateQueryBuilder {
   private table: string;
   private allowedColumns: readonly string[] = [];
-  private updates: Record<string, any> = {};
+  private updates: Record<string, unknown> = {};
   private whereClause: string = '';
-  private whereValues: any[] = [];
+  private whereValues: unknown[] = [];
 
   constructor(table: string) {
     this.table = table;
@@ -116,7 +134,7 @@ export class UpdateQueryBuilder {
   /**
    * Set columns to update (filtered by allowlist)
    */
-  set(updates: Record<string, any>): this {
+  set(updates: Record<string, unknown>): this {
     this.updates = updates;
     return this;
   }
@@ -124,7 +142,7 @@ export class UpdateQueryBuilder {
   /**
    * Set WHERE clause with parameterized values
    */
-  where(clause: string, values: any[]): this {
+  where(clause: string, values: unknown[]): this {
     this.whereClause = clause;
     this.whereValues = values;
     return this;
@@ -135,11 +153,25 @@ export class UpdateQueryBuilder {
    */
   build(): UpdateBuilderResult {
     if (this.allowedColumns.length === 0) {
-      throw new Error('No allowed columns specified. Call allowColumns() first.');
+      throw new ValidationError(
+        'No allowed columns specified. Call allowColumns() first.',
+        {
+          service: 'sqlBuilder',
+          operation: 'UpdateQueryBuilder.build',
+          metadata: { table: this.table }
+        }
+      );
     }
 
     if (!this.whereClause) {
-      throw new Error('No WHERE clause specified. Call where() first.');
+      throw new ValidationError(
+        'No WHERE clause specified. Call where() first.',
+        {
+          service: 'sqlBuilder',
+          operation: 'UpdateQueryBuilder.build',
+          metadata: { table: this.table }
+        }
+      );
     }
 
     return buildUpdateQuery(
@@ -158,9 +190,13 @@ export class UpdateQueryBuilder {
  */
 export function validateColumn(column: string, allowedColumns: readonly string[], table: string): void {
   if (!allowedColumns.includes(column)) {
-    throw new Error(
-      `Column "${column}" is not in allowlist for table "${table}". ` +
-        `Allowed columns: ${allowedColumns.join(', ')}`
+    throw new ValidationError(
+      `Column "${column}" is not in allowlist for table "${table}". Allowed columns: ${allowedColumns.join(', ')}`,
+      {
+        service: 'sqlBuilder',
+        operation: 'validateColumn',
+        metadata: { column, table, allowedColumns: [...allowedColumns] }
+      }
     );
   }
 }
@@ -169,15 +205,15 @@ export function validateColumn(column: string, allowedColumns: readonly string[]
  * Filters an object to only include keys in the allowlist
  * Returns a new object with only allowed fields
  */
-export function filterAllowedFields<T extends Record<string, any>>(
+export function filterAllowedFields<T extends Record<string, unknown>>(
   data: T,
   allowedColumns: readonly string[]
-): Partial<T> {
-  const filtered: Partial<T> = {};
+): Record<string, unknown> {
+  const filtered: Record<string, unknown> = {};
 
   for (const key of Object.keys(data)) {
     if (allowedColumns.includes(key)) {
-      filtered[key as keyof T] = data[key];
+      filtered[key] = data[key];
     }
   }
 

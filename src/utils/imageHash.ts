@@ -12,6 +12,7 @@ import { promises as fs } from 'fs';
 import sharp from 'sharp';
 import { getErrorMessage } from './errorHandling.js';
 import { imageProcessor, ImageAnalysis } from './ImageProcessor.js';
+import { FileSystemError, ValidationError, ErrorCode } from '../errors/index.js';
 
 /**
  * Compute all perceptual hashes for an image
@@ -33,7 +34,14 @@ export async function computeImageHashes(
       metadata: analysis,
     };
   } catch (error) {
-    throw new Error(`Failed to compute image hashes for ${imagePath}: ${getErrorMessage(error)}`);
+    throw new FileSystemError(
+      `Failed to compute image hashes: ${getErrorMessage(error)}`,
+      ErrorCode.FS_READ_FAILED,
+      imagePath,
+      true,
+      { service: 'imageHash', operation: 'computeImageHashes', metadata: { imagePath } },
+      error instanceof Error ? error : undefined
+    );
   }
 }
 
@@ -62,7 +70,14 @@ export async function computeContentHash(filePath: string): Promise<string> {
     const fileBuffer = await fs.readFile(filePath);
     return crypto.createHash('sha256').update(fileBuffer).digest('hex');
   } catch (error) {
-    throw new Error(`Failed to compute content hash for ${filePath}: ${getErrorMessage(error)}`);
+    throw new FileSystemError(
+      `Failed to compute content hash: ${getErrorMessage(error)}`,
+      ErrorCode.FS_READ_FAILED,
+      filePath,
+      true,
+      { service: 'imageHash', operation: 'computeContentHash', metadata: { filePath } },
+      error instanceof Error ? error : undefined
+    );
   }
 }
 
@@ -75,7 +90,14 @@ export async function computeContentHash(filePath: string): Promise<string> {
  */
 export function hammingDistance(hash1: string, hash2: string): number {
   if (hash1.length !== hash2.length) {
-    throw new Error('Hashes must be same length');
+    throw new ValidationError(
+      'Hashes must be same length',
+      {
+        service: 'imageHash',
+        operation: 'hammingDistance',
+        metadata: { hash1Length: hash1.length, hash2Length: hash2.length }
+      }
+    );
   }
 
   const val1 = BigInt('0x' + hash1);
@@ -134,7 +156,14 @@ export async function getImageDimensions(
       height: metadata.height || 0,
     };
   } catch (error) {
-    throw new Error(`Failed to get image dimensions for ${imagePath}: ${getErrorMessage(error)}`);
+    throw new FileSystemError(
+      `Failed to get image dimensions: ${getErrorMessage(error)}`,
+      ErrorCode.FS_READ_FAILED,
+      imagePath,
+      true,
+      { service: 'imageHash', operation: 'getImageDimensions', metadata: { imagePath } },
+      error instanceof Error ? error : undefined
+    );
   }
 }
 
@@ -149,6 +178,13 @@ export async function getFileSize(filePath: string): Promise<number> {
     const stats = await fs.stat(filePath);
     return stats.size;
   } catch (error) {
-    throw new Error(`Failed to get file size for ${filePath}: ${getErrorMessage(error)}`);
+    throw new FileSystemError(
+      `Failed to get file size: ${getErrorMessage(error)}`,
+      ErrorCode.FS_READ_FAILED,
+      filePath,
+      true,
+      { service: 'imageHash', operation: 'getFileSize', metadata: { filePath } },
+      error instanceof Error ? error : undefined
+    );
   }
 }

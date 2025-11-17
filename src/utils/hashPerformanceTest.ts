@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import { getSubdirectories } from '../services/nfo/nfoDiscovery.js';
 import { logger } from '../middleware/logging.js';
 import { getErrorMessage } from './errorHandling.js';
+import { ValidationError } from '../errors/index.js';
 
 interface HashResult {
   dir: string;
@@ -414,7 +415,14 @@ export async function runHashPerformanceTest(
     logger.info(`Found ${movieDirs.length} directories\n`);
 
     if (movieDirs.length === 0) {
-      throw new Error('No directories found in test path');
+      throw new ValidationError(
+        'No directories found in test path',
+        {
+          service: 'hashPerformanceTest',
+          operation: 'runHashPerformanceTest',
+          metadata: { testRootPath }
+        }
+      );
     }
 
     // 2. Select random sample

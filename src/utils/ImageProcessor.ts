@@ -12,6 +12,7 @@
 
 import sharp from 'sharp';
 import { getErrorMessage } from './errorHandling.js';
+import { FileSystemError, ErrorCode } from '../errors/index.js';
 
 /**
  * Complete image analysis result
@@ -188,8 +189,13 @@ export class ImageProcessor {
         ...(foregroundRatio !== undefined && { foregroundRatio }),
       };
     } catch (error) {
-      throw new Error(
-        `Failed to analyze image ${imagePath}: ${getErrorMessage(error)}`
+      throw new FileSystemError(
+        `Failed to analyze image: ${getErrorMessage(error)}`,
+        ErrorCode.FS_READ_FAILED,
+        imagePath,
+        true, // Image processing can be retried
+        { service: 'ImageProcessor', operation: 'analyzeImage', metadata: { imagePath } },
+        error instanceof Error ? error : undefined
       );
     }
   }
@@ -237,8 +243,13 @@ export class ImageProcessor {
       };
     } catch (error) {
       const context = originalUrl ? ` from ${originalUrl}` : '';
-      throw new Error(
-        `Failed to analyze image buffer${context}: ${getErrorMessage(error)}`
+      throw new FileSystemError(
+        `Failed to analyze image buffer${context}: ${getErrorMessage(error)}`,
+        ErrorCode.FS_READ_FAILED,
+        originalUrl || 'buffer',
+        true, // Buffer processing can be retried
+        { service: 'ImageProcessor', operation: 'analyzeBuffer', metadata: { originalUrl, bufferSize: buffer.length } },
+        error instanceof Error ? error : undefined
       );
     }
   }

@@ -13,6 +13,8 @@
 import fs from 'fs/promises';
 import crypto from 'crypto';
 import { logger } from '../middleware/logging.js';
+import { FileSystemError, ErrorCode } from '../errors/index.js';
+import { getErrorMessage } from './errorHandling.js';
 
 /**
  * Calculate a quick hash of a file by reading first/last chunks and file size
@@ -70,12 +72,19 @@ export async function calculateQuickHash(filePath: string): Promise<string> {
     } finally {
       await fileHandle.close();
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
     logger.error('Failed to calculate file hash', {
       filePath,
-      error: error.message,
+      error: getErrorMessage(error),
     });
-    throw new Error(`Failed to hash file: ${error.message}`);
+    throw new FileSystemError(
+      `Failed to hash file: ${getErrorMessage(error)}`,
+      ErrorCode.FS_READ_FAILED,
+      filePath,
+      true, // File hashing can be retried
+      { service: 'fileHash', operation: 'calculateQuickHash', metadata: { filePath } },
+      error instanceof Error ? error : undefined
+    );
   }
 }
 
@@ -103,10 +112,11 @@ export async function calculateQuickHashBatch(
       try {
         const hash = await calculateQuickHash(filePath);
         results.set(filePath, hash);
-      } catch (error: any) {
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         logger.warn('Skipping file hash calculation', {
           filePath,
-          error: error.message,
+          error: errorMessage,
         });
         // Don't fail entire batch on one error
       }
