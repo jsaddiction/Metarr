@@ -7,7 +7,7 @@ import { rateLimitByIp } from '../middleware/security.js';
 export function createWebhookRouter(
   dbManager: DatabaseManager,
   connectionManager: MediaPlayerConnectionManager,
-  jobQueue?: any
+  jobQueue?: unknown
 ): Router {
   const router = Router();
   const webhookController = new WebhookController(dbManager, connectionManager, jobQueue);

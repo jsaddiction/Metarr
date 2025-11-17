@@ -16,7 +16,7 @@ process.on('SIGINT', async () => {
   process.exit(0);
 });
 
-process.on('unhandledRejection', (reason: any, promise: Promise<any>) => {
+process.on('unhandledRejection', (reason: unknown, promise: Promise<unknown>) => {
   logger.error('Unhandled promise rejection:', { reason, promise });
   process.exit(1);
 });

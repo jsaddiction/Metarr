@@ -25,6 +25,7 @@ import { securityMiddleware, rateLimitByIp } from './middleware/security.js';
 import { requestLoggingMiddleware, errorLoggingMiddleware, logger } from './middleware/logging.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { WEBSOCKET, RATE_LIMITS, DATABASE, JOB_QUEUE } from './config/constants.js';
+import { InvalidStateError } from './errors/index.js';
 
 // Import routes
 import { createWebhookRouter } from './routes/webhooks.js';
@@ -95,7 +96,7 @@ export class App {
     this.express.use(
       express.json({
         limit: '10mb',
-        verify: (req: any, _res, buf) => {
+        verify: (req: express.Request & { rawBody?: string }, _res, buf) => {
           // Store raw body for HMAC signature validation (webhooks)
           req.rawBody = buf.toString('utf8');
         },
@@ -144,11 +145,21 @@ export class App {
   private initializeApiRoutes(): void {
     // API routes (with dependency injection) - requires DB connection
     if (!this.jobQueueService) {
-      throw new Error('JobQueueService not initialized. Must call start() before initializing API routes.');
+      throw new InvalidStateError(
+        'App',
+        'jobQueueService',
+        'JobQueueService not initialized. Must call start() before initializing API routes.',
+        { service: 'App', operation: 'initializeApiRoutes' }
+      );
     }
 
     if (!this.healthCheckService) {
-      throw new Error('HealthCheckService not initialized. Must call start() before initializing API routes.');
+      throw new InvalidStateError(
+        'App',
+        'healthCheckService',
+        'HealthCheckService not initialized. Must call start() before initializing API routes.',
+        { service: 'App', operation: 'initializeApiRoutes' }
+      );
     }
 
     const apiRoutes = createApiRouter(

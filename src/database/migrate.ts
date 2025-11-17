@@ -1,5 +1,6 @@
 import { DatabaseManager } from './DatabaseManager.js';
 import { MigrationRunner } from './MigrationRunner.js';
+import { DatabaseConfig, DatabaseType } from '../types/database.js';
 import dotenv from 'dotenv';
 import path from 'path';
 
@@ -10,8 +11,8 @@ async function runMigrations() {
   console.log('🔧 Starting database migration...');
 
   // Create database configuration
-  const dbConfig: any = {
-    type: (process.env.DB_TYPE as 'sqlite3' | 'postgres' | 'mysql') || 'sqlite3',
+  const dbConfig: DatabaseConfig = {
+    type: (process.env.DB_TYPE as DatabaseType) || 'sqlite3',
     database: process.env.DB_NAME || 'metarr',
     filename: process.env.DB_FILE || path.join(process.cwd(), 'data', 'metarr.sqlite'),
   };

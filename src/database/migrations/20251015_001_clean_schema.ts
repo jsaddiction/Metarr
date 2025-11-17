@@ -17,6 +17,14 @@ import { DatabaseConnection } from '../../types/database.js';
  * - Field locking for user overrides
  * - 30-day soft deletes
  * - Media player groups with path mappings
+ *
+ * FOREIGN KEY CASCADE RULES (Added 2025-11-17):
+ * Addresses Audit Finding [C] Missing Foreign Key Cascades
+ * All foreign keys now have explicit ON DELETE behavior:
+ * - Asset references (poster_id, thumb_id, etc.) → ON DELETE SET NULL
+ * - Junction tables (movie_actors, etc.) → ON DELETE CASCADE
+ * - Audit references (webhook job_id) → ON DELETE SET NULL
+ * - Parent entity references → ON DELETE CASCADE
  */
 
 export class CleanSchemaMigration {
@@ -543,12 +551,12 @@ export class CleanSchemaMigration {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (library_id) REFERENCES libraries(id) ON DELETE CASCADE,
-        FOREIGN KEY (poster_id) REFERENCES cache_image_files(id),
-        FOREIGN KEY (fanart_id) REFERENCES cache_image_files(id),
-        FOREIGN KEY (banner_id) REFERENCES cache_image_files(id),
-        FOREIGN KEY (logo_id) REFERENCES cache_image_files(id),
-        FOREIGN KEY (clearart_id) REFERENCES cache_image_files(id),
-        FOREIGN KEY (thumb_id) REFERENCES cache_image_files(id)
+        FOREIGN KEY (poster_id) REFERENCES cache_image_files(id) ON DELETE SET NULL,
+        FOREIGN KEY (fanart_id) REFERENCES cache_image_files(id) ON DELETE SET NULL,
+        FOREIGN KEY (banner_id) REFERENCES cache_image_files(id) ON DELETE SET NULL,
+        FOREIGN KEY (logo_id) REFERENCES cache_image_files(id) ON DELETE SET NULL,
+        FOREIGN KEY (clearart_id) REFERENCES cache_image_files(id) ON DELETE SET NULL,
+        FOREIGN KEY (thumb_id) REFERENCES cache_image_files(id) ON DELETE SET NULL
       )
     `);
 
@@ -579,10 +587,10 @@ export class CleanSchemaMigration {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (series_id) REFERENCES series(id) ON DELETE CASCADE,
-        FOREIGN KEY (poster_id) REFERENCES cache_image_files(id),
-        FOREIGN KEY (fanart_id) REFERENCES cache_image_files(id),
-        FOREIGN KEY (banner_id) REFERENCES cache_image_files(id),
-        FOREIGN KEY (thumb_id) REFERENCES cache_image_files(id),
+        FOREIGN KEY (poster_id) REFERENCES cache_image_files(id) ON DELETE SET NULL,
+        FOREIGN KEY (fanart_id) REFERENCES cache_image_files(id) ON DELETE SET NULL,
+        FOREIGN KEY (banner_id) REFERENCES cache_image_files(id) ON DELETE SET NULL,
+        FOREIGN KEY (thumb_id) REFERENCES cache_image_files(id) ON DELETE SET NULL,
         UNIQUE(series_id, season_number)
       )
     `);
@@ -621,7 +629,7 @@ export class CleanSchemaMigration {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (series_id) REFERENCES series(id) ON DELETE CASCADE,
         FOREIGN KEY (season_id) REFERENCES seasons(id) ON DELETE CASCADE,
-        FOREIGN KEY (thumb_id) REFERENCES cache_image_files(id),
+        FOREIGN KEY (thumb_id) REFERENCES cache_image_files(id) ON DELETE SET NULL,
         UNIQUE(season_id, episode_number)
       )
     `);
@@ -666,10 +674,10 @@ export class CleanSchemaMigration {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (library_id) REFERENCES libraries(id) ON DELETE CASCADE,
-        FOREIGN KEY (thumb_id) REFERENCES cache_image_files(id),
-        FOREIGN KEY (fanart_id) REFERENCES cache_image_files(id),
-        FOREIGN KEY (banner_id) REFERENCES cache_image_files(id),
-        FOREIGN KEY (logo_id) REFERENCES cache_image_files(id)
+        FOREIGN KEY (thumb_id) REFERENCES cache_image_files(id) ON DELETE SET NULL,
+        FOREIGN KEY (fanart_id) REFERENCES cache_image_files(id) ON DELETE SET NULL,
+        FOREIGN KEY (banner_id) REFERENCES cache_image_files(id) ON DELETE SET NULL,
+        FOREIGN KEY (logo_id) REFERENCES cache_image_files(id) ON DELETE SET NULL
       )
     `);
 
@@ -702,7 +710,7 @@ export class CleanSchemaMigration {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (artist_id) REFERENCES artists(id) ON DELETE CASCADE,
-        FOREIGN KEY (thumb_id) REFERENCES cache_image_files(id)
+        FOREIGN KEY (thumb_id) REFERENCES cache_image_files(id) ON DELETE SET NULL
       )
     `);
 
@@ -795,7 +803,7 @@ export class CleanSchemaMigration {
         forced BOOLEAN DEFAULT 0,
         default_stream BOOLEAN DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (cache_asset_id) REFERENCES cache_text_files(id)
+        FOREIGN KEY (cache_asset_id) REFERENCES cache_text_files(id) ON DELETE SET NULL
       )
     `);
 
@@ -849,7 +857,7 @@ export class CleanSchemaMigration {
         actor_order INTEGER,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (movie_id) REFERENCES movies(id) ON DELETE CASCADE,
-        FOREIGN KEY (actor_id) REFERENCES actors(id)
+        FOREIGN KEY (actor_id) REFERENCES actors(id) ON DELETE CASCADE
       )
     `);
 
@@ -881,7 +889,7 @@ export class CleanSchemaMigration {
         imdb_id TEXT,
         thumb_id INTEGER,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (thumb_id) REFERENCES cache_image_files(id),
+        FOREIGN KEY (thumb_id) REFERENCES cache_image_files(id) ON DELETE SET NULL,
         UNIQUE(name)
       )
     `);
@@ -1226,7 +1234,7 @@ export class CleanSchemaMigration {
         job_id INTEGER,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         processed_at TIMESTAMP,
-        FOREIGN KEY (job_id) REFERENCES job_queue(id)
+        FOREIGN KEY (job_id) REFERENCES job_queue(id) ON DELETE SET NULL
       )
     `);
 

@@ -74,7 +74,13 @@ export const errorHandler = (
   });
 
   // Send error response
-  const errorResponse: any = {
+  const errorResponse: {
+    error: {
+      message: string;
+      status: number;
+      stack?: string;
+    };
+  } = {
     error: {
       message,
       status: statusCode,
