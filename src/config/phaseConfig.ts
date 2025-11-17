@@ -8,32 +8,11 @@
  */
 
 /**
- * Scan Phase Configuration
- *
- * Scan always runs fully - these settings control what to ignore/process
- */
-export interface ScanConfig {
-  // Ignore patterns (glob format)
-  ignorePatterns: string[];
-
-  // Max file size to process (GB)
-  maxFileSizeGB: number;
-
-  // FFprobe timeout (seconds)
-  ffprobeTimeoutSeconds: number;
-
-  // Video extensions
-  videoExtensions: string[];
-
-  // Image extensions
-  imageExtensions: string[];
-}
-
-/**
  * Enrichment Phase Configuration
  *
  * Enrichment always runs, but what it fetches/selects is configurable.
  * NOTE: Actors are ALWAYS fetched from TMDB (non-configurable - required for accuracy)
+ * NOTE: Asset limits are configured via AssetConfigService, not here
  */
 export interface EnrichmentPhaseConfig {
   // Fetch provider assets (posters, fanart, logos, trailers)
@@ -42,19 +21,8 @@ export interface EnrichmentPhaseConfig {
   // Auto-select best assets (if false, user picks manually in UI)
   autoSelectAssets: boolean;
 
-  // Max assets to fetch per type
-  maxAssetsPerType: {
-    poster: number;
-    fanart: number;
-    logo: number;
-    trailer: number;
-  };
-
-  // Preferred language for assets
+  // Preferred language for assets (ISO 639-1 code)
   preferredLanguage: string;
-
-  // Minimum asset resolution (height in pixels)
-  minAssetResolution: number;
 }
 
 /**
@@ -75,27 +43,11 @@ export interface PublishConfig {
 }
 
 /**
- * Player Sync Phase Configuration
+ * General Workflow Configuration
  *
- * Player sync always runs, but notifications can be disabled
+ * Controls core application behavior that applies across all phases
  */
-export interface PlayerSyncConfig {
-  // Notify media players after publishing
-  notifyOnPublish: boolean;
-
-  // Delay before notifying (seconds) - useful for batch operations
-  delaySeconds: number;
-
-  // Clean library first before update (Kodi-specific)
-  cleanLibraryFirst: boolean;
-}
-
-/**
- * Workflow Configuration
- *
- * Controls job chaining behavior between phases
- */
-export interface WorkflowConfig {
+export interface GeneralConfig {
   // Auto-publish after enrichment (if false, user must manually trigger publish)
   // When false: scan → enrich → [USER REVIEW] → manual publish
   // When true: scan → enrich → auto publish
@@ -106,41 +58,19 @@ export interface WorkflowConfig {
  * Complete phase configuration
  */
 export interface PhaseConfiguration {
-  scan: ScanConfig;
   enrichment: EnrichmentPhaseConfig;
   publish: PublishConfig;
-  playerSync: PlayerSyncConfig;
-  workflow: WorkflowConfig;
+  general: GeneralConfig;
 }
 
 /**
  * Default phase configuration
  */
 export const DEFAULT_PHASE_CONFIG: PhaseConfiguration = {
-  scan: {
-    ignorePatterns: [
-      '**/@eaDir/**',
-      '**/.DS_Store',
-      '**/Thumbs.db',
-      '**/.thumbnails/**',
-    ],
-    maxFileSizeGB: 100,
-    ffprobeTimeoutSeconds: 30,
-    videoExtensions: ['.mkv', '.mp4', '.avi', '.m4v', '.mov', '.wmv', '.flv', '.webm'],
-    imageExtensions: ['.jpg', '.jpeg', '.png', '.webp', '.gif'],
-  },
-
   enrichment: {
     fetchProviderAssets: true,
     autoSelectAssets: true,
-    maxAssetsPerType: {
-      poster: 3,
-      fanart: 5,
-      logo: 2,
-      trailer: 1,
-    },
     preferredLanguage: 'en',
-    minAssetResolution: 720,
   },
 
   publish: {
@@ -149,13 +79,7 @@ export const DEFAULT_PHASE_CONFIG: PhaseConfiguration = {
     publishTrailers: false, // Default: false (saves disk space)
   },
 
-  playerSync: {
-    notifyOnPublish: true,
-    delaySeconds: 0,
-    cleanLibraryFirst: false,
-  },
-
-  workflow: {
+  general: {
     autoPublish: false, // Default: false (user review gate enabled)
   },
 };

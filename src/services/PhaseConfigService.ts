@@ -50,25 +50,10 @@ export class PhaseConfigService {
 
     // Build config with defaults
     const config: PhaseConfiguration = {
-      scan: {
-        ignorePatterns: this.getArray(settings, 'phase.scan.ignorePatterns', DEFAULT_PHASE_CONFIG.scan.ignorePatterns),
-        maxFileSizeGB: this.getInt(settings, 'phase.scan.maxFileSizeGB', DEFAULT_PHASE_CONFIG.scan.maxFileSizeGB),
-        ffprobeTimeoutSeconds: this.getInt(settings, 'phase.scan.ffprobeTimeoutSeconds', DEFAULT_PHASE_CONFIG.scan.ffprobeTimeoutSeconds),
-        videoExtensions: this.getArray(settings, 'phase.scan.videoExtensions', DEFAULT_PHASE_CONFIG.scan.videoExtensions),
-        imageExtensions: this.getArray(settings, 'phase.scan.imageExtensions', DEFAULT_PHASE_CONFIG.scan.imageExtensions),
-      },
-
       enrichment: {
         fetchProviderAssets: this.getBool(settings, 'phase.enrichment.fetchProviderAssets', DEFAULT_PHASE_CONFIG.enrichment.fetchProviderAssets),
         autoSelectAssets: this.getBool(settings, 'phase.enrichment.autoSelectAssets', DEFAULT_PHASE_CONFIG.enrichment.autoSelectAssets),
-        maxAssetsPerType: {
-          poster: this.getInt(settings, 'phase.enrichment.maxPoster', DEFAULT_PHASE_CONFIG.enrichment.maxAssetsPerType.poster),
-          fanart: this.getInt(settings, 'phase.enrichment.maxFanart', DEFAULT_PHASE_CONFIG.enrichment.maxAssetsPerType.fanart),
-          logo: this.getInt(settings, 'phase.enrichment.maxLogo', DEFAULT_PHASE_CONFIG.enrichment.maxAssetsPerType.logo),
-          trailer: this.getInt(settings, 'phase.enrichment.maxTrailer', DEFAULT_PHASE_CONFIG.enrichment.maxAssetsPerType.trailer),
-        },
         preferredLanguage: this.getString(settings, 'phase.enrichment.language', DEFAULT_PHASE_CONFIG.enrichment.preferredLanguage),
-        minAssetResolution: this.getInt(settings, 'phase.enrichment.minResolution', DEFAULT_PHASE_CONFIG.enrichment.minAssetResolution),
       },
 
       publish: {
@@ -77,14 +62,8 @@ export class PhaseConfigService {
         publishTrailers: this.getBool(settings, 'phase.publish.trailers', DEFAULT_PHASE_CONFIG.publish.publishTrailers),
       },
 
-      playerSync: {
-        notifyOnPublish: this.getBool(settings, 'phase.playerSync.notify', DEFAULT_PHASE_CONFIG.playerSync.notifyOnPublish),
-        delaySeconds: this.getInt(settings, 'phase.playerSync.delaySeconds', DEFAULT_PHASE_CONFIG.playerSync.delaySeconds),
-        cleanLibraryFirst: this.getBool(settings, 'phase.playerSync.cleanFirst', DEFAULT_PHASE_CONFIG.playerSync.cleanLibraryFirst),
-      },
-
-      workflow: {
-        autoPublish: this.getBool(settings, 'phase.workflow.autoPublish', DEFAULT_PHASE_CONFIG.workflow.autoPublish),
+      general: {
+        autoPublish: this.getBool(settings, 'phase.general.autoPublish', DEFAULT_PHASE_CONFIG.general.autoPublish),
       },
     };
 
