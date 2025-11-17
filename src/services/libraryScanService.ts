@@ -12,8 +12,8 @@ export class LibraryScanService extends EventEmitter {
   private activeScansCancellationFlags: Map<number, boolean> = new Map();
 
   constructor(
-    private dbManager: DatabaseManager,
-    private jobQueue: JobQueueService
+    private readonly dbManager: DatabaseManager,
+    private readonly jobQueue: JobQueueService
   ) {
     super();
   }

@@ -24,11 +24,7 @@ export interface LibrarySchedulerConfig {
 }
 
 export class LibrarySchedulerConfigService {
-  private db: DatabaseConnection;
-
-  constructor(db: DatabaseConnection) {
-    this.db = db;
-  }
+  constructor(private readonly db: DatabaseConnection) {}
 
   /**
    * Get scheduler config for library

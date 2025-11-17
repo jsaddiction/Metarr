@@ -15,7 +15,7 @@ import {
 } from '../errors/index.js';
 
 export class LibraryService {
-  constructor(private dbManager: DatabaseManager) {}
+  constructor(private readonly dbManager: DatabaseManager) {}
 
   /**
    * Get all libraries
