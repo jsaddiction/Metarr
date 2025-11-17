@@ -66,7 +66,7 @@ export interface UpdateProviderAssetParams {
 }
 
 export class ProviderAssetsRepository {
-  constructor(private db: DatabaseConnection) {}
+  constructor(private readonly db: DatabaseConnection) {}
 
   /**
    * Find provider asset by URL

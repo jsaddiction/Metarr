@@ -100,14 +100,14 @@ interface ProviderMetadata {
 }
 
 export class EnrichmentService {
-  private providerAssetsRepo: ProviderAssetsRepository;
-  private providerCacheOrchestrator: ProviderCacheOrchestrator;
-  private phaseConfigService: PhaseConfigService;
-  private tempDir: string;
+  private readonly providerAssetsRepo: ProviderAssetsRepository;
+  private readonly providerCacheOrchestrator: ProviderCacheOrchestrator;
+  private readonly phaseConfigService: PhaseConfigService;
+  private readonly tempDir: string;
 
   constructor(
-    private db: DatabaseConnection,
-    private dbManager: DatabaseManager,
+    private readonly db: DatabaseConnection,
+    private readonly dbManager: DatabaseManager,
     cacheDir: string
   ) {
     this.providerAssetsRepo = new ProviderAssetsRepository(db);
