@@ -23,7 +23,7 @@ import { ValidationError, ResourceNotFoundError, InvalidStateError } from '../er
  * Manages provider priority ordering for asset types and metadata fields
  */
 export class PriorityConfigService {
-  constructor(private db: DatabaseConnection) {}
+  constructor(private readonly db: DatabaseConnection) {}
 
   /**
    * Get all asset type priorities

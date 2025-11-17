@@ -10,7 +10,7 @@ import { DatabaseError } from '../errors/index.js';
  * Handles CRUD operations for provider configurations
  */
 export class ProviderConfigService {
-  constructor(private db: DatabaseConnection) {}
+  constructor(private readonly db: DatabaseConnection) {}
 
   /**
    * Get all provider configurations

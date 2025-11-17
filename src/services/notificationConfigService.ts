@@ -31,7 +31,7 @@ export interface NotificationConfig {
  * ```
  */
 export class NotificationConfigService {
-  constructor(private db: DatabaseConnection) {}
+  constructor(private readonly db: DatabaseConnection) {}
 
   /**
    * Get all enabled notification services
