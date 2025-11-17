@@ -18,12 +18,9 @@ import { getErrorMessage, getErrorCode } from '../utils/errorHandling.js';
  */
 
 export class GarbageCollectionService {
-  private dbManager: DatabaseManager;
   private intervalId: NodeJS.Timeout | null = null;
 
-  constructor(dbManager: DatabaseManager) {
-    this.dbManager = dbManager;
-  }
+  constructor(private readonly dbManager: DatabaseManager) {}
 
   /**
    * Start the garbage collection scheduler

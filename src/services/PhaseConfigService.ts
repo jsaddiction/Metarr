@@ -22,7 +22,7 @@ export class PhaseConfigService {
   private cacheTimestamp = 0;
   private readonly CACHE_TTL = 60000; // 1 minute
 
-  constructor(private db: DatabaseConnection) {}
+  constructor(private readonly db: DatabaseConnection) {}
 
   /**
    * Get configuration for a specific phase

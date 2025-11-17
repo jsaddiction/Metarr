@@ -5,6 +5,17 @@ import axios from 'axios';
 import { getErrorMessage, getStatusCode } from '../utils/errorHandling.js';
 import { ValidationError } from '../errors/index.js';
 
+/**
+ * Health check configuration constants
+ */
+const HEALTH_CHECK_CONFIG = {
+  /** Interval between health checks (milliseconds) */
+  CHECK_INTERVAL_MS: 60000, // 60 seconds
+
+  /** Timeout for individual provider health checks (milliseconds) */
+  PROVIDER_TIMEOUT_MS: 5000, // 5 seconds
+} as const;
+
 export interface ProviderHealth {
   name: string;
   displayName: string;
@@ -21,9 +32,9 @@ export interface ProviderHealth {
 export class HealthCheckService extends EventEmitter {
   private healthCache: Map<string, ProviderHealth> = new Map();
   private checkInterval: NodeJS.Timeout | null = null;
-  private readonly CHECK_INTERVAL_MS = 60000; // 60 seconds
+  private readonly CHECK_INTERVAL_MS = HEALTH_CHECK_CONFIG.CHECK_INTERVAL_MS;
 
-  constructor(_providerRegistry: ProviderRegistry) {
+  constructor(readonly _providerRegistry: ProviderRegistry) {
     super();
     // Provider registry not currently used, but kept for future extensibility
   }
@@ -41,13 +52,13 @@ export class HealthCheckService extends EventEmitter {
 
     // Run initial check immediately
     this.runHealthChecks().catch(err =>
-      logger.error('[HealthCheckService] Initial health check failed:', err)
+      logger.error('[HealthCheckService] Initial health check failed', { error: getErrorMessage(err) })
     );
 
     // Schedule periodic checks
     this.checkInterval = setInterval(() => {
       this.runHealthChecks().catch(err =>
-        logger.error('[HealthCheckService] Health check failed:', err)
+        logger.error('[HealthCheckService] Health check failed', { error: getErrorMessage(err) })
       );
     }, this.CHECK_INTERVAL_MS);
   }
@@ -141,7 +152,7 @@ export class HealthCheckService extends EventEmitter {
         headers: {
           'Authorization': `Bearer ${apiKey}`,
         },
-        timeout: 5000,
+        timeout: HEALTH_CHECK_CONFIG.PROVIDER_TIMEOUT_MS,
       });
 
       return response.status === 200;
@@ -158,7 +169,7 @@ export class HealthCheckService extends EventEmitter {
   private async checkTVDB(): Promise<boolean> {
     try {
       await axios.get('https://api4.thetvdb.com/v4/swagger', {
-        timeout: 5000,
+        timeout: HEALTH_CHECK_CONFIG.PROVIDER_TIMEOUT_MS,
         validateStatus: (status) => status < 500, // Accept all non-server-error responses
       });
 
@@ -186,7 +197,7 @@ export class HealthCheckService extends EventEmitter {
         params: {
           api_key: apiKey,
         },
-        timeout: 5000,
+        timeout: HEALTH_CHECK_CONFIG.PROVIDER_TIMEOUT_MS,
       });
 
       return response.status === 200;
@@ -208,7 +219,7 @@ export class HealthCheckService extends EventEmitter {
   private async checkIMDb(): Promise<boolean> {
     try {
       const response = await axios.get('https://www.imdb.com', {
-        timeout: 5000,
+        timeout: HEALTH_CHECK_CONFIG.PROVIDER_TIMEOUT_MS,
         validateStatus: (status) => status < 500, // Accept all non-server-error responses
         headers: {
           'User-Agent': 'Metarr/1.0.0 (Health Check)',

@@ -21,7 +21,7 @@ export interface IgnorePattern {
 }
 
 export class IgnorePatternService {
-  constructor(private dbManager: DatabaseManager) {}
+  constructor(private readonly dbManager: DatabaseManager) {}
 
   /**
    * Get all ignore patterns

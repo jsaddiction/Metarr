@@ -37,11 +37,7 @@ export interface CompletenessConfig {
 }
 
 export class AutomationConfigService {
-  private db: DatabaseConnection;
-
-  constructor(db: DatabaseConnection) {
-    this.db = db;
-  }
+  constructor(private readonly db: DatabaseConnection) {}
 
   /**
    * Get automation config for library
