@@ -27,13 +27,10 @@ export interface UpdateMediaPlayerData extends Partial<CreateMediaPlayerData> {
 }
 
 export class MediaPlayerService {
-  private dbManager: DatabaseManager;
-  private connectionManager: MediaPlayerConnectionManager;
-
-  constructor(dbManager: DatabaseManager, connectionManager: MediaPlayerConnectionManager) {
-    this.dbManager = dbManager;
-    this.connectionManager = connectionManager;
-  }
+  constructor(
+    private readonly dbManager: DatabaseManager,
+    private readonly connectionManager: MediaPlayerConnectionManager
+  ) {}
 
   /**
    * Create a new media player

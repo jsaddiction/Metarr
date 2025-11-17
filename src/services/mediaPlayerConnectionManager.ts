@@ -38,14 +38,12 @@ interface PlayerConnectionState {
 export class MediaPlayerConnectionManager extends EventEmitter {
   private connections: Map<number, PlayerConnectionState> = new Map();
   private activityStates: Map<number, PlayerActivityState> = new Map();
-  private dbManager: DatabaseManager;
   private readonly WS_PORT = 9090; // Hardcoded WebSocket port
   private readonly HTTP_POLL_INTERVAL = 30000; // 30 seconds for HTTP polling
   private readonly PROGRESS_POLL_INTERVAL = 3000; // 3 seconds for playback progress (fast enough for accurate time display)
 
-  constructor(dbManager: DatabaseManager) {
+  constructor(private readonly dbManager: DatabaseManager) {
     super();
-    this.dbManager = dbManager;
   }
 
   /**

@@ -4,7 +4,7 @@ import { FullMovieNFO, FullTVShowNFO, ActorData, RatingData } from '../types/mod
 import { getErrorMessage } from '../utils/errorHandling.js';
 
 export class MetadataInitializationService {
-  constructor(private dbManager: DatabaseManager) {}
+  constructor(private readonly dbManager: DatabaseManager) {}
 
   // ========================================
   // Main Initialization Methods
