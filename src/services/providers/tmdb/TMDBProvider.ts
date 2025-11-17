@@ -21,6 +21,19 @@ import {
 } from '../../../types/providers/index.js';
 import { ProviderConfig } from '../../../types/provider.js';
 import { logger } from '../../../middleware/logging.js';
+import { ValidationError } from '../../../errors/index.js';
+import {
+  TMDBMovie,
+  TMDBMovieSearchResult,
+  TMDBCollection,
+  TMDBSearchOptions,
+  TMDBGenre,
+  TMDBProductionCompany,
+  TMDBProductionCountry,
+  TMDBCastMember,
+  TMDBCrewMember,
+  TMDBMovieReleaseDatesResult,
+} from '../../../types/providers/tmdb.js';
 
 export class TMDBProvider extends BaseProvider {
   private tmdbClient: TMDBClient;
@@ -153,60 +166,51 @@ export class TMDBProvider extends BaseProvider {
       return [];
     }
 
-    try {
-      // Search by external ID (IMDB) if provided
-      if (externalId && externalId.type === 'imdb_id') {
-        const findResult = await this.tmdbClient.findByExternalId({
-          externalId: externalId.value,
-          externalSource: 'imdb_id',
-        });
-
-        return findResult.movie_results.slice(0, limit).map((movie): SearchResult => ({
-          providerId: 'tmdb',
-          providerResultId: movie.id.toString(),
-          externalIds: {
-            tmdb: movie.id,
-          },
-          title: movie.title,
-          ...(movie.original_title && { originalTitle: movie.original_title }),
-          ...(movie.release_date && { releaseDate: new Date(movie.release_date) }),
-          ...(movie.overview && { overview: movie.overview }),
-          ...(movie.poster_path && { posterUrl: `https://image.tmdb.org/t/p/w500${movie.poster_path}` }),
-          confidence: 1.0, // Exact match via IMDB ID
-        }));
-      }
-
-      // Search by title
-      if (entityType === 'movie') {
-        const searchOptions: any = { query, page };
-        if (year) searchOptions.year = year;
-
-        const searchResult = await this.tmdbClient.searchMovies(searchOptions);
-
-        return searchResult.results.slice(0, limit).map((movie): SearchResult => ({
-          providerId: 'tmdb',
-          providerResultId: movie.id.toString(),
-          externalIds: {
-            tmdb: movie.id,
-          },
-          title: movie.title,
-          ...(movie.original_title && { originalTitle: movie.original_title }),
-          ...(movie.release_date && { releaseDate: new Date(movie.release_date) }),
-          ...(movie.overview && { overview: movie.overview }),
-          ...(movie.poster_path && { posterUrl: `https://image.tmdb.org/t/p/w500${movie.poster_path}` }),
-          confidence: this.calculateSearchConfidence(movie, query, year),
-        }));
-      }
-
-      return [];
-    } catch (error: any) {
-      logger.error('TMDB search failed', {
-        query,
-        entityType,
-        error: error.message,
+    // Search by external ID (IMDB) if provided
+    if (externalId && externalId.type === 'imdb_id') {
+      const findResult = await this.tmdbClient.findByExternalId({
+        externalId: externalId.value,
+        externalSource: 'imdb_id',
       });
-      throw new Error(`TMDB search failed: ${error.message}`);
+
+      return findResult.movie_results.slice(0, limit).map((movie): SearchResult => ({
+        providerId: 'tmdb',
+        providerResultId: movie.id.toString(),
+        externalIds: {
+          tmdb: movie.id,
+        },
+        title: movie.title,
+        ...(movie.original_title && { originalTitle: movie.original_title }),
+        ...(movie.release_date && { releaseDate: new Date(movie.release_date) }),
+        ...(movie.overview && { overview: movie.overview }),
+        ...(movie.poster_path && { posterUrl: `https://image.tmdb.org/t/p/w500${movie.poster_path}` }),
+        confidence: 1.0, // Exact match via IMDB ID
+      }));
     }
+
+    // Search by title
+    if (entityType === 'movie') {
+      const searchOptions: TMDBSearchOptions = { query, page };
+      if (year) searchOptions.year = year;
+
+      const searchResult = await this.tmdbClient.searchMovies(searchOptions);
+
+      return searchResult.results.slice(0, limit).map((movie): SearchResult => ({
+        providerId: 'tmdb',
+        providerResultId: movie.id.toString(),
+        externalIds: {
+          tmdb: movie.id,
+        },
+        title: movie.title,
+        ...(movie.original_title && { originalTitle: movie.original_title }),
+        ...(movie.release_date && { releaseDate: new Date(movie.release_date) }),
+        ...(movie.overview && { overview: movie.overview }),
+        ...(movie.poster_path && { posterUrl: `https://image.tmdb.org/t/p/w500${movie.poster_path}` }),
+        confidence: this.calculateSearchConfidence(movie, query, year),
+      }));
+    }
+
+    return [];
   }
 
   /**
@@ -216,54 +220,45 @@ export class TMDBProvider extends BaseProvider {
     const { providerResultId, entityType, fields } = request;
 
     if (entityType !== 'movie' && entityType !== 'collection') {
-      throw new Error(`TMDB provider does not support entity type: ${entityType}`);
+      throw new ValidationError(`TMDB provider does not support entity type: ${entityType}`);
     }
 
-    try {
-      if (entityType === 'movie') {
-        const movie = await this.tmdbClient.getMovie(parseInt(providerResultId), {
-          appendToResponse: ['credits', 'external_ids', 'release_dates'],
-        });
-
-        const transformedData = this.transformMovieMetadata(movie, fields);
-        const response: MetadataResponse = {
-          providerId: 'tmdb',
-          providerResultId,
-          fields: transformedData.fields,
-          completeness: this.calculateCompleteness(transformedData.fields, fields),
-          confidence: 0.95, // TMDB is highly reliable
-        };
-
-        // Only add externalIds if present
-        if (transformedData.externalIds) {
-          response.externalIds = transformedData.externalIds;
-        }
-
-        return response;
-      }
-
-      if (entityType === 'collection') {
-        const collection = await this.tmdbClient.getCollection(parseInt(providerResultId));
-
-        const transformedData = this.transformCollectionMetadata(collection, fields);
-        return {
-          providerId: 'tmdb',
-          providerResultId,
-          fields: transformedData.fields,
-          completeness: this.calculateCompleteness(transformedData.fields, fields),
-          confidence: 0.95,
-        };
-      }
-
-      throw new Error(`Unsupported entity type: ${entityType}`);
-    } catch (error: any) {
-      logger.error('TMDB metadata fetch failed', {
-        providerResultId,
-        entityType,
-        error: error.message,
+    if (entityType === 'movie') {
+      const movie = await this.tmdbClient.getMovie(parseInt(providerResultId), {
+        appendToResponse: ['credits', 'external_ids', 'release_dates'],
       });
-      throw new Error(`TMDB metadata fetch failed: ${error.message}`);
+
+      const transformedData = this.transformMovieMetadata(movie, fields);
+      const response: MetadataResponse = {
+        providerId: 'tmdb',
+        providerResultId,
+        fields: transformedData.fields,
+        completeness: this.calculateCompleteness(transformedData.fields, fields),
+        confidence: 0.95, // TMDB is highly reliable
+      };
+
+      // Only add externalIds if present
+      if (transformedData.externalIds) {
+        response.externalIds = transformedData.externalIds;
+      }
+
+      return response;
     }
+
+    if (entityType === 'collection') {
+      const collection = await this.tmdbClient.getCollection(parseInt(providerResultId));
+
+      const transformedData = this.transformCollectionMetadata(collection, fields);
+      return {
+        providerId: 'tmdb',
+        providerResultId,
+        fields: transformedData.fields,
+        completeness: this.calculateCompleteness(transformedData.fields, fields),
+        confidence: 0.95,
+      };
+    }
+
+    throw new ValidationError(`Unsupported entity type: ${entityType}`);
   }
 
   /**
@@ -276,85 +271,76 @@ export class TMDBProvider extends BaseProvider {
       return [];
     }
 
-    try {
-      const candidates: AssetCandidate[] = [];
-      const tmdbId = parseInt(providerResultId);
+    const candidates: AssetCandidate[] = [];
+    const tmdbId = parseInt(providerResultId);
 
-      // Get images from TMDB
-      const images = await this.tmdbClient.getMovieImages(tmdbId);
+    // Get images from TMDB
+    const images = await this.tmdbClient.getMovieImages(tmdbId);
 
-      // Process posters
-      if (assetTypes.includes('poster') && images.posters) {
-        for (const poster of images.posters) {
-          candidates.push({
-            providerId: 'tmdb',
-            providerResultId,
-            assetType: 'poster',
-            url: this.tmdbClient.getImageUrl(poster.file_path, 'original'),
-            thumbnailUrl: this.tmdbClient.getImageUrl(poster.file_path, 'w342'),
-            width: poster.width,
-            height: poster.height,
-            aspectRatio: poster.aspect_ratio,
-            language: poster.iso_639_1 || 'null',
-            votes: poster.vote_count,
-            voteAverage: poster.vote_average,
-          });
-        }
+    // Process posters
+    if (assetTypes.includes('poster') && images.posters) {
+      for (const poster of images.posters) {
+        candidates.push({
+          providerId: 'tmdb',
+          providerResultId,
+          assetType: 'poster',
+          url: this.tmdbClient.getImageUrl(poster.file_path, 'original'),
+          thumbnailUrl: this.tmdbClient.getImageUrl(poster.file_path, 'w342'),
+          width: poster.width,
+          height: poster.height,
+          aspectRatio: poster.aspect_ratio,
+          language: poster.iso_639_1 || 'null',
+          votes: poster.vote_count,
+          voteAverage: poster.vote_average,
+        });
       }
-
-      // Process backdrops (fanart)
-      if (assetTypes.includes('fanart') && images.backdrops) {
-        for (const backdrop of images.backdrops) {
-          candidates.push({
-            providerId: 'tmdb',
-            providerResultId,
-            assetType: 'fanart',
-            url: this.tmdbClient.getImageUrl(backdrop.file_path, 'original'),
-            thumbnailUrl: this.tmdbClient.getImageUrl(backdrop.file_path, 'w780'),
-            width: backdrop.width,
-            height: backdrop.height,
-            aspectRatio: backdrop.aspect_ratio,
-            language: backdrop.iso_639_1 || 'null',
-            votes: backdrop.vote_count,
-            voteAverage: backdrop.vote_average,
-          });
-        }
-      }
-
-      // Process logos (clearlogo)
-      if (assetTypes.includes('clearlogo') && images.logos) {
-        for (const logo of images.logos) {
-          candidates.push({
-            providerId: 'tmdb',
-            providerResultId,
-            assetType: 'clearlogo',
-            url: this.tmdbClient.getImageUrl(logo.file_path, 'original'),
-            thumbnailUrl: this.tmdbClient.getImageUrl(logo.file_path, 'w185'),
-            width: logo.width,
-            height: logo.height,
-            aspectRatio: logo.aspect_ratio,
-            language: logo.iso_639_1 || 'null',
-            votes: logo.vote_count,
-            voteAverage: logo.vote_average,
-          });
-        }
-      }
-
-      logger.debug('TMDB assets fetched', {
-        providerResultId,
-        entityType,
-        totalCandidates: candidates.length,
-      });
-
-      return candidates;
-    } catch (error: any) {
-      logger.error('TMDB asset fetch failed', {
-        providerResultId,
-        entityType,
-        error: error.message,
-      });
-      throw new Error(`TMDB asset fetch failed: ${error.message}`);
     }
+
+    // Process backdrops (fanart)
+    if (assetTypes.includes('fanart') && images.backdrops) {
+      for (const backdrop of images.backdrops) {
+        candidates.push({
+          providerId: 'tmdb',
+          providerResultId,
+          assetType: 'fanart',
+          url: this.tmdbClient.getImageUrl(backdrop.file_path, 'original'),
+          thumbnailUrl: this.tmdbClient.getImageUrl(backdrop.file_path, 'w780'),
+          width: backdrop.width,
+          height: backdrop.height,
+          aspectRatio: backdrop.aspect_ratio,
+          language: backdrop.iso_639_1 || 'null',
+          votes: backdrop.vote_count,
+          voteAverage: backdrop.vote_average,
+        });
+      }
+    }
+
+    // Process logos (clearlogo)
+    if (assetTypes.includes('clearlogo') && images.logos) {
+      for (const logo of images.logos) {
+        candidates.push({
+          providerId: 'tmdb',
+          providerResultId,
+          assetType: 'clearlogo',
+          url: this.tmdbClient.getImageUrl(logo.file_path, 'original'),
+          thumbnailUrl: this.tmdbClient.getImageUrl(logo.file_path, 'w185'),
+          width: logo.width,
+          height: logo.height,
+          aspectRatio: logo.aspect_ratio,
+          language: logo.iso_639_1 || 'null',
+          votes: logo.vote_count,
+          voteAverage: logo.vote_average,
+        });
+      }
+    }
+
+    logger.debug('TMDB assets fetched', {
+      providerResultId,
+      entityType,
+      totalCandidates: candidates.length,
+    });
+
+    return candidates;
   }
 
   // ============================================
@@ -365,7 +351,7 @@ export class TMDBProvider extends BaseProvider {
    * Calculate search confidence score based on title match and year
    */
   private calculateSearchConfidence(
-    movie: any,
+    movie: TMDBMovieSearchResult,
     query: string,
     year?: number
   ): number {
@@ -403,9 +389,9 @@ export class TMDBProvider extends BaseProvider {
    * Transform TMDB movie response to MetadataResponse format
    */
   private transformMovieMetadata(
-    movie: any,
+    movie: TMDBMovie,
     requestedFields?: MetadataField[]
-  ): { fields: Partial<Record<MetadataField, any>>; externalIds?: Record<string, any> } {
+  ): { fields: Partial<Record<MetadataField, unknown>>; externalIds?: Record<string, string | number> } {
     const fields: Partial<Record<MetadataField, any>> = {};
 
     // Only include requested fields if specified
@@ -430,42 +416,42 @@ export class TMDBProvider extends BaseProvider {
     }
 
     if (shouldInclude('genres') && movie.genres) {
-      fields.genres = movie.genres.map((g: any) => g.name);
+      fields.genres = movie.genres.map((g: TMDBGenre) => g.name);
     }
 
     if (shouldInclude('studios') && movie.production_companies) {
-      fields.studios = movie.production_companies.map((c: any) => c.name);
+      fields.studios = movie.production_companies.map((c: TMDBProductionCompany) => c.name);
     }
 
     if (shouldInclude('country') && movie.production_countries) {
-      fields.country = movie.production_countries.map((c: any) => c.name);
+      fields.country = movie.production_countries.map((c: TMDBProductionCountry) => c.name);
     }
 
     if (shouldInclude('actors') && movie.credits?.cast) {
-      fields.actors = movie.credits.cast.slice(0, 20).map((actor: any) => ({
+      fields.actors = movie.credits.cast.slice(0, 20).map((actor: TMDBCastMember) => ({
         name: actor.name,
-        role: (actor as { [key: string]: unknown }).character,
-        thumb: (actor as { [key: string]: unknown }).profile_path
-          ? this.tmdbClient.getImageUrl((actor as { [key: string]: unknown }).profile_path as string, 'w185')
+        role: actor.character,
+        thumb: actor.profile_path
+          ? this.tmdbClient.getImageUrl(actor.profile_path, 'w185')
           : undefined,
       }));
     }
 
     if (shouldInclude('directors') && movie.credits?.crew) {
-      const directors = movie.credits.crew.filter((c: any) => c.job === 'Director');
-      fields.directors = directors.map((d: any) => d.name);
+      const directors = movie.credits.crew.filter((c: TMDBCrewMember) => c.job === 'Director');
+      fields.directors = directors.map((d: TMDBCrewMember) => d.name);
     }
 
     if (shouldInclude('writers') && movie.credits?.crew) {
-      const writers = movie.credits.crew.filter((c: any) =>
+      const writers = movie.credits.crew.filter((c: TMDBCrewMember) =>
         ['Screenplay', 'Writer', 'Story'].includes(c.job)
       );
-      fields.writers = writers.map((w: any) => w.name);
+      fields.writers = writers.map((w: TMDBCrewMember) => w.name);
     }
 
     if (shouldInclude('certification') && movie.release_dates) {
       // Extract US certification
-      const usRelease = movie.release_dates.results?.find((r: any) => r.iso_3166_1 === 'US');
+      const usRelease = movie.release_dates.results?.find((r: TMDBMovieReleaseDatesResult) => r.iso_3166_1 === 'US');
       if (usRelease?.release_dates?.[0]?.certification) {
         fields.certification = usRelease.release_dates[0].certification;
       }
@@ -480,10 +466,10 @@ export class TMDBProvider extends BaseProvider {
     }
 
     // External IDs
-    const result: { fields: Partial<Record<MetadataField, any>>; externalIds?: Record<string, any> } = { fields };
+    const result: { fields: Partial<Record<MetadataField, unknown>>; externalIds?: Record<string, string | number> } = { fields };
 
     if (movie.external_ids) {
-      const externalIds: Record<string, any> = {};
+      const externalIds: Record<string, string | number> = {};
       if (movie.external_ids.imdb_id) externalIds.imdb = movie.external_ids.imdb_id;
       if (movie.external_ids.tvdb_id) externalIds.tvdb = movie.external_ids.tvdb_id;
 
@@ -499,10 +485,10 @@ export class TMDBProvider extends BaseProvider {
    * Transform TMDB collection response to MetadataResponse format
    */
   private transformCollectionMetadata(
-    collection: any,
+    collection: TMDBCollection,
     requestedFields?: MetadataField[]
-  ): { fields: Partial<Record<MetadataField, any>> } {
-    const fields: Partial<Record<MetadataField, any>> = {};
+  ): { fields: Partial<Record<MetadataField, unknown>> } {
+    const fields: Partial<Record<MetadataField, unknown>> = {};
 
     const shouldInclude = (field: MetadataField) =>
       !requestedFields || requestedFields.includes(field);
@@ -517,7 +503,7 @@ export class TMDBProvider extends BaseProvider {
    * Calculate metadata completeness (0-1)
    */
   private calculateCompleteness(
-    fields: Partial<Record<MetadataField, any>>,
+    fields: Partial<Record<MetadataField, unknown>>,
     requestedFields?: MetadataField[]
   ): number {
     if (!requestedFields || requestedFields.length === 0) {

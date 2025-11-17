@@ -21,6 +21,12 @@ import {
 import { ProviderConfig } from '../../../types/provider.js';
 import { logger } from '../../../middleware/logging.js';
 import { getErrorMessage } from '../../../utils/errorHandling.js';
+import {
+  ProviderError,
+  NetworkError,
+  ValidationError,
+  ErrorCode,
+} from '../../../errors/index.js';
 
 export class MusicBrainzProvider extends BaseProvider {
   private mbClient: MusicBrainzClient;
@@ -145,7 +151,7 @@ export class MusicBrainzProvider extends BaseProvider {
         } else if (entityType === 'track') {
           details = await this.mbClient.getRecording(mbid);
         } else {
-          throw new Error(`Unsupported entity type: ${entityType}`);
+          throw new ValidationError(`Unsupported entity type for MusicBrainz: ${entityType}`);
         }
 
         return [
@@ -161,7 +167,7 @@ export class MusicBrainzProvider extends BaseProvider {
 
       // Search by query
       if (!query) {
-        throw new Error('Query or MusicBrainz ID required for search');
+        throw new ValidationError('Query or MusicBrainz ID required for search');
       }
 
       let searchResults;
@@ -172,7 +178,7 @@ export class MusicBrainzProvider extends BaseProvider {
       } else if (entityType === 'track') {
         searchResults = await this.mbClient.searchRecordings(query);
       } else {
-        throw new Error(`Unsupported entity type: ${entityType}`);
+        throw new ValidationError(`Unsupported entity type for MusicBrainz: ${entityType}`);
       }
 
       // Convert to SearchResult format
@@ -196,12 +202,25 @@ export class MusicBrainzProvider extends BaseProvider {
       logger.info(`MusicBrainz search for "${query}" returned ${results.length} results`);
       return results;
     } catch (error) {
+      // Re-throw ApplicationError instances
+      if (error instanceof ProviderError || error instanceof NetworkError || error instanceof ValidationError) {
+        throw error;
+      }
+
       logger.error('MusicBrainz search failed', {
         query,
         entityType,
         error: getErrorMessage(error),
       });
-      throw error;
+      throw new ProviderError(
+        `Search failed: ${getErrorMessage(error)}`,
+        'MusicBrainz',
+        ErrorCode.PROVIDER_SERVER_ERROR,
+        500,
+        true,
+        { service: 'MusicBrainzProvider', operation: 'search', metadata: { query, entityType } },
+        error instanceof Error ? error : undefined
+      );
     }
   }
 
@@ -213,7 +232,7 @@ export class MusicBrainzProvider extends BaseProvider {
 
     const mbid = providerResultId;
     if (!mbid) {
-      throw new Error('MusicBrainz ID required for metadata request');
+      throw new ValidationError('MusicBrainz ID required for metadata request');
     }
 
     try {
@@ -242,7 +261,7 @@ export class MusicBrainzProvider extends BaseProvider {
           fields.artist = track.artistCredit[0].artist.name;
         }
       } else {
-        throw new Error(`Unsupported entity type: ${entityType}`);
+        throw new ValidationError(`Unsupported entity type for MusicBrainz: ${entityType}`);
       }
 
       const metadata: MetadataResponse = {
@@ -260,12 +279,25 @@ export class MusicBrainzProvider extends BaseProvider {
       });
       return metadata;
     } catch (error) {
+      // Re-throw ApplicationError instances
+      if (error instanceof ProviderError || error instanceof NetworkError || error instanceof ValidationError) {
+        throw error;
+      }
+
       logger.error('MusicBrainz metadata retrieval failed', {
         mbid,
         entityType,
         error: getErrorMessage(error),
       });
-      throw error;
+      throw new ProviderError(
+        `Metadata retrieval failed: ${getErrorMessage(error)}`,
+        'MusicBrainz',
+        ErrorCode.PROVIDER_SERVER_ERROR,
+        500,
+        true,
+        { service: 'MusicBrainzProvider', operation: 'getMetadata', metadata: { mbid, entityType } },
+        error instanceof Error ? error : undefined
+      );
     }
   }
 

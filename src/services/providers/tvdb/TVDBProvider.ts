@@ -21,7 +21,22 @@ import {
 } from '../../../types/providers/index.js';
 import { ProviderConfig } from '../../../types/provider.js';
 import { logger } from '../../../middleware/logging.js';
-import { TVDBImageType } from '../../../types/providers/tvdb.js';
+import { getErrorMessage } from '../../../utils/errorHandling.js';
+import {
+  ProviderError,
+  NetworkError,
+  ValidationError,
+  ErrorCode,
+} from '../../../errors/index.js';
+import {
+  TVDBImageType,
+  TVDBSearchResult,
+  TVDBSeriesExtended,
+  TVDBSeason,
+  TVDBEpisodeExtended,
+  TVDBGenre,
+  TVDBCharacter,
+} from '../../../types/providers/tvdb.js';
 
 export class TVDBProvider extends BaseProvider {
   private tvdbClient: TVDBClient;
@@ -176,13 +191,26 @@ export class TVDBProvider extends BaseProvider {
         confidence: this.calculateSearchConfidence(series, query, year),
         matchedBy: 'title',
       }));
-    } catch (error: any) {
+    } catch (error: unknown) {
+      // Re-throw ApplicationError instances
+      if (error instanceof ProviderError || error instanceof NetworkError || error instanceof ValidationError) {
+        throw error;
+      }
+
       logger.error('TVDB search failed', {
         query,
         entityType,
-        error: error.message,
+        error: getErrorMessage(error),
       });
-      throw new Error(`TVDB search failed: ${error.message}`);
+      throw new ProviderError(
+        `Search failed: ${getErrorMessage(error)}`,
+        'TVDB',
+        ErrorCode.PROVIDER_SERVER_ERROR,
+        500,
+        true,
+        { service: 'TVDBProvider', operation: 'search', metadata: { query, entityType } },
+        error instanceof Error ? error : undefined
+      );
     }
   }
 
@@ -244,14 +272,27 @@ export class TVDBProvider extends BaseProvider {
         return response;
       }
 
-      throw new Error(`TVDB provider does not support entity type: ${entityType}`);
-    } catch (error: any) {
+      throw new ValidationError(`TVDB provider does not support entity type: ${entityType}`);
+    } catch (error: unknown) {
+      // Re-throw ApplicationError instances
+      if (error instanceof ProviderError || error instanceof NetworkError || error instanceof ValidationError) {
+        throw error;
+      }
+
       logger.error('TVDB metadata fetch failed', {
         providerResultId,
         entityType,
-        error: error.message,
+        error: getErrorMessage(error),
       });
-      throw new Error(`TVDB metadata fetch failed: ${error.message}`);
+      throw new ProviderError(
+        `Metadata fetch failed: ${getErrorMessage(error)}`,
+        'TVDB',
+        ErrorCode.PROVIDER_SERVER_ERROR,
+        500,
+        true,
+        { service: 'TVDBProvider', operation: 'getMetadata', metadata: { providerResultId, entityType } },
+        error instanceof Error ? error : undefined
+      );
     }
   }
 
@@ -341,13 +382,26 @@ export class TVDBProvider extends BaseProvider {
       });
 
       return candidates;
-    } catch (error: any) {
+    } catch (error: unknown) {
+      // Re-throw ApplicationError instances
+      if (error instanceof ProviderError || error instanceof NetworkError || error instanceof ValidationError) {
+        throw error;
+      }
+
       logger.error('TVDB asset fetch failed', {
         providerResultId,
         entityType,
-        error: error.message,
+        error: getErrorMessage(error),
       });
-      throw new Error(`TVDB asset fetch failed: ${error.message}`);
+      throw new ProviderError(
+        `Asset fetch failed: ${getErrorMessage(error)}`,
+        'TVDB',
+        ErrorCode.PROVIDER_SERVER_ERROR,
+        500,
+        true,
+        { service: 'TVDBProvider', operation: 'getAssets', metadata: { providerResultId, entityType } },
+        error instanceof Error ? error : undefined
+      );
     }
   }
 
@@ -381,7 +435,7 @@ export class TVDBProvider extends BaseProvider {
   /**
    * Calculate search confidence score
    */
-  private calculateSearchConfidence(series: any, query: string, year?: number): number {
+  private calculateSearchConfidence(series: TVDBSearchResult, query: string, year?: number): number {
     let confidence = 50;
 
     // Exact title match
@@ -416,10 +470,10 @@ export class TVDBProvider extends BaseProvider {
    * Transform TVDB series to MetadataResponse format
    */
   private transformSeriesMetadata(
-    series: any,
+    series: TVDBSeriesExtended,
     requestedFields?: MetadataField[]
-  ): { fields: Partial<Record<MetadataField, any>>; externalIds?: Record<string, any> } {
-    const fields: Partial<Record<MetadataField, any>> = {};
+  ): { fields: Partial<Record<MetadataField, unknown>>; externalIds?: Record<string, string | number> } {
+    const fields: Partial<Record<MetadataField, unknown>> = {};
 
     const shouldInclude = (field: MetadataField) =>
       !requestedFields || requestedFields.includes(field);
@@ -433,13 +487,13 @@ export class TVDBProvider extends BaseProvider {
     if (shouldInclude('status')) fields.status = series.status?.name;
 
     if (shouldInclude('genres') && series.genres) {
-      fields.genres = series.genres.map((g: any) => g.name);
+      fields.genres = series.genres.map((g: TVDBGenre) => g.name);
     }
 
     if (shouldInclude('actors') && series.characters) {
-      fields.actors = series.characters.slice(0, 20).map((char: any) => ({
+      fields.actors = series.characters.slice(0, 20).map((char: TVDBCharacter) => ({
         name: char.personName || char.name,
-        role: (char as { [key: string]: unknown }).name,
+        role: char.name,
         thumb: char.personImgURL,
       }));
     }
@@ -448,11 +502,11 @@ export class TVDBProvider extends BaseProvider {
       fields.country = series.originalCountry ? [series.originalCountry] : undefined;
     }
 
-    const result: { fields: Partial<Record<MetadataField, any>>; externalIds?: Record<string, any> } = { fields };
+    const result: { fields: Partial<Record<MetadataField, unknown>>; externalIds?: Record<string, string | number> } = { fields };
 
     // External IDs
     if (series.remoteIds) {
-      const externalIds: Record<string, any> = {};
+      const externalIds: Record<string, string | number> = {};
       for (const remoteId of series.remoteIds) {
         if (remoteId.sourceName === 'IMDB') {
           externalIds.imdb = remoteId.id;
@@ -473,16 +527,18 @@ export class TVDBProvider extends BaseProvider {
    * Transform TVDB season to MetadataResponse format
    */
   private transformSeasonMetadata(
-    season: any,
+    season: TVDBSeason,
     requestedFields?: MetadataField[]
-  ): { fields: Partial<Record<MetadataField, any>> } {
-    const fields: Partial<Record<MetadataField, any>> = {};
+  ): { fields: Partial<Record<MetadataField, unknown>> } {
+    const fields: Partial<Record<MetadataField, unknown>> = {};
 
     const shouldInclude = (field: MetadataField) =>
       !requestedFields || requestedFields.includes(field);
 
     if (shouldInclude('title')) fields.title = season.name || `Season ${season.number}`;
-    if (shouldInclude('plot')) fields.plot = season.overview;
+    if (shouldInclude('plot')) {
+      fields.plot = (season as TVDBSeason & { overview?: string }).overview;
+    }
 
     return { fields };
   }
@@ -491,10 +547,10 @@ export class TVDBProvider extends BaseProvider {
    * Transform TVDB episode to MetadataResponse format
    */
   private transformEpisodeMetadata(
-    episode: any,
+    episode: TVDBEpisodeExtended,
     requestedFields?: MetadataField[]
-  ): { fields: Partial<Record<MetadataField, any>>; externalIds?: Record<string, any> } {
-    const fields: Partial<Record<MetadataField, any>> = {};
+  ): { fields: Partial<Record<MetadataField, unknown>>; externalIds?: Record<string, string | number> } {
+    const fields: Partial<Record<MetadataField, unknown>> = {};
 
     const shouldInclude = (field: MetadataField) =>
       !requestedFields || requestedFields.includes(field);
@@ -506,18 +562,18 @@ export class TVDBProvider extends BaseProvider {
     if (shouldInclude('runtime')) fields.runtime = episode.runtime;
 
     if (shouldInclude('actors') && episode.characters) {
-      fields.actors = episode.characters.map((char: any) => ({
+      fields.actors = episode.characters.map((char: TVDBCharacter) => ({
         name: char.personName || char.name,
-        role: (char as { [key: string]: unknown }).name,
+        role: char.name,
         thumb: char.personImgURL,
       }));
     }
 
-    const result: { fields: Partial<Record<MetadataField, any>>; externalIds?: Record<string, any> } = { fields };
+    const result: { fields: Partial<Record<MetadataField, unknown>>; externalIds?: Record<string, string | number> } = { fields };
 
     // External IDs
     if (episode.remoteIds) {
-      const externalIds: Record<string, any> = {};
+      const externalIds: Record<string, string | number> = {};
       for (const remoteId of episode.remoteIds) {
         if (remoteId.sourceName === 'IMDB') {
           externalIds.imdb = remoteId.id;

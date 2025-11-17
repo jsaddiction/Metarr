@@ -25,6 +25,12 @@ import {
 import { ProviderConfig } from '../../../types/provider.js';
 import { logger } from '../../../middleware/logging.js';
 import { getErrorMessage } from '../../../utils/errorHandling.js';
+import {
+  ProviderError,
+  NetworkError,
+  ValidationError,
+  ErrorCode,
+} from '../../../errors/index.js';
 
 export class IMDbProvider extends BaseProvider {
   private imdbClient: IMDbClient;
@@ -184,7 +190,7 @@ export class IMDbProvider extends BaseProvider {
 
       // Search by title
       if (!query) {
-        throw new Error('Query or IMDb ID required for search');
+        throw new ValidationError('Query or IMDb ID required for search');
       }
 
       const searchType = entityType === 'series' ? 'tv' : 'movie';
@@ -223,11 +229,24 @@ export class IMDbProvider extends BaseProvider {
       logger.info(`IMDb search for "${query}" returned ${results.length} results`);
       return results;
     } catch (error) {
+      // Re-throw ApplicationError instances
+      if (error instanceof ProviderError || error instanceof NetworkError || error instanceof ValidationError) {
+        throw error;
+      }
+
       logger.error('IMDb search failed', {
         query,
         error: getErrorMessage(error),
       });
-      throw error;
+      throw new ProviderError(
+        `Search failed: ${getErrorMessage(error)}`,
+        'IMDb',
+        ErrorCode.PROVIDER_SERVER_ERROR,
+        500,
+        true,
+        { service: 'IMDbProvider', operation: 'search', metadata: { query, entityType } },
+        error instanceof Error ? error : undefined
+      );
     }
   }
 
@@ -240,7 +259,7 @@ export class IMDbProvider extends BaseProvider {
     // Determine IMDb ID
     const imdbId = providerResultId;
     if (!imdbId) {
-      throw new Error('IMDb ID required for metadata request');
+      throw new ValidationError('IMDb ID required for metadata request');
     }
 
     try {
@@ -310,11 +329,24 @@ export class IMDbProvider extends BaseProvider {
       logger.info(`Retrieved IMDb metadata for ${imdbId}`, { title: details.title });
       return metadata;
     } catch (error) {
+      // Re-throw ApplicationError instances
+      if (error instanceof ProviderError || error instanceof NetworkError || error instanceof ValidationError) {
+        throw error;
+      }
+
       logger.error('IMDb metadata retrieval failed', {
         imdbId,
         error: getErrorMessage(error),
       });
-      throw error;
+      throw new ProviderError(
+        `Metadata retrieval failed: ${getErrorMessage(error)}`,
+        'IMDb',
+        ErrorCode.PROVIDER_SERVER_ERROR,
+        500,
+        true,
+        { service: 'IMDbProvider', operation: 'getMetadata', metadata: { imdbId, entityType } },
+        error instanceof Error ? error : undefined
+      );
     }
   }
 

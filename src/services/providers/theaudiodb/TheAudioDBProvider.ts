@@ -21,6 +21,12 @@ import {
 import { ProviderConfig } from '../../../types/provider.js';
 import { logger } from '../../../middleware/logging.js';
 import { getErrorMessage } from '../../../utils/errorHandling.js';
+import {
+  ProviderError,
+  NetworkError,
+  ValidationError,
+  ErrorCode,
+} from '../../../errors/index.js';
 
 export class TheAudioDBProvider extends BaseProvider {
   private audioDbClient: TheAudioDBClient;
@@ -164,7 +170,7 @@ export class TheAudioDBProvider extends BaseProvider {
 
       // Search by query
       if (!query) {
-        throw new Error('Query or MusicBrainz ID required for search');
+        throw new ValidationError('Query or MusicBrainz ID required for search');
       }
 
       if (entityType === 'artist') {
@@ -190,12 +196,25 @@ export class TheAudioDBProvider extends BaseProvider {
 
       return [];
     } catch (error) {
+      // Re-throw ApplicationError instances
+      if (error instanceof ProviderError || error instanceof NetworkError || error instanceof ValidationError) {
+        throw error;
+      }
+
       logger.error('TheAudioDB search failed', {
         query,
         entityType,
         error: getErrorMessage(error),
       });
-      throw error;
+      throw new ProviderError(
+        `Search failed: ${getErrorMessage(error)}`,
+        'TheAudioDB',
+        ErrorCode.PROVIDER_SERVER_ERROR,
+        500,
+        true,
+        { service: 'TheAudioDBProvider', operation: 'search', metadata: { query, entityType } },
+        error instanceof Error ? error : undefined
+      );
     }
   }
 
@@ -220,7 +239,7 @@ export class TheAudioDBProvider extends BaseProvider {
     const { providerResultId, entityType, assetTypes } = request;
 
     if (!providerResultId) {
-      throw new Error('TheAudioDB ID required for asset request');
+      throw new ValidationError('TheAudioDB ID required for asset request');
     }
 
     try {
