@@ -52,16 +52,21 @@ Metarr operates through independent, idempotent phases that form an automated ch
 
 ### Phase Overview
 
-| Phase | Purpose | Triggers | Required |
-|-------|---------|----------|----------|
-| **[Scanning](docs/phases/SCANNING.md)** | Discover & classify files | Manual, webhook, schedule | Yes |
-| **[Enrichment](docs/phases/ENRICHMENT.md)** | Fetch metadata & select assets | Post-scan, manual, refresh | No |
-| **[Publishing](docs/phases/PUBLISHING.md)** | Deploy assets to library | Post-selection, manual | No |
-| **[Player Sync](docs/phases/PLAYER_SYNC.md)** | Update media players | Post-publish, manual | No |
-| **[Notification](docs/phases/NOTIFICATION.md)** | Send filtered notifications | Phase events, workflow completion | No* |
-| **[Verification](docs/phases/VERIFICATION.md)** | Ensure cache↔library consistency | Manual, schedule | No* |
+| Phase | Status | Purpose | Triggers | Required |
+|-------|--------|---------|----------|----------|
+| **[Scanning](docs/phases/SCANNING.md)** | ✅ Implemented | Discover & classify files | Manual, webhook, schedule | Yes |
+| **[Enrichment](docs/phases/ENRICHMENT.md)** | ✅ Implemented | Fetch metadata & select assets | Post-scan, manual, refresh | No |
+| **[Publishing](docs/phases/PUBLISHING.md)** | ✅ Implemented | Deploy assets to library | Post-selection, manual | No |
+| **[Player Sync](docs/phases/PLAYER_SYNC.md)** | ⚠️ Partial | Update media players | Post-publish, manual | No |
+| **[Notification](docs/phases/NOTIFICATION.md)** | ✅ Implemented | Send filtered notifications | Phase events, workflow completion | No* |
+| **[Verification](docs/phases/VERIFICATION.md)** | ✅ Implemented | Ensure cache↔library consistency | Manual, schedule | No* |
 
 \* Notification and Verification phases run independently and are not part of the sequential automation chain
+
+**Implementation Notes:**
+- **Player Sync**: Media player updates are handled via `MediaPlayerConnectionManager` but not yet integrated as a dedicated workflow phase
+- **Verification**: Cache verification runs as part of scheduled cleanup tasks
+- All phases support WebSocket progress updates for real-time UI feedback
 
 ### Job-Driven Automation
 
@@ -82,7 +87,7 @@ Each phase completion triggers the next phase via job creation. Workers check ph
 ### Backend
 - **Runtime**: Node.js 20+ with TypeScript
 - **Framework**: Express.js
-- **Database**: SQLite (dev) / PostgreSQL (production)
+- **Database**: SQLite (default) / PostgreSQL (supported)
 - **Job Queue**: SQLite-based with worker pool
 - **Communication**: REST API + WebSocket
 
@@ -104,15 +109,17 @@ Each phase completion triggers the next phase via job creation. Workers check ph
 ```
 CACHE (Protected)              LIBRARY (Working)
 /data/cache/                   /media/movies/
-  ├── images/                    ├── Movie (2024)/
-  │   └── {uuid}/                │   ├── movie.mkv
-  │       ├── poster.jpg         │   ├── movie-poster.jpg
-  │       └── fanart.jpg         │   └── movie-fanart.jpg
-  └── trailers/                  └── ...
-      └── {uuid}/
+  ├── assets/                    ├── Movie (2024)/
+  │   └── ab/                    │   ├── movie.mkv
+  │       └── c1/                │   ├── movie-poster.jpg
+  │           └── abc123...jpg   │   └── movie-fanart.jpg
+  └── actors/                    └── ...
+      └── ab/
+          └── c1/
+              └── abc123...jpg
 ```
 
-**Cache**: Content-addressed storage with SHA256 deduplication
+**Cache**: SHA256-sharded storage (first 2 chars / next 2 chars / full hash)
 **Library**: Kodi naming convention for player compatibility
 
 ### Asset Tiers Explained
