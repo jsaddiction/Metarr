@@ -38,8 +38,8 @@ export interface OrchestrationConfig {
 
 export class ProviderOrchestrator {
   constructor(
-    private registry: ProviderRegistry,
-    private configService: ProviderConfigService
+    private readonly registry: ProviderRegistry,
+    private readonly configService: ProviderConfigService
   ) {}
 
   /**

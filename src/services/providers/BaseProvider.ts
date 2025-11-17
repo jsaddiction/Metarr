@@ -32,11 +32,11 @@ import {
 } from '../../errors/providerErrors.js';
 
 export abstract class BaseProvider {
-  protected capabilities: ProviderCapabilities;
+  protected readonly capabilities: ProviderCapabilities;
   protected config: ProviderConfig;
   protected options: ProviderOptions;
-  protected rateLimiter: RateLimiter;
-  protected circuitBreaker: CircuitBreaker;
+  protected readonly rateLimiter: RateLimiter;
+  protected readonly circuitBreaker: CircuitBreaker;
 
   // Rate limit backoff state
   private lastRequestTime: number = 0;

@@ -82,7 +82,7 @@ export class FetchOrchestrator {
 
   constructor(
     private registry: ProviderRegistry,
-    private configService: ProviderConfigService
+    private readonly configService: ProviderConfigService
   ) {}
 
   /**
