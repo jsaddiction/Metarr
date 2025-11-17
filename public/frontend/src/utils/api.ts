@@ -52,6 +52,14 @@ import {
   TriggerJobResponse,
   JobsResponse,
 } from '../types/job';
+import {
+  AssetLimit,
+  AssetLimitsMap,
+  SetAssetLimitRequest,
+  SetAssetLimitResponse,
+  ResetAssetLimitResponse,
+  ResetAllLimitsResponse,
+} from '../types/assetConfig';
 
 const API_BASE_URL = '/api';
 
@@ -940,6 +948,68 @@ export const jobApi = {
    */
   async triggerJob(movieId: number, jobType: 'verify' | 'enrich' | 'publish'): Promise<TriggerJobResponse> {
     return fetchApi<TriggerJobResponse>(`/movies/${movieId}/jobs/${jobType}`, {
+      method: 'POST',
+    });
+  },
+};
+
+/**
+ * Asset Limits Configuration API
+ * Manage asset download limits per type
+ */
+export const assetLimitsApi = {
+  /**
+   * Get all asset limits with metadata
+   * GET /api/settings/asset-limits/metadata
+   */
+  async getAllWithMetadata(): Promise<AssetLimit[]> {
+    return fetchApi<AssetLimit[]>('/settings/asset-limits/metadata');
+  },
+
+  /**
+   * Get all asset limits as a simple map
+   * GET /api/settings/asset-limits
+   */
+  async getAll(): Promise<AssetLimitsMap> {
+    return fetchApi<AssetLimitsMap>('/settings/asset-limits');
+  },
+
+  /**
+   * Get limit for a specific asset type
+   * GET /api/settings/asset-limits/:assetType
+   */
+  async getLimit(assetType: string): Promise<{ assetType: string; limit: number }> {
+    return fetchApi<{ assetType: string; limit: number }>(`/settings/asset-limits/${assetType}`);
+  },
+
+  /**
+   * Set limit for a specific asset type
+   * PUT /api/settings/asset-limits/:assetType
+   */
+  async setLimit(assetType: string, limit: number): Promise<SetAssetLimitResponse> {
+    const data: SetAssetLimitRequest = { limit };
+    return fetchApi<SetAssetLimitResponse>(`/settings/asset-limits/${assetType}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * Reset limit to default for a specific asset type
+   * DELETE /api/settings/asset-limits/:assetType
+   */
+  async resetLimit(assetType: string): Promise<ResetAssetLimitResponse> {
+    return fetchApi<ResetAssetLimitResponse>(`/settings/asset-limits/${assetType}`, {
+      method: 'DELETE',
+    });
+  },
+
+  /**
+   * Reset all asset limits to defaults
+   * POST /api/settings/asset-limits/reset-all
+   */
+  async resetAll(): Promise<ResetAllLimitsResponse> {
+    return fetchApi<ResetAllLimitsResponse>('/settings/asset-limits/reset-all', {
       method: 'POST',
     });
   },
