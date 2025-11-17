@@ -14,7 +14,7 @@ export const Settings: React.FC = () => {
           <div>
             <h2 className="content-title">Application Settings & Configuration</h2>
             <p className="content-subtitle">
-              Configure providers, file management, media players, notifications, and general application settings
+              Configure workflow behavior, providers, libraries, media players, and notifications
             </p>
           </div>
         </div>
@@ -33,12 +33,10 @@ export const Settings: React.FC = () => {
             <div className="card-body">
               <h3 className="text-lg text-primary mb-3">General Settings</h3>
               <ul className="text-secondary">
-                <li>• Application-wide configurations</li>
-                <li>• Database and storage settings</li>
-                <li>• Logging and monitoring preferences</li>
-                <li>• Security and authentication</li>
-                <li>• Performance optimization</li>
-                <li>• User interface preferences</li>
+                <li>• Core application behavior</li>
+                <li>• Metadata enrichment preferences</li>
+                <li>• Publishing and asset deployment</li>
+                <li>• Automatic vs manual workflow control</li>
               </ul>
             </div>
           </div>
@@ -47,54 +45,46 @@ export const Settings: React.FC = () => {
             <div className="card-body">
               <h3 className="text-lg text-primary mb-3">Provider Settings</h3>
               <ul className="text-secondary">
-                <li>• TMDB, TVDB, and IMDB configuration</li>
+                <li>• TMDB, TVDB, and Fanart.tv configuration</li>
                 <li>• MusicBrainz and music providers</li>
-                <li>• Arr integration (Sonarr, Radarr, Lidarr)</li>
                 <li>• API keys and authentication</li>
                 <li>• Rate limiting and retry policies</li>
-                <li>• Fallback provider priorities</li>
               </ul>
             </div>
           </div>
 
           <div className="card">
             <div className="card-body">
-              <h3 className="text-lg text-primary mb-3">File Management</h3>
+              <h3 className="text-lg text-primary mb-3">Libraries</h3>
               <ul className="text-secondary">
-                <li>• Naming conventions and patterns</li>
-                <li>• Directory structure preferences</li>
-                <li>• NFO and metadata file settings</li>
-                <li>• Watch folder monitoring</li>
-                <li>• File organization rules</li>
-                <li>• Duplicate handling policies</li>
+                <li>• Media library path configuration</li>
+                <li>• Library types (movies, TV shows, music)</li>
+                <li>• Scanner settings and scheduling</li>
+                <li>• Directory monitoring preferences</li>
               </ul>
             </div>
           </div>
 
           <div className="card">
             <div className="card-body">
-              <h3 className="text-lg text-primary mb-3">Media Player Integration</h3>
+              <h3 className="text-lg text-primary mb-3">Media Players</h3>
               <ul className="text-secondary">
                 <li>• Kodi JSON-RPC configuration</li>
                 <li>• Jellyfin server integration</li>
                 <li>• Plex Media Server settings</li>
-                <li>• Emby and other players</li>
-                <li>• Library update triggers</li>
-                <li>• Metadata sync preferences</li>
+                <li>• Player groups and path mappings</li>
               </ul>
             </div>
           </div>
 
           <div className="card">
             <div className="card-body">
-              <h3 className="text-lg text-primary mb-3">Notification Settings</h3>
+              <h3 className="text-lg text-primary mb-3">Notifications</h3>
               <ul className="text-secondary">
-                <li>• Email and SMTP configuration</li>
                 <li>• Discord and Slack webhooks</li>
+                <li>• Email and SMTP configuration</li>
                 <li>• Push notification services</li>
                 <li>• Event triggers and filtering</li>
-                <li>• Message templates and formatting</li>
-                <li>• Delivery preferences and scheduling</li>
               </ul>
             </div>
           </div>

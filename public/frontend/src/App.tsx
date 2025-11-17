@@ -22,14 +22,10 @@ import { Tasks } from './pages/system/Tasks';
 import { Backup } from './pages/system/Backup';
 import { Events } from './pages/system/Events';
 import { LogFiles } from './pages/system/LogFiles';
-import { General } from './pages/settings/General';
 import { Providers } from './pages/settings/Providers';
-import { DataSelection } from './pages/settings/DataSelection';
-import { Files } from './pages/settings/Files';
 import { Libraries } from './pages/settings/Libraries';
 import { MediaPlayers } from './pages/settings/MediaPlayers';
 import { Notifications } from './pages/settings/Notifications';
-import { AssetLimits } from './pages/settings/AssetLimits';
 import { Workflow } from './pages/settings/Workflow';
 import { SaveBarDemo } from './pages/test/SaveBarDemo';
 
@@ -69,15 +65,11 @@ function usePageTitle() {
     '/activity/history': 'Activity History',
     '/activity/running-jobs': 'Running Jobs',
     '/activity/blocked-assets': 'Blocked Assets',
-    '/settings/general': 'General Settings',
+    '/settings/general': 'General',
     '/settings/providers': 'Providers',
-    '/settings/data-selection': 'Data Selection',
-    '/settings/files': 'Files',
     '/settings/libraries': 'Libraries',
     '/settings/media-players': 'Media Players',
     '/settings/notifications': 'Notifications',
-    '/settings/asset-limits': 'Asset Limits',
-    '/settings/workflow': 'Workflow Control',
     '/system/status': 'System Status',
     '/system/tasks': 'Tasks',
     '/system/backup': 'Backup',
@@ -187,23 +179,13 @@ function AppRoutes() {
 
         {/* Settings sub-routes */}
         <Route path="/settings/general" element={
-          <RouteErrorBoundary routeName="General Settings">
-            <General />
+          <RouteErrorBoundary routeName="General">
+            <Workflow />
           </RouteErrorBoundary>
         } />
         <Route path="/settings/providers" element={
           <RouteErrorBoundary routeName="Providers">
             <Providers />
-          </RouteErrorBoundary>
-        } />
-        <Route path="/settings/data-selection" element={
-          <RouteErrorBoundary routeName="Data Selection">
-            <DataSelection />
-          </RouteErrorBoundary>
-        } />
-        <Route path="/settings/files" element={
-          <RouteErrorBoundary routeName="Files">
-            <Files />
           </RouteErrorBoundary>
         } />
         <Route path="/settings/libraries" element={
@@ -219,16 +201,6 @@ function AppRoutes() {
         <Route path="/settings/notifications" element={
           <RouteErrorBoundary routeName="Notifications">
             <Notifications />
-          </RouteErrorBoundary>
-        } />
-        <Route path="/settings/asset-limits" element={
-          <RouteErrorBoundary routeName="Asset Limits">
-            <AssetLimits />
-          </RouteErrorBoundary>
-        } />
-        <Route path="/settings/workflow" element={
-          <RouteErrorBoundary routeName="Workflow">
-            <Workflow />
           </RouteErrorBoundary>
         } />
 

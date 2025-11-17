@@ -205,7 +205,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isCollapsed = false, isMobileO
       label: 'Settings',
       children: [
         {
-          icon: faCog,
+          icon: faNetworkWired,
           label: 'General',
           path: '/settings/general',
         },
@@ -213,16 +213,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ isCollapsed = false, isMobileO
           icon: faDatabase,
           label: 'Providers',
           path: '/settings/providers',
-        },
-        {
-          icon: faSliders,
-          label: 'Data Selection',
-          path: '/settings/data-selection',
-        },
-        {
-          icon: faFolder,
-          label: 'Files',
-          path: '/settings/files',
         },
         {
           icon: faBook,
@@ -238,16 +228,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ isCollapsed = false, isMobileO
           icon: faBell,
           label: 'Notifications',
           path: '/settings/notifications',
-        },
-        {
-          icon: faSliders,
-          label: 'Asset Limits',
-          path: '/settings/asset-limits',
-        },
-        {
-          icon: faNetworkWired,
-          label: 'Workflow',
-          path: '/settings/workflow',
         },
       ],
     },
