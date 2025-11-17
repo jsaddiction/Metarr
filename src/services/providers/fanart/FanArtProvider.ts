@@ -21,6 +21,7 @@ import {
 import { ProviderConfig } from '../../../types/provider.js';
 import { logger } from '../../../middleware/logging.js';
 import { getErrorMessage } from '../../../utils/errorHandling.js';
+import { NotImplementedError } from '../../../errors/index.js';
 import {
   FanArtImage,
   FanArtSeasonImage,
@@ -34,7 +35,11 @@ export class FanArtProvider extends BaseProvider {
     super(config, options);
 
     // Initialize FanArt.tv client
-    const clientOptions: any = {
+    const clientOptions: {
+      apiKey: string;
+      baseUrl: string;
+      personalApiKey?: string;
+    } = {
       apiKey: config.apiKey || '',
       baseUrl: (options?.baseUrl as string) || 'https://webservice.fanart.tv/v3',
     };
@@ -146,7 +151,7 @@ export class FanArtProvider extends BaseProvider {
    */
   async getMetadata(_request: MetadataRequest): Promise<MetadataResponse> {
     // FanArt.tv doesn't provide metadata, only images
-    throw new Error('FanArt.tv provider does not support metadata fetching');
+    throw new NotImplementedError('FanArt.tv provider does not support metadata fetching');
   }
 
   /**
@@ -377,13 +382,13 @@ export class FanArtProvider extends BaseProvider {
   private transformImage(
     image: FanArtImage,
     providerResultId: string,
-    assetType: string,
+    assetType: AssetRequest['assetTypes'][number],
     isHD = false
   ): AssetCandidate {
     const candidate: AssetCandidate = {
       providerId: 'fanart_tv',
       providerResultId,
-      assetType: assetType as any,
+      assetType,
       url: image.url,
       language: image.lang === '00' ? 'null' : image.lang,
     };
@@ -408,7 +413,7 @@ export class FanArtProvider extends BaseProvider {
   private transformSeasonImage(
     image: FanArtSeasonImage,
     providerResultId: string,
-    assetType: string
+    assetType: AssetRequest['assetTypes'][number]
   ): AssetCandidate {
     const candidate = this.transformImage(image, providerResultId, assetType);
 

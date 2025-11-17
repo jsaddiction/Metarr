@@ -13,29 +13,30 @@ import axios from 'axios';
 // ============================================
 
 class OldStyleProvider extends BaseProvider {
-  async getMovieOldStyle(movieId: number): Promise<any> {
+  async getMovieOldStyle(movieId: number): Promise<unknown> {
     return this.requestWithRetry(`/movie/${movieId}`, 3);
   }
 
-  private async requestWithRetry(endpoint: string, retriesLeft: number): Promise<any> {
+  private async requestWithRetry(endpoint: string, retriesLeft: number): Promise<unknown> {
     try {
       const response = await axios.get(endpoint);
       return response.data;
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       // Manual 429 handling - NOT RECOMMENDED
-      if (error.response?.status === 429 && retriesLeft > 0) {
+      if ((error as { response?: { status?: number } }).response?.status === 429 && retriesLeft > 0) {
         console.log('Rate limited, waiting 5 seconds...');
         await this.delay(5000);
         return this.requestWithRetry(endpoint, retriesLeft - 1);
       }
 
       // Manual 404 handling
-      if (error.response?.status === 404) {
+      if ((error as { response?: { status?: number } }).response?.status === 404) {
         throw new Error('Movie not found');
       }
 
       // Generic error
-      throw new Error(`Request failed: ${error.message}`);
+      throw new Error(`Request failed: ${errorMessage}`);
     }
   }
 
@@ -44,8 +45,10 @@ class OldStyleProvider extends BaseProvider {
   }
 
   // Required abstract methods...
-  defineCapabilities() { return {} as any; }
-  protected createRateLimiter() { return {} as any; }
+  // @ts-expect-error - Example code only, not implementing full interface
+  defineCapabilities() { return {} as unknown; }
+  // @ts-expect-error - Example code only, not implementing full interface
+  protected createRateLimiter() { return {} as unknown; }
 }
 
 // ============================================
@@ -59,7 +62,7 @@ class NewStyleProvider extends BaseProvider {
    * - Automatic circuit breaker
    * - Built-in error handling
    */
-  async getMovieWithExecuteRequest(movieId: number): Promise<any> {
+  async getMovieWithExecuteRequest(movieId: number): Promise<unknown> {
     return this.executeRequest(
       async () => {
         const response = await axios.get(`/movie/${movieId}`);
@@ -76,7 +79,7 @@ class NewStyleProvider extends BaseProvider {
    * - Still gets standardized errors
    * - Can add custom logic before/after request
    */
-  async getMovieWithParseError(movieId: number): Promise<any> {
+  async getMovieWithParseError(movieId: number): Promise<unknown> {
     try {
       // Custom pre-request logic
       this.log('info', `Fetching movie ${movieId}`);
@@ -99,7 +102,7 @@ class NewStyleProvider extends BaseProvider {
    * - Use executeRequest for rate limiting and circuit breaker
    * - Use parseHttpError inside for consistent error handling
    */
-  async getMovieBestPractice(movieId: number): Promise<any> {
+  async getMovieBestPractice(movieId: number): Promise<Record<string, unknown>> {
     return this.executeRequest(
       async () => {
         try {
@@ -115,19 +118,22 @@ class NewStyleProvider extends BaseProvider {
     );
   }
 
-  private transformResponse(data: any): any {
+  private transformResponse(data: Record<string, unknown>): Record<string, unknown> {
     // Transform provider response to internal format
+    const releaseDate = data.release_date as string | undefined;
     return {
       id: data.id,
       title: data.title,
-      year: data.release_date?.split('-')[0],
+      year: releaseDate?.split('-')[0],
       // ... etc
     };
   }
 
   // Required abstract methods...
-  defineCapabilities() { return {} as any; }
-  protected createRateLimiter() { return {} as any; }
+  // @ts-expect-error - Example code only, not implementing full interface
+  defineCapabilities() { return {} as unknown; }
+  // @ts-expect-error - Example code only, not implementing full interface
+  protected createRateLimiter() { return {} as unknown; }
 }
 
 // ============================================
