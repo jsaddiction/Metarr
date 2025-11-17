@@ -11,6 +11,7 @@ import { DatabaseConnection } from '../types/database.js';
 import { getErrorMessage } from '../utils/errorHandling.js';
 import { SqlParam } from '../types/database.js';
 import { imageProcessor, ImageProcessor } from '../utils/ImageProcessor.js';
+import { ResourceNotFoundError, InvalidStateError } from '../errors/index.js';
 
 export interface Image {
   id: number;
@@ -415,7 +416,14 @@ export class ImageService {
    */
   async deleteImage(imageId: number): Promise<void> {
     const image = await this.getImageById(imageId);
-    if (!image) throw new Error('Image not found');
+    if (!image) {
+      throw new ResourceNotFoundError(
+        'image',
+        imageId,
+        'Image not found',
+        { service: 'ImageService', operation: 'deleteImage' }
+      );
+    }
 
     if (image.file_path && (await fs.pathExists(image.file_path))) {
       await fs.remove(image.file_path);
@@ -430,8 +438,22 @@ export class ImageService {
    */
   async copyToLibrary(imageId: number, libraryPath: string): Promise<void> {
     const image = await this.getImageById(imageId);
-    if (!image) throw new Error('Image not found');
-    if (!image.file_path) throw new Error('Image has no file path');
+    if (!image) {
+      throw new ResourceNotFoundError(
+        'image',
+        imageId,
+        'Image not found',
+        { service: 'ImageService', operation: 'copyToLibrary' }
+      );
+    }
+    if (!image.file_path) {
+      throw new InvalidStateError(
+        'Image',
+        'file_path',
+        'Image has no file path',
+        { service: 'ImageService', operation: 'copyToLibrary', metadata: { imageId } }
+      );
+    }
 
     await fs.ensureDir(path.dirname(libraryPath));
     await fs.copy(image.file_path, libraryPath);

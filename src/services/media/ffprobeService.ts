@@ -3,6 +3,7 @@ import { promisify } from 'util';
 import { logger } from '../../middleware/logging.js';
 import { DatabaseConnection } from '../../types/database.js';
 import { getErrorMessage } from '../../utils/errorHandling.js';
+import { ProcessError, DatabaseError, ErrorCode } from '../../errors/index.js';
 
 const execPromise = promisify(exec);
 
@@ -163,7 +164,25 @@ export async function extractMediaInfo(filePath: string): Promise<MediaInfo> {
       filePath,
       error: getErrorMessage(error),
     });
-    throw new Error(`FFprobe failed: ${getErrorMessage(error)}`);
+
+    // Check if this is a process execution error
+    if (error instanceof Error && 'code' in error) {
+      throw new ProcessError(
+        'ffprobe',
+        (error as any).code || -1,
+        `FFprobe failed: ${getErrorMessage(error)}`,
+        { metadata: { filePath } },
+        error
+      );
+    }
+
+    throw new ProcessError(
+      'ffprobe',
+      -1,
+      `FFprobe failed: ${getErrorMessage(error)}`,
+      { metadata: { filePath } },
+      error instanceof Error ? error : undefined
+    );
   }
 }
 
@@ -354,7 +373,18 @@ export async function storeVideoStreams(
       entityId,
       error: getErrorMessage(error),
     });
-    throw new Error(`Failed to store video streams: ${getErrorMessage(error)}`);
+    // Re-throw ApplicationError instances as-is
+    if (error instanceof DatabaseError) {
+      throw error;
+    }
+    // Wrap other errors
+    throw new DatabaseError(
+      `Failed to store video streams: ${getErrorMessage(error)}`,
+      ErrorCode.DATABASE_QUERY_FAILED,
+      true,
+      { metadata: { entityType, entityId } },
+      error instanceof Error ? error : undefined
+    );
   }
 }
 
@@ -406,7 +436,18 @@ export async function storeAudioStreams(
       entityId,
       error: getErrorMessage(error),
     });
-    throw new Error(`Failed to store audio streams: ${getErrorMessage(error)}`);
+    // Re-throw ApplicationError instances as-is
+    if (error instanceof DatabaseError) {
+      throw error;
+    }
+    // Wrap other errors
+    throw new DatabaseError(
+      `Failed to store audio streams: ${getErrorMessage(error)}`,
+      ErrorCode.DATABASE_QUERY_FAILED,
+      true,
+      { metadata: { entityType, entityId } },
+      error instanceof Error ? error : undefined
+    );
   }
 }
 
@@ -457,7 +498,18 @@ export async function storeSubtitleStreams(
       entityId,
       error: getErrorMessage(error),
     });
-    throw new Error(`Failed to store subtitle streams: ${getErrorMessage(error)}`);
+    // Re-throw ApplicationError instances as-is
+    if (error instanceof DatabaseError) {
+      throw error;
+    }
+    // Wrap other errors
+    throw new DatabaseError(
+      `Failed to store subtitle streams: ${getErrorMessage(error)}`,
+      ErrorCode.DATABASE_QUERY_FAILED,
+      true,
+      { metadata: { entityType, entityId } },
+      error instanceof Error ? error : undefined
+    );
   }
 }
 
@@ -497,6 +549,17 @@ export async function extractAndStoreMediaInfo(
       filePath,
       error: getErrorMessage(error),
     });
-    throw new Error(`Failed to extract and store media info: ${getErrorMessage(error)}`);
+    // Re-throw ApplicationError instances as-is
+    if (error instanceof ProcessError || error instanceof DatabaseError) {
+      throw error;
+    }
+    // Wrap other errors
+    throw new ProcessError(
+      'ffprobe',
+      -1,
+      `Failed to extract and store media info: ${getErrorMessage(error)}`,
+      { metadata: { entityType, entityId, filePath } },
+      error instanceof Error ? error : undefined
+    );
   }
 }

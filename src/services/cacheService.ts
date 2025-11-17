@@ -5,6 +5,7 @@ import { createReadStream } from 'fs';
 import { logger } from '../middleware/logging.js';
 import { DatabaseManager } from '../database/DatabaseManager.js';
 import { DatabaseConnection } from '../types/database.js';
+import { InvalidStateError } from '../errors/index.js';
 
 /**
  * Cache Service
@@ -198,7 +199,12 @@ export class CacheService {
     isNew: boolean;
   }> {
     if (!this.db) {
-      throw new Error('Cache service not initialized');
+      throw new InvalidStateError(
+        'CacheService',
+        'initialized',
+        'Cache service not initialized',
+        { service: 'CacheService', operation: 'initialization check' }
+      );
     }
 
     try {
@@ -334,7 +340,12 @@ export class CacheService {
     referenceCount: number;
   } | null> {
     if (!this.db) {
-      throw new Error('Cache service not initialized');
+      throw new InvalidStateError(
+        'CacheService',
+        'initialized',
+        'Cache service not initialized',
+        { service: 'CacheService', operation: 'initialization check' }
+      );
     }
 
     const asset = await this.db.get<{
@@ -403,7 +414,12 @@ export class CacheService {
     referenceCount: number;
   } | null> {
     if (!this.db) {
-      throw new Error('Cache service not initialized');
+      throw new InvalidStateError(
+        'CacheService',
+        'initialized',
+        'Cache service not initialized',
+        { service: 'CacheService', operation: 'initialization check' }
+      );
     }
 
     const asset = await this.db.get<{
@@ -469,7 +485,12 @@ export class CacheService {
    */
   public async incrementReference(cacheAssetId: number): Promise<void> {
     if (!this.db) {
-      throw new Error('Cache service not initialized');
+      throw new InvalidStateError(
+        'CacheService',
+        'initialized',
+        'Cache service not initialized',
+        { service: 'CacheService', operation: 'initialization check' }
+      );
     }
 
     await this.db.execute(
@@ -514,7 +535,12 @@ export class CacheService {
    */
   public async decrementReference(cacheAssetId: number): Promise<void> {
     if (!this.db) {
-      throw new Error('Cache service not initialized');
+      throw new InvalidStateError(
+        'CacheService',
+        'initialized',
+        'Cache service not initialized',
+        { service: 'CacheService', operation: 'initialization check' }
+      );
     }
 
     await this.db.execute(
@@ -572,7 +598,12 @@ export class CacheService {
     errors: number;
   }> {
     if (!this.db) {
-      throw new Error('Cache service not initialized');
+      throw new InvalidStateError(
+        'CacheService',
+        'initialized',
+        'Cache service not initialized',
+        { service: 'CacheService', operation: 'initialization check' }
+      );
     }
 
     // Find orphaned assets
@@ -588,7 +619,7 @@ export class CacheService {
     logger.info(`Found ${orphans.length} orphaned cache assets`, { dryRun });
 
     if (dryRun) {
-      const totalSize = orphans.reduce((sum: number, asset: any) => sum + asset.file_size, 0);
+      const totalSize = orphans.reduce((sum: number, asset: { id: number; file_path: string; file_size: number; content_hash: string }) => sum + asset.file_size, 0);
       return {
         deleted: orphans.length,
         freedBytes: totalSize,
@@ -669,7 +700,12 @@ export class CacheService {
     orphanedSize: number;
   }> {
     if (!this.db) {
-      throw new Error('Cache service not initialized');
+      throw new InvalidStateError(
+        'CacheService',
+        'initialized',
+        'Cache service not initialized',
+        { service: 'CacheService', operation: 'initialization check' }
+      );
     }
 
     const stats = await this.db.get<{
@@ -739,7 +775,12 @@ export class CacheService {
     corrupted: number;
   }> {
     if (!this.db) {
-      throw new Error('Cache service not initialized');
+      throw new InvalidStateError(
+        'CacheService',
+        'initialized',
+        'Cache service not initialized',
+        { service: 'CacheService', operation: 'initialization check' }
+      );
     }
 
     const assets = await this.db.query<{

@@ -13,6 +13,7 @@ import {
   getAllAssetTypes,
 } from '../config/assetTypeDefaults.js';
 import { logger } from '../middleware/logging.js';
+import { ValidationError } from '../errors/index.js';
 
 export class AssetConfigService {
   constructor(private dbManager: DatabaseManager) {}
@@ -59,11 +60,11 @@ export class AssetConfigService {
   async setAssetLimit(assetType: string, limit: number): Promise<void> {
     const config = ASSET_TYPE_DEFAULTS[assetType];
     if (!config) {
-      throw new Error(`Unknown asset type: ${assetType}`);
+      throw new ValidationError(`Unknown asset type: ${assetType}`);
     }
 
     if (limit < config.minAllowed || limit > config.maxAllowed) {
-      throw new Error(
+      throw new ValidationError(
         `Limit must be between ${config.minAllowed} and ${config.maxAllowed} for ${assetType}`
       );
     }
@@ -151,7 +152,7 @@ export class AssetConfigService {
   async resetAssetLimit(assetType: string): Promise<void> {
     const config = ASSET_TYPE_DEFAULTS[assetType];
     if (!config) {
-      throw new Error(`Unknown asset type: ${assetType}`);
+      throw new ValidationError(`Unknown asset type: ${assetType}`);
     }
 
     const db = this.dbManager.getConnection();

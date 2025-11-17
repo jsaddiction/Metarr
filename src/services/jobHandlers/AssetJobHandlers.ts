@@ -8,6 +8,7 @@ import { PhaseConfigService } from '../PhaseConfigService.js';
 import { websocketBroadcaster } from '../websocketBroadcaster.js';
 import { logger } from '../../middleware/logging.js';
 import path from 'path';
+import { ValidationError, ResourceNotFoundError } from '../../errors/index.js';
 
 /**
  * Asset Job Handlers
@@ -31,6 +32,12 @@ export class AssetJobHandlers {
     this.db = db;
     this.jobQueue = jobQueue;
     this.phaseConfig = phaseConfig;
+    if (!dbManager) {
+      throw new ValidationError(
+        'DatabaseManager is required for AssetJobHandlers',
+        { service: 'AssetJobHandlers', operation: 'constructor', metadata: { field: 'dbManager' } }
+      );
+    }
     this.enrichment = new EnrichmentService(db, dbManager, cacheDir);
     this.publishing = new PublishingService(db, cacheDir);
   }
@@ -203,7 +210,12 @@ export class AssetJobHandlers {
     // Get entity and library info
     const entity = await this.getEntityForPublish(entityType, entityId);
     if (!entity) {
-      throw new Error(`Entity not found: ${entityType} ${entityId}`);
+      throw new ResourceNotFoundError(
+        entityType,
+        entityId,
+        `Entity not found: ${entityType} ${entityId}`,
+        { service: 'AssetJobHandlers', operation: 'handlePublish' }
+      );
     }
 
     // Run publishing with phase config

@@ -11,6 +11,7 @@ import crypto from 'crypto';
 import { DatabaseConnection } from '../../types/database.js';
 import { logger } from '../../middleware/logging.js';
 import { getErrorMessage, getErrorCode } from '../../utils/errorHandling.js';
+import { ValidationError } from '../../errors/index.js';
 import { imageProcessor } from '../../utils/ImageProcessor.js';
 
 // ============================================================
@@ -292,7 +293,7 @@ export async function cacheImageFile(
     const tempHash = crypto.createHash('sha256').update(tempBuffer).digest('hex');
 
     if (tempHash !== fileHash) {
-      throw new Error(`Hash mismatch: expected ${fileHash}, got ${tempHash}`);
+      throw new ValidationError(`Hash mismatch: expected ${fileHash}, got ${tempHash}`);
     }
 
     // Atomic rename (all-or-nothing operation)

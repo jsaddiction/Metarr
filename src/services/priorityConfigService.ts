@@ -15,6 +15,7 @@ import {
   providerSupportsAssetType,
   getProvidersForAssetType
 } from '../config/providerMetadata.js';
+import { ValidationError, ResourceNotFoundError, InvalidStateError } from '../errors/index.js';
 
 /**
  * Priority Configuration Service
@@ -87,9 +88,16 @@ export class PriorityConfigService {
 
     if (invalidProviders.length > 0) {
       const supportedProviders = getProvidersForAssetType(data.assetType);
-      throw new Error(
+      throw new ValidationError(
         `Provider(s) ${invalidProviders.join(', ')} do not support asset type '${data.assetType}'. ` +
-        `Supported providers: ${supportedProviders.join(', ')}`
+        `Supported providers: ${supportedProviders.join(', ')}`,
+        {
+          metadata: {
+            assetType: data.assetType,
+            invalidProviders,
+            supportedProviders
+          }
+        }
       );
     }
 
@@ -120,7 +128,12 @@ export class PriorityConfigService {
 
     const updated = await this.getAssetTypePriority(data.assetType);
     if (!updated) {
-      throw new Error(`Failed to retrieve asset type priority after upsert: ${data.assetType}`);
+      throw new InvalidStateError(
+        'asset type priority exists',
+        'asset type priority not found',
+        `Failed to retrieve asset type priority after upsert: ${data.assetType}`,
+        { metadata: { assetType: data.assetType } }
+      );
     }
 
     return updated;
@@ -200,7 +213,10 @@ export class PriorityConfigService {
   async upsertMetadataFieldPriority(data: UpdateMetadataFieldPriorityRequest): Promise<MetadataFieldPriority> {
     // Check if this is a forced field
     if (FORCED_LOCAL_FIELDS.includes(data.fieldName as any)) {
-      throw new Error(`Field '${data.fieldName}' is forced to use Local provider and cannot be changed`);
+      throw new ValidationError(
+        `Field '${data.fieldName}' is forced to use Local provider and cannot be changed`,
+        { metadata: { fieldName: data.fieldName } }
+      );
     }
 
     const existing = await this.getMetadataFieldPriority(data.fieldName);
@@ -230,7 +246,12 @@ export class PriorityConfigService {
 
     const updated = await this.getMetadataFieldPriority(data.fieldName);
     if (!updated) {
-      throw new Error(`Failed to retrieve metadata field priority after upsert: ${data.fieldName}`);
+      throw new InvalidStateError(
+        'metadata field priority exists',
+        'metadata field priority not found',
+        `Failed to retrieve metadata field priority after upsert: ${data.fieldName}`,
+        { metadata: { fieldName: data.fieldName } }
+      );
     }
 
     return updated;
@@ -272,7 +293,11 @@ export class PriorityConfigService {
     if (presetId !== 'custom') {
       const preset = getPriorityPreset(presetId);
       if (!preset) {
-        throw new Error(`Unknown preset: ${presetId}`);
+        throw new ResourceNotFoundError(
+          'priority preset',
+          presetId,
+          `Unknown preset: ${presetId}`
+        );
       }
     }
 
@@ -306,7 +331,11 @@ export class PriorityConfigService {
   async applyPreset(presetId: string): Promise<void> {
     const preset = getPriorityPreset(presetId);
     if (!preset) {
-      throw new Error(`Unknown preset: ${presetId}`);
+      throw new ResourceNotFoundError(
+        'priority preset',
+        presetId,
+        `Unknown preset: ${presetId}`
+      );
     }
 
     logger.info(`Applying preset: ${presetId}`);

@@ -6,6 +6,7 @@ import { scanMovieDirectory, ScanContext } from './scan/unifiedScanService.js';
 import { applyManagerPathMapping } from './pathMappingService.js';
 import { MediaPlayerConnectionManager } from './mediaPlayerConnectionManager.js';
 import { getErrorMessage } from '../utils/errorHandling.js';
+import { ResourceNotFoundError } from '../errors/index.js';
 
 /**
  * Find library by matching the longest path prefix
@@ -37,12 +38,22 @@ async function findLibraryByPath(db: DatabaseConnection, filePath: string): Prom
  * - MovieFileDelete: High (mark for deletion)
  */
 
+interface JobQueueService {
+  addJob(job: {
+    type: string;
+    priority: number;
+    payload: Record<string, unknown>;
+    retry_count: number;
+    max_retries: number;
+  }): Promise<number>;
+}
+
 export class WebhookProcessingService {
   private dbManager: DatabaseManager;
   private mediaPlayerManager: MediaPlayerConnectionManager;
-  private jobQueue: any; // JobQueueService - will be injected
+  private jobQueue?: JobQueueService | undefined;
 
-  constructor(dbManager: DatabaseManager, mediaPlayerManager: MediaPlayerConnectionManager, jobQueue?: any) {
+  constructor(dbManager: DatabaseManager, mediaPlayerManager: MediaPlayerConnectionManager, jobQueue?: JobQueueService | undefined) {
     this.dbManager = dbManager;
     this.mediaPlayerManager = mediaPlayerManager;
     this.jobQueue = jobQueue;
@@ -125,7 +136,19 @@ export class WebhookProcessingService {
       // Find library for this path
       const libraryId = await findLibraryByPath(db, mappedPath);
       if (!libraryId) {
-        throw new Error(`No library found for path: ${mappedPath}`);
+        throw new ResourceNotFoundError(
+          'library',
+          mappedPath,
+          `No library found for path: ${mappedPath}`,
+          {
+            service: 'WebhookProcessingService',
+            operation: 'handleRadarrDownload',
+            metadata: {
+              movieTitle: payload.movie.title,
+              tmdbId: payload.movie.tmdbId
+            }
+          }
+        );
       }
 
       // Create background job if job queue available
@@ -222,7 +245,19 @@ export class WebhookProcessingService {
       // Find library for this path
       const libraryId = await findLibraryByPath(db, mappedPath);
       if (!libraryId) {
-        throw new Error(`No library found for path: ${mappedPath}`);
+        throw new ResourceNotFoundError(
+          'library',
+          mappedPath,
+          `No library found for path: ${mappedPath}`,
+          {
+            service: 'WebhookProcessingService',
+            operation: 'handleRadarrRename',
+            metadata: {
+              movieTitle: payload.movie.title,
+              tmdbId: payload.movie.tmdbId
+            }
+          }
+        );
       }
 
       if (this.jobQueue) {

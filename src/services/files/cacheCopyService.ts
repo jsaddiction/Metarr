@@ -22,6 +22,7 @@ import crypto from 'crypto';
 import { logger } from '../../middleware/logging.js';
 import { imageProcessor } from '../../utils/ImageProcessor.js';
 import { getErrorMessage } from '../../utils/errorHandling.js';
+import { FileSystemError, ErrorCode } from '../../errors/index.js';
 
 const CACHE_BASE_PATH = path.join(process.cwd(), 'data', 'cache');
 
@@ -150,7 +151,11 @@ export async function copyToCache(options: CacheCopyOptions): Promise<CacheFileI
       fileType,
       error: getErrorMessage(error),
     });
-    throw new Error(`Failed to copy to cache: ${getErrorMessage(error)}`);
+    throw new FileSystemError(
+      `Failed to copy to cache: ${getErrorMessage(error)}`,
+      ErrorCode.FS_WRITE_FAILED,
+      sourcePath
+    );
   }
 }
 

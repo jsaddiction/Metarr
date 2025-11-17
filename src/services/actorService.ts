@@ -2,6 +2,7 @@ import { DatabaseManager } from '../database/DatabaseManager.js';
 import { logger } from '../middleware/logging.js';
 import { getErrorMessage } from '../utils/errorHandling.js';
 import { SqlParam } from '../types/database.js';
+import { ResourceNotFoundError } from '../errors/index.js';
 
 export interface Actor {
   id: number;
@@ -254,7 +255,16 @@ export class ActorService {
       ]);
 
       if (!sourceActor || !targetActor) {
-        throw new Error('One or both actors not found');
+        throw new ResourceNotFoundError(
+          'actor',
+          !sourceActor ? sourceActorId : targetActorId,
+          'One or both actors not found',
+          {
+            service: 'ActorService',
+            operation: 'mergeActors',
+            metadata: { sourceActorId, targetActorId }
+          }
+        );
       }
 
       // Move all movie_actors links from source to target
@@ -351,15 +361,10 @@ export class ActorService {
    * Map database row to Actor interface
    */
   private mapActor(row: ActorDatabaseRow): Actor {
-    return {
+    const actor: Actor = {
       id: row.id,
       name: row.name,
       name_normalized: row.name_normalized,
-      tmdb_id: row.tmdb_id ?? undefined,
-      imdb_id: row.imdb_id ?? undefined,
-      image_cache_path: row.image_cache_path ?? undefined,
-      image_hash: row.image_hash ?? undefined,
-      image_ctime: row.image_ctime ?? undefined,
       identification_status: row.identification_status || 'identified',
       enrichment_priority: row.enrichment_priority || 5,
       name_locked: Boolean(row.name_locked),
@@ -368,5 +373,24 @@ export class ActorService {
       created_at: row.created_at,
       updated_at: row.updated_at,
     };
+
+    // Add optional properties explicitly
+    if (row.tmdb_id !== null && row.tmdb_id !== undefined) {
+      actor.tmdb_id = row.tmdb_id;
+    }
+    if (row.imdb_id !== null && row.imdb_id !== undefined) {
+      actor.imdb_id = row.imdb_id;
+    }
+    if (row.image_cache_path !== null && row.image_cache_path !== undefined) {
+      actor.image_cache_path = row.image_cache_path;
+    }
+    if (row.image_hash !== null && row.image_hash !== undefined) {
+      actor.image_hash = row.image_hash;
+    }
+    if (row.image_ctime !== null && row.image_ctime !== undefined) {
+      actor.image_ctime = row.image_ctime;
+    }
+
+    return actor;
   }
 }

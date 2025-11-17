@@ -6,6 +6,7 @@ import { getSubdirectories } from './nfo/nfoDiscovery.js';
 import { websocketBroadcaster } from './websocketBroadcaster.js';
 import { JobQueueService } from './jobQueue/JobQueueService.js';
 import { getErrorMessage } from '../utils/errorHandling.js';
+import { ResourceNotFoundError, InvalidStateError, DatabaseError } from '../errors/index.js';
 
 export class LibraryScanService extends EventEmitter {
   private activeScansCancellationFlags: Map<number, boolean> = new Map();
@@ -72,35 +73,40 @@ export class LibraryScanService extends EventEmitter {
       const db = this.dbManager.getConnection();
 
       // Check if library exists
-      const libraryRows = await db.query<any[]>('SELECT * FROM libraries WHERE id = ?', [
+      const libraryRows = await db.query<Record<string, unknown>>('SELECT * FROM libraries WHERE id = ?', [
         libraryId,
       ]);
 
       if (libraryRows.length === 0) {
-        throw new Error('Library not found');
+        throw new ResourceNotFoundError('library', libraryId);
       }
 
-      const row = libraryRows[0] as any;
+      const row = libraryRows[0];
       const library: Library = {
-        id: row.id,
-        name: row.name,
-        type: row.type,
-        path: row.path,
+        id: row.id as number,
+        name: row.name as string,
+        type: row.type as Library['type'],
+        path: row.path as string,
         auto_enrich: Boolean(row.auto_enrich),
         auto_publish: Boolean(row.auto_publish),
-        description: row.description || undefined,
-        created_at: new Date(row.created_at),
-        updated_at: new Date(row.updated_at),
+        ...(row.description ? { description: row.description as string } : {}),
+        created_at: new Date(row.created_at as string | number),
+        updated_at: new Date(row.updated_at as string | number),
       };
 
       // Check for existing running scan
-      const existingScans = await db.query<any[]>(
+      const existingScans = await db.query<Record<string, unknown>>(
         'SELECT * FROM scan_jobs WHERE library_id = ? AND status = ?',
         [libraryId, 'running']
       );
 
       if (existingScans.length > 0) {
-        throw new Error('A scan is already running for this library');
+        throw new InvalidStateError(
+          'no active scan',
+          'scan already running',
+          'A scan is already running for this library',
+          { metadata: { libraryId } }
+        );
       }
 
       // Create scan job with new schema
@@ -115,7 +121,12 @@ export class LibraryScanService extends EventEmitter {
       // Get the created scan job
       const scanJob = await this.getScanJob(scanJobId);
       if (!scanJob) {
-        throw new Error('Failed to create scan job');
+        throw new InvalidStateError(
+          'scan job exists',
+          'scan job not found',
+          'Failed to create scan job',
+          { metadata: { scanJobId, libraryId } }
+        );
       }
 
       logger.info(`Started scan for library ${library.name}`, { libraryId, scanJobId });
@@ -138,7 +149,18 @@ export class LibraryScanService extends EventEmitter {
       return scanJob;
     } catch (error) {
       logger.error(`Failed to start scan for library ${libraryId}`, { error: getErrorMessage(error) });
-      throw new Error(`Failed to start scan: ${getErrorMessage(error)}`);
+      // Re-throw ApplicationError instances as-is
+      if (error instanceof ResourceNotFoundError || error instanceof InvalidStateError || error instanceof DatabaseError) {
+        throw error;
+      }
+      // Wrap other errors
+      throw new DatabaseError(
+        `Failed to start scan: ${getErrorMessage(error)}`,
+        undefined,
+        true,
+        { metadata: { libraryId } },
+        error instanceof Error ? error : undefined
+      );
     }
   }
 
@@ -171,7 +193,7 @@ export class LibraryScanService extends EventEmitter {
   async getScanJob(scanJobId: number): Promise<ScanJob | null> {
     try {
       const db = this.dbManager.getConnection();
-      const rows = await db.query<any[]>('SELECT * FROM scan_jobs WHERE id = ?', [scanJobId]);
+      const rows = await db.query<Record<string, unknown>>('SELECT * FROM scan_jobs WHERE id = ?', [scanJobId]);
 
       if (rows.length === 0) {
         return null;
@@ -212,12 +234,12 @@ export class LibraryScanService extends EventEmitter {
   async getActiveScanJobs(): Promise<ScanJob[]> {
     try {
       const db = this.dbManager.getConnection();
-      const rows = await db.query<any[]>(
+      const rows = await db.query<Record<string, unknown>>(
         'SELECT * FROM scan_jobs WHERE status = ? ORDER BY started_at DESC',
         ['running']
       );
 
-      return rows.map(this.mapRowToScanJob);
+      return rows.map(row => this.mapRowToScanJob(row));
     } catch (error) {
       logger.error('Failed to get active scan jobs', { error: getErrorMessage(error) });
       return [];
@@ -314,7 +336,12 @@ export class LibraryScanService extends EventEmitter {
         await this.scanTVShowLibrary(scanJob, library);
         // TV shows don't return stats yet
       } else {
-        throw new Error(`Unsupported library type: ${library.type}`);
+        throw new InvalidStateError(
+          'valid library type',
+          library.type,
+          `Unsupported library type: ${library.type}`,
+          { metadata: { libraryId: library.id, libraryType: library.type } }
+        );
       }
 
       // Check if scan was cancelled during processing
@@ -553,58 +580,58 @@ export class LibraryScanService extends EventEmitter {
   /**
    * Map database row to ScanJob object
    */
-  private mapRowToScanJob(row: any): ScanJob {
+  private mapRowToScanJob(row: Record<string, unknown>): ScanJob {
     const scanJob: ScanJob = {
-      id: row.id,
-      libraryId: row.library_id,
-      status: row.status,
+      id: row.id as number,
+      libraryId: row.library_id as number,
+      status: row.status as 'scanning' | 'discovering' | 'caching' | 'enriching' | 'completed' | 'failed' | 'cancelled',
 
       // Phase 1: Directory Discovery
-      directoriesTotal: row.directories_total || 0,
-      directoriesQueued: row.directories_queued || 0,
+      directoriesTotal: (row.directories_total as number) || 0,
+      directoriesQueued: (row.directories_queued as number) || 0,
 
       // Phase 2: Directory Scanning
-      directoriesScanned: row.directories_scanned || 0,
-      moviesFound: row.movies_found || 0,
-      moviesNew: row.movies_new || 0,
-      moviesUpdated: row.movies_updated || 0,
+      directoriesScanned: (row.directories_scanned as number) || 0,
+      moviesFound: (row.movies_found as number) || 0,
+      moviesNew: (row.movies_new as number) || 0,
+      moviesUpdated: (row.movies_updated as number) || 0,
 
       // Phase 3: Asset Caching
-      assetsQueued: row.assets_queued || 0,
-      assetsCached: row.assets_cached || 0,
+      assetsQueued: (row.assets_queued as number) || 0,
+      assetsCached: (row.assets_cached as number) || 0,
 
       // Phase 4: Enrichment
-      enrichmentQueued: row.enrichment_queued || 0,
-      enrichmentCompleted: row.enrichment_completed || 0,
+      enrichmentQueued: (row.enrichment_queued as number) || 0,
+      enrichmentCompleted: (row.enrichment_completed as number) || 0,
 
       // Timing
-      startedAt: new Date(row.started_at),
+      startedAt: new Date(row.started_at as string | number),
 
       // Errors
-      errorsCount: row.errors_count || 0,
+      errorsCount: (row.errors_count as number) || 0,
     };
 
     // Add optional fields only if they exist
     if (row.discovery_completed_at) {
-      scanJob.discoveryCompletedAt = new Date(row.discovery_completed_at);
+      scanJob.discoveryCompletedAt = new Date(row.discovery_completed_at as string | number);
     }
     if (row.scanning_completed_at) {
-      scanJob.scanningCompletedAt = new Date(row.scanning_completed_at);
+      scanJob.scanningCompletedAt = new Date(row.scanning_completed_at as string | number);
     }
     if (row.caching_completed_at) {
-      scanJob.cachingCompletedAt = new Date(row.caching_completed_at);
+      scanJob.cachingCompletedAt = new Date(row.caching_completed_at as string | number);
     }
     if (row.completed_at) {
-      scanJob.completedAt = new Date(row.completed_at);
+      scanJob.completedAt = new Date(row.completed_at as string | number);
     }
     if (row.last_error) {
-      scanJob.lastError = row.last_error;
+      scanJob.lastError = row.last_error as string;
     }
     if (row.current_operation) {
-      scanJob.currentOperation = row.current_operation;
+      scanJob.currentOperation = row.current_operation as string;
     }
     if (row.options) {
-      scanJob.options = JSON.parse(row.options);
+      scanJob.options = JSON.parse(row.options as string);
     }
 
     return scanJob;

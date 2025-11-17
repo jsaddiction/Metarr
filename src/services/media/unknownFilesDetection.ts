@@ -4,6 +4,7 @@ import { logger } from '../../middleware/logging.js';
 import { DatabaseConnection } from '../../types/database.js';
 import { IgnorePatternService } from '../ignorePatternService.js';
 import { getErrorMessage } from '../../utils/errorHandling.js';
+import { FileSystemError, DatabaseError, ErrorCode } from '../../errors/index.js';
 
 /**
  * Unknown Files Detection Service
@@ -130,7 +131,17 @@ export async function detectUnknownFiles(
       dirPath,
       error: getErrorMessage(error),
     });
-    throw new Error(`Unknown file detection failed: ${getErrorMessage(error)}`);
+    throw new FileSystemError(
+      `Unknown file detection failed: ${getErrorMessage(error)}`,
+      ErrorCode.FS_READ_FAILED,
+      dirPath,
+      false,
+      {
+        service: 'UnknownFilesDetection',
+        operation: 'detectUnknownFiles'
+      },
+      error instanceof Error ? error : undefined
+    );
   }
 }
 
@@ -339,7 +350,17 @@ export async function buildKnownFilesSet(
       entityId,
       error: getErrorMessage(error),
     });
-    throw new Error(`Failed to build known files set: ${getErrorMessage(error)}`);
+    throw new DatabaseError(
+      `Failed to build known files set: ${getErrorMessage(error)}`,
+      ErrorCode.DATABASE_QUERY_FAILED,
+      true,
+      {
+        service: 'UnknownFilesDetection',
+        operation: 'buildKnownFilesSet',
+        metadata: { entityType, entityId, mediaFilePath }
+      },
+      error instanceof Error ? error : undefined
+    );
   }
 }
 
@@ -389,7 +410,17 @@ export async function storeUnknownFiles(
       entityId,
       error: getErrorMessage(error),
     });
-    throw new Error(`Failed to store unknown files: ${getErrorMessage(error)}`);
+    throw new DatabaseError(
+      `Failed to store unknown files: ${getErrorMessage(error)}`,
+      ErrorCode.DATABASE_QUERY_FAILED,
+      true,
+      {
+        service: 'UnknownFilesDetection',
+        operation: 'storeUnknownFiles',
+        metadata: { entityType, entityId, unknownFilesCount: unknownFiles.length }
+      },
+      error instanceof Error ? error : undefined
+    );
   }
 }
 
@@ -430,6 +461,17 @@ export async function detectAndStoreUnknownFiles(
       dirPath,
       error: getErrorMessage(error),
     });
-    throw new Error(`Failed to detect and store unknown files: ${getErrorMessage(error)}`);
+    throw new FileSystemError(
+      `Failed to detect and store unknown files: ${getErrorMessage(error)}`,
+      ErrorCode.FS_READ_FAILED,
+      dirPath,
+      false,
+      {
+        service: 'UnknownFilesDetection',
+        operation: 'detectAndStoreUnknownFiles',
+        metadata: { entityType, entityId, mediaFilePath }
+      },
+      error instanceof Error ? error : undefined
+    );
   }
 }

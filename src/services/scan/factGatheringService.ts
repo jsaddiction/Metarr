@@ -13,22 +13,52 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { logger } from '../../middleware/logging.js';
-import { extractMediaInfo } from '../media/ffprobeService.js';
+import {
+  extractMediaInfo,
+  VideoStream as FFprobeVideoStream,
+} from '../media/ffprobeService.js';
 import { getErrorMessage } from '../../utils/errorHandling.js';
 import { calculateQuickHash } from '../../utils/fileHash.js';
 import { DatabaseManager } from '../../database/DatabaseManager.js';
 import { imageProcessor } from '../../utils/ImageProcessor.js';
+import { FileSystemError, ErrorCode } from '../../errors/index.js';
 import {
   FileFacts,
   FilesystemFacts,
   FilenameFacts,
   VideoStreamFacts,
+  VideoStream,
+  AudioStream,
+  SubtitleStream,
+  DirectoryContextFacts,
   ImageFacts,
   TextFileFacts,
   DiscStructureInfo,
   LegacyDirectoryInfo,
   DirectoryScanFacts,
 } from '../../types/fileFacts.js';
+
+/**
+ * Database row structure for cache_video_files table
+ * Used for FFprobe result caching
+ */
+interface CachedVideoFileRow {
+  id: number;
+  file_path: string;
+  file_hash: string;
+  codec?: string;
+  width?: number;
+  height?: number;
+  framerate?: number;
+  bitrate?: number;
+  duration_seconds?: number;
+  hdr_type?: string;
+  audio_codec?: string;
+  audio_channels?: number;
+  audio_language?: string;
+  created_at: string;
+  updated_at: string;
+}
 
 /**
  * Supported file extensions by type
@@ -96,7 +126,14 @@ export async function gatherFilesystemFacts(filePath: string): Promise<Filesyste
       filePath,
       error: getErrorMessage(error),
     });
-    throw new Error(`Failed to gather filesystem facts: ${getErrorMessage(error)}`);
+    throw new FileSystemError(
+      `Failed to gather filesystem facts: ${getErrorMessage(error)}`,
+      ErrorCode.FS_READ_FAILED,
+      filePath,
+      true,
+      { service: 'factGatheringService', operation: 'gatherFilesystemFacts', metadata: { filePath } },
+      error instanceof Error ? error : undefined
+    );
   }
 }
 
@@ -335,7 +372,7 @@ export async function gatherVideoFacts(
         const fileHash = await calculateQuickHash(filePath);
 
         // Query cache by hash (content-addressed lookup)
-        const cached = await db.query<any>(
+        const cached = await db.query<CachedVideoFileRow>(
           'SELECT * FROM cache_video_files WHERE file_hash = ? LIMIT 1',
           [fileHash]
         );
@@ -368,8 +405,8 @@ export async function gatherVideoFacts(
     // Cache miss or disabled - run FFprobe
     const mediaInfo = await extractMediaInfo(filePath);
 
-    const videoStreamsData = mediaInfo.videoStreams.map((stream) => {
-      const videoStream: any = {
+    const videoStreamsData = mediaInfo.videoStreams.map((stream): VideoStream => {
+      const videoStream: VideoStream = {
         codec: stream.codecName || 'unknown',
         width: stream.width || 0,
         height: stream.height || 0,
@@ -383,8 +420,8 @@ export async function gatherVideoFacts(
       return videoStream;
     });
 
-    const audioStreamsData = mediaInfo.audioStreams.map((stream) => {
-      const audioStream: any = {
+    const audioStreamsData = mediaInfo.audioStreams.map((stream): AudioStream => {
+      const audioStream: AudioStream = {
         codec: stream.codecName || 'unknown',
         channels: stream.channels || 0,
         sampleRate: stream.sampleRate || 0,
@@ -395,8 +432,8 @@ export async function gatherVideoFacts(
       return audioStream;
     });
 
-    const subtitleStreamsData = mediaInfo.subtitleStreams.map((stream) => {
-      const subtitleStream: any = {
+    const subtitleStreamsData = mediaInfo.subtitleStreams.map((stream): SubtitleStream => {
+      const subtitleStream: SubtitleStream = {
         codec: stream.codecName || 'unknown',
         forced: stream.isForced || false,
         default: stream.isDefault || false,
@@ -406,7 +443,7 @@ export async function gatherVideoFacts(
       return subtitleStream;
     });
 
-    const videoFacts: any = {
+    const videoFacts: VideoStreamFacts = {
       hasVideoStream: mediaInfo.videoStreams.length > 0,
       hasAudioStream: mediaInfo.audioStreams.length > 0,
       durationSeconds: mediaInfo.duration || 0,
@@ -433,7 +470,7 @@ export async function gatherVideoFacts(
  * The full stream data is stored in video_streams/audio_streams/subtitle_streams tables
  * and will be queried separately if needed.
  */
-function convertCachedRowToVideoFacts(row: any): VideoStreamFacts {
+function convertCachedRowToVideoFacts(row: CachedVideoFileRow): VideoStreamFacts {
   // Build minimal facts from cache row
   // The presence of codec indicates video stream exists
   const hasVideoStream = !!row.codec;
@@ -472,7 +509,7 @@ function convertCachedRowToVideoFacts(row: any): VideoStreamFacts {
 /**
  * Detect HDR format from video stream metadata
  */
-function detectHdrFormat(stream: any): string | undefined {
+function detectHdrFormat(stream: FFprobeVideoStream): string | undefined {
   if (!stream.colorTransfer) return undefined;
 
   const transfer = stream.colorTransfer.toLowerCase();
@@ -691,7 +728,7 @@ export async function gatherDirectoryContextFacts(
     const isLargestFile = sizeRank === 1;
     const percentOfLargest = (file.filesystem.sizeBytes / largestSize) * 100;
 
-    const contextFacts: any = {
+    const contextFacts: DirectoryContextFacts = {
       totalVideoFiles: videoFiles.length,
       totalImageFiles: imageFiles.length,
       totalTextFiles: textFiles.length,
@@ -818,6 +855,13 @@ export async function gatherAllFacts(
       directoryPath,
       error: getErrorMessage(error),
     });
-    throw new Error(`Failed to gather facts: ${getErrorMessage(error)}`);
+    throw new FileSystemError(
+      `Failed to gather facts: ${getErrorMessage(error)}`,
+      ErrorCode.FS_READ_FAILED,
+      directoryPath,
+      true,
+      { service: 'factGatheringService', operation: 'gatherAllFacts', metadata: { directoryPath } },
+      error instanceof Error ? error : undefined
+    );
   }
 }
