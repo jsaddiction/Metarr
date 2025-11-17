@@ -86,7 +86,7 @@ export interface TVDBArtwork {
   thumbnailHeight?: number;
   updatedAt?: number;
   status?: TVDBStatus;
-  tagOptions?: any[];
+  tagOptions?: unknown[];
 }
 
 // ============================================
@@ -138,7 +138,7 @@ export interface TVDBSeasonBasic {
   };
   image?: string;
   imageType?: number;
-  companies?: any[];
+  companies?: unknown[];
   year?: string;
 }
 
@@ -149,7 +149,7 @@ export interface TVDBSeasonBasic {
 export interface TVDBSeason extends TVDBSeasonBasic {
   episodes?: TVDBEpisode[];
   artwork?: TVDBArtwork[];
-  trailers?: any[];
+  trailers?: unknown[];
 }
 
 // ============================================
@@ -168,7 +168,7 @@ export interface TVDBEpisode {
   image?: string;
   imageType?: number;
   isMovie?: number;
-  seasons?: Array<{ id: number; seriesId: number; type: any }>;
+  seasons?: Array<{ id: number; seriesId: number; type: unknown }>;
   number?: number;
   seasonNumber?: number;
   lastUpdated?: string;
@@ -180,14 +180,14 @@ export interface TVDBEpisode {
 }
 
 export interface TVDBEpisodeExtended extends TVDBEpisode {
-  awards?: any[];
-  companies?: any[];
-  contentRatings?: any[];
+  awards?: unknown[];
+  companies?: unknown[];
+  contentRatings?: unknown[];
   productionCode?: string;
   remoteIds?: TVDBRemoteId[];
-  tagOptions?: any[];
-  trailers?: any[];
-  translations?: any[];
+  tagOptions?: unknown[];
+  trailers?: unknown[];
+  translations?: unknown[];
 }
 
 // ============================================

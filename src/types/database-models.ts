@@ -48,13 +48,21 @@ export interface MediaPlayerRow {
   name: string;
   type: 'kodi' | 'jellyfin' | 'plex';
   host: string;
-  port: number;
+  http_port: number;
+  port?: number; // Legacy column name support
   username: string | null;
   password: string | null;
   api_key: string | null;
-  use_https: number; // SQLite boolean (0 or 1)
+  use_https?: number; // SQLite boolean (0 or 1)
   enabled: number; // SQLite boolean
+  library_paths: string; // JSON string
+  library_group: string | null;
+  connection_status: 'connected' | 'disconnected' | 'error';
+  json_rpc_version: string | null;
+  config: string; // JSON string
   last_connected: string | null;
+  last_error: string | null;
+  last_sync: string | null;
   created_at: string;
   updated_at: string;
 }

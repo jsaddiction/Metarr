@@ -130,14 +130,14 @@ export namespace Player {
     canrotate?: boolean;
     canshuffle?: boolean;
     canrepeat?: boolean;
-    currentaudiostream?: any;
-    audiostreams?: any[];
+    currentaudiostream?: unknown;
+    audiostreams?: unknown[];
     subtitleenabled?: boolean;
-    currentsubtitle?: any;
-    subtitles?: any[];
+    currentsubtitle?: unknown;
+    subtitles?: unknown[];
     live?: boolean;
-    currentvideostream?: any;
-    videostreams?: any[];
+    currentvideostream?: unknown;
+    videostreams?: unknown[];
     cachepercentage?: number;
   }
 

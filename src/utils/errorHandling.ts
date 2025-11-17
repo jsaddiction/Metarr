@@ -209,7 +209,7 @@ export async function asyncTryCatch<T>(
 /**
  * Check if error is a specific type (by name or constructor)
  */
-export function isErrorType(error: unknown, errorType: string | (new (...args: any[]) => Error)): boolean {
+export function isErrorType(error: unknown, errorType: string | (new (...args: unknown[]) => Error)): boolean {
   if (!isError(error)) {
     return false;
   }
@@ -281,9 +281,9 @@ export function hasAxiosResponse(error: unknown): error is { response: { status:
     typeof error === 'object' &&
     error !== null &&
     'response' in error &&
-    typeof (error as any).response === 'object' &&
-    (error as any).response !== null &&
-    'status' in (error as any).response
+    typeof (error as Record<string, unknown>).response === 'object' &&
+    (error as Record<string, unknown>).response !== null &&
+    'status' in ((error as Record<string, unknown>).response as Record<string, unknown>)
   );
 }
 
@@ -295,7 +295,7 @@ export function hasStatusCode(error: unknown): error is { statusCode: number } {
     typeof error === 'object' &&
     error !== null &&
     'statusCode' in error &&
-    typeof (error as any).statusCode === 'number'
+    typeof (error as Record<string, unknown>).statusCode === 'number'
   );
 }
 

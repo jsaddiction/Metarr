@@ -10,7 +10,7 @@ import { ProviderId, EntityType, AssetType, MetadataField } from './capabilities
  * Provider-specific configuration options
  */
 export interface ProviderOptions {
-  [key: string]: any;
+  [key: string]: unknown;
 
   // Common options
   seasonOrder?: 'aired' | 'dvd';
@@ -97,7 +97,7 @@ export interface MetadataResponse {
   providerResultId: string;
 
   // Metadata by field
-  fields: Partial<Record<MetadataField, any>>;
+  fields: Partial<Record<MetadataField, unknown>>;
 
   // Cross-references
   externalIds?: Record<string, unknown>;

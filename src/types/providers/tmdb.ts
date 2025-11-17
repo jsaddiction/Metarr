@@ -227,10 +227,10 @@ export interface TMDBCollection {
 
 export interface TMDBFindResponse {
   movie_results: TMDBMovieSearchResult[];
-  person_results: any[];
-  tv_results: any[];
-  tv_episode_results: any[];
-  tv_season_results: any[];
+  person_results: unknown[];
+  tv_results: unknown[];
+  tv_episode_results: unknown[];
+  tv_season_results: unknown[];
 }
 
 // ============================================
@@ -322,8 +322,8 @@ export interface TMDBChangeItem {
   time: string; // ISO 8601 timestamp
   iso_639_1?: string;
   iso_3166_1?: string;
-  value?: any;
-  original_value?: any;
+  value?: unknown;
+  original_value?: unknown;
 }
 
 export interface TMDBChange {

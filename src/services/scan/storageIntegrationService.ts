@@ -15,6 +15,8 @@ import {
   insertCacheImageFile,
   insertCacheVideoFile,
   insertCacheTextFile,
+  type CacheImageFileRecord,
+  type CacheVideoFileRecord,
 } from '../files/unifiedFileService.js';
 import { logger } from '../../middleware/logging.js';
 import { getErrorMessage } from '../../utils/errorHandling.js';
@@ -121,7 +123,7 @@ async function storeImages(
       });
 
       // Insert into cache_image_files
-      const imageRecord: any = {
+      const imageRecord: CacheImageFileRecord = {
         entityType,
         entityId,
         filePath: cacheInfo.cachePath,
@@ -134,19 +136,11 @@ async function storeImages(
         format: image.facts.image?.format ?? 'unknown',
         sourceType: 'local',
         classificationScore: image.confidence,
+        ...(cacheInfo.perceptualHash && { perceptualHash: cacheInfo.perceptualHash }),
+        ...(cacheInfo.differenceHash && { differenceHash: cacheInfo.differenceHash }),
+        ...(cacheInfo.hasAlpha !== undefined && { hasAlpha: cacheInfo.hasAlpha }),
+        ...(cacheInfo.foregroundRatio !== undefined && { foregroundRatio: cacheInfo.foregroundRatio }),
       };
-      if (cacheInfo.perceptualHash) {
-        imageRecord.perceptualHash = cacheInfo.perceptualHash;
-      }
-      if (cacheInfo.differenceHash) {
-        imageRecord.differenceHash = cacheInfo.differenceHash;
-      }
-      if (cacheInfo.hasAlpha !== undefined) {
-        imageRecord.hasAlpha = cacheInfo.hasAlpha;
-      }
-      if (cacheInfo.foregroundRatio !== undefined) {
-        imageRecord.foregroundRatio = cacheInfo.foregroundRatio;
-      }
       const cacheId = await insertCacheImageFile(db, imageRecord);
 
       outputArray.push(cacheId);
@@ -193,7 +187,7 @@ async function storeVideos(
       const audioStream = video.facts.video?.audioStreams?.[0];
 
       // Insert into cache_video_files
-      const videoRecord: any = {
+      const videoRecord: CacheVideoFileRecord = {
         entityType,
         entityId,
         filePath: cacheInfo.cachePath,
@@ -203,18 +197,17 @@ async function storeVideos(
         videoType: videoType as 'trailer' | 'sample' | 'extra',
         sourceType: 'local',
         classificationScore: video.confidence,
+        ...(videoStream?.codec && { codec: videoStream.codec }),
+        ...(videoStream?.width && { width: videoStream.width }),
+        ...(videoStream?.height && { height: videoStream.height }),
+        ...(video.facts.video?.durationSeconds && { durationSeconds: video.facts.video.durationSeconds }),
+        ...(video.facts.video?.overallBitrate && { bitrate: video.facts.video.overallBitrate }),
+        ...(videoStream?.fps && { framerate: videoStream.fps }),
+        ...(videoStream?.hdrFormat && { hdrType: videoStream.hdrFormat }),
+        ...(audioStream?.codec && { audioCodec: audioStream.codec }),
+        ...(audioStream?.channels && { audioChannels: audioStream.channels }),
+        ...(audioStream?.language && { audioLanguage: audioStream.language }),
       };
-      // Only add optional properties if they have values
-      if (videoStream?.codec) videoRecord.codec = videoStream.codec;
-      if (videoStream?.width) videoRecord.width = videoStream.width;
-      if (videoStream?.height) videoRecord.height = videoStream.height;
-      if (video.facts.video?.durationSeconds) videoRecord.durationSeconds = video.facts.video.durationSeconds;
-      if (video.facts.video?.overallBitrate) videoRecord.bitrate = video.facts.video.overallBitrate;
-      if (videoStream?.fps) videoRecord.framerate = videoStream.fps;
-      if (videoStream?.hdrFormat) videoRecord.hdrType = videoStream.hdrFormat;
-      if (audioStream?.codec) videoRecord.audioCodec = audioStream.codec;
-      if (audioStream?.channels) videoRecord.audioChannels = audioStream.channels;
-      if (audioStream?.language) videoRecord.audioLanguage = audioStream.language;
 
       const cacheId = await insertCacheVideoFile(db, videoRecord);
 

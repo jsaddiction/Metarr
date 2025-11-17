@@ -7,6 +7,7 @@ import {
   LibraryChangedMessage,
   ResyncDataMessage,
 } from '../types/websocket.js';
+import { Movie, MediaPlayer, Library, ScanJob } from '../types/models.js';
 
 /**
  * WebSocket Broadcaster Service
@@ -212,7 +213,7 @@ export class WebSocketBroadcaster {
   /**
    * Broadcast movies added
    */
-  public broadcastMoviesAdded(movieIds: number[], movies?: any[]): void {
+  public broadcastMoviesAdded(movieIds: number[], movies?: Movie[]): void {
     if (!this.isReady()) return;
 
     const message: MoviesChangedMessage = {
@@ -230,7 +231,7 @@ export class WebSocketBroadcaster {
   /**
    * Broadcast movies updated
    */
-  public broadcastMoviesUpdated(movieIds: number[], movies?: any[]): void {
+  public broadcastMoviesUpdated(movieIds: number[], movies?: Movie[]): void {
     if (!this.isReady()) return;
 
     const message: MoviesChangedMessage = {
@@ -273,7 +274,7 @@ export class WebSocketBroadcaster {
   /**
    * Broadcast library added
    */
-  public broadcastLibraryAdded(libraryId: number, library?: any): void {
+  public broadcastLibraryAdded(libraryId: number, library?: Library): void {
     if (!this.isReady()) return;
 
     const message: LibraryChangedMessage = {
@@ -291,7 +292,7 @@ export class WebSocketBroadcaster {
   /**
    * Broadcast library updated
    */
-  public broadcastLibraryUpdated(libraryId: number, library?: any): void {
+  public broadcastLibraryUpdated(libraryId: number, library?: Library): void {
     if (!this.isReady()) return;
 
     const message: LibraryChangedMessage = {
@@ -476,10 +477,10 @@ export class WebSocketBroadcaster {
     clientId: string,
     scope: 'all' | 'movies' | 'players' | 'libraries' | 'scans',
     data: {
-      movies?: any[];
-      players?: any[];
-      libraries?: any[];
-      scans?: any[];
+      movies?: Movie[];
+      players?: MediaPlayer[];
+      libraries?: Library[];
+      scans?: ScanJob[];
     }
   ): void {
     if (!this.isReady()) return;
@@ -554,8 +555,9 @@ export class WebSocketBroadcaster {
   /**
    * Generic broadcast method for custom messages
    * Use this for messages that don't have a specific typed method
+   * Note: This method bypasses strict type checking for custom event types
    */
-  public broadcast(eventType: string, data: any): void {
+  public broadcast(eventType: string, data: Record<string, unknown>): void {
     if (!this.isReady()) return;
 
     const message = {
@@ -564,7 +566,8 @@ export class WebSocketBroadcaster {
       ...data,
     };
 
-    this.wsServer!.broadcastToAll(message);
+    // Cast to ServerMessage since this is a generic method for custom events
+    this.wsServer!.broadcastToAll(message as import('../types/websocket.js').ServerMessage);
     logger.info('Broadcasted WebSocket message', { eventType, data });
   }
 

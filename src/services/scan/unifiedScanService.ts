@@ -3,6 +3,7 @@ import fs from 'fs/promises';
 import { logger } from '../../middleware/logging.js';
 import { DatabaseConnection } from '../../types/database.js';
 import { DatabaseManager } from '../../database/DatabaseManager.js';
+import { FullMovieNFO, RatingData, SetData } from '../../types/models.js';
 // TODO: Re-enable hash tracking when schema supports it
 // import {
 //   hashDirectoryFingerprint,
@@ -227,7 +228,7 @@ export async function scanMovieDirectory(
         highestPriority: nfoDiscovery.highestPriority ? path.basename(nfoDiscovery.highestPriority) : 'none'
       });
 
-      let metadataToStore: any = null;
+      let metadataToStore: FullMovieNFO | null = null;
 
       if (nfoDiscovery.prioritized.length > 0) {
         // Parse all NFOs with priority-based merging
@@ -491,7 +492,7 @@ export async function scanMovieDirectory(
 async function storeMovieMetadata(
   db: DatabaseConnection,
   movieId: number,
-  nfoData: any
+  nfoData: FullMovieNFO
 ): Promise<void> {
   // Build UPDATE statement dynamically - only update fields provided by NFO
   // This preserves existing values (like title from filename) when NFO doesn't provide them
@@ -504,47 +505,47 @@ async function storeMovieMetadata(
     values.push(nfoData.title);
   }
 
-  if (nfoData.originalTitle !== undefined) {
+  if (nfoData.originalTitle !== undefined && nfoData.originalTitle !== null) {
     updates.push('original_title = ?');
     values.push(nfoData.originalTitle);
   }
 
-  if (nfoData.sortTitle !== undefined) {
+  if (nfoData.sortTitle !== undefined && nfoData.sortTitle !== null) {
     updates.push('sort_title = ?');
     values.push(nfoData.sortTitle);
   }
 
-  if (nfoData.year !== undefined) {
+  if (nfoData.year !== undefined && nfoData.year !== null) {
     updates.push('year = ?');
     values.push(nfoData.year);
   }
 
-  if (nfoData.plot !== undefined) {
+  if (nfoData.plot !== undefined && nfoData.plot !== null) {
     updates.push('plot = ?');
     values.push(nfoData.plot);
   }
 
-  if (nfoData.tagline !== undefined) {
+  if (nfoData.tagline !== undefined && nfoData.tagline !== null) {
     updates.push('tagline = ?');
     values.push(nfoData.tagline);
   }
 
-  if (nfoData.mpaa !== undefined) {
+  if (nfoData.mpaa !== undefined && nfoData.mpaa !== null) {
     updates.push('content_rating = ?');
     values.push(nfoData.mpaa);
   }
 
-  if (nfoData.premiered !== undefined) {
+  if (nfoData.premiered !== undefined && nfoData.premiered !== null) {
     updates.push('release_date = ?');
     values.push(nfoData.premiered);
   }
 
-  if (nfoData.tmdbId !== undefined) {
+  if (nfoData.tmdbId !== undefined && nfoData.tmdbId !== null) {
     updates.push('tmdb_id = ?');
     values.push(nfoData.tmdbId);
   }
 
-  if (nfoData.imdbId !== undefined) {
+  if (nfoData.imdbId !== undefined && nfoData.imdbId !== null) {
     updates.push('imdb_id = ?');
     values.push(nfoData.imdbId);
   }
@@ -566,103 +567,115 @@ async function storeMovieMetadata(
   }
 
   // Store genres (clean schema: genres table with media_type, movie_genres junction)
-  if (nfoData.genres && nfoData.genres.length > 0) {
+  if (nfoData.genres && Array.isArray(nfoData.genres) && nfoData.genres.length > 0) {
     for (const genreName of nfoData.genres) {
-      // Get or create genre
-      const genreResults = await db.query(`SELECT id FROM genres WHERE name = ? AND media_type = 'movie'`, [genreName]);
-      let genre = genreResults.length > 0 ? genreResults[0] : null;
-      if (!genre) {
-        const result = await db.execute(`INSERT INTO genres (name, media_type) VALUES (?, 'movie')`, [genreName]);
-        genre = { id: result.insertId };
-      }
+      if (typeof genreName === 'string') {
+        // Get or create genre
+        const genreResults = await db.query(`SELECT id FROM genres WHERE name = ? AND media_type = 'movie'`, [genreName]);
+        let genre = genreResults.length > 0 ? genreResults[0] : null;
+        if (!genre) {
+          const result = await db.execute(`INSERT INTO genres (name, media_type) VALUES (?, 'movie')`, [genreName]);
+          genre = { id: result.insertId };
+        }
 
-      // Link to movie
-      await db.execute(`INSERT OR IGNORE INTO movie_genres (movie_id, genre_id) VALUES (?, ?)`, [
-        movieId,
-        genre.id,
-      ]);
+        // Link to movie
+        await db.execute(`INSERT OR IGNORE INTO movie_genres (movie_id, genre_id) VALUES (?, ?)`, [
+          movieId,
+          genre.id,
+        ]);
+      }
     }
   }
 
   // Store directors (clean schema: crew table with movie_crew junction using role='director')
-  if (nfoData.directors && nfoData.directors.length > 0) {
+  if (nfoData.directors && Array.isArray(nfoData.directors) && nfoData.directors.length > 0) {
     for (const directorName of nfoData.directors) {
-      const crewResults = await db.query(`SELECT id FROM crew WHERE name = ?`, [directorName]);
-      let crew = crewResults.length > 0 ? crewResults[0] : null;
-      if (!crew) {
-        const result = await db.execute(`INSERT INTO crew (name) VALUES (?)`, [directorName]);
-        crew = { id: result.insertId };
-      }
+      if (typeof directorName === 'string') {
+        const crewResults = await db.query(`SELECT id FROM crew WHERE name = ?`, [directorName]);
+        let crew = crewResults.length > 0 ? crewResults[0] : null;
+        if (!crew) {
+          const result = await db.execute(`INSERT INTO crew (name) VALUES (?)`, [directorName]);
+          crew = { id: result.insertId };
+        }
 
-      await db.execute(
-        `INSERT OR IGNORE INTO movie_crew (movie_id, crew_id, role) VALUES (?, ?, 'director')`,
-        [movieId, crew.id]
-      );
+        await db.execute(
+          `INSERT OR IGNORE INTO movie_crew (movie_id, crew_id, role) VALUES (?, ?, 'director')`,
+          [movieId, crew.id]
+        );
+      }
     }
   }
 
   // Store writers (clean schema: crew table with movie_crew junction using role='writer')
-  if (nfoData.credits && nfoData.credits.length > 0) {
+  if (nfoData.credits && Array.isArray(nfoData.credits) && nfoData.credits.length > 0) {
     for (const writerName of nfoData.credits) {
-      const crewResults = await db.query(`SELECT id FROM crew WHERE name = ?`, [writerName]);
-      let crew = crewResults.length > 0 ? crewResults[0] : null;
-      if (!crew) {
-        const result = await db.execute(`INSERT INTO crew (name) VALUES (?)`, [writerName]);
-        crew = { id: result.insertId };
-      }
+      if (typeof writerName === 'string') {
+        const crewResults = await db.query(`SELECT id FROM crew WHERE name = ?`, [writerName]);
+        let crew = crewResults.length > 0 ? crewResults[0] : null;
+        if (!crew) {
+          const result = await db.execute(`INSERT INTO crew (name) VALUES (?)`, [writerName]);
+          crew = { id: result.insertId };
+        }
 
-      await db.execute(`INSERT OR IGNORE INTO movie_crew (movie_id, crew_id, role) VALUES (?, ?, 'writer')`, [
-        movieId,
-        crew.id,
-      ]);
+        await db.execute(`INSERT OR IGNORE INTO movie_crew (movie_id, crew_id, role) VALUES (?, ?, 'writer')`, [
+          movieId,
+          crew.id,
+        ]);
+      }
     }
   }
 
   // Store ratings - Clean schema doesn't have a ratings table
   // TMDB/IMDB ratings go directly in movies table columns
-  if (nfoData.ratings && nfoData.ratings.length > 0) {
+  if (nfoData.ratings && Array.isArray(nfoData.ratings) && nfoData.ratings.length > 0) {
     for (const rating of nfoData.ratings) {
-      if (rating.source === 'tmdb') {
-        await db.execute(
-          `UPDATE movies SET tmdb_rating = ?, tmdb_votes = ? WHERE id = ?`,
-          [rating.value, rating.votes || 0, movieId]
-        );
-      } else if (rating.source === 'imdb') {
-        await db.execute(
-          `UPDATE movies SET imdb_rating = ?, imdb_votes = ? WHERE id = ?`,
-          [rating.value, rating.votes || 0, movieId]
-        );
+      if (rating && typeof rating === 'object' && 'source' in rating && 'value' in rating) {
+        const typedRating = rating as RatingData;
+        if (typedRating.source === 'tmdb') {
+          await db.execute(
+            `UPDATE movies SET tmdb_rating = ?, tmdb_votes = ? WHERE id = ?`,
+            [typedRating.value, typedRating.votes || 0, movieId]
+          );
+        } else if (typedRating.source === 'imdb') {
+          await db.execute(
+            `UPDATE movies SET imdb_rating = ?, imdb_votes = ? WHERE id = ?`,
+            [typedRating.value, typedRating.votes || 0, movieId]
+          );
+        }
       }
     }
   }
 
   // Store studios (clean schema: studios table with movie_studios junction)
-  if (nfoData.studios && nfoData.studios.length > 0) {
+  if (nfoData.studios && Array.isArray(nfoData.studios) && nfoData.studios.length > 0) {
     for (const studioName of nfoData.studios) {
-      const studioResults = await db.query(`SELECT id FROM studios WHERE name = ?`, [studioName]);
-      let studio = studioResults.length > 0 ? studioResults[0] : null;
-      if (!studio) {
-        const result = await db.execute(`INSERT INTO studios (name) VALUES (?)`, [studioName]);
-        studio = { id: result.insertId };
-      }
+      if (typeof studioName === 'string') {
+        const studioResults = await db.query(`SELECT id FROM studios WHERE name = ?`, [studioName]);
+        let studio = studioResults.length > 0 ? studioResults[0] : null;
+        if (!studio) {
+          const result = await db.execute(`INSERT INTO studios (name) VALUES (?)`, [studioName]);
+          studio = { id: result.insertId };
+        }
 
-      await db.execute(`INSERT OR IGNORE INTO movie_studios (movie_id, studio_id) VALUES (?, ?)`, [
-        movieId,
-        studio.id,
-      ]);
+        await db.execute(`INSERT OR IGNORE INTO movie_studios (movie_id, studio_id) VALUES (?, ?)`, [
+          movieId,
+          studio.id,
+        ]);
+      }
     }
   }
 
   // Clean schema doesn't have countries or tags tables - skipping for now
 
   // Store set/collection (clean schema: movie_collections table with movie_collection_members junction)
-  if (nfoData.set && nfoData.set.name) {
-    const collectionResults = await db.query(`SELECT id FROM movie_collections WHERE name = ?`, [nfoData.set.name]);
+  if (nfoData.set && typeof nfoData.set === 'object' && 'name' in nfoData.set && nfoData.set.name) {
+    const typedSet = nfoData.set as SetData;
+    const collectionResults = await db.query(`SELECT id FROM movie_collections WHERE name = ?`, [typedSet.name]);
     let collection = collectionResults.length > 0 ? collectionResults[0] : null;
     if (!collection) {
       const result = await db.execute(`INSERT INTO movie_collections (name, plot) VALUES (?, ?)`, [
-        nfoData.set.name,
-        nfoData.set.overview,
+        typedSet.name,
+        typedSet.overview || null,
       ]);
       collection = { id: result.insertId };
     }

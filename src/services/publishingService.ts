@@ -6,6 +6,13 @@ import { DatabaseConnection } from '../types/database.js';
 import { PublishConfig as PublishPhaseConfig, DEFAULT_PHASE_CONFIG } from '../config/phaseConfig.js';
 import { logger } from '../middleware/logging.js';
 import { getErrorMessage } from '../utils/errorHandling.js';
+import {
+  InvalidStateError,
+  FileNotFoundError,
+  FileSystemError,
+  ResourceNotFoundError,
+  ErrorCode,
+} from '../errors/index.js';
 
 /**
  * Publishing Service
@@ -237,13 +244,22 @@ export class PublishingService {
     }
 
     if (!asset.content_hash) {
-      throw new Error(`Asset ${asset.id} has no content hash`);
+      throw new InvalidStateError(
+        'Asset',
+        'content_hash',
+        `Asset ${asset.id} has no content hash`,
+        { service: 'PublishingService', operation: 'publishAsset', metadata: { assetId: asset.id } }
+      );
     }
 
     // Get cache path
     const cachePath = await this.getCachePath(asset.content_hash);
     if (!cachePath) {
-      throw new Error(`Cache file not found for hash ${asset.content_hash}`);
+      throw new FileNotFoundError(
+        asset.content_hash,
+        `Cache file not found for hash ${asset.content_hash}`,
+        { service: 'PublishingService', operation: 'publishAsset', metadata: { assetId: asset.id } }
+      );
     }
 
     // Determine library path with Kodi naming (includes rank for multiple assets)
@@ -267,7 +283,18 @@ export class PublishingService {
         // Ignore cleanup errors
       }
 
-      throw new Error(`Failed to copy ${cachePath} to ${libraryAssetPath}: ${error}`);
+      throw new FileSystemError(
+        `Failed to copy ${cachePath} to ${libraryAssetPath}: ${getErrorMessage(error)}`,
+        ErrorCode.FS_WRITE_FAILED,
+        libraryAssetPath,
+        true,
+        {
+          service: 'PublishingService',
+          operation: 'publishAsset',
+          metadata: { cachePath, libraryAssetPath, assetId: asset.id },
+        },
+        error instanceof Error ? error : undefined
+      );
     }
 
     // Note: cache_path tracking removed - provider_assets table doesn't have this column
@@ -397,7 +424,12 @@ export class PublishingService {
   private async generateNFO(entityType: string, entityId: number): Promise<string> {
     const entity = await this.getEntity(entityType, entityId);
     if (!entity) {
-      throw new Error('Entity not found');
+      throw new ResourceNotFoundError(
+        entityType,
+        entityId,
+        'Entity not found',
+        { service: 'PublishingService', operation: 'generateNFO' }
+      );
     }
 
     if (entityType === 'movie') {
@@ -412,7 +444,7 @@ export class PublishingService {
   /**
    * Generate movie NFO (Kodi format)
    */
-  private async generateMovieNFO(movie: any): Promise<string> {
+  private async generateMovieNFO(movie: Record<string, unknown>): Promise<string> {
     const nfo: string[] = ['<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'];
     nfo.push('<movie>');
 
@@ -430,13 +462,14 @@ export class PublishingService {
     if (movie.tmdb_id) nfo.push(`  <tmdbid>${movie.tmdb_id}</tmdbid>`);
 
     // Add genres
-    const genres = await this.getMovieGenres(movie.id);
+    const movieId = Number(movie.id);
+    const genres = await this.getMovieGenres(movieId);
     for (const genre of genres) {
       nfo.push(`  <genre>${this.escapeXML(genre.name)}</genre>`);
     }
 
     // Add actors
-    const actors = await this.getMovieActors(movie.id);
+    const actors = await this.getMovieActors(movieId);
     for (const actor of actors) {
       nfo.push('  <actor>');
       nfo.push(`    <name>${this.escapeXML(actor.name)}</name>`);
@@ -447,19 +480,19 @@ export class PublishingService {
     }
 
     // Add directors
-    const directors = await this.getMovieDirectors(movie.id);
+    const directors = await this.getMovieDirectors(movieId);
     for (const director of directors) {
       nfo.push(`  <director>${this.escapeXML(director.name)}</director>`);
     }
 
     // Add writers
-    const writers = await this.getMovieWriters(movie.id);
+    const writers = await this.getMovieWriters(movieId);
     for (const writer of writers) {
       nfo.push(`  <credits>${this.escapeXML(writer.name)}</credits>`);
     }
 
     // Add studios
-    const studios = await this.getMovieStudios(movie.id);
+    const studios = await this.getMovieStudios(movieId);
     for (const studio of studios) {
       nfo.push(`  <studio>${this.escapeXML(studio.name)}</studio>`);
     }
@@ -471,7 +504,7 @@ export class PublishingService {
   /**
    * Generate series NFO (Kodi format)
    */
-  private generateSeriesNFO(series: any): string {
+  private generateSeriesNFO(series: Record<string, unknown>): string {
     const nfo: string[] = ['<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'];
     nfo.push('<tvshow>');
 
@@ -494,7 +527,7 @@ export class PublishingService {
   /**
    * Generate episode NFO (Kodi format)
    */
-  private generateEpisodeNFO(episode: any): string {
+  private generateEpisodeNFO(episode: Record<string, unknown>): string {
     const nfo: string[] = ['<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'];
     nfo.push('<episodedetails>');
 
@@ -517,8 +550,9 @@ export class PublishingService {
   /**
    * Escape XML special characters
    */
-  private escapeXML(str: string): string {
-    return str
+  private escapeXML(str: unknown): string {
+    const strValue = String(str ?? '');
+    return strValue
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
@@ -584,7 +618,7 @@ export class PublishingService {
   /**
    * Get entity data from database
    */
-  private async getEntity(entityType: string, entityId: number): Promise<any> {
+  private async getEntity(entityType: string, entityId: number): Promise<Record<string, unknown> | null> {
     const table = this.getTableName(entityType);
     if (!table) {
       return null;

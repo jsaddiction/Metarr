@@ -24,7 +24,7 @@ export interface Movie {
   imdb_id?: string;
   file_path: string;
   status?: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface MovieLookupContext {

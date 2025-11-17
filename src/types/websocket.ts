@@ -3,7 +3,8 @@
  * Defines all client-to-server and server-to-client WebSocket messages
  */
 
-import { PlayerActivityState } from './models.js';
+import { PlayerActivityState, Movie, MediaPlayer, Library, ScanJob } from './models.js';
+import { WebSocket } from 'ws';
 
 // ============================================================================
 // Base Message Types
@@ -126,10 +127,10 @@ export interface ResyncDataMessage extends BaseServerMessage {
   type: 'resyncData';
   scope: 'all' | 'movies' | 'players' | 'libraries' | 'scans';
   data: {
-    movies?: any[]; // Movie list data
-    players?: any[]; // Media player list
-    libraries?: any[]; // Library list
-    scans?: any[]; // Active scan jobs
+    movies?: Movie[];
+    players?: MediaPlayer[];
+    libraries?: Library[];
+    scans?: ScanJob[];
   };
 }
 
@@ -173,7 +174,7 @@ export interface MoviesChangedMessage extends BaseServerMessage {
   type: 'moviesChanged';
   action: 'added' | 'updated' | 'deleted';
   movieIds: number[];
-  movies?: any[] | undefined; // Optional: include full movie data
+  movies?: Movie[] | undefined;
 }
 
 /**
@@ -183,7 +184,7 @@ export interface LibraryChangedMessage extends BaseServerMessage {
   type: 'libraryChanged';
   action: 'added' | 'updated' | 'deleted';
   libraryId: number;
-  library?: any | undefined; // Optional: include full library data
+  library?: Library | undefined;
 }
 
 /**
@@ -216,7 +217,7 @@ export interface ErrorMessage extends BaseServerMessage {
   originalType?: string | undefined; // Type of message that caused error
   error: string;
   code?: string | undefined;
-  details?: any | undefined;
+  details?: Record<string, unknown> | undefined;
 }
 
 /**
@@ -364,19 +365,24 @@ export type ServerMessage =
 // ============================================================================
 
 /**
+ * Client Metadata
+ */
+export interface ClientMetadata {
+  userAgent?: string | undefined;
+  ip?: string | undefined;
+  [key: string]: string | number | boolean | undefined;
+}
+
+/**
  * Connected Client Information
  */
 export interface ConnectedClient {
   id: string; // Unique client ID
-  ws: any; // WebSocket instance (using 'any' to avoid importing ws types here)
+  ws: WebSocket; // WebSocket instance
   connectedAt: Date;
   lastPing?: Date;
   lastPong?: Date;
-  metadata?: {
-    userAgent?: string | undefined;
-    ip?: string | undefined;
-    [key: string]: any;
-  } | undefined;
+  metadata?: ClientMetadata | undefined;
 }
 
 /**
