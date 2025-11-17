@@ -23,12 +23,12 @@ import {
 } from '../../../types/providers/fanart.js';
 
 export class FanArtClient {
-  private client: AxiosInstance;
-  private circuitBreaker: CircuitBreaker;
-  private retryStrategy: RetryStrategy;
-  private apiKey: string;
+  private readonly client: AxiosInstance;
+  private readonly circuitBreaker: CircuitBreaker;
+  private readonly retryStrategy: RetryStrategy;
+  private readonly apiKey: string;
   private personalApiKey?: string;
-  private baseUrl: string;
+  private readonly baseUrl: string;
   private lastRequestTime: number = 0;
   private requestDelay: number; // Milliseconds between requests
 

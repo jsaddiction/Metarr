@@ -32,12 +32,12 @@ import {
 } from '../../../types/providers/tvdb.js';
 
 export class TVDBClient {
-  private client: AxiosInstance;
-  private circuitBreaker: CircuitBreaker;
-  private retryStrategy: RetryStrategy;
-  private apiKey: string;
-  private baseUrl: string;
-  private imageBaseUrl: string;
+  private readonly client: AxiosInstance;
+  private readonly circuitBreaker: CircuitBreaker;
+  private readonly retryStrategy: RetryStrategy;
+  private readonly apiKey: string;
+  private readonly baseUrl: string;
+  private readonly imageBaseUrl: string;
   private token: string | null = null;
   private tokenExpiry: number | null = null;
   private tokenRefreshBuffer: number; // Hours before expiry to refresh

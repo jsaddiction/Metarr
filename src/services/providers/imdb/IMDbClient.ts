@@ -66,9 +66,9 @@ export interface IMDbSeriesDetails extends Omit<IMDbMovieDetails, 'runtime'> {
 }
 
 export class IMDbClient {
-  private client: AxiosInstance;
-  private circuitBreaker: CircuitBreaker;
-  private retryStrategy: RetryStrategy;
+  private readonly client: AxiosInstance;
+  private readonly circuitBreaker: CircuitBreaker;
+  private readonly retryStrategy: RetryStrategy;
   private baseUrl = 'https://www.imdb.com';
 
   constructor() {

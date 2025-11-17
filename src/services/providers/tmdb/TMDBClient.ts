@@ -38,15 +38,15 @@ import {
 } from '../../../types/providers/tmdb.js';
 
 export class TMDBClient {
-  private client: AxiosInstance;
-  private rateLimiter: RateLimiter;
-  private circuitBreaker: CircuitBreaker;
-  private retryStrategy: RetryStrategy;
-  private apiKey: string;
-  private baseUrl: string;
-  private imageBaseUrl: string;
-  private language: string;
-  private includeAdult: boolean;
+  private readonly client: AxiosInstance;
+  private readonly rateLimiter: RateLimiter;
+  private readonly circuitBreaker: CircuitBreaker;
+  private readonly retryStrategy: RetryStrategy;
+  private readonly apiKey: string;
+  private readonly baseUrl: string;
+  private readonly imageBaseUrl: string;
+  private readonly language: string;
+  private readonly includeAdult: boolean;
 
   constructor(options: TMDBClientOptions) {
     this.apiKey = options.apiKey;
