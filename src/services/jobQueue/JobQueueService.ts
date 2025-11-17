@@ -22,7 +22,7 @@ export interface JobHandler<T extends JobType = JobType> {
 }
 
 export class JobQueueService {
-  private storage: IJobQueueStorage;
+  private readonly storage: IJobQueueStorage;
   private handlers: Map<JobType, JobHandler<any>> = new Map();
   private isProcessing: boolean = false;
   private processingInterval: NodeJS.Timeout | null = null;

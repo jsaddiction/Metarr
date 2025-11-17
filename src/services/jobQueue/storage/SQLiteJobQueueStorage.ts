@@ -17,7 +17,7 @@ import { SqlParam } from '../../../types/database.js';
  * - Simple completion: Completed jobs removed from queue (use logs for history)
  */
 export class SQLiteJobQueueStorage implements IJobQueueStorage {
-  constructor(private db: DatabaseConnection) {}
+  constructor(private readonly db: DatabaseConnection) {}
 
   async addJob(job: Omit<Job, 'id' | 'created_at'>): Promise<number> {
     logger.debug('[SQLiteJobQueueStorage] Adding job', {
