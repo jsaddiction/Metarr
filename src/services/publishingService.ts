@@ -43,8 +43,8 @@ export interface PublishResult {
 }
 
 export class PublishingService {
-  private db: DatabaseConnection;
-  private cacheDir: string;
+  private readonly db: DatabaseConnection;
+  private readonly cacheDir: string;
 
   constructor(db: DatabaseConnection, cacheDir?: string) {
     this.db = db;
@@ -150,7 +150,7 @@ export class PublishingService {
             await this.publishAsset(asset, config, asset.rank);
             result.assetsPublished++;
           } catch (error) {
-            logger.error(`Error publishing asset ${asset.id}:`, error);
+            logger.error(`Error publishing asset ${asset.id}`, { error: getErrorMessage(error) });
             result.errors.push(`Asset ${asset.asset_type}: ${getErrorMessage(error)}`);
           }
         }
@@ -164,7 +164,7 @@ export class PublishingService {
           const actorsPublished = await this.publishActors(config);
           logger.info(`[PublishingService] Published ${actorsPublished} actor thumbnails`);
         } catch (error) {
-          logger.error('Error publishing actors:', error);
+          logger.error('Error publishing actors', { error: getErrorMessage(error) });
           result.errors.push(`Actors: ${getErrorMessage(error)}`);
         }
       } else {
@@ -192,7 +192,7 @@ export class PublishingService {
 
         result.nfoGenerated = true;
       } catch (error) {
-        logger.error('Error generating/writing NFO:', error);
+        logger.error('Error generating/writing NFO', { error: getErrorMessage(error) });
         result.errors.push(`NFO: ${getErrorMessage(error)}`);
       }
 
@@ -218,7 +218,7 @@ export class PublishingService {
       return result;
 
     } catch (error) {
-      logger.error('Error during publish:', error);
+      logger.error('Error during publish', { error: getErrorMessage(error) });
       result.errors.push(getErrorMessage(error));
       return result;
     }
