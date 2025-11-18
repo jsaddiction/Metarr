@@ -257,7 +257,7 @@ describe('ProviderOrchestrator - Fallback Chain', () => {
 
         const mockTvdbProvider = {
           getMetadata: jest.fn<(req: MetadataRequest) => Promise<MetadataResponse>>()
-            .mockRejectedValue(new NetworkError('tvdb', new Error('Network timeout'))),
+            .mockRejectedValue(new NetworkError('Network timeout', undefined, undefined, undefined, new Error('Network timeout'))),
           getCapabilities: jest.fn().mockReturnValue({
             id: 'tvdb',
             search: { externalIdLookup: ['tvdb', 'imdb'] },
@@ -675,7 +675,7 @@ describe('ProviderOrchestrator - Fallback Chain', () => {
 
         const mockTvdbProvider = {
           getAssets: jest.fn<(req: AssetRequest) => Promise<AssetCandidate[]>>()
-            .mockRejectedValue(new NetworkError('tvdb', new Error('Connection timeout'))),
+            .mockRejectedValue(new NetworkError('Connection timeout', undefined, undefined, undefined, new Error('Connection timeout'))),
           getCapabilities: jest.fn().mockReturnValue({
             id: 'tvdb',
             supportedAssetTypes: {

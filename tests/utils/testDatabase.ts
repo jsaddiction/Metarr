@@ -76,6 +76,16 @@ export class TestDatabase {
   }
 
   /**
+   * Get the database connection
+   */
+  getConnection(): DatabaseConnection {
+    if (!this.connection) {
+      throw new Error('Database not created. Call create() first.');
+    }
+    return this.connection;
+  }
+
+  /**
    * Close and destroy the test database
    */
   async destroy(): Promise<void> {

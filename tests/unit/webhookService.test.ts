@@ -15,15 +15,19 @@ describe('WebhookService', () => {
 
   beforeEach(async () => {
     testDb = await createTestDatabase();
-    const db = await testDb.create();
+    const db = testDb.getConnection();
     const storage = new SQLiteJobQueueStorage(db);
     jobQueue = new JobQueueService(storage);
     service = new WebhookService(jobQueue);
   });
 
   afterEach(async () => {
-    jobQueue.stop();
-    await testDb.destroy();
+    if (jobQueue) {
+      jobQueue.stop();
+    }
+    if (testDb) {
+      await testDb.destroy();
+    }
   });
 
   describe('processRadarrWebhook', () => {

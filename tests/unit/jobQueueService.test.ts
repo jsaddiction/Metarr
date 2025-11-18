@@ -8,14 +8,18 @@ describe('JobQueueService', () => {
 
   beforeEach(async () => {
     testDb = await createTestDatabase();
-    const db = await testDb.create();
+    const db = testDb.getConnection();
     const storage = new SQLiteJobQueueStorage(db);
     service = new JobQueueService(storage);
   });
 
   afterEach(async () => {
-    service.stop();
-    await testDb.destroy();
+    if (service) {
+      service.stop();
+    }
+    if (testDb) {
+      await testDb.destroy();
+    }
   });
 
   describe('addJob', () => {
