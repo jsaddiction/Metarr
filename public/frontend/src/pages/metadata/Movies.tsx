@@ -17,6 +17,7 @@ export const Movies: React.FC = () => {
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [viewMode, setViewMode] = useState<ViewMode>('table');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [indexedMovies, setIndexedMovies] = useState(movies);
 
   // Debounce search input for performance
   useEffect(() => {
@@ -27,15 +28,24 @@ export const Movies: React.FC = () => {
     return () => clearTimeout(timer);
   }, [searchTerm]);
 
-  // Initialize Fuse.js for fuzzy search
+  // Debounce Fuse.js index rebuilding (only rebuild 500ms after last change)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setIndexedMovies(movies);
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [movies]);
+
+  // Initialize Fuse.js for fuzzy search (now uses debounced indexedMovies)
   const fuse = useMemo(() => {
-    return new Fuse(movies, {
+    return new Fuse(indexedMovies, {
       keys: ['title', 'studio'],
       threshold: 0.4,
       ignoreLocation: true,
       includeScore: true,
     });
-  }, [movies]);
+  }, [indexedMovies]);
 
   // Filter movies based on debounced search term and status
   const filteredMovies = useMemo(() => {

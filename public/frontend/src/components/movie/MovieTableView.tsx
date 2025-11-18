@@ -128,8 +128,17 @@ export const MovieTableView: React.FC<MovieTableViewProps> = ({
           {movies.map((movie) => (
             <tr
               key={movie.id}
-              className="hover:bg-neutral-700 cursor-pointer transition-colors duration-200"
+              className="hover:bg-neutral-700 focus-within:bg-neutral-700 cursor-pointer transition-colors duration-200"
               onClick={() => onMovieClick?.(movie)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onMovieClick?.(movie);
+                }
+              }}
+              tabIndex={0}
+              role="button"
+              aria-label={`View details for ${movie.title}${movie.year ? ` (${movie.year})` : ''}`}
             >
               <td className="py-4 px-4">
                 <div className="flex flex-col">
