@@ -1,0 +1,3122 @@
+
+> metarr@1.0.0 test
+> cross-env NODE_OPTIONS=--experimental-vm-modules jest
+
+(node:2707544) ExperimentalWarning: VM Modules is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:2707551) ExperimentalWarning: VM Modules is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":1,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:31.966Z","type":"scan-movie"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":2,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:31.972Z","type":"scan-movie"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":3,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:31.976Z","type":"scan-movie"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":4,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:31.980Z","type":"scan-movie"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":5,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:31.984Z","type":"scan-movie"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job picked[39m {"jobId":1,"operation":"pickNextJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.002Z","type":"scan-movie","waitTime":"-17998998ms"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job picked[39m {"jobId":2,"operation":"pickNextJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.003Z","type":"scan-movie","waitTime":"-17998997ms"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job picked[39m {"jobId":3,"operation":"pickNextJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.003Z","type":"scan-movie","waitTime":"-17998997ms"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job picked[39m {"jobId":4,"operation":"pickNextJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.004Z","type":"scan-movie","waitTime":"-17998996ms"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job picked[39m {"jobId":5,"operation":"pickNextJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.004Z","type":"scan-movie","waitTime":"-17998996ms"}
+(node:2707525) ExperimentalWarning: VM Modules is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":1,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.039Z","type":"enrich-metadata"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":2,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.046Z","type":"enrich-metadata"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":3,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.050Z","type":"enrich-metadata"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":4,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.054Z","type":"enrich-metadata"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":5,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.061Z","type":"enrich-metadata"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":6,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.064Z","type":"enrich-metadata"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":7,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.068Z","type":"enrich-metadata"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":8,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.079Z","type":"enrich-metadata"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":9,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.085Z","type":"enrich-metadata"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":10,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.089Z","type":"enrich-metadata"}
+  console.log
+    🚀 Running clean schema migration...
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:35:13)
+
+  console.log
+    🧹 Cleaning up old tables if they exist...
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:41:13)
+
+  console.log
+    ✅ Old tables cleaned up
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:52:13)
+
+  console.log
+    ✅ cache_video_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:206:13)
+
+  console.log
+    ✅ cache_video_files and library_video_files tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:222:13)
+
+[33mwarn[39m: [33mCircuit breaker opened[39m {"failureCount":3,"threshold":3,"timestamp":"2025-11-18T18:35:32.116Z"}
+[33mwarn[39m: [33mCircuit breaker opened[39m {"failureCount":3,"threshold":3,"timestamp":"2025-11-18T18:35:32.121Z"}
+  console.log
+    ✅ cache_image_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:269:13)
+
+  console.log
+    ✅ library_image_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:285:13)
+
+[33mwarn[39m: [33mCircuit breaker opened[39m {"failureCount":3,"threshold":3,"timestamp":"2025-11-18T18:35:32.134Z"}
+  console.log
+    ✅ cache_audio_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:319:13)
+
+(node:2707524) ExperimentalWarning: VM Modules is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job picked[39m {"jobId":1,"operation":"pickNextJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.137Z","type":"enrich-metadata","waitTime":"-17999863ms"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job picked[39m {"jobId":2,"operation":"pickNextJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.137Z","type":"enrich-metadata","waitTime":"-17999863ms"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job picked[39m {"jobId":3,"operation":"pickNextJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.137Z","type":"enrich-metadata","waitTime":"-17999863ms"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job picked[39m {"jobId":4,"operation":"pickNextJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.138Z","type":"enrich-metadata","waitTime":"-17999862ms"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job picked[39m {"jobId":5,"operation":"pickNextJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.138Z","type":"enrich-metadata","waitTime":"-17999862ms"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job picked[39m {"jobId":6,"operation":"pickNextJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.138Z","type":"enrich-metadata","waitTime":"-17999862ms"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job picked[39m {"jobId":7,"operation":"pickNextJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.138Z","type":"enrich-metadata","waitTime":"-17999862ms"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job picked[39m {"jobId":8,"operation":"pickNextJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.138Z","type":"enrich-metadata","waitTime":"-17999862ms"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job picked[39m {"jobId":9,"operation":"pickNextJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.138Z","type":"enrich-metadata","waitTime":"-17999862ms"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job picked[39m {"jobId":10,"operation":"pickNextJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.138Z","type":"enrich-metadata","waitTime":"-17999862ms"}
+  console.log
+    [dotenv@17.2.2] injecting env (0) from .env -- tip: ⚙️  suppress all logs with { quiet: true }
+
+      at _log (node_modules/dotenv/lib/main.js:139:11)
+
+  console.log
+    ✅ library_audio_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:335:13)
+
+  console.log
+    ✅ cache_text_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:372:13)
+
+[32minfo[39m: [32m[ProviderCacheOrchestrator] Fanart.tv adapter initialized[39m {"timestamp":"2025-11-18T18:35:32.141Z"}
+[33mwarn[39m: [33m[ProviderFetchPhase] Only supports movies currently[39m {"entityId":1,"entityType":"show","timestamp":"2025-11-18T18:35:32.145Z"}
+  console.log
+    ✅ library_text_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:388:13)
+
+  console.log
+    ✅ unknown_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:411:13)
+
+  console.log
+    ✅ Unified file system tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:413:13)
+
+[32minfo[39m: [32m[ProviderCacheOrchestrator] Fanart.tv adapter initialized[39m {"timestamp":"2025-11-18T18:35:32.148Z"}
+[32minfo[39m: [32m[ProviderFetchPhase] Fetching from provider cache[39m {"entityId":1,"forceRefresh":false,"timestamp":"2025-11-18T18:35:32.149Z","tmdb_id":550}
+[32minfo[39m: [32m[ProviderFetchPhase] Provider cache fetch complete[39m {"cacheAge":0,"castCount":0,"entityId":1,"imageCount":0,"providers":["tmdb"],"source":"tmdb","timestamp":"2025-11-18T18:35:32.149Z","videoCount":0}
+[33mwarn[39m: [33m[ProviderFetchPhase] Movie not found for metadata copy[39m {"movieId":1,"timestamp":"2025-11-18T18:35:32.150Z"}
+[32minfo[39m: [32m[ProviderFetchPhase] Phase 1 complete[39m {"assetsFetched":0,"entityId":1,"entityType":"movie","providers":["tmdb"],"source":"tmdb","timestamp":"2025-11-18T18:35:32.150Z"}
+[32minfo[39m: [32m[ProviderCacheOrchestrator] Fanart.tv adapter initialized[39m {"timestamp":"2025-11-18T18:35:32.151Z"}
+  console.log
+    ✅ Movie tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:505:13)
+
+[31merror[39m: [31m[ProviderFetchPhase] Phase 1 failed[39m {"error":"movie not found: 999","timestamp":"2025-11-18T18:35:32.152Z"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":1,"manual":false,"operation":"addJob","priority":3,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.155Z","type":"publish"}
+  console.log
+    ✅ TV show tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:644:13)
+
+  console.log
+    ✅ Music tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:747:13)
+
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":2,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.158Z","type":"publish"}
+  console.log
+    ✅ Stream detail tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:813:13)
+
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":3,"manual":false,"operation":"addJob","priority":8,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.162Z","type":"publish"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job picked[39m {"jobId":1,"operation":"pickNextJob","priority":3,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.165Z","type":"publish","waitTime":"-17999835ms"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job picked[39m {"jobId":2,"operation":"pickNextJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.168Z","type":"publish","waitTime":"-17999832ms"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job picked[39m {"jobId":3,"operation":"pickNextJob","priority":8,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.171Z","type":"publish","waitTime":"-17999829ms"}
+  console.log
+    ✅ Normalized metadata tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1093:13)
+
+[32minfo[39m: [32m[ProviderCacheOrchestrator] Fanart.tv adapter initialized[39m {"timestamp":"2025-11-18T18:35:32.173Z"}
+[32minfo[39m: [32m[ProviderFetchPhase] Fetching from provider cache[39m {"entityId":1,"forceRefresh":false,"imdb_id":"tt0137523","timestamp":"2025-11-18T18:35:32.176Z","tmdb_id":550}
+  console.log
+    ✅ Cache orphan cleanup triggers created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1146:13)
+
+[32minfo[39m: [32m[ProviderFetchPhase] Provider cache fetch complete[39m {"cacheAge":0,"castCount":0,"entityId":1,"imageCount":0,"providers":["tmdb"],"source":"tmdb","timestamp":"2025-11-18T18:35:32.177Z","videoCount":0}
+[33mwarn[39m: [33m[ProviderFetchPhase] Movie not found for metadata copy[39m {"movieId":1,"timestamp":"2025-11-18T18:35:32.178Z"}
+[32minfo[39m: [32m[ProviderFetchPhase] Phase 1 complete[39m {"assetsFetched":0,"entityId":1,"entityType":"movie","providers":["tmdb"],"source":"tmdb","timestamp":"2025-11-18T18:35:32.178Z"}
+[32minfo[39m: [32m[ProviderCacheOrchestrator] Fanart.tv adapter initialized[39m {"timestamp":"2025-11-18T18:35:32.179Z"}
+[32minfo[39m: [32m[ProviderFetchPhase] Skipping unmonitored entity[39m {"entityId":1,"entityType":"movie","timestamp":"2025-11-18T18:35:32.180Z"}
+[32minfo[39m: [32m[ProviderCacheOrchestrator] Fanart.tv adapter initialized[39m {"timestamp":"2025-11-18T18:35:32.181Z"}
+  console.log
+    ✅ Job queue tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1246:13)
+
+[32minfo[39m: [32m[ProviderFetchPhase] Fetching from provider cache[39m {"entityId":1,"forceRefresh":false,"timestamp":"2025-11-18T18:35:32.182Z","tmdb_id":550}
+[32minfo[39m: [32m[ProviderFetchPhase] Provider cache fetch complete[39m {"cacheAge":0,"castCount":0,"entityId":1,"imageCount":0,"providers":["tmdb"],"source":"tmdb","timestamp":"2025-11-18T18:35:32.182Z","videoCount":0}
+[33mwarn[39m: [33m[ProviderFetchPhase] Movie not found for metadata copy[39m {"movieId":1,"timestamp":"2025-11-18T18:35:32.183Z"}
+[32minfo[39m: [32m[ProviderFetchPhase] Phase 1 complete[39m {"assetsFetched":0,"entityId":1,"entityType":"movie","providers":["tmdb"],"source":"tmdb","timestamp":"2025-11-18T18:35:32.183Z"}
+[32minfo[39m: [32m[ProviderCacheOrchestrator] Fanart.tv adapter initialized[39m {"timestamp":"2025-11-18T18:35:32.184Z"}
+[32minfo[39m: [32m[ProviderFetchPhase] Fetching from provider cache[39m {"entityId":1,"forceRefresh":true,"timestamp":"2025-11-18T18:35:32.185Z","tmdb_id":550}
+[32minfo[39m: [32m[ProviderFetchPhase] Provider cache fetch complete[39m {"cacheAge":0,"castCount":0,"entityId":1,"imageCount":0,"providers":["tmdb"],"source":"tmdb","timestamp":"2025-11-18T18:35:32.185Z","videoCount":0}
+[33mwarn[39m: [33m[ProviderFetchPhase] Movie not found for metadata copy[39m {"movieId":1,"timestamp":"2025-11-18T18:35:32.186Z"}
+[32minfo[39m: [32m[ProviderFetchPhase] Phase 1 complete[39m {"assetsFetched":0,"entityId":1,"entityType":"movie","providers":["tmdb"],"source":"tmdb","timestamp":"2025-11-18T18:35:32.186Z"}
+  console.log
+    ✅ Activity log table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1314:13)
+
+[32minfo[39m: [32m[ProviderCacheOrchestrator] Fanart.tv adapter initialized[39m {"timestamp":"2025-11-18T18:35:32.188Z"}
+[32minfo[39m: [32m[ProviderFetchPhase] Fetching from provider cache[39m {"entityId":1,"forceRefresh":false,"timestamp":"2025-11-18T18:35:32.188Z","tmdb_id":550}
+[32minfo[39m: [32m[ProviderFetchPhase] Provider cache fetch complete[39m {"cacheAge":0,"castCount":0,"entityId":1,"imageCount":0,"providers":["tmdb"],"source":"tmdb","timestamp":"2025-11-18T18:35:32.188Z","videoCount":0}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":1,"manual":true,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.188Z","type":"scan-movie"}
+[33mwarn[39m: [33m[ProviderFetchPhase] Movie not found for metadata copy[39m {"movieId":1,"timestamp":"2025-11-18T18:35:32.188Z"}
+[32minfo[39m: [32m[ProviderFetchPhase] Phase 1 complete[39m {"assetsFetched":0,"entityId":1,"entityType":"movie","providers":["tmdb"],"source":"tmdb","timestamp":"2025-11-18T18:35:32.188Z"}
+[32minfo[39m: [32m[ProviderCacheOrchestrator] Fanart.tv adapter initialized[39m {"timestamp":"2025-11-18T18:35:32.190Z"}
+  console.log
+    ✅ Provider cache movies table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1368:13)
+
+[32minfo[39m: [32m[ProviderFetchPhase] Fetching from provider cache[39m {"entityId":1,"forceRefresh":false,"timestamp":"2025-11-18T18:35:32.190Z","tmdb_id":550}
+[33mwarn[39m: [33m[ProviderFetchPhase] Provider cache returned no data[39m {"entityId":1,"entityType":"movie","timestamp":"2025-11-18T18:35:32.190Z"}
+[32minfo[39m: [32m[ProviderCacheOrchestrator] Fanart.tv adapter initialized[39m {"timestamp":"2025-11-18T18:35:32.192Z"}
+[32minfo[39m: [32m[ProviderFetchPhase] Fetching from provider cache[39m {"entityId":1,"forceRefresh":false,"imdb_id":null,"timestamp":"2025-11-18T18:35:32.193Z","tmdb_id":550}
+[32minfo[39m: [32m[ProviderFetchPhase] Provider cache fetch complete[39m {"cacheAge":0,"castCount":0,"entityId":1,"imageCount":0,"providers":["tmdb"],"source":"tmdb","timestamp":"2025-11-18T18:35:32.193Z","videoCount":0}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job picked[39m {"jobId":1,"operation":"pickNextJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.193Z","type":"scan-movie","waitTime":"-17999807ms"}
+[33mwarn[39m: [33m[ProviderFetchPhase] Movie not found for metadata copy[39m {"movieId":1,"timestamp":"2025-11-18T18:35:32.194Z"}
+[32minfo[39m: [32m[ProviderFetchPhase] Phase 1 complete[39m {"assetsFetched":0,"entityId":1,"entityType":"movie","providers":["tmdb"],"source":"tmdb","timestamp":"2025-11-18T18:35:32.194Z"}
+  console.log
+    ✅ Provider cache collections tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1397:13)
+
+  console.log
+    ✅ Provider cache images table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1434:13)
+
+[32minfo[39m: [32m[ProviderCacheOrchestrator] Fanart.tv adapter initialized[39m {"timestamp":"2025-11-18T18:35:32.196Z"}
+[32minfo[39m: [32m[ProviderFetchPhase] Fetching from provider cache[39m {"entityId":1,"forceRefresh":false,"imdb_id":"tt0137523","timestamp":"2025-11-18T18:35:32.197Z","tmdb_id":null}
+[32minfo[39m: [32m[ProviderFetchPhase] Provider cache fetch complete[39m {"cacheAge":0,"castCount":0,"entityId":1,"imageCount":0,"providers":["tmdb"],"source":"tmdb","timestamp":"2025-11-18T18:35:32.197Z","videoCount":0}
+[33mwarn[39m: [33m[ProviderFetchPhase] Movie not found for metadata copy[39m {"movieId":1,"timestamp":"2025-11-18T18:35:32.197Z"}
+[32minfo[39m: [32m[ProviderFetchPhase] Phase 1 complete[39m {"assetsFetched":0,"entityId":1,"entityType":"movie","providers":["tmdb"],"source":"tmdb","timestamp":"2025-11-18T18:35:32.197Z"}
+  console.log
+    ✅ Provider cache videos table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1464:13)
+
+[32minfo[39m: [32m[ProviderCacheOrchestrator] Fanart.tv adapter initialized[39m {"timestamp":"2025-11-18T18:35:32.198Z"}
+[32minfo[39m: [32m[ProviderFetchPhase] Fetching from provider cache[39m {"entityId":1,"forceRefresh":false,"imdb_id":"tt0137523","timestamp":"2025-11-18T18:35:32.198Z","tmdb_id":550}
+[32minfo[39m: [32m[ProviderFetchPhase] Provider cache fetch complete[39m {"cacheAge":0,"castCount":0,"entityId":1,"imageCount":0,"providers":["tmdb"],"source":"tmdb","timestamp":"2025-11-18T18:35:32.199Z","videoCount":0}
+[33mwarn[39m: [33m[ProviderFetchPhase] Movie not found for metadata copy[39m {"movieId":1,"timestamp":"2025-11-18T18:35:32.199Z"}
+[32minfo[39m: [32m[ProviderFetchPhase] Phase 1 complete[39m {"assetsFetched":0,"entityId":1,"entityType":"movie","providers":["tmdb"],"source":"tmdb","timestamp":"2025-11-18T18:35:32.199Z"}
+[32minfo[39m: [32m[ProviderCacheOrchestrator] Fanart.tv adapter initialized[39m {"timestamp":"2025-11-18T18:35:32.200Z"}
+[32minfo[39m: [32m[ProviderFetchPhase] Fetching from provider cache[39m {"entityId":1,"forceRefresh":false,"timestamp":"2025-11-18T18:35:32.200Z","tmdb_id":550}
+[32minfo[39m: [32m[ProviderFetchPhase] Provider cache fetch complete[39m {"cacheAge":0,"castCount":0,"entityId":1,"imageCount":4,"providers":["tmdb"],"source":"tmdb","timestamp":"2025-11-18T18:35:32.200Z","videoCount":0}
+[33mwarn[39m: [33m[ProviderFetchPhase] Movie not found for metadata copy[39m {"movieId":1,"timestamp":"2025-11-18T18:35:32.200Z"}
+[32minfo[39m: [32m[ProviderFetchPhase] Phase 1 complete[39m {"assetsFetched":4,"entityId":1,"entityType":"movie","providers":["tmdb"],"source":"tmdb","timestamp":"2025-11-18T18:35:32.201Z"}
+[32minfo[39m: [32m[ProviderCacheOrchestrator] Fanart.tv adapter initialized[39m {"timestamp":"2025-11-18T18:35:32.201Z"}
+  console.log
+    ✅ Provider cache people/cast/crew tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1514:13)
+
+[32minfo[39m: [32m[ProviderFetchPhase] Fetching from provider cache[39m {"entityId":1,"forceRefresh":false,"timestamp":"2025-11-18T18:35:32.201Z","tmdb_id":550}
+[32minfo[39m: [32m[ProviderFetchPhase] Provider cache fetch complete[39m {"cacheAge":0,"castCount":0,"entityId":1,"imageCount":0,"providers":["tmdb"],"source":"tmdb","timestamp":"2025-11-18T18:35:32.202Z","videoCount":0}
+[33mwarn[39m: [33m[ProviderFetchPhase] Movie not found for metadata copy[39m {"movieId":1,"timestamp":"2025-11-18T18:35:32.202Z"}
+[32minfo[39m: [32m[ProviderFetchPhase] Phase 1 complete[39m {"assetsFetched":0,"entityId":1,"entityType":"movie","providers":["tmdb"],"source":"tmdb","timestamp":"2025-11-18T18:35:32.202Z"}
+[32minfo[39m: [32m[ProviderCacheOrchestrator] Fanart.tv adapter initialized[39m {"timestamp":"2025-11-18T18:35:32.203Z"}
+[32minfo[39m: [32m[ProviderFetchPhase] Fetching from provider cache[39m {"entityId":1,"forceRefresh":false,"timestamp":"2025-11-18T18:35:32.204Z","tmdb_id":550}
+[31merror[39m: [31m[ProviderFetchPhase] Phase 1 failed[39m {"error":"Provider unavailable","timestamp":"2025-11-18T18:35:32.204Z"}
+[32minfo[39m: [32m[ProviderCacheOrchestrator] Fanart.tv adapter initialized[39m {"timestamp":"2025-11-18T18:35:32.207Z"}
+  console.log
+    ✅ Provider cache relational tables created (genres, companies, countries, keywords)
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1595:13)
+
+[31merror[39m: [31m[ProviderFetchPhase] Phase 1 failed[39m {"error":"Database connection lost","timestamp":"2025-11-18T18:35:32.208Z"}
+  console.log
+    ✅ provider_assets table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1646:13)
+
+(node:2707537) ExperimentalWarning: VM Modules is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+PASS tests/services/enrichment/ProviderFetchPhase.test.ts (6.65 s)
+  ProviderFetchPhase
+    Entity Type Support
+      ✓ should only process movies (not TV or music) (69 ms)
+      ✓ should process movies (3 ms)
+    Entity Existence
+      ✓ should throw ResourceNotFoundError if entity does not exist (21 ms)
+      ✓ should fetch existing entity by ID (7 ms)
+    Monitored Status
+      ✓ should skip unmonitored entities for automated jobs (1 ms)
+      ✓ should process unmonitored entities for manual jobs (2 ms)
+    Provider Cache Orchestration
+      ✓ should pass forceRefresh flag to provider cache (4 ms)
+      ✓ should include all optional data (images, videos, cast, crew) (1 ms)
+      ✓ should handle empty provider cache response (2 ms)
+    Lookup Parameters
+      ✓ should use TMDB ID if available (5 ms)
+      ✓ should use IMDB ID if available (1 ms)
+      ✓ should use both TMDB and IMDB IDs if available (1 ms)
+    Asset Counting
+      ✓ should count all asset types from provider response (2 ms)
+      ✓ should return 0 for entities with no assets (1 ms)
+    Error Handling
+      ✓ should propagate provider cache errors (3 ms)
+      ✓ should handle database errors gracefully (3 ms)
+
+  console.log
+    ✅ Webhook configuration table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1695:13)
+
+  console.log
+    ✅ Configuration tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1777:13)
+
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":1,"manual":true,"operation":"addJob","priority":3,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.220Z","type":"scan-movie"}
+  console.log
+    🔗 Creating CASCADE delete triggers for file tables...
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1840:13)
+
+  console.log
+    ✅ CASCADE delete triggers created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1959:13)
+
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job picked[39m {"jobId":1,"operation":"pickNextJob","priority":3,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.224Z","type":"scan-movie","waitTime":"-17999776ms"}
+  console.log
+    ✅ Clean schema migration completed successfully!
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1960:13)
+
+[32minfo[39m: [32mReceived Radarr webhook: Download[39m {"movie":"Test Movie","timestamp":"2025-11-18T18:35:32.229Z","year":2023}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":1,"manual":false,"operation":"addJob","priority":1,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.232Z","type":"webhook-received"}
+[33mwarn[39m: [33mWebSocket broadcaster not initialized[39m {"timestamp":"2025-11-18T18:35:32.232Z"}
+[32minfo[39m: [32m[JobQueueService] Job added to queue[39m {"jobId":1,"operation":"addJob","priority":1,"service":"JobQueueService","timestamp":"2025-11-18T18:35:32.233Z","type":"webhook-received"}
+[32minfo[39m: [32mCreated webhook job 1 for movie: Test Movie[39m {"timestamp":"2025-11-18T18:35:32.233Z"}
+  console.log
+    🚀 Running clean schema migration...
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:35:13)
+
+  console.log
+    🧹 Cleaning up old tables if they exist...
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:41:13)
+
+  console.log
+    ✅ Old tables cleaned up
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:52:13)
+
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":1,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.244Z","type":"enrich-metadata"}
+  console.log
+    ✅ cache_video_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:206:13)
+
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job picked[39m {"jobId":1,"operation":"pickNextJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.248Z","type":"enrich-metadata","waitTime":"-17999752ms"}
+  console.log
+    ✅ cache_video_files and library_video_files tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:222:13)
+
+  console.log
+    ✅ cache_image_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:269:13)
+
+  console.log
+    ✅ library_image_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:285:13)
+
+  console.log
+    ✅ cache_audio_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:319:13)
+
+  console.log
+    ✅ library_audio_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:335:13)
+
+  console.log
+    ✅ cache_text_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:372:13)
+
+  console.log
+    ✅ library_text_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:388:13)
+
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":1,"manual":false,"operation":"addJob","priority":8,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.268Z","type":"publish"}
+  console.log
+    ✅ unknown_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:411:13)
+
+  console.log
+    ✅ Unified file system tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:413:13)
+
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":2,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.271Z","type":"publish"}
+  console.log
+    ✅ Movie tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:505:13)
+
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":3,"manual":false,"operation":"addJob","priority":3,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.275Z","type":"publish"}
+  console.log
+    ✅ TV show tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:644:13)
+
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":4,"manual":false,"operation":"addJob","priority":1,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.282Z","type":"webhook-received"}
+  console.log
+    ✅ Music tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:747:13)
+
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job picked[39m {"jobId":4,"operation":"pickNextJob","priority":1,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.285Z","type":"webhook-received","waitTime":"-17999715ms"}
+  console.log
+    ✅ Stream detail tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:813:13)
+
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job picked[39m {"jobId":3,"operation":"pickNextJob","priority":3,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.293Z","type":"publish","waitTime":"-17999707ms"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job picked[39m {"jobId":2,"operation":"pickNextJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.297Z","type":"publish","waitTime":"-17999704ms"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job picked[39m {"jobId":1,"operation":"pickNextJob","priority":8,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.300Z","type":"publish","waitTime":"-17999700ms"}
+  console.log
+    ✅ Normalized metadata tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1093:13)
+
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":1,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.313Z","type":"publish"}
+  console.log
+    ✅ Cache orphan cleanup triggers created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1146:13)
+
+  console.log
+    ✅ Job queue tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1246:13)
+
+  console.log
+    ✅ Activity log table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1314:13)
+
+  console.log
+    ✅ Provider cache movies table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1368:13)
+
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":2,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.331Z","type":"publish"}
+  console.log
+    ✅ Provider cache collections tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1397:13)
+
+  console.log
+    ✅ Provider cache images table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1434:13)
+
+  console.log
+    ✅ Provider cache videos table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1464:13)
+
+  console.log
+    ✅ Provider cache people/cast/crew tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1514:13)
+
+  console.log
+    ✅ Provider cache relational tables created (genres, companies, countries, keywords)
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1595:13)
+
+  console.log
+    ✅ provider_assets table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1646:13)
+
+  console.log
+    ✅ Webhook configuration table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1695:13)
+
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":3,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.351Z","type":"publish"}
+  console.log
+    ✅ Configuration tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1777:13)
+
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job picked[39m {"jobId":1,"operation":"pickNextJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.354Z","type":"publish","waitTime":"-17999646ms"}
+  console.log
+    🔗 Creating CASCADE delete triggers for file tables...
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1840:13)
+
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job picked[39m {"jobId":2,"operation":"pickNextJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.358Z","type":"publish","waitTime":"-17999642ms"}
+  console.log
+    ✅ CASCADE delete triggers created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1959:13)
+
+  console.log
+    ✅ Clean schema migration completed successfully!
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1960:13)
+
+[32minfo[39m: [32mReceived Radarr webhook: Test[39m {"movie":"Test","timestamp":"2025-11-18T18:35:32.360Z","year":2023}
+[32minfo[39m: [32mRadarr test webhook received - connection OK[39m {"timestamp":"2025-11-18T18:35:32.361Z"}
+  console.log
+    🚀 Running clean schema migration...
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:35:13)
+
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job picked[39m {"jobId":3,"operation":"pickNextJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.363Z","type":"publish","waitTime":"-17999637ms"}
+  console.log
+    🧹 Cleaning up old tables if they exist...
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:41:13)
+
+  console.log
+    ✅ Old tables cleaned up
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:52:13)
+
+  console.log
+    ✅ cache_video_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:206:13)
+
+  console.log
+    ✅ cache_video_files and library_video_files tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:222:13)
+
+  console.log
+    ✅ cache_image_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:269:13)
+
+  console.log
+    ✅ library_image_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:285:13)
+
+  console.log
+    ✅ cache_audio_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:319:13)
+
+  console.log
+    ✅ library_audio_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:335:13)
+
+  console.log
+    ✅ cache_text_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:372:13)
+
+  console.log
+    ✅ library_text_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:388:13)
+
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":1,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.389Z","type":"scan-movie"}
+  console.log
+    ✅ unknown_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:411:13)
+
+  console.log
+    ✅ Unified file system tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:413:13)
+
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job picked[39m {"jobId":1,"operation":"pickNextJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.392Z","type":"scan-movie","waitTime":"-17999608ms"}
+  console.log
+    ✅ Movie tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:505:13)
+
+  console.log
+    ✅ TV show tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:644:13)
+
+  console.log
+    ✅ Music tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:747:13)
+
+  console.log
+    ✅ Stream detail tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:813:13)
+
+  console.log
+    ✅ Normalized metadata tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1093:13)
+
+  console.log
+    ✅ Cache orphan cleanup triggers created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1146:13)
+
+  console.log
+    ✅ Job queue tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1246:13)
+
+  console.log
+    ✅ Activity log table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1314:13)
+
+  console.log
+    ✅ Provider cache movies table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1368:13)
+
+  console.log
+    ✅ Provider cache collections tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1397:13)
+
+  console.log
+    ✅ Provider cache images table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1434:13)
+
+  console.log
+    ✅ Provider cache videos table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1464:13)
+
+  console.log
+    ✅ Provider cache people/cast/crew tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1514:13)
+
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":1,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.432Z","type":"publish"}
+  console.log
+    ✅ Provider cache relational tables created (genres, companies, countries, keywords)
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1595:13)
+
+  console.log
+    ✅ provider_assets table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1646:13)
+
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job picked[39m {"jobId":1,"operation":"pickNextJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.437Z","type":"publish","waitTime":"-17999563ms"}
+  console.log
+    ✅ Webhook configuration table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1695:13)
+
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job completed and removed from queue[39m {"duration":"-17999562ms","jobId":1,"operation":"completeJob","service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.441Z","type":"publish"}
+  console.log
+    ✅ Configuration tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1777:13)
+
+  console.log
+    🔗 Creating CASCADE delete triggers for file tables...
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1840:13)
+
+  console.log
+    ✅ CASCADE delete triggers created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1959:13)
+
+  console.log
+    ✅ Clean schema migration completed successfully!
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1960:13)
+
+[32minfo[39m: [32mReceived Radarr webhook: Rename[39m {"movie":"Test Movie","timestamp":"2025-11-18T18:35:32.451Z","year":2023}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":1,"manual":false,"operation":"addJob","priority":1,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.452Z","type":"webhook-received"}
+[33mwarn[39m: [33mWebSocket broadcaster not initialized[39m {"timestamp":"2025-11-18T18:35:32.452Z"}
+[32minfo[39m: [32m[JobQueueService] Job added to queue[39m {"jobId":1,"operation":"addJob","priority":1,"service":"JobQueueService","timestamp":"2025-11-18T18:35:32.452Z","type":"webhook-received"}
+[32minfo[39m: [32mCreated webhook job 1 for movie: Test Movie[39m {"timestamp":"2025-11-18T18:35:32.452Z"}
+  console.log
+    🚀 Running clean schema migration...
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:35:13)
+
+  console.log
+    🧹 Cleaning up old tables if they exist...
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:41:13)
+
+  console.log
+    ✅ Old tables cleaned up
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:52:13)
+
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":1,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.458Z","type":"scan-movie"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job picked[39m {"jobId":1,"operation":"pickNextJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.462Z","type":"scan-movie","waitTime":"-17999538ms"}
+  console.log
+    ✅ cache_video_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:206:13)
+
+  console.log
+    ✅ cache_video_files and library_video_files tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:222:13)
+
+  console.log
+    ✅ cache_image_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:269:13)
+
+[33mwarn[39m: [33m[SQLiteJobQueueStorage] Job failed, will retry[39m {"error":"Test error","jobId":1,"maxRetries":3,"operation":"failJob","retryCount":1,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.466Z","type":"scan-movie"}
+  console.log
+    ✅ library_image_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:285:13)
+
+  console.log
+    ✅ cache_audio_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:319:13)
+
+  console.log
+    ✅ library_audio_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:335:13)
+
+  console.log
+    ✅ cache_text_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:372:13)
+
+  console.log
+    ✅ library_text_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:388:13)
+
+  console.log
+    ✅ unknown_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:411:13)
+
+  console.log
+    ✅ Unified file system tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:413:13)
+
+  console.log
+    ✅ Movie tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:505:13)
+
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":1,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.482Z","type":"publish"}
+  console.log
+    ✅ TV show tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:644:13)
+
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job picked[39m {"jobId":1,"operation":"pickNextJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.486Z","type":"publish","waitTime":"-17999514ms"}
+  console.log
+    ✅ Music tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:747:13)
+
+  console.log
+    ✅ Stream detail tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:813:13)
+
+[31merror[39m: [31m[SQLiteJobQueueStorage] Job permanently failed and removed from queue[39m {"error":"Final failure","jobId":1,"operation":"failJob","retryCount":3,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.489Z","type":"publish"}
+  console.log
+    ✅ Normalized metadata tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1093:13)
+
+  console.log
+    ✅ Cache orphan cleanup triggers created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1146:13)
+
+[32minfo[39m: [32mFanArt.tv Provider initialized[39m {"hasPersonalKey":false,"providerId":"fanart_tv","rateLimit":"1 req/sec","timestamp":"2025-11-18T18:35:32.502Z","version":"1.0.0"}
+  console.log
+    ✅ Job queue tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1246:13)
+
+[33mwarn[39m: [33m[SQLiteJobQueueStorage] Reset stalled jobs on startup[39m {"count":2,"operation":"resetStalledJobs","service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.507Z"}
+  console.log
+    ✅ Activity log table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1314:13)
+
+[32minfo[39m: [32mFanArt.tv Provider initialized[39m {"hasPersonalKey":false,"providerId":"fanart_tv","rateLimit":"1 req/sec","timestamp":"2025-11-18T18:35:32.511Z","version":"1.0.0"}
+  console.log
+    ✅ Provider cache movies table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1368:13)
+
+[32minfo[39m: [32mFanArt.tv Provider initialized[39m {"hasPersonalKey":false,"providerId":"fanart_tv","rateLimit":"1 req/sec","timestamp":"2025-11-18T18:35:32.512Z","version":"1.0.0"}
+  console.log
+    ✅ Provider cache collections tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1397:13)
+
+[32minfo[39m: [32mFanArt.tv Provider initialized[39m {"hasPersonalKey":false,"providerId":"fanart_tv","rateLimit":"1 req/sec","timestamp":"2025-11-18T18:35:32.513Z","version":"1.0.0"}
+[32minfo[39m: [32mFanArt.tv Provider initialized[39m {"hasPersonalKey":false,"providerId":"fanart_tv","rateLimit":"1 req/sec","timestamp":"2025-11-18T18:35:32.514Z","version":"1.0.0"}
+  console.log
+    ✅ Provider cache images table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1434:13)
+
+[32minfo[39m: [32mFanArt.tv Provider initialized[39m {"hasPersonalKey":false,"providerId":"fanart_tv","rateLimit":"1 req/sec","timestamp":"2025-11-18T18:35:32.515Z","version":"1.0.0"}
+  console.log
+    ✅ Provider cache videos table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1464:13)
+
+[32minfo[39m: [32mFanArt.tv Provider initialized[39m {"hasPersonalKey":false,"providerId":"fanart_tv","rateLimit":"1 req/sec","timestamp":"2025-11-18T18:35:32.516Z","version":"1.0.0"}
+  console.log
+    ✅ Provider cache people/cast/crew tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1514:13)
+
+[32minfo[39m: [32mFanArt.tv Provider initialized[39m {"hasPersonalKey":false,"providerId":"fanart_tv","rateLimit":"1 req/sec","timestamp":"2025-11-18T18:35:32.518Z","version":"1.0.0"}
+  console.log
+    ✅ Provider cache relational tables created (genres, companies, countries, keywords)
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1595:13)
+
+  console.log
+    ✅ provider_assets table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1646:13)
+
+  console.log
+    ✅ Webhook configuration table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1695:13)
+
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":1,"manual":true,"operation":"addJob","priority":3,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.524Z","type":"enrich-metadata"}
+  console.log
+    ✅ Configuration tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1777:13)
+
+  console.log
+    🔗 Creating CASCADE delete triggers for file tables...
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1840:13)
+
+  console.log
+    ✅ CASCADE delete triggers created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1959:13)
+
+  console.log
+    ✅ Clean schema migration completed successfully!
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1960:13)
+
+[32minfo[39m: [32mReceived Radarr webhook: Grab[39m {"movie":"Test Movie","timestamp":"2025-11-18T18:35:32.534Z","year":2023}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":1,"manual":false,"operation":"addJob","priority":1,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.535Z","type":"webhook-received"}
+[33mwarn[39m: [33mWebSocket broadcaster not initialized[39m {"timestamp":"2025-11-18T18:35:32.535Z"}
+[32minfo[39m: [32m[JobQueueService] Job added to queue[39m {"jobId":1,"operation":"addJob","priority":1,"service":"JobQueueService","timestamp":"2025-11-18T18:35:32.535Z","type":"webhook-received"}
+[32minfo[39m: [32mCreated webhook job 1 for movie: Test Movie[39m {"timestamp":"2025-11-18T18:35:32.535Z"}
+  console.log
+    🚀 Running clean schema migration...
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:35:13)
+
+[32minfo[39m: [32mFanArt.tv Provider initialized[39m {"hasPersonalKey":false,"providerId":"fanart_tv","rateLimit":"1 req/sec","timestamp":"2025-11-18T18:35:32.538Z","version":"1.0.0"}
+  console.log
+    🧹 Cleaning up old tables if they exist...
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:41:13)
+
+  console.log
+    ✅ Old tables cleaned up
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:52:13)
+
+[32minfo[39m: [32mFanArt.tv Provider initialized[39m {"hasPersonalKey":false,"providerId":"fanart_tv","rateLimit":"1 req/sec","timestamp":"2025-11-18T18:35:32.543Z","version":"1.0.0"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":1,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.544Z","type":"publish"}
+[32minfo[39m: [32mFanArt.tv Provider initialized[39m {"hasPersonalKey":false,"providerId":"fanart_tv","rateLimit":"1 req/sec","timestamp":"2025-11-18T18:35:32.545Z","version":"1.0.0"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":2,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.547Z","type":"publish"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job picked[39m {"jobId":1,"operation":"pickNextJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.549Z","type":"publish","waitTime":"-17999451ms"}
+  console.log
+    ✅ cache_video_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:206:13)
+
+[32minfo[39m: [32mFanArt.tv Provider initialized[39m {"hasPersonalKey":false,"providerId":"fanart_tv","rateLimit":"1 req/sec","timestamp":"2025-11-18T18:35:32.554Z","version":"1.0.0"}
+PASS tests/providers/FanArtProvider.test.ts
+  FanArtProvider
+    Capabilities
+      ✓ should have correct provider ID (5 ms)
+      ✓ should support movie, series, and season entity types (1 ms)
+      ✓ should be images-only provider (1 ms)
+      ✓ should have proper rate limits (1 ms)
+      ✓ should not support search (1 ms)
+      ✓ should support asset provision (1 ms)
+    Search
+      ✓ should return empty array as search is not supported (2 ms)
+    Metadata
+      ✓ should throw error as metadata is not supported (19 ms)
+    Assets
+      ✓ should retrieve movie assets (4 ms)
+      ✓ should retrieve TV series assets (3 ms)
+      ✓ should return empty array when no images found (9 ms)
+    Connection Test
+      ✓ should return success when circuit breaker is closed (1 ms)
+
+  console.log
+    ✅ cache_video_files and library_video_files tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:222:13)
+
+  console.log
+    ✅ cache_image_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:269:13)
+
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":1,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.566Z","type":"scan-movie"}
+  console.log
+    ✅ library_image_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:285:13)
+
+  console.log
+    ✅ cache_audio_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:319:13)
+
+  console.log
+    ✅ library_audio_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:335:13)
+
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":2,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.570Z","type":"publish"}
+  console.log
+    ✅ cache_text_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:372:13)
+
+  console.log
+    ✅ library_text_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:388:13)
+
+  console.log
+    ✅ unknown_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:411:13)
+
+  console.log
+    ✅ Unified file system tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:413:13)
+
+  console.log
+    ✅ Movie tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:505:13)
+
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":1,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.585Z","type":"publish"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":2,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.590Z","type":"publish"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":3,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.596Z","type":"publish"}
+  console.log
+    ✅ TV show tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:644:13)
+
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":4,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.600Z","type":"publish"}
+  console.log
+    ✅ Music tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:747:13)
+
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":5,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.603Z","type":"publish"}
+  console.log
+    ✅ Stream detail tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:813:13)
+
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":6,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.607Z","type":"publish"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":7,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.612Z","type":"publish"}
+  console.log
+    ✅ Normalized metadata tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1093:13)
+
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":8,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.616Z","type":"publish"}
+  console.log
+    ✅ Cache orphan cleanup triggers created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1146:13)
+
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":9,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.620Z","type":"publish"}
+  console.log
+    ✅ Job queue tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1246:13)
+
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":10,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.624Z","type":"publish"}
+  console.log
+    ✅ Activity log table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1314:13)
+
+  console.log
+    ✅ Provider cache movies table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1368:13)
+
+  console.log
+    ✅ Provider cache collections tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1397:13)
+
+  console.log
+    ✅ Provider cache images table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1434:13)
+
+  console.log
+    ✅ Provider cache videos table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1464:13)
+
+  console.log
+    ✅ Provider cache people/cast/crew tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1514:13)
+
+  console.log
+    ✅ Provider cache relational tables created (genres, companies, countries, keywords)
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1595:13)
+
+  console.log
+    ✅ provider_assets table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1646:13)
+
+  console.log
+    ✅ Webhook configuration table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1695:13)
+
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":1,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.644Z","type":"publish"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":2,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.647Z","type":"publish"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job picked[39m {"jobId":1,"operation":"pickNextJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.650Z","type":"publish","waitTime":"-17999350ms"}
+  console.log
+    ✅ Configuration tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1777:13)
+
+  console.log
+    🔗 Creating CASCADE delete triggers for file tables...
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1840:13)
+
+  console.log
+    ✅ CASCADE delete triggers created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1959:13)
+
+  console.log
+    ✅ Clean schema migration completed successfully!
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1960:13)
+
+[32minfo[39m: [32mReceived Radarr webhook: Download[39m {"movie":"Test Movie","timestamp":"2025-11-18T18:35:32.657Z","year":2023}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":1,"manual":false,"operation":"addJob","priority":1,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.659Z","type":"webhook-received"}
+[33mwarn[39m: [33mWebSocket broadcaster not initialized[39m {"timestamp":"2025-11-18T18:35:32.660Z"}
+[32minfo[39m: [32m[JobQueueService] Job added to queue[39m {"jobId":1,"operation":"addJob","priority":1,"service":"JobQueueService","timestamp":"2025-11-18T18:35:32.660Z","type":"webhook-received"}
+[32minfo[39m: [32mCreated webhook job 1 for movie: Test Movie[39m {"timestamp":"2025-11-18T18:35:32.660Z"}
+  console.log
+    🚀 Running clean schema migration...
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:35:13)
+
+  console.log
+    🧹 Cleaning up old tables if they exist...
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:41:13)
+
+  console.log
+    ✅ Old tables cleaned up
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:52:13)
+
+[33mwarn[39m: [33m[SQLiteJobQueueStorage] Job not found for completion[39m {"jobId":99999,"operation":"completeJob","service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.669Z"}
+  console.log
+    ✅ cache_video_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:206:13)
+
+  console.log
+    ✅ cache_video_files and library_video_files tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:222:13)
+
+[33mwarn[39m: [33m[SQLiteJobQueueStorage] Job not found for failure[39m {"jobId":99999,"operation":"failJob","service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.684Z"}
+  console.log
+    ✅ cache_image_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:269:13)
+
+  console.log
+    ✅ library_image_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:285:13)
+
+  console.log
+    ✅ cache_audio_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:319:13)
+
+  console.log
+    ✅ library_audio_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:335:13)
+
+  console.log
+    ✅ cache_text_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:372:13)
+
+  console.log
+    ✅ library_text_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:388:13)
+
+  console.log
+    ✅ unknown_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:411:13)
+
+  console.log
+    ✅ Unified file system tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:413:13)
+
+  console.log
+    ✅ Movie tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:505:13)
+
+  console.log
+    ✅ TV show tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:644:13)
+
+  console.log
+    ✅ Music tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:747:13)
+
+  console.log
+    ✅ Stream detail tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:813:13)
+
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":1,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.739Z","type":"publish"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":2,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.746Z","type":"publish"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":3,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.749Z","type":"publish"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":4,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.752Z","type":"publish"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":5,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.755Z","type":"publish"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":6,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.760Z","type":"publish"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":7,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.763Z","type":"publish"}
+  console.log
+    ✅ Normalized metadata tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1093:13)
+
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":8,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.765Z","type":"publish"}
+  console.log
+    ✅ Cache orphan cleanup triggers created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1146:13)
+
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":9,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.769Z","type":"publish"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":10,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.772Z","type":"publish"}
+[32minfo[39m: [32mTMDB Provider initialized[39m {"providerId":"tmdb","timestamp":"2025-11-18T18:35:32.772Z","version":"1.0.0"}
+[32minfo[39m: [32mRegistered provider: The Movie Database (tmdb)[39m {"timestamp":"2025-11-18T18:35:32.775Z"}
+  console.log
+    ✅ Job queue tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1246:13)
+
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":11,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.777Z","type":"publish"}
+[32minfo[39m: [32mTVDB Provider initialized[39m {"providerId":"tvdb","timestamp":"2025-11-18T18:35:32.777Z","version":"1.0.0"}
+[32minfo[39m: [32mRegistered provider: TheTVDB (tvdb)[39m {"timestamp":"2025-11-18T18:35:32.778Z"}
+[32minfo[39m: [32mFanArt.tv Provider initialized[39m {"hasPersonalKey":false,"providerId":"fanart_tv","rateLimit":"1 req/sec","timestamp":"2025-11-18T18:35:32.779Z","version":"1.0.0"}
+[32minfo[39m: [32mRegistered provider: FanArt.tv (fanart_tv)[39m {"timestamp":"2025-11-18T18:35:32.779Z"}
+[32minfo[39m: [32mLocal Provider initialized[39m {"providerId":"local","timestamp":"2025-11-18T18:35:32.779Z","version":"1.0.0"}
+[32minfo[39m: [32mRegistered provider: Local Files (local)[39m {"timestamp":"2025-11-18T18:35:32.780Z"}
+  console.log
+    ✅ Activity log table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1314:13)
+
+[33mwarn[39m: [33mIMDb scraping client initialized - this violates IMDb ToS[39m {"timestamp":"2025-11-18T18:35:32.780Z"}
+[32minfo[39m: [32mIMDb Provider initialized (web scraping - violates IMDb ToS)[39m {"providerId":"imdb","timestamp":"2025-11-18T18:35:32.780Z","version":"1.0.0"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":12,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.781Z","type":"publish"}
+[32minfo[39m: [32mRegistered provider: Internet Movie Database (IMDb) (imdb)[39m {"timestamp":"2025-11-18T18:35:32.781Z"}
+[32minfo[39m: [32mMusicBrainz client initialized[39m {"timestamp":"2025-11-18T18:35:32.782Z","userAgent":"Metarr/1.0.0"}
+[32minfo[39m: [32mMusicBrainz Provider initialized[39m {"providerId":"musicbrainz","timestamp":"2025-11-18T18:35:32.782Z","version":"1.0.0"}
+[32minfo[39m: [32mRegistered provider: MusicBrainz (musicbrainz)[39m {"timestamp":"2025-11-18T18:35:32.782Z"}
+[32minfo[39m: [32mTheAudioDB client initialized[39m {"apiKey":"1","timestamp":"2025-11-18T18:35:32.783Z"}
+[32minfo[39m: [32mTheAudioDB Provider initialized[39m {"providerId":"theaudiodb","timestamp":"2025-11-18T18:35:32.783Z","version":"1.0.0"}
+  console.log
+    ✅ Provider cache movies table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1368:13)
+
+[32minfo[39m: [32mRegistered provider: TheAudioDB (theaudiodb)[39m {"timestamp":"2025-11-18T18:35:32.783Z"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":13,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.784Z","type":"publish"}
+  console.log
+    ✅ Provider cache collections tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1397:13)
+
+  console.log
+    ✅ Provider cache images table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1434:13)
+
+  console.log
+    ✅ Provider cache videos table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1464:13)
+
+[32minfo[39m: [32mRegistered provider: Test Provider (test)[39m {"timestamp":"2025-11-18T18:35:32.788Z"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":14,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.788Z","type":"publish"}
+[32minfo[39m: [32mRegistered provider: Test Provider (test)[39m {"timestamp":"2025-11-18T18:35:32.790Z"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":15,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.792Z","type":"publish"}
+[32minfo[39m: [32mTMDB Provider initialized[39m {"providerId":"tmdb","timestamp":"2025-11-18T18:35:32.793Z","version":"1.0.0"}
+[32minfo[39m: [32mTMDB Provider initialized[39m {"providerId":"tmdb","timestamp":"2025-11-18T18:35:32.794Z","version":"1.0.0"}
+[32minfo[39m: [32mTMDB Provider initialized[39m {"providerId":"tmdb","timestamp":"2025-11-18T18:35:32.796Z","version":"1.0.0"}
+  console.log
+    ✅ Provider cache people/cast/crew tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1514:13)
+
+[32minfo[39m: [32mTMDB Provider initialized[39m {"providerId":"tmdb","timestamp":"2025-11-18T18:35:32.797Z","version":"1.0.0"}
+[32minfo[39m: [32mTMDB Provider initialized[39m {"providerId":"tmdb","timestamp":"2025-11-18T18:35:32.798Z","version":"1.0.0"}
+  console.log
+    ✅ Provider cache relational tables created (genres, companies, countries, keywords)
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1595:13)
+
+[32minfo[39m: [32mTMDB Provider initialized[39m {"providerId":"tmdb","timestamp":"2025-11-18T18:35:32.799Z","version":"1.0.0"}
+[32minfo[39m: [32mTMDB Provider initialized[39m {"providerId":"tmdb","timestamp":"2025-11-18T18:35:32.799Z","version":"1.0.0"}
+[32minfo[39m: [32mTMDB Provider initialized[39m {"providerId":"tmdb","timestamp":"2025-11-18T18:35:32.800Z","version":"1.0.0"}
+  console.log
+    ✅ provider_assets table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1646:13)
+
+[32minfo[39m: [32mTMDB Provider initialized[39m {"providerId":"tmdb","timestamp":"2025-11-18T18:35:32.802Z","version":"1.0.0"}
+[32minfo[39m: [32mTMDB Provider initialized[39m {"providerId":"tmdb","timestamp":"2025-11-18T18:35:32.805Z","version":"1.0.0"}
+PASS tests/providers/RateLimiter.test.ts (7.271 s)
+  RateLimiter
+    ✓ should allow requests within limit (9 ms)
+    ✓ should delay requests exceeding limit (1102 ms)
+    ✓ should track request count correctly (1 ms)
+    ✓ should calculate remaining requests
+    ✓ should allow burst capacity for high-priority requests (1 ms)
+    ✓ should provide statistics (1 ms)
+    ✓ should reset correctly
+
+  console.log
+    ✅ Webhook configuration table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1695:13)
+
+[33mwarn[39m: [33mIMDb scraping client initialized - this violates IMDb ToS[39m {"timestamp":"2025-11-18T18:35:32.813Z"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":16,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.816Z","type":"publish"}
+[32minfo[39m: [32mIMDb Provider initialized (web scraping - violates IMDb ToS)[39m {"providerId":"imdb","timestamp":"2025-11-18T18:35:32.816Z","version":"1.0.0"}
+(node:2707531) ExperimentalWarning: VM Modules is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+PASS tests/providers/ProviderRegistry.test.ts (7.297 s)
+  ProviderRegistry
+    Provider Registration
+      ✓ should register a provider (4 ms)
+      ✓ should get provider capabilities (2 ms)
+      ✓ should list all registered providers (1 ms)
+    Provider Creation
+      ✓ should create a provider instance (1 ms)
+      ✓ should throw error for unregistered provider (17 ms)
+    Provider Filtering
+      ✓ should get providers by entity type (1 ms)
+      ✓ should get providers that support specific asset type (1 ms)
+
+[32minfo[39m: [32mTMDB Provider initialized[39m {"providerId":"tmdb","timestamp":"2025-11-18T18:35:32.819Z","version":"1.0.0"}
+[33mwarn[39m: [33mIMDb scraping client initialized - this violates IMDb ToS[39m {"timestamp":"2025-11-18T18:35:32.818Z"}
+[32minfo[39m: [32mIMDb Provider initialized (web scraping - violates IMDb ToS)[39m {"providerId":"imdb","timestamp":"2025-11-18T18:35:32.819Z","version":"1.0.0"}
+[33mwarn[39m: [33mIMDb scraping client initialized - this violates IMDb ToS[39m {"timestamp":"2025-11-18T18:35:32.820Z"}
+[32minfo[39m: [32mIMDb Provider initialized (web scraping - violates IMDb ToS)[39m {"providerId":"imdb","timestamp":"2025-11-18T18:35:32.820Z","version":"1.0.0"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":17,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.821Z","type":"publish"}
+PASS tests/providers/TMDBProvider.test.ts
+  TMDBProvider
+    Capabilities
+      ✓ should have correct provider ID (5 ms)
+      ✓ should support movies and collections (1 ms)
+      ✓ should support both metadata and images
+      ✓ should have proper rate limits (1 ms)
+      ✓ should support search (1 ms)
+      ✓ should support asset provision (1 ms)
+    Search
+      ✓ should search for movies (2 ms)
+    Metadata
+      ✓ should retrieve movie metadata (2 ms)
+    Assets
+      ✓ should retrieve movie assets (14 ms)
+    Connection Test
+      ✓ should return success when circuit breaker is closed (1 ms)
+
+[33mwarn[39m: [33mIMDb scraping client initialized - this violates IMDb ToS[39m {"timestamp":"2025-11-18T18:35:32.822Z"}
+[32minfo[39m: [32mIMDb Provider initialized (web scraping - violates IMDb ToS)[39m {"providerId":"imdb","timestamp":"2025-11-18T18:35:32.822Z","version":"1.0.0"}
+[33mwarn[39m: [33mIMDb scraping client initialized - this violates IMDb ToS[39m {"timestamp":"2025-11-18T18:35:32.823Z"}
+[32minfo[39m: [32mIMDb Provider initialized (web scraping - violates IMDb ToS)[39m {"providerId":"imdb","timestamp":"2025-11-18T18:35:32.823Z","version":"1.0.0"}
+[32minfo[39m: [32mIMDb search for "The Matrix" returned 1 results[39m {"timestamp":"2025-11-18T18:35:32.824Z"}
+[33mwarn[39m: [33mIMDb scraping client initialized - this violates IMDb ToS[39m {"timestamp":"2025-11-18T18:35:32.826Z"}
+[32minfo[39m: [32mIMDb Provider initialized (web scraping - violates IMDb ToS)[39m {"providerId":"imdb","timestamp":"2025-11-18T18:35:32.826Z","version":"1.0.0"}
+[32minfo[39m: [32mRetrieved IMDb metadata for tt0133093[39m {"timestamp":"2025-11-18T18:35:32.827Z","title":"The Matrix"}
+[33mwarn[39m: [33mIMDb scraping client initialized - this violates IMDb ToS[39m {"timestamp":"2025-11-18T18:35:32.828Z"}
+[32minfo[39m: [32mIMDb Provider initialized (web scraping - violates IMDb ToS)[39m {"providerId":"imdb","timestamp":"2025-11-18T18:35:32.828Z","version":"1.0.0"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":18,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.827Z","type":"publish"}
+  console.log
+    ✅ Configuration tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1777:13)
+
+  console.log
+    🔗 Creating CASCADE delete triggers for file tables...
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1840:13)
+
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":19,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.830Z","type":"publish"}
+[33mwarn[39m: [33mIMDb scraping client initialized - this violates IMDb ToS[39m {"timestamp":"2025-11-18T18:35:32.830Z"}
+[32minfo[39m: [32mIMDb Provider initialized (web scraping - violates IMDb ToS)[39m {"providerId":"imdb","timestamp":"2025-11-18T18:35:32.830Z","version":"1.0.0"}
+  console.log
+    ✅ CASCADE delete triggers created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1959:13)
+
+  console.log
+    ✅ Clean schema migration completed successfully!
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1960:13)
+
+[32minfo[39m: [32mReceived Sonarr webhook: Download[39m {"episodes":1,"series":"Test Series","timestamp":"2025-11-18T18:35:32.832Z"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":20,"manual":false,"operation":"addJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.833Z","type":"publish"}
+(node:2707561) ExperimentalWarning: VM Modules is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":1,"manual":false,"operation":"addJob","priority":1,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.833Z","type":"webhook-received"}
+[33mwarn[39m: [33mWebSocket broadcaster not initialized[39m {"timestamp":"2025-11-18T18:35:32.833Z"}
+[32minfo[39m: [32m[JobQueueService] Job added to queue[39m {"jobId":1,"operation":"addJob","priority":1,"service":"JobQueueService","timestamp":"2025-11-18T18:35:32.834Z","type":"webhook-received"}
+[32minfo[39m: [32mCreated webhook job 1 for series: Test Series[39m {"timestamp":"2025-11-18T18:35:32.834Z"}
+PASS tests/providers/IMDbProvider.test.ts (7.263 s)
+  IMDbProvider
+    Capabilities
+      ✓ should have correct provider ID (10 ms)
+      ✓ should be metadata-only provider (1 ms)
+      ✓ should support movie, series, and episode (2 ms)
+      ✓ should have conservative rate limit (1 ms)
+    Search
+      ✓ should search for titles (3 ms)
+    Metadata
+      ✓ should retrieve title metadata (2 ms)
+    Assets
+      ✓ should return empty array as IMDb does not provide assets (1 ms)
+    Connection Test
+      ✓ should return success (2 ms)
+
+  console.log
+    🚀 Running clean schema migration...
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:35:13)
+
+  console.log
+    🧹 Cleaning up old tables if they exist...
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:41:13)
+
+  console.log
+    ✅ Old tables cleaned up
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:52:13)
+
+  console.log
+    ✅ cache_video_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:206:13)
+
+  console.log
+    ✅ cache_video_files and library_video_files tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:222:13)
+
+  console.log
+    ✅ cache_image_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:269:13)
+
+  console.log
+    ✅ library_image_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:285:13)
+
+  console.log
+    ✅ cache_audio_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:319:13)
+
+  console.log
+    ✅ library_audio_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:335:13)
+
+  console.log
+    ✅ cache_text_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:372:13)
+
+  console.log
+    ✅ library_text_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:388:13)
+
+  console.log
+    ✅ unknown_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:411:13)
+
+  console.log
+    ✅ Unified file system tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:413:13)
+
+  console.log
+    ✅ Movie tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:505:13)
+
+  console.log
+    ✅ TV show tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:644:13)
+
+  console.log
+    ✅ Music tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:747:13)
+
+  console.log
+    ✅ Stream detail tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:813:13)
+
+  console.log
+    ✅ Normalized metadata tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1093:13)
+
+  console.log
+    ✅ Cache orphan cleanup triggers created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1146:13)
+
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job picked[39m {"jobId":1,"operation":"pickNextJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.905Z","type":"publish","waitTime":"-17999095ms"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job picked[39m {"jobId":2,"operation":"pickNextJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.905Z","type":"publish","waitTime":"-17999095ms"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job picked[39m {"jobId":3,"operation":"pickNextJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.905Z","type":"publish","waitTime":"-17999095ms"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job picked[39m {"jobId":4,"operation":"pickNextJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.908Z","type":"publish","waitTime":"-17999092ms"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job picked[39m {"jobId":5,"operation":"pickNextJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.909Z","type":"publish","waitTime":"-17999091ms"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job picked[39m {"jobId":6,"operation":"pickNextJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.909Z","type":"publish","waitTime":"-17999091ms"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job picked[39m {"jobId":7,"operation":"pickNextJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.909Z","type":"publish","waitTime":"-17999091ms"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job picked[39m {"jobId":8,"operation":"pickNextJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.909Z","type":"publish","waitTime":"-17999091ms"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job picked[39m {"jobId":9,"operation":"pickNextJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.910Z","type":"publish","waitTime":"-17999090ms"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job picked[39m {"jobId":10,"operation":"pickNextJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.910Z","type":"publish","waitTime":"-17999090ms"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job picked[39m {"jobId":11,"operation":"pickNextJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.910Z","type":"publish","waitTime":"-17999090ms"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job picked[39m {"jobId":12,"operation":"pickNextJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.910Z","type":"publish","waitTime":"-17999090ms"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job picked[39m {"jobId":13,"operation":"pickNextJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.910Z","type":"publish","waitTime":"-17999090ms"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job picked[39m {"jobId":14,"operation":"pickNextJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.910Z","type":"publish","waitTime":"-17999090ms"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job picked[39m {"jobId":15,"operation":"pickNextJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.910Z","type":"publish","waitTime":"-17999090ms"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job picked[39m {"jobId":16,"operation":"pickNextJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.910Z","type":"publish","waitTime":"-17999090ms"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job picked[39m {"jobId":17,"operation":"pickNextJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.911Z","type":"publish","waitTime":"-17999089ms"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job picked[39m {"jobId":18,"operation":"pickNextJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.911Z","type":"publish","waitTime":"-17999089ms"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job picked[39m {"jobId":19,"operation":"pickNextJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.911Z","type":"publish","waitTime":"-17999089ms"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job picked[39m {"jobId":20,"operation":"pickNextJob","priority":5,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.911Z","type":"publish","waitTime":"-17999089ms"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":21,"manual":false,"operation":"addJob","priority":3,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.912Z","type":"enrich-metadata"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":22,"manual":false,"operation":"addJob","priority":3,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.912Z","type":"enrich-metadata"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":23,"manual":false,"operation":"addJob","priority":3,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.912Z","type":"enrich-metadata"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":24,"manual":false,"operation":"addJob","priority":3,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.912Z","type":"enrich-metadata"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":25,"manual":false,"operation":"addJob","priority":3,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.912Z","type":"enrich-metadata"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job picked[39m {"jobId":21,"operation":"pickNextJob","priority":3,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.912Z","type":"enrich-metadata","waitTime":"-17999088ms"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job picked[39m {"jobId":22,"operation":"pickNextJob","priority":3,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.912Z","type":"enrich-metadata","waitTime":"-17999088ms"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job picked[39m {"jobId":23,"operation":"pickNextJob","priority":3,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:32.912Z","type":"enrich-metadata","waitTime":"-17999088ms"}
+PASS tests/services/jobQueue/SQLiteJobQueueStorage.test.ts (7.36 s)
+  SQLiteJobQueueStorage
+    Race Condition Prevention (CRITICAL)
+      ✓ should not assign the same job to multiple concurrent workers (85 ms)
+      ✓ should handle extreme concurrency (100 workers, 10 jobs) (127 ms)
+      ✓ should handle sequential picks without duplication (32 ms)
+    Atomic Operation
+      ✓ should atomically transition job from pending to processing (33 ms)
+      ✓ should preserve job metadata during atomic update (21 ms)
+      ✓ should set started_at timestamp during atomic update (22 ms)
+    Priority Ordering
+      ✓ should pick higher priority jobs first (lower number = higher priority) (52 ms)
+      ✓ should use created_at as tiebreaker for same priority (62 ms)
+    Empty Queue Behavior
+      ✓ should return null when no pending jobs exist (10 ms)
+      ✓ should return null when all jobs are processing (20 ms)
+      ✓ should handle rapid consecutive picks on empty queue (21 ms)
+    Job Lifecycle
+      ✓ should complete a job and remove it from queue (29 ms)
+      ✓ should fail a job and reset to pending if retries remain (24 ms)
+      ✓ should remove job when max retries exceeded (21 ms)
+      ✓ should reset stalled jobs from processing to pending (21 ms)
+    Job Queries
+      ✓ should get job by ID (15 ms)
+      ✓ should list jobs with status filter (25 ms)
+      ✓ should list jobs with type filter (22 ms)
+      ✓ should list jobs with limit (54 ms)
+      ✓ should get queue stats (23 ms)
+    Error Handling
+      ✓ should handle completing non-existent job gracefully (20 ms)
+      ✓ should handle failing non-existent job gracefully (14 ms)
+      ✓ should return null when getting non-existent job (24 ms)
+    Concurrent Stress Test
+      ✓ should handle mixed concurrent operations without corruption (203 ms)
+
+  console.log
+    ✅ Job queue tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1246:13)
+
+  console.log
+    ✅ Activity log table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1314:13)
+
+  console.log
+    ✅ Provider cache movies table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1368:13)
+
+  console.log
+    ✅ Provider cache collections tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1397:13)
+
+  console.log
+    ✅ Provider cache images table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1434:13)
+
+  console.log
+    ✅ Provider cache videos table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1464:13)
+
+  console.log
+    ✅ Provider cache people/cast/crew tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1514:13)
+
+  console.log
+    ✅ Provider cache relational tables created (genres, companies, countries, keywords)
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1595:13)
+
+  console.log
+    ✅ provider_assets table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1646:13)
+
+  console.log
+    ✅ Webhook configuration table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1695:13)
+
+  console.log
+    ✅ Configuration tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1777:13)
+
+  console.log
+    🔗 Creating CASCADE delete triggers for file tables...
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1840:13)
+
+  console.log
+    ✅ CASCADE delete triggers created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1959:13)
+
+  console.log
+    ✅ Clean schema migration completed successfully!
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1960:13)
+
+[32minfo[39m: [32mReceived Sonarr webhook: Test[39m {"episodes":0,"series":"Test","timestamp":"2025-11-18T18:35:32.971Z"}
+[32minfo[39m: [32mSonarr test webhook received - connection OK[39m {"timestamp":"2025-11-18T18:35:32.971Z"}
+  console.log
+    🚀 Running clean schema migration...
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:35:13)
+
+  console.log
+    🧹 Cleaning up old tables if they exist...
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:41:13)
+
+  console.log
+    ✅ Old tables cleaned up
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:52:13)
+
+  console.log
+    ✅ cache_video_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:206:13)
+
+  console.log
+    ✅ cache_video_files and library_video_files tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:222:13)
+
+  console.log
+    ✅ cache_image_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:269:13)
+
+  console.log
+    ✅ library_image_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:285:13)
+
+  console.log
+    ✅ cache_audio_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:319:13)
+
+  console.log
+    ✅ library_audio_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:335:13)
+
+  console.log
+    ✅ cache_text_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:372:13)
+
+  console.log
+    ✅ library_text_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:388:13)
+
+  console.log
+    ✅ unknown_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:411:13)
+
+  console.log
+    ✅ Unified file system tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:413:13)
+
+  console.log
+    ✅ Movie tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:505:13)
+
+  console.log
+    ✅ TV show tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:644:13)
+
+[31merror[39m: [31mFFprobe failed to extract media info[39m {"error":"FFprobe not found","filePath":"/movies/video.mkv","timestamp":"2025-11-18T18:35:33.025Z"}
+  console.log
+    ✅ Music tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:747:13)
+
+  console.log
+    ✅ Stream detail tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:813:13)
+
+  console.log
+    ✅ Normalized metadata tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1093:13)
+
+  console.log
+    ✅ Cache orphan cleanup triggers created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1146:13)
+
+  console.log
+    ✅ Job queue tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1246:13)
+
+  console.log
+    ✅ Activity log table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1314:13)
+
+  console.log
+    ✅ Provider cache movies table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1368:13)
+
+  console.log
+    ✅ Provider cache collections tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1397:13)
+
+  console.log
+    ✅ Provider cache images table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1434:13)
+
+  console.log
+    ✅ Provider cache videos table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1464:13)
+
+  console.log
+    ✅ Provider cache people/cast/crew tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1514:13)
+
+[31merror[39m: [31mFFprobe failed to extract media info[39m {"error":"FFprobe failed","filePath":"/movies/Test Movie/video.mkv","timestamp":"2025-11-18T18:35:33.080Z"}
+[31merror[39m: [31mFFprobe failed to extract media info[39m {"error":"FFprobe failed","filePath":"/movies/video; rm -rf /","timestamp":"2025-11-18T18:35:33.082Z"}
+  console.log
+    ✅ Provider cache relational tables created (genres, companies, countries, keywords)
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1595:13)
+
+[31merror[39m: [31mFFprobe failed to extract media info[39m {"error":"The argument 'args[6]' must be a string without null bytes. Received '/movies/video.mkv\\x00.txt'","filePath":"/movies/video.mkv\u0000.txt","timestamp":"2025-11-18T18:35:33.087Z"}
+  console.log
+    ✅ provider_assets table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1646:13)
+
+  console.log
+    ✅ Webhook configuration table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1695:13)
+
+PASS tests/unit/ffprobeService.test.ts
+  FFprobeService Security Tests
+    Command Injection Prevention
+      ✓ should use execFile instead of exec to prevent shell interpretation (5 ms)
+      ✓ should pass filename as separate argument, not concatenated string (1 ms)
+      ✓ should handle semicolon injection attempt safely (3 ms)
+      ✓ should handle AND operator injection attempt safely (4 ms)
+      ✓ should handle pipe injection attempt safely (3 ms)
+      ✓ should handle command substitution with $() safely (1 ms)
+      ✓ should handle backtick command substitution safely (1 ms)
+      ✓ should handle newline injection attempt safely
+      ✓ should handle dollar sign variable expansion safely (1 ms)
+      ✓ should handle redirection operators safely
+      ✓ should handle multiple injection vectors in one filename (1 ms)
+    FFprobe Argument Safety
+      ✓ should pass all FFprobe flags as separate array elements (2 ms)
+      ✓ should not allow flag injection through filename
+    Error Handling
+      ✓ should throw ProcessError when FFprobe execution fails (55 ms)
+      ✓ should include original file path in error metadata (1 ms)
+      ✓ should handle malicious path in error safely (1 ms)
+    Media Info Extraction
+      ✓ should successfully extract media info from valid FFprobe output (1 ms)
+      ✓ should handle FFprobe output with special characters in metadata (1 ms)
+    Path Traversal Prevention
+      ✓ should handle path traversal attempts in filename (1 ms)
+      ✓ should handle null byte injection safely (2 ms)
+    Windows-Specific Attacks
+      ✓ should handle Windows command injection attempts (1 ms)
+      ✓ should handle UNC path injection attempts (1 ms)
+
+  console.log
+    ✅ Configuration tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1777:13)
+
+  console.log
+    🔗 Creating CASCADE delete triggers for file tables...
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1840:13)
+
+  console.log
+    ✅ CASCADE delete triggers created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1959:13)
+
+  console.log
+    ✅ Clean schema migration completed successfully!
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1960:13)
+
+[32minfo[39m: [32mReceived Sonarr webhook: Rename[39m {"episodes":0,"series":"Test Series","timestamp":"2025-11-18T18:35:33.112Z"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":1,"manual":false,"operation":"addJob","priority":1,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:33.115Z","type":"webhook-received"}
+[33mwarn[39m: [33mWebSocket broadcaster not initialized[39m {"timestamp":"2025-11-18T18:35:33.115Z"}
+[32minfo[39m: [32m[JobQueueService] Job added to queue[39m {"jobId":1,"operation":"addJob","priority":1,"service":"JobQueueService","timestamp":"2025-11-18T18:35:33.116Z","type":"webhook-received"}
+[32minfo[39m: [32mCreated webhook job 1 for series: Test Series[39m {"timestamp":"2025-11-18T18:35:33.116Z"}
+[32minfo[39m: [32mSelecting best 1 poster from 3 candidates[39m {"timestamp":"2025-11-18T18:35:33.125Z"}
+[32minfo[39m: [32mSelected 1 poster[39m {"providers":["tmdb"],"timestamp":"2025-11-18T18:35:33.128Z","topScores":[89,79,65]}
+  console.log
+    🚀 Running clean schema migration...
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:35:13)
+
+  console.log
+    🧹 Cleaning up old tables if they exist...
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:41:13)
+
+  console.log
+    ✅ Old tables cleaned up
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:52:13)
+
+[32minfo[39m: [32mSelecting best 2 poster from 4 candidates[39m {"timestamp":"2025-11-18T18:35:33.132Z"}
+[32minfo[39m: [32mSelected 2 poster[39m {"providers":["tmdb","tmdb"],"timestamp":"2025-11-18T18:35:33.132Z","topScores":[88,88,88,80]}
+[32minfo[39m: [32mSelecting best 5 poster from 4 candidates[39m {"timestamp":"2025-11-18T18:35:33.134Z"}
+[32minfo[39m: [32mSelected 2 poster[39m {"providers":["tmdb","tmdb"],"timestamp":"2025-11-18T18:35:33.135Z","topScores":[88,80]}
+[32minfo[39m: [32mCircuit breaker half-open, attempting recovery[39m {"timestamp":"2025-11-18T18:35:33.135Z"}
+  console.log
+    ✅ cache_video_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:206:13)
+
+[32minfo[39m: [32mSelecting best 1 poster from 2 candidates[39m {"timestamp":"2025-11-18T18:35:33.136Z"}
+  console.log
+    ✅ cache_video_files and library_video_files tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:222:13)
+
+[32minfo[39m: [32mSelected 1 poster[39m {"providers":["tmdb"],"timestamp":"2025-11-18T18:35:33.137Z","topScores":[87,69]}
+[32minfo[39m: [32mSelecting best 5 fanart from 3 candidates[39m {"timestamp":"2025-11-18T18:35:33.138Z"}
+[32minfo[39m: [32mSelected 2 fanart[39m {"providers":["tmdb","tmdb"],"timestamp":"2025-11-18T18:35:33.139Z","topScores":[88,88]}
+[32minfo[39m: [32mSelecting best 1 poster from 2 candidates[39m {"timestamp":"2025-11-18T18:35:33.140Z"}
+[32minfo[39m: [32mSelected 1 poster[39m {"providers":["fanart_tv"],"timestamp":"2025-11-18T18:35:33.141Z","topScores":[95,91]}
+[32minfo[39m: [32mSelecting best 5 poster from 3 candidates[39m {"timestamp":"2025-11-18T18:35:33.143Z"}
+[32minfo[39m: [32mSelected 2 poster[39m {"providers":["tmdb","tmdb"],"timestamp":"2025-11-18T18:35:33.144Z","topScores":[88,88,88]}
+  console.log
+    ✅ cache_image_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:269:13)
+
+[32minfo[39m: [32mSelecting best 5 poster from 3 candidates[39m {"timestamp":"2025-11-18T18:35:33.146Z"}
+  console.log
+    ✅ library_image_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:285:13)
+
+[32minfo[39m: [32mSelected 3 poster[39m {"providers":["tmdb","tmdb","tmdb"],"timestamp":"2025-11-18T18:35:33.147Z","topScores":[88,88,88]}
+  console.log
+    ✅ cache_audio_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:319:13)
+
+[32minfo[39m: [32mSelecting best 5 poster from 2 candidates[39m {"timestamp":"2025-11-18T18:35:33.148Z"}
+[33mwarn[39m: [33mNo candidates passed quality filters for poster[39m {"timestamp":"2025-11-18T18:35:33.149Z"}
+  console.log
+    ✅ library_audio_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:335:13)
+
+PASS tests/providers/AssetSelector.test.ts
+  AssetSelector
+    ✓ should select best candidate based on score (7 ms)
+    ✓ should respect maxCount (2 ms)
+    ✓ should filter by minimum dimensions (1 ms)
+    ✓ should prefer matching language (2 ms)
+    ✓ should filter by quality preference (2 ms)
+    ✓ should boost scores for preferred providers (2 ms)
+    ✓ should deduplicate by perceptual hash (3 ms)
+    ✓ should handle candidates with missing data gracefully (2 ms)
+    ✓ should return empty array if no candidates pass filters (1 ms)
+
+  console.log
+    ✅ cache_text_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:372:13)
+
+  console.log
+    ✅ library_text_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:388:13)
+
+  console.log
+    ✅ unknown_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:411:13)
+
+  console.log
+    ✅ Unified file system tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:413:13)
+
+  console.log
+    ✅ Movie tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:505:13)
+
+  console.log
+    ✅ TV show tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:644:13)
+
+  console.log
+    ✅ Music tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:747:13)
+
+  console.log
+    ✅ Stream detail tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:813:13)
+
+  console.log
+    ✅ Normalized metadata tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1093:13)
+
+  console.log
+    ✅ Cache orphan cleanup triggers created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1146:13)
+
+  console.log
+    ✅ Job queue tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1246:13)
+
+  console.log
+    ✅ Activity log table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1314:13)
+
+  console.log
+    ✅ Provider cache movies table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1368:13)
+
+  console.log
+    ✅ Provider cache collections tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1397:13)
+
+[32minfo[39m: [32mMusicBrainz client initialized[39m {"timestamp":"2025-11-18T18:35:33.215Z","userAgent":"Metarr/1.0.0"}
+[32minfo[39m: [32mMusicBrainz Provider initialized[39m {"providerId":"musicbrainz","timestamp":"2025-11-18T18:35:33.217Z","version":"1.0.0"}
+  console.log
+    ✅ Provider cache images table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1434:13)
+
+  console.log
+    ✅ Provider cache videos table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1464:13)
+
+[32minfo[39m: [32mMusicBrainz client initialized[39m {"timestamp":"2025-11-18T18:35:33.220Z","userAgent":"Metarr/1.0.0"}
+[32minfo[39m: [32mMusicBrainz Provider initialized[39m {"providerId":"musicbrainz","timestamp":"2025-11-18T18:35:33.220Z","version":"1.0.0"}
+  console.log
+    ✅ Provider cache people/cast/crew tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1514:13)
+
+[32minfo[39m: [32mMusicBrainz client initialized[39m {"timestamp":"2025-11-18T18:35:33.222Z","userAgent":"Metarr/1.0.0"}
+[32minfo[39m: [32mMusicBrainz Provider initialized[39m {"providerId":"musicbrainz","timestamp":"2025-11-18T18:35:33.222Z","version":"1.0.0"}
+  console.log
+    ✅ Provider cache relational tables created (genres, companies, countries, keywords)
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1595:13)
+
+[32minfo[39m: [32mMusicBrainz client initialized[39m {"timestamp":"2025-11-18T18:35:33.223Z","userAgent":"Metarr/1.0.0"}
+[32minfo[39m: [32mMusicBrainz Provider initialized[39m {"providerId":"musicbrainz","timestamp":"2025-11-18T18:35:33.223Z","version":"1.0.0"}
+[32minfo[39m: [32mMusicBrainz client initialized[39m {"timestamp":"2025-11-18T18:35:33.224Z","userAgent":"Metarr/1.0.0"}
+  console.log
+    ✅ provider_assets table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1646:13)
+
+[32minfo[39m: [32mMusicBrainz Provider initialized[39m {"providerId":"musicbrainz","timestamp":"2025-11-18T18:35:33.225Z","version":"1.0.0"}
+[32minfo[39m: [32mMusicBrainz client initialized[39m {"timestamp":"2025-11-18T18:35:33.227Z","userAgent":"Metarr/1.0.0"}
+  console.log
+    ✅ Webhook configuration table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1695:13)
+
+[32minfo[39m: [32mMusicBrainz Provider initialized[39m {"providerId":"musicbrainz","timestamp":"2025-11-18T18:35:33.227Z","version":"1.0.0"}
+[32minfo[39m: [32mMusicBrainz client initialized[39m {"timestamp":"2025-11-18T18:35:33.229Z","userAgent":"Metarr/1.0.0"}
+[32minfo[39m: [32mMusicBrainz Provider initialized[39m {"providerId":"musicbrainz","timestamp":"2025-11-18T18:35:33.229Z","version":"1.0.0"}
+[32minfo[39m: [32mMusicBrainz search for "Radiohead" returned 1 results[39m {"timestamp":"2025-11-18T18:35:33.230Z"}
+[32minfo[39m: [32mMusicBrainz client initialized[39m {"timestamp":"2025-11-18T18:35:33.233Z","userAgent":"Metarr/1.0.0"}
+[32minfo[39m: [32mMusicBrainz Provider initialized[39m {"providerId":"musicbrainz","timestamp":"2025-11-18T18:35:33.233Z","version":"1.0.0"}
+[32minfo[39m: [32mMusicBrainz search for "OK Computer" returned 1 results[39m {"timestamp":"2025-11-18T18:35:33.233Z"}
+  console.log
+    ✅ Configuration tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1777:13)
+
+  console.log
+    🔗 Creating CASCADE delete triggers for file tables...
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1840:13)
+
+  console.log
+    ✅ CASCADE delete triggers created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1959:13)
+
+  console.log
+    ✅ Clean schema migration completed successfully!
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1960:13)
+
+[32minfo[39m: [32mReceived Lidarr webhook: Download[39m {"albums":1,"artist":"Test Artist","timestamp":"2025-11-18T18:35:33.233Z"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":1,"manual":false,"operation":"addJob","priority":1,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:33.233Z","type":"webhook-received"}
+[33mwarn[39m: [33mWebSocket broadcaster not initialized[39m {"timestamp":"2025-11-18T18:35:33.233Z"}
+[32minfo[39m: [32m[JobQueueService] Job added to queue[39m {"jobId":1,"operation":"addJob","priority":1,"service":"JobQueueService","timestamp":"2025-11-18T18:35:33.233Z","type":"webhook-received"}
+[32minfo[39m: [32mCreated webhook job 1 for artist: Test Artist[39m {"timestamp":"2025-11-18T18:35:33.233Z"}
+  console.log
+    🚀 Running clean schema migration...
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:35:13)
+
+  console.log
+    🧹 Cleaning up old tables if they exist...
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:41:13)
+
+[33mwarn[39m: [33mCircuit breaker opened[39m {"failureCount":3,"threshold":3,"timestamp":"2025-11-18T18:35:33.238Z"}
+  console.log
+    ✅ Old tables cleaned up
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:52:13)
+
+[32minfo[39m: [32mMusicBrainz client initialized[39m {"timestamp":"2025-11-18T18:35:33.241Z","userAgent":"Metarr/1.0.0"}
+[32minfo[39m: [32mMusicBrainz Provider initialized[39m {"providerId":"musicbrainz","timestamp":"2025-11-18T18:35:33.241Z","version":"1.0.0"}
+[32minfo[39m: [32mMusicBrainz search for "Paranoid Android" returned 1 results[39m {"timestamp":"2025-11-18T18:35:33.242Z"}
+  console.log
+    ✅ cache_video_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:206:13)
+
+[32minfo[39m: [32mMusicBrainz client initialized[39m {"timestamp":"2025-11-18T18:35:33.244Z","userAgent":"Metarr/1.0.0"}
+[32minfo[39m: [32mMusicBrainz Provider initialized[39m {"providerId":"musicbrainz","timestamp":"2025-11-18T18:35:33.244Z","version":"1.0.0"}
+[32minfo[39m: [32mRetrieved MusicBrainz metadata for artist-mbid-123[39m {"entityType":"artist","timestamp":"2025-11-18T18:35:33.245Z","title":"Radiohead"}
+  console.log
+    ✅ cache_video_files and library_video_files tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:222:13)
+
+  console.log
+    ✅ cache_image_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:269:13)
+
+[32minfo[39m: [32mMusicBrainz client initialized[39m {"timestamp":"2025-11-18T18:35:33.257Z","userAgent":"Metarr/1.0.0"}
+[32minfo[39m: [32mMusicBrainz Provider initialized[39m {"providerId":"musicbrainz","timestamp":"2025-11-18T18:35:33.257Z","version":"1.0.0"}
+[32minfo[39m: [32mRetrieved MusicBrainz metadata for album-mbid-456[39m {"entityType":"album","timestamp":"2025-11-18T18:35:33.258Z","title":"OK Computer"}
+  console.log
+    ✅ library_image_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:285:13)
+
+[32minfo[39m: [32mMusicBrainz client initialized[39m {"timestamp":"2025-11-18T18:35:33.260Z","userAgent":"Metarr/1.0.0"}
+[32minfo[39m: [32mMusicBrainz Provider initialized[39m {"providerId":"musicbrainz","timestamp":"2025-11-18T18:35:33.260Z","version":"1.0.0"}
+  console.log
+    ✅ cache_audio_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:319:13)
+
+[32minfo[39m: [32mRetrieved MusicBrainz metadata for track-mbid-789[39m {"entityType":"track","timestamp":"2025-11-18T18:35:33.261Z","title":"Paranoid Android"}
+  console.log
+    ✅ library_audio_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:335:13)
+
+[32minfo[39m: [32mMusicBrainz client initialized[39m {"timestamp":"2025-11-18T18:35:33.262Z","userAgent":"Metarr/1.0.0"}
+[32minfo[39m: [32mMusicBrainz Provider initialized[39m {"providerId":"musicbrainz","timestamp":"2025-11-18T18:35:33.262Z","version":"1.0.0"}
+  console.log
+    ✅ cache_text_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:372:13)
+
+[32minfo[39m: [32mMusicBrainz client initialized[39m {"timestamp":"2025-11-18T18:35:33.264Z","userAgent":"Metarr/1.0.0"}
+[32minfo[39m: [32mMusicBrainz Provider initialized[39m {"providerId":"musicbrainz","timestamp":"2025-11-18T18:35:33.264Z","version":"1.0.0"}
+  console.log
+    ✅ library_text_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:388:13)
+
+[32minfo[39m: [32mMusicBrainz client initialized[39m {"timestamp":"2025-11-18T18:35:33.265Z","userAgent":"Metarr/1.0.0"}
+[32minfo[39m: [32mMusicBrainz Provider initialized[39m {"providerId":"musicbrainz","timestamp":"2025-11-18T18:35:33.265Z","version":"1.0.0"}
+  console.log
+    ✅ unknown_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:411:13)
+
+  console.log
+    ✅ Unified file system tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:413:13)
+
+PASS tests/providers/MusicBrainzProvider.test.ts
+  MusicBrainzProvider
+    Capabilities
+      ✓ should have correct provider ID (8 ms)
+      ✓ should support music entities (2 ms)
+      ✓ should be metadata-only provider (1 ms)
+      ✓ should have strict rate limit of 1 req/sec (1 ms)
+      ✓ should support search with fuzzy matching (2 ms)
+      ✓ should not provide assets (2 ms)
+    Search
+      ✓ should search for artists (4 ms)
+      ✓ should search for albums (2 ms)
+      ✓ should search for tracks (10 ms)
+    Metadata
+      ✓ should retrieve artist metadata (12 ms)
+      ✓ should retrieve album metadata (2 ms)
+      ✓ should retrieve track metadata (2 ms)
+    Assets
+      ✓ should return empty array for asset requests (1 ms)
+    Connection Test
+      ✓ should return success when API is accessible (1 ms)
+      ✓ should return failure when API is not accessible (1 ms)
+
+  console.log
+    ✅ Movie tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:505:13)
+
+[32minfo[39m: [32m[CacheMatchingPhase] Phase 2 complete[39m {"assetsMatched":0,"entityId":1,"entityType":"movie","timestamp":"2025-11-18T18:35:33.272Z"}
+  console.log
+    ✅ TV show tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:644:13)
+
+[32minfo[39m: [32m[CacheMatchingPhase] Phase 2 complete[39m {"assetsMatched":0,"entityId":1,"entityType":"movie","timestamp":"2025-11-18T18:35:33.281Z"}
+[33mwarn[39m: [33m[CacheMatchingPhase] Failed to backfill image metadata[39m {"cacheFileId":1,"error":"Cannot read properties of undefined (reading 'differenceHash')","timestamp":"2025-11-18T18:35:33.282Z"}
+[32minfo[39m: [32m[CacheMatchingPhase] Phase 2 complete[39m {"assetsMatched":0,"entityId":1,"entityType":"movie","timestamp":"2025-11-18T18:35:33.282Z"}
+[32minfo[39m: [32m[CacheMatchingPhase] Phase 2 complete[39m {"assetsMatched":0,"entityId":1,"entityType":"movie","timestamp":"2025-11-18T18:35:33.284Z"}
+[32minfo[39m: [32m[CacheMatchingPhase] Phase 2 complete[39m {"assetsMatched":1,"entityId":1,"entityType":"movie","timestamp":"2025-11-18T18:35:33.286Z"}
+[32minfo[39m: [32m[CacheMatchingPhase] Phase 2 complete[39m {"assetsMatched":0,"entityId":1,"entityType":"movie","timestamp":"2025-11-18T18:35:33.288Z"}
+  console.log
+    ✅ Music tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:747:13)
+
+  console.log
+    ✅ Stream detail tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:813:13)
+
+[32minfo[39m: [32m[CacheMatchingPhase] Phase 2 complete[39m {"assetsMatched":0,"entityId":1,"entityType":"movie","timestamp":"2025-11-18T18:35:33.292Z"}
+[32minfo[39m: [32m[CacheMatchingPhase] Phase 2 complete[39m {"assetsMatched":0,"entityId":1,"entityType":"movie","timestamp":"2025-11-18T18:35:33.295Z"}
+[32minfo[39m: [32m[CacheMatchingPhase] Phase 2 complete[39m {"assetsMatched":1,"entityId":1,"entityType":"movie","timestamp":"2025-11-18T18:35:33.297Z"}
+[32minfo[39m: [32m[CacheMatchingPhase] Phase 2 complete[39m {"assetsMatched":0,"entityId":1,"entityType":"movie","timestamp":"2025-11-18T18:35:33.299Z"}
+[32minfo[39m: [32m[CacheMatchingPhase] Phase 2 complete[39m {"assetsMatched":1,"entityId":1,"entityType":"movie","timestamp":"2025-11-18T18:35:33.302Z"}
+[32minfo[39m: [32m[CacheMatchingPhase] Phase 2 complete[39m {"assetsMatched":1,"entityId":1,"entityType":"movie","timestamp":"2025-11-18T18:35:33.304Z"}
+[32minfo[39m: [32m[CacheMatchingPhase] Phase 2 complete[39m {"assetsMatched":1,"entityId":1,"entityType":"movie","timestamp":"2025-11-18T18:35:33.306Z"}
+[32minfo[39m: [32m[CacheMatchingPhase] Phase 2 complete[39m {"assetsMatched":1,"entityId":1,"entityType":"movie","timestamp":"2025-11-18T18:35:33.308Z"}
+  console.log
+    ✅ Normalized metadata tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1093:13)
+
+[32minfo[39m: [32m[CacheMatchingPhase] Phase 2 complete[39m {"assetsMatched":1,"entityId":1,"entityType":"movie","timestamp":"2025-11-18T18:35:33.310Z"}
+[33mwarn[39m: [33m[CacheMatchingPhase] Failed to backfill image metadata[39m {"cacheFileId":1,"error":"Corrupt image file","timestamp":"2025-11-18T18:35:33.312Z"}
+[32minfo[39m: [32m[CacheMatchingPhase] Phase 2 complete[39m {"assetsMatched":1,"entityId":1,"entityType":"movie","timestamp":"2025-11-18T18:35:33.313Z"}
+  console.log
+    ✅ Cache orphan cleanup triggers created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1146:13)
+
+[31merror[39m: [31m[CacheMatchingPhase] Phase 2 failed[39m {"error":"Database unavailable","timestamp":"2025-11-18T18:35:33.319Z"}
+  console.log
+    ✅ Job queue tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1246:13)
+
+PASS tests/services/enrichment/CacheMatchingPhase.test.ts
+  CacheMatchingPhase
+    Cache File Discovery
+      ✓ should query cache files for entity (11 ms)
+      ✓ should return 0 for entities with no cache files (1 ms)
+      ✓ should only process cache files with file_path (2 ms)
+    Perceptual Hash Requirements
+      ✓ should skip cache files without perceptual hash (2 ms)
+      ✓ should process cache files with perceptual hash (1 ms)
+    Metadata Backfilling
+      ✓ should backfill missing difference_hash (2 ms)
+      ✓ should backfill missing has_alpha (4 ms)
+      ✓ should skip backfilling if all metadata exists (1 ms)
+    Similarity Matching
+      ✓ should match cache file to provider asset with ≥85% similarity (2 ms)
+      ✓ should reject matches below 85% similarity threshold (2 ms)
+      ✓ should select best match when multiple candidates exist (1 ms)
+    Asset Type Matching
+      ✓ should only match cache file to same asset type (2 ms)
+      ✓ should match poster to poster (1 ms)
+    Database Updates
+      ✓ should update cache_image_files with provider name (2 ms)
+      ✓ should mark provider asset as downloaded (2 ms)
+    Error Handling
+      ✓ should handle image analysis errors gracefully (2 ms)
+      ✓ should handle database query errors (22 ms)
+
+  console.log
+    ✅ Activity log table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1314:13)
+
+  console.log
+    ✅ Provider cache movies table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1368:13)
+
+  console.log
+    ✅ Provider cache collections tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1397:13)
+
+  console.log
+    ✅ Provider cache images table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1434:13)
+
+  console.log
+    ✅ Provider cache videos table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1464:13)
+
+[32minfo[39m: [32mTVDB Provider initialized[39m {"providerId":"tvdb","timestamp":"2025-11-18T18:35:33.354Z","version":"1.0.0"}
+  console.log
+    ✅ Provider cache people/cast/crew tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1514:13)
+
+[32minfo[39m: [32mTVDB Provider initialized[39m {"providerId":"tvdb","timestamp":"2025-11-18T18:35:33.361Z","version":"1.0.0"}
+[31merror[39m: [31mRequest error[39m {"error":{"code":"RESOURCE_NOT_FOUND","context":{"entityId":"123","entityType":"movie"},"isOperational":true,"message":"movie not found: 123","name":"ResourceNotFoundError","retryable":false,"stack":"ResourceNotFoundError: movie not found: 123\n    at Object.<anonymous> (/home/justin/Code/Metarr/tests/middleware/errorHandler.test.ts:57:21)\n    at Promise.then.completed (/home/justin/Code/Metarr/node_modules/jest-circus/build/utils.js:298:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (/home/justin/Code/Metarr/node_modules/jest-circus/build/utils.js:231:10)\n    at _callCircusTest (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:316:40)\n    at processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at _runTest (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:252:3)\n    at _runTestsForDescribeBlock (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:126:9)\n    at _runTestsForDescribeBlock (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:121:9)\n    at _runTestsForDescribeBlock (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:121:9)\n    at run (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:71:3)\n    at runAndTransformResultsToJestFormat (/home/justin/Code/Metarr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapterInit.js:122:21)\n    at jestAdapter (/home/justin/Code/Metarr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapter.js:79:19)\n    at runTestInternal (/home/justin/Code/Metarr/node_modules/jest-runner/build/runTest.js:367:16)\n    at runTest (/home/justin/Code/Metarr/node_modules/jest-runner/build/runTest.js:444:34)\n    at Object.worker (/home/justin/Code/Metarr/node_modules/jest-runner/build/testWorker.js:106:12)","statusCode":404,"timestamp":"2025-11-18T18:35:33.345Z"},"request":{"ip":"127.0.0.1","method":"GET","url":"/api/movies/123","userAgent":"Mozilla/5.0"},"timestamp":"2025-11-18T18:35:33.361Z"}
+[32minfo[39m: [32mTVDB Provider initialized[39m {"providerId":"tvdb","timestamp":"2025-11-18T18:35:33.363Z","version":"1.0.0"}
+  console.log
+    ✅ Provider cache relational tables created (genres, companies, countries, keywords)
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1595:13)
+
+[32minfo[39m: [32mTVDB Provider initialized[39m {"providerId":"tvdb","timestamp":"2025-11-18T18:35:33.364Z","version":"1.0.0"}
+[32minfo[39m: [32mTVDB Provider initialized[39m {"providerId":"tvdb","timestamp":"2025-11-18T18:35:33.366Z","version":"1.0.0"}
+[31merror[39m: [31mRequest error[39m {"error":{"code":"VALIDATION_INPUT_INVALID","context":{},"isOperational":true,"message":"Invalid email format","name":"ValidationError","retryable":false,"stack":"ValidationError: Invalid email format\n    at Object.<anonymous> (/home/justin/Code/Metarr/tests/middleware/errorHandler.test.ts:70:21)\n    at Promise.then.completed (/home/justin/Code/Metarr/node_modules/jest-circus/build/utils.js:298:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (/home/justin/Code/Metarr/node_modules/jest-circus/build/utils.js:231:10)\n    at _callCircusTest (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:316:40)\n    at processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at _runTest (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:252:3)\n    at _runTestsForDescribeBlock (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:126:9)\n    at _runTestsForDescribeBlock (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:121:9)\n    at _runTestsForDescribeBlock (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:121:9)\n    at run (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:71:3)\n    at runAndTransformResultsToJestFormat (/home/justin/Code/Metarr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapterInit.js:122:21)\n    at jestAdapter (/home/justin/Code/Metarr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapter.js:79:19)\n    at runTestInternal (/home/justin/Code/Metarr/node_modules/jest-runner/build/runTest.js:367:16)\n    at runTest (/home/justin/Code/Metarr/node_modules/jest-runner/build/runTest.js:444:34)\n    at Object.worker (/home/justin/Code/Metarr/node_modules/jest-runner/build/testWorker.js:106:12)","statusCode":400,"timestamp":"2025-11-18T18:35:33.366Z"},"request":{"ip":"127.0.0.1","method":"GET","url":"/api/movies/123","userAgent":"Mozilla/5.0"},"timestamp":"2025-11-18T18:35:33.366Z"}
+[32minfo[39m: [32mTVDB Provider initialized[39m {"providerId":"tvdb","timestamp":"2025-11-18T18:35:33.367Z","version":"1.0.0"}
+  console.log
+    ✅ provider_assets table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1646:13)
+
+[32minfo[39m: [32mTVDB Provider initialized[39m {"providerId":"tvdb","timestamp":"2025-11-18T18:35:33.368Z","version":"1.0.0"}
+[31merror[39m: [31mRequest error[39m {"error":{"code":"DATABASE_QUERY_FAILED","context":{},"isOperational":true,"message":"Query timeout exceeded","name":"DatabaseError","retryable":true,"stack":"DatabaseError: Query timeout exceeded\n    at Object.<anonymous> (/home/justin/Code/Metarr/tests/middleware/errorHandler.test.ts:88:21)\n    at Promise.then.completed (/home/justin/Code/Metarr/node_modules/jest-circus/build/utils.js:298:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (/home/justin/Code/Metarr/node_modules/jest-circus/build/utils.js:231:10)\n    at _callCircusTest (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:316:40)\n    at processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at _runTest (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:252:3)\n    at _runTestsForDescribeBlock (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:126:9)\n    at _runTestsForDescribeBlock (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:121:9)\n    at _runTestsForDescribeBlock (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:121:9)\n    at run (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:71:3)\n    at runAndTransformResultsToJestFormat (/home/justin/Code/Metarr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapterInit.js:122:21)\n    at jestAdapter (/home/justin/Code/Metarr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapter.js:79:19)\n    at runTestInternal (/home/justin/Code/Metarr/node_modules/jest-runner/build/runTest.js:367:16)\n    at runTest (/home/justin/Code/Metarr/node_modules/jest-runner/build/runTest.js:444:34)\n    at Object.worker (/home/justin/Code/Metarr/node_modules/jest-runner/build/testWorker.js:106:12)","statusCode":500,"timestamp":"2025-11-18T18:35:33.368Z"},"request":{"ip":"127.0.0.1","method":"GET","url":"/api/movies/123","userAgent":"Mozilla/5.0"},"timestamp":"2025-11-18T18:35:33.369Z"}
+  console.log
+    ✅ Webhook configuration table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1695:13)
+
+[32minfo[39m: [32mTVDB Provider initialized[39m {"providerId":"tvdb","timestamp":"2025-11-18T18:35:33.372Z","version":"1.0.0"}
+[32minfo[39m: [32mTVDB Provider initialized[39m {"providerId":"tvdb","timestamp":"2025-11-18T18:35:33.374Z","version":"1.0.0"}
+  console.log
+    ✅ Configuration tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1777:13)
+
+[31merror[39m: [31mRequest error[39m {"error":{"code":"AUTH_AUTHENTICATION_FAILED","context":{},"isOperational":true,"message":"Invalid API key","name":"AuthenticationError","retryable":false,"stack":"AuthenticationError: Invalid API key\n    at Object.<anonymous> (/home/justin/Code/Metarr/tests/middleware/errorHandler.test.ts:106:21)\n    at Promise.then.completed (/home/justin/Code/Metarr/node_modules/jest-circus/build/utils.js:298:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (/home/justin/Code/Metarr/node_modules/jest-circus/build/utils.js:231:10)\n    at _callCircusTest (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:316:40)\n    at processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at _runTest (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:252:3)\n    at _runTestsForDescribeBlock (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:126:9)\n    at _runTestsForDescribeBlock (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:121:9)\n    at _runTestsForDescribeBlock (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:121:9)\n    at run (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:71:3)\n    at runAndTransformResultsToJestFormat (/home/justin/Code/Metarr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapterInit.js:122:21)\n    at jestAdapter (/home/justin/Code/Metarr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapter.js:79:19)\n    at runTestInternal (/home/justin/Code/Metarr/node_modules/jest-runner/build/runTest.js:367:16)\n    at runTest (/home/justin/Code/Metarr/node_modules/jest-runner/build/runTest.js:444:34)\n    at Object.worker (/home/justin/Code/Metarr/node_modules/jest-runner/build/testWorker.js:106:12)","statusCode":401,"timestamp":"2025-11-18T18:35:33.371Z"},"request":{"ip":"127.0.0.1","method":"GET","url":"/api/movies/123","userAgent":"Mozilla/5.0"},"timestamp":"2025-11-18T18:35:33.376Z"}
+  console.log
+    🔗 Creating CASCADE delete triggers for file tables...
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1840:13)
+
+[31merror[39m: [31mRequest error (generic)[39m {"error":{"message":"Unexpected error","name":"Error","stack":"Error: Unexpected error\n    at Object.<anonymous> (/home/justin/Code/Metarr/tests/middleware/errorHandler.test.ts:123:21)\n    at Promise.then.completed (/home/justin/Code/Metarr/node_modules/jest-circus/build/utils.js:298:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (/home/justin/Code/Metarr/node_modules/jest-circus/build/utils.js:231:10)\n    at _callCircusTest (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:316:40)\n    at processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at _runTest (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:252:3)\n    at _runTestsForDescribeBlock (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:126:9)\n    at _runTestsForDescribeBlock (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:121:9)\n    at _runTestsForDescribeBlock (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:121:9)\n    at run (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:71:3)\n    at runAndTransformResultsToJestFormat (/home/justin/Code/Metarr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapterInit.js:122:21)\n    at jestAdapter (/home/justin/Code/Metarr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapter.js:79:19)\n    at runTestInternal (/home/justin/Code/Metarr/node_modules/jest-runner/build/runTest.js:367:16)\n    at runTest (/home/justin/Code/Metarr/node_modules/jest-runner/build/runTest.js:444:34)\n    at Object.worker (/home/justin/Code/Metarr/node_modules/jest-runner/build/testWorker.js:106:12)"},"request":{"ip":"127.0.0.1","method":"GET","url":"/api/movies/123","userAgent":"Mozilla/5.0"},"timestamp":"2025-11-18T18:35:33.379Z"}
+  console.log
+    ✅ CASCADE delete triggers created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1959:13)
+
+[31merror[39m: [31mRequest error (generic)[39m {"error":{"message":"Something went wrong","name":"Error","stack":"Error: Something went wrong\n    at Object.<anonymous> (/home/justin/Code/Metarr/tests/middleware/errorHandler.test.ts:142:21)\n    at Promise.then.completed (/home/justin/Code/Metarr/node_modules/jest-circus/build/utils.js:298:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (/home/justin/Code/Metarr/node_modules/jest-circus/build/utils.js:231:10)\n    at _callCircusTest (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:316:40)\n    at processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at _runTest (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:252:3)\n    at _runTestsForDescribeBlock (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:126:9)\n    at _runTestsForDescribeBlock (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:121:9)\n    at _runTestsForDescribeBlock (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:121:9)\n    at run (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:71:3)\n    at runAndTransformResultsToJestFormat (/home/justin/Code/Metarr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapterInit.js:122:21)\n    at jestAdapter (/home/justin/Code/Metarr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapter.js:79:19)\n    at runTestInternal (/home/justin/Code/Metarr/node_modules/jest-runner/build/runTest.js:367:16)\n    at runTest (/home/justin/Code/Metarr/node_modules/jest-runner/build/runTest.js:444:34)\n    at Object.worker (/home/justin/Code/Metarr/node_modules/jest-runner/build/testWorker.js:106:12)"},"request":{"ip":"127.0.0.1","method":"GET","url":"/api/movies/123","userAgent":"Mozilla/5.0"},"timestamp":"2025-11-18T18:35:33.381Z"}
+  console.log
+    ✅ Clean schema migration completed successfully!
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1960:13)
+
+[32minfo[39m: [32mReceived Lidarr webhook: Test[39m {"albums":0,"artist":"Test","timestamp":"2025-11-18T18:35:33.382Z"}
+[31merror[39m: [31mRequest error[39m {"error":{"code":"VALIDATION_INPUT_INVALID","context":{},"isOperational":true,"message":"Invalid input","name":"ValidationError","retryable":false,"stack":"Error: Invalid input\n  at file.ts:10:5","statusCode":400,"timestamp":"2025-11-18T18:35:33.382Z"},"request":{"ip":"127.0.0.1","method":"GET","url":"/api/movies/123","userAgent":"Mozilla/5.0"},"timestamp":"2025-11-18T18:35:33.382Z"}
+[32minfo[39m: [32mLidarr test webhook received - connection OK[39m {"timestamp":"2025-11-18T18:35:33.382Z"}
+[31merror[39m: [31mRequest error[39m {"error":{"code":"VALIDATION_INPUT_INVALID","context":{},"isOperational":true,"message":"Invalid input","name":"ValidationError","retryable":false,"stack":"Error: Invalid input\n  at file.ts:10:5","statusCode":400,"timestamp":"2025-11-18T18:35:33.383Z"},"request":{"ip":"127.0.0.1","method":"GET","url":"/api/movies/123","userAgent":"Mozilla/5.0"},"timestamp":"2025-11-18T18:35:33.383Z"}
+  console.log
+    🚀 Running clean schema migration...
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:35:13)
+
+  console.log
+    🧹 Cleaning up old tables if they exist...
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:41:13)
+
+[31merror[39m: [31mRequest error[39m {"error":{"code":"VALIDATION_INPUT_INVALID","context":{},"isOperational":true,"message":"Invalid input","name":"ValidationError","retryable":false,"stack":"Error: Invalid input\n  at file.ts:10:5","statusCode":400,"timestamp":"2025-11-18T18:35:33.385Z"},"request":{"ip":"127.0.0.1","method":"GET","url":"/api/movies/123","userAgent":"Mozilla/5.0"},"timestamp":"2025-11-18T18:35:33.385Z"}
+[32minfo[39m: [32mTVDB Provider initialized[39m {"providerId":"tvdb","timestamp":"2025-11-18T18:35:33.386Z","version":"1.0.0"}
+  console.log
+    ✅ Old tables cleaned up
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:52:13)
+
+[31merror[39m: [31mRequest error[39m {"error":{"code":"RESOURCE_NOT_FOUND","context":{"entityId":"123","entityType":"movie"},"isOperational":true,"message":"movie not found: 123","name":"ResourceNotFoundError","retryable":false,"stack":"ResourceNotFoundError: movie not found: 123\n    at Object.<anonymous> (/home/justin/Code/Metarr/tests/middleware/errorHandler.test.ts:212:21)\n    at Promise.then.completed (/home/justin/Code/Metarr/node_modules/jest-circus/build/utils.js:298:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (/home/justin/Code/Metarr/node_modules/jest-circus/build/utils.js:231:10)\n    at _callCircusTest (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:316:40)\n    at processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at _runTest (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:252:3)\n    at _runTestsForDescribeBlock (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:126:9)\n    at _runTestsForDescribeBlock (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:121:9)\n    at _runTestsForDescribeBlock (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:121:9)\n    at run (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:71:3)\n    at runAndTransformResultsToJestFormat (/home/justin/Code/Metarr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapterInit.js:122:21)\n    at jestAdapter (/home/justin/Code/Metarr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapter.js:79:19)\n    at runTestInternal (/home/justin/Code/Metarr/node_modules/jest-runner/build/runTest.js:367:16)\n    at runTest (/home/justin/Code/Metarr/node_modules/jest-runner/build/runTest.js:444:34)\n    at Object.worker (/home/justin/Code/Metarr/node_modules/jest-runner/build/testWorker.js:106:12)","statusCode":404,"timestamp":"2025-11-18T18:35:33.387Z"},"request":{"ip":"127.0.0.1","method":"GET","url":"/api/movies/123","userAgent":"Mozilla/5.0"},"timestamp":"2025-11-18T18:35:33.387Z"}
+[32minfo[39m: [32mTVDB Provider initialized[39m {"providerId":"tvdb","timestamp":"2025-11-18T18:35:33.388Z","version":"1.0.0"}
+[31merror[39m: [31mRequest error (generic)[39m {"error":{"message":"Unexpected error","name":"Error","stack":"Error: Unexpected error\n    at Object.<anonymous> (/home/justin/Code/Metarr/tests/middleware/errorHandler.test.ts:240:21)\n    at Promise.then.completed (/home/justin/Code/Metarr/node_modules/jest-circus/build/utils.js:298:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (/home/justin/Code/Metarr/node_modules/jest-circus/build/utils.js:231:10)\n    at _callCircusTest (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:316:40)\n    at processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at _runTest (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:252:3)\n    at _runTestsForDescribeBlock (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:126:9)\n    at _runTestsForDescribeBlock (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:121:9)\n    at _runTestsForDescribeBlock (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:121:9)\n    at run (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:71:3)\n    at runAndTransformResultsToJestFormat (/home/justin/Code/Metarr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapterInit.js:122:21)\n    at jestAdapter (/home/justin/Code/Metarr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapter.js:79:19)\n    at runTestInternal (/home/justin/Code/Metarr/node_modules/jest-runner/build/runTest.js:367:16)\n    at runTest (/home/justin/Code/Metarr/node_modules/jest-runner/build/runTest.js:444:34)\n    at Object.worker (/home/justin/Code/Metarr/node_modules/jest-runner/build/testWorker.js:106:12)"},"request":{"ip":"127.0.0.1","method":"GET","url":"/api/movies/123","userAgent":"Mozilla/5.0"},"timestamp":"2025-11-18T18:35:33.388Z"}
+[32minfo[39m: [32mTVDB Provider initialized[39m {"providerId":"tvdb","timestamp":"2025-11-18T18:35:33.390Z","version":"1.0.0"}
+[31merror[39m: [31mRequest error[39m {"error":{"code":"VALIDATION_INPUT_INVALID","context":{},"isOperational":true,"message":"Invalid field","name":"ValidationError","retryable":false,"stack":"ValidationError: Invalid field\n    at Object.<anonymous> (/home/justin/Code/Metarr/tests/middleware/errorHandler.test.ts:267:21)\n    at Promise.then.completed (/home/justin/Code/Metarr/node_modules/jest-circus/build/utils.js:298:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (/home/justin/Code/Metarr/node_modules/jest-circus/build/utils.js:231:10)\n    at _callCircusTest (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:316:40)\n    at processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at _runTest (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:252:3)\n    at _runTestsForDescribeBlock (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:126:9)\n    at _runTestsForDescribeBlock (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:121:9)\n    at _runTestsForDescribeBlock (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:121:9)\n    at run (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:71:3)\n    at runAndTransformResultsToJestFormat (/home/justin/Code/Metarr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapterInit.js:122:21)\n    at jestAdapter (/home/justin/Code/Metarr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapter.js:79:19)\n    at runTestInternal (/home/justin/Code/Metarr/node_modules/jest-runner/build/runTest.js:367:16)\n    at runTest (/home/justin/Code/Metarr/node_modules/jest-runner/build/runTest.js:444:34)\n    at Object.worker (/home/justin/Code/Metarr/node_modules/jest-runner/build/testWorker.js:106:12)","statusCode":400,"timestamp":"2025-11-18T18:35:33.390Z"},"request":{"ip":"127.0.0.1","method":"GET","url":"/api/movies/123","userAgent":"Mozilla/5.0"},"timestamp":"2025-11-18T18:35:33.390Z"}
+[31merror[39m: [31mRequest error[39m {"error":{"code":"AUTH_AUTHENTICATION_FAILED","context":{},"isOperational":true,"message":"Invalid credentials","name":"AuthenticationError","retryable":false,"stack":"AuthenticationError: Invalid credentials\n    at Object.<anonymous> (/home/justin/Code/Metarr/tests/middleware/errorHandler.test.ts:280:21)\n    at Promise.then.completed (/home/justin/Code/Metarr/node_modules/jest-circus/build/utils.js:298:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (/home/justin/Code/Metarr/node_modules/jest-circus/build/utils.js:231:10)\n    at _callCircusTest (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:316:40)\n    at processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at _runTest (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:252:3)\n    at _runTestsForDescribeBlock (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:126:9)\n    at _runTestsForDescribeBlock (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:121:9)\n    at _runTestsForDescribeBlock (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:121:9)\n    at run (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:71:3)\n    at runAndTransformResultsToJestFormat (/home/justin/Code/Metarr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapterInit.js:122:21)\n    at jestAdapter (/home/justin/Code/Metarr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapter.js:79:19)\n    at runTestInternal (/home/justin/Code/Metarr/node_modules/jest-runner/build/runTest.js:367:16)\n    at runTest (/home/justin/Code/Metarr/node_modules/jest-runner/build/runTest.js:444:34)\n    at Object.worker (/home/justin/Code/Metarr/node_modules/jest-runner/build/testWorker.js:106:12)","statusCode":401,"timestamp":"2025-11-18T18:35:33.392Z"},"request":{"ip":"127.0.0.1","method":"GET","url":"/api/movies/123","userAgent":"Mozilla/5.0"},"timestamp":"2025-11-18T18:35:33.393Z"}
+PASS tests/providers/TVDBProvider.test.ts
+  TVDBProvider
+    Capabilities
+      ✓ should have correct provider ID (7 ms)
+      ✓ should support series, season, and episode entity types (3 ms)
+      ✓ should support both metadata and images (2 ms)
+      ✓ should have proper rate limits (1 ms)
+      ✓ should support search (1 ms)
+      ✓ should support asset provision (1 ms)
+    Search
+      ✓ should search for series (3 ms)
+      ✓ should return empty array for non-series entity types (2 ms)
+    Metadata
+      ✓ should retrieve series metadata (12 ms)
+    Assets
+      ✓ should retrieve series assets (3 ms)
+      ✓ should return empty array for unsupported entity types (1 ms)
+    Connection Test
+      ✓ should return success when circuit breaker is closed (1 ms)
+
+[31merror[39m: [31mRequest error[39m {"error":{"code":"RESOURCE_NOT_FOUND","context":{"entityId":"123","entityType":"movie"},"isOperational":true,"message":"movie not found: 123","name":"ResourceNotFoundError","retryable":false,"stack":"ResourceNotFoundError: movie not found: 123\n    at Object.<anonymous> (/home/justin/Code/Metarr/tests/middleware/errorHandler.test.ts:293:21)\n    at Promise.then.completed (/home/justin/Code/Metarr/node_modules/jest-circus/build/utils.js:298:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (/home/justin/Code/Metarr/node_modules/jest-circus/build/utils.js:231:10)\n    at _callCircusTest (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:316:40)\n    at processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at _runTest (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:252:3)\n    at _runTestsForDescribeBlock (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:126:9)\n    at _runTestsForDescribeBlock (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:121:9)\n    at _runTestsForDescribeBlock (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:121:9)\n    at run (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:71:3)\n    at runAndTransformResultsToJestFormat (/home/justin/Code/Metarr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapterInit.js:122:21)\n    at jestAdapter (/home/justin/Code/Metarr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapter.js:79:19)\n    at runTestInternal (/home/justin/Code/Metarr/node_modules/jest-runner/build/runTest.js:367:16)\n    at runTest (/home/justin/Code/Metarr/node_modules/jest-runner/build/runTest.js:444:34)\n    at Object.worker (/home/justin/Code/Metarr/node_modules/jest-runner/build/testWorker.js:106:12)","statusCode":404,"timestamp":"2025-11-18T18:35:33.394Z"},"request":{"ip":"127.0.0.1","method":"GET","url":"/api/movies/123","userAgent":"Mozilla/5.0"},"timestamp":"2025-11-18T18:35:33.395Z"}
+[31merror[39m: [31mRequest error[39m {"error":{"code":"PROVIDER_RATE_LIMIT","context":{"metadata":{"retryAfter":60},"service":"TMDB"},"isOperational":true,"message":"Rate limit exceeded for provider: TMDB","name":"RateLimitError","retryable":true,"stack":"RateLimitError: Rate limit exceeded for provider: TMDB\n    at Object.<anonymous> (/home/justin/Code/Metarr/tests/middleware/errorHandler.test.ts:306:21)\n    at Promise.then.completed (/home/justin/Code/Metarr/node_modules/jest-circus/build/utils.js:298:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (/home/justin/Code/Metarr/node_modules/jest-circus/build/utils.js:231:10)\n    at _callCircusTest (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:316:40)\n    at processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at _runTest (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:252:3)\n    at _runTestsForDescribeBlock (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:126:9)\n    at _runTestsForDescribeBlock (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:121:9)\n    at _runTestsForDescribeBlock (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:121:9)\n    at run (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:71:3)\n    at runAndTransformResultsToJestFormat (/home/justin/Code/Metarr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapterInit.js:122:21)\n    at jestAdapter (/home/justin/Code/Metarr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapter.js:79:19)\n    at runTestInternal (/home/justin/Code/Metarr/node_modules/jest-runner/build/runTest.js:367:16)\n    at runTest (/home/justin/Code/Metarr/node_modules/jest-runner/build/runTest.js:444:34)\n    at Object.worker (/home/justin/Code/Metarr/node_modules/jest-runner/build/testWorker.js:106:12)","statusCode":429,"timestamp":"2025-11-18T18:35:33.396Z"},"request":{"ip":"127.0.0.1","method":"GET","url":"/api/movies/123","userAgent":"Mozilla/5.0"},"timestamp":"2025-11-18T18:35:33.396Z"}
+[31merror[39m: [31mRequest error (generic)[39m {"error":{"message":"Something went wrong","name":"Error","stack":"Error: Something went wrong\n    at Object.<anonymous> (/home/justin/Code/Metarr/tests/middleware/errorHandler.test.ts:319:21)\n    at Promise.then.completed (/home/justin/Code/Metarr/node_modules/jest-circus/build/utils.js:298:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (/home/justin/Code/Metarr/node_modules/jest-circus/build/utils.js:231:10)\n    at _callCircusTest (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:316:40)\n    at processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at _runTest (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:252:3)\n    at _runTestsForDescribeBlock (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:126:9)\n    at _runTestsForDescribeBlock (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:121:9)\n    at _runTestsForDescribeBlock (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:121:9)\n    at run (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:71:3)\n    at runAndTransformResultsToJestFormat (/home/justin/Code/Metarr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapterInit.js:122:21)\n    at jestAdapter (/home/justin/Code/Metarr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapter.js:79:19)\n    at runTestInternal (/home/justin/Code/Metarr/node_modules/jest-runner/build/runTest.js:367:16)\n    at runTest (/home/justin/Code/Metarr/node_modules/jest-runner/build/runTest.js:444:34)\n    at Object.worker (/home/justin/Code/Metarr/node_modules/jest-runner/build/testWorker.js:106:12)"},"request":{"ip":"127.0.0.1","method":"GET","url":"/api/movies/123","userAgent":"Mozilla/5.0"},"timestamp":"2025-11-18T18:35:33.398Z"}
+[31merror[39m: [31mRequest error[39m {"error":{"code":"VALIDATION_INPUT_INVALID","context":{},"isOperational":true,"message":"Invalid input","name":"ValidationError","retryable":false,"stack":"ValidationError: Invalid input\n    at Object.<anonymous> (/home/justin/Code/Metarr/tests/middleware/errorHandler.test.ts:334:21)\n    at Promise.then.completed (/home/justin/Code/Metarr/node_modules/jest-circus/build/utils.js:298:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (/home/justin/Code/Metarr/node_modules/jest-circus/build/utils.js:231:10)\n    at _callCircusTest (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:316:40)\n    at processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at _runTest (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:252:3)\n    at _runTestsForDescribeBlock (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:126:9)\n    at _runTestsForDescribeBlock (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:121:9)\n    at _runTestsForDescribeBlock (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:121:9)\n    at run (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:71:3)\n    at runAndTransformResultsToJestFormat (/home/justin/Code/Metarr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapterInit.js:122:21)\n    at jestAdapter (/home/justin/Code/Metarr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapter.js:79:19)\n    at runTestInternal (/home/justin/Code/Metarr/node_modules/jest-runner/build/runTest.js:367:16)\n    at runTest (/home/justin/Code/Metarr/node_modules/jest-runner/build/runTest.js:444:34)\n    at Object.worker (/home/justin/Code/Metarr/node_modules/jest-runner/build/testWorker.js:106:12)","statusCode":400,"timestamp":"2025-11-18T18:35:33.400Z"},"request":{"ip":"127.0.0.1","method":"GET","url":"/api/movies/123","userAgent":"Mozilla/5.0"},"timestamp":"2025-11-18T18:35:33.400Z"}
+[31merror[39m: [31mRequest error[39m {"error":{"code":"VALIDATION_INPUT_INVALID","context":{},"isOperational":true,"message":"Invalid input","name":"ValidationError","retryable":false,"stack":"ValidationError: Invalid input\n    at Object.<anonymous> (/home/justin/Code/Metarr/tests/middleware/errorHandler.test.ts:355:21)\n    at Promise.then.completed (/home/justin/Code/Metarr/node_modules/jest-circus/build/utils.js:298:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (/home/justin/Code/Metarr/node_modules/jest-circus/build/utils.js:231:10)\n    at _callCircusTest (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:316:40)\n    at processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at _runTest (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:252:3)\n    at _runTestsForDescribeBlock (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:126:9)\n    at _runTestsForDescribeBlock (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:121:9)\n    at _runTestsForDescribeBlock (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:121:9)\n    at run (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:71:3)\n    at runAndTransformResultsToJestFormat (/home/justin/Code/Metarr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapterInit.js:122:21)\n    at jestAdapter (/home/justin/Code/Metarr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapter.js:79:19)\n    at runTestInternal (/home/justin/Code/Metarr/node_modules/jest-runner/build/runTest.js:367:16)\n    at runTest (/home/justin/Code/Metarr/node_modules/jest-runner/build/runTest.js:444:34)\n    at Object.worker (/home/justin/Code/Metarr/node_modules/jest-runner/build/testWorker.js:106:12)","statusCode":400,"timestamp":"2025-11-18T18:35:33.401Z"},"request":{"ip":"127.0.0.1","method":"GET","url":"/api/movies/123","userAgent":"Mozilla/5.0"},"timestamp":"2025-11-18T18:35:33.401Z"}
+[31merror[39m: [31mRequest error[39m {"error":{"code":"VALIDATION_INPUT_INVALID","context":{},"isOperational":true,"message":"Invalid input","name":"ValidationError","retryable":false,"stack":"ValidationError: Invalid input\n    at Object.<anonymous> (/home/justin/Code/Metarr/tests/middleware/errorHandler.test.ts:375:21)\n    at Promise.then.completed (/home/justin/Code/Metarr/node_modules/jest-circus/build/utils.js:298:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (/home/justin/Code/Metarr/node_modules/jest-circus/build/utils.js:231:10)\n    at _callCircusTest (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:316:40)\n    at processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at _runTest (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:252:3)\n    at _runTestsForDescribeBlock (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:126:9)\n    at _runTestsForDescribeBlock (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:121:9)\n    at _runTestsForDescribeBlock (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:121:9)\n    at run (/home/justin/Code/Metarr/node_modules/jest-circus/build/run.js:71:3)\n    at runAndTransformResultsToJestFormat (/home/justin/Code/Metarr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapterInit.js:122:21)\n    at jestAdapter (/home/justin/Code/Metarr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapter.js:79:19)\n    at runTestInternal (/home/justin/Code/Metarr/node_modules/jest-runner/build/runTest.js:367:16)\n    at runTest (/home/justin/Code/Metarr/node_modules/jest-runner/build/runTest.js:444:34)\n    at Object.worker (/home/justin/Code/Metarr/node_modules/jest-runner/build/testWorker.js:106:12)","statusCode":400,"timestamp":"2025-11-18T18:35:33.403Z"},"request":{"ip":"127.0.0.1","method":"GET","url":"/api/movies/123","userAgent":"Mozilla/5.0"},"timestamp":"2025-11-18T18:35:33.403Z"}
+PASS tests/middleware/errorHandler.test.ts
+  errorHandler
+    ApplicationError Handling
+      ✓ should return correct status code for ApplicationError (25 ms)
+      ✓ should return error message for operational errors (2 ms)
+      ✓ should return operational database errors with message (3 ms)
+      ✓ should include error code in response (8 ms)
+    Generic Error Handling
+      ✓ should handle generic Error objects (2 ms)
+      ✓ should not include error code for generic errors (1 ms)
+    Development vs Production Mode
+      ✓ should include stack trace in development mode (2 ms)
+      ✓ should exclude stack trace in production mode (1 ms)
+      ✓ should exclude stack trace when NODE_ENV is undefined (2 ms)
+    Logging
+      ✓ should log ApplicationError with full context (2 ms)
+      ✓ should log generic errors with basic context (1 ms)
+    HTTP Status Codes
+      ✓ should return 400 for ValidationError (2 ms)
+      ✓ should return 401 for AuthenticationError (3 ms)
+      ✓ should return 404 for ResourceNotFoundError (1 ms)
+      ✓ should return 429 for RateLimitError (1 ms)
+      ✓ should return 500 for generic errors (2 ms)
+    Request Context
+      ✓ should capture request method and URL (2 ms)
+      ✓ should capture client IP address (1 ms)
+      ✓ should capture User-Agent header (2 ms)
+  notFoundHandler
+    ✓ should return 404 status
+    ✓ should include route information in response (1 ms)
+    ✓ should format GET requests correctly
+    ✓ should format DELETE requests correctly
+
+PASS tests/unit/providerMetadata.test.ts
+  Provider Metadata
+    PROVIDER_METADATA constant
+      ✓ should contain TMDB metadata (2 ms)
+      ✓ should contain TVDB metadata (1 ms)
+      ✓ should contain FanArt.tv metadata
+      ✓ should have at least 3 providers
+    TMDB metadata
+      ✓ should have embedded default API key (no user key required)
+      ✓ should have correct base URL (1 ms)
+      ✓ should use bearer auth
+      ✓ should have rate limit of 40 requests per 10 seconds
+      ✓ should support movie posters
+      ✓ should support movie fanart
+      ✓ should support movie trailers (1 ms)
+      ✓ should not support movie banners
+      ✓ should not support movie clearlogo
+      ✓ should have all required metadata fields (1 ms)
+    TVDB metadata
+      ✓ should have embedded default API key (no user key required)
+      ✓ should have correct base URL
+      ✓ should use JWT auth (1 ms)
+      ✓ should have rate limit of 30 requests per 10 seconds
+      ✓ should support series posters
+      ✓ should support banners
+      ✓ should support season posters (1 ms)
+    FanArt.tv metadata
+      ✓ should not require API key (but is optional)
+      ✓ should have API key benefit explanation (1 ms)
+      ✓ should have correct base URL
+      ✓ should have rate limit of 10 requests per second
+      ✓ should support movie clearlogo (2 ms)
+      ✓ should support movie clearart (1 ms)
+      ✓ should support TV character art
+    getProviderMetadata
+      ✓ should return metadata for TMDB
+      ✓ should return metadata for TVDB (1 ms)
+      ✓ should return metadata for FanArt.tv (11 ms)
+      ✓ should return undefined for unknown provider
+      ✓ should return undefined for empty string
+      ✓ should be case-sensitive
+    getAllProviderMetadata
+      ✓ should return array of all provider metadata (1 ms)
+      ✓ should include TMDB in results
+      ✓ should include TVDB in results
+      ✓ should include FanArt.tv in results (1 ms)
+      ✓ should return complete metadata objects (3 ms)
+      ✓ should return new array instance each call (7 ms)
+    isProviderSupported
+      ✓ should return true for TMDB (1 ms)
+      ✓ should return true for TVDB
+      ✓ should return true for FanArt.tv
+      ✓ should return false for unknown provider
+      ✓ should return false for empty string (1 ms)
+      ✓ should be case-sensitive
+      ✓ should return false for partial matches
+    Rate limits
+      ✓ should have unique rate limits per provider (1 ms)
+      ✓ should have positive rate limit values (1 ms)
+      ✓ should have reasonable rate limit values (2 ms)
+    Asset types
+      ✓ should have at least one supported asset type per provider (except metadata-only providers) (1 ms)
+      ✓ should have display names for all asset types (12 ms)
+      ✓ should have unique asset type names within a provider (1 ms)
+      ✓ should use lowercase asset type identifiers (3 ms)
+    Provider metadata consistency
+      ✓ should have matching name and metadata key (1 ms)
+      ✓ should use lowercase provider names (1 ms)
+      ✓ should have non-empty display names (1 ms)
+      ✓ should have valid base URLs (1 ms)
+
+  console.log
+    ✅ cache_video_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:206:13)
+
+  console.log
+    ✅ cache_video_files and library_video_files tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:222:13)
+
+  console.log
+    ✅ cache_image_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:269:13)
+
+  console.log
+    ✅ library_image_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:285:13)
+
+  console.log
+    ✅ cache_audio_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:319:13)
+
+  console.log
+    ✅ library_audio_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:335:13)
+
+  console.log
+    ✅ cache_text_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:372:13)
+
+  console.log
+    ✅ library_text_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:388:13)
+
+  console.log
+    ✅ unknown_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:411:13)
+
+  console.log
+    ✅ Unified file system tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:413:13)
+
+  console.log
+    ✅ Movie tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:505:13)
+
+  console.log
+    ✅ TV show tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:644:13)
+
+  console.log
+    ✅ Music tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:747:13)
+
+  console.log
+    ✅ Stream detail tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:813:13)
+
+  console.log
+    ✅ Normalized metadata tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1093:13)
+
+  console.log
+    ✅ Cache orphan cleanup triggers created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1146:13)
+
+  console.log
+    ✅ Job queue tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1246:13)
+
+[32minfo[39m: [32m[AssetScoringPhase] Final asset score calculated[39m {"assetType":"poster","finalScore":78,"provider":"tmdb","resolution":"2000x3000","timestamp":"2025-11-18T18:35:33.473Z"}
+[32minfo[39m: [32m[AssetScoringPhase] Final asset score calculated[39m {"assetType":"poster","finalScore":93,"provider":"tmdb","resolution":"3000x4500","timestamp":"2025-11-18T18:35:33.477Z"}
+[32minfo[39m: [32m[AssetScoringPhase] Final asset score calculated[39m {"assetType":"poster","finalScore":78,"provider":"tmdb","resolution":"2000x3000","timestamp":"2025-11-18T18:35:33.478Z"}
+[32minfo[39m: [32m[AssetScoringPhase] Final asset score calculated[39m {"assetType":"poster","finalScore":50,"provider":"tmdb","resolution":"500x750","timestamp":"2025-11-18T18:35:33.480Z"}
+[32minfo[39m: [32m[AssetScoringPhase] Final asset score calculated[39m {"assetType":"fanart","finalScore":78,"provider":"tmdb","resolution":"1920x1080","timestamp":"2025-11-18T18:35:33.480Z"}
+[32minfo[39m: [32m[AssetScoringPhase] Final asset score calculated[39m {"assetType":"poster","finalScore":56,"provider":"tmdb","resolution":"1000x1500","timestamp":"2025-11-18T18:35:33.481Z"}
+[32minfo[39m: [32m[AssetScoringPhase] Final asset score calculated[39m {"assetType":"poster","finalScore":33,"provider":"tmdb","resolution":"1000x1000","timestamp":"2025-11-18T18:35:33.482Z"}
+[32minfo[39m: [32m[AssetScoringPhase] Final asset score calculated[39m {"assetType":"poster","finalScore":56,"provider":"tmdb","resolution":"1000x1500","timestamp":"2025-11-18T18:35:33.483Z"}
+  console.log
+    ✅ Activity log table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1314:13)
+
+[32minfo[39m: [32m[AssetScoringPhase] Final asset score calculated[39m {"assetType":"fanart","finalScore":78,"provider":"tmdb","resolution":"1920x1080","timestamp":"2025-11-18T18:35:33.484Z"}
+[32minfo[39m: [32m[AssetScoringPhase] Final asset score calculated[39m {"assetType":"poster","finalScore":58,"provider":"tmdb","resolution":"1000x1500","timestamp":"2025-11-18T18:35:33.485Z"}
+[32minfo[39m: [32m[AssetScoringPhase] Final asset score calculated[39m {"assetType":"poster","finalScore":53,"provider":"tmdb","resolution":"1000x1500","timestamp":"2025-11-18T18:35:33.486Z"}
+  console.log
+    ✅ Provider cache movies table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1368:13)
+
+[32minfo[39m: [32m[AssetScoringPhase] Final asset score calculated[39m {"assetType":"clearlogo","finalScore":53,"provider":"tmdb","resolution":"800x200","timestamp":"2025-11-18T18:35:33.487Z"}
+[32minfo[39m: [32m[AssetScoringPhase] Final asset score calculated[39m {"assetType":"poster","finalScore":43,"provider":"tmdb","resolution":"1000x1500","timestamp":"2025-11-18T18:35:33.487Z"}
+[32minfo[39m: [32m[AssetScoringPhase] Final asset score calculated[39m {"assetType":"poster","finalScore":58,"provider":"tmdb","resolution":"1000x1500","timestamp":"2025-11-18T18:35:33.487Z"}
+  console.log
+    ✅ Provider cache collections tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1397:13)
+
+[32minfo[39m: [32m[AssetScoringPhase] Final asset score calculated[39m {"assetType":"poster","finalScore":75,"provider":"tmdb","resolution":"1000x1500","timestamp":"2025-11-18T18:35:33.488Z"}
+[32minfo[39m: [32m[AssetScoringPhase] Final asset score calculated[39m {"assetType":"poster","finalScore":57,"provider":"tmdb","resolution":"1000x1500","timestamp":"2025-11-18T18:35:33.489Z"}
+[32minfo[39m: [32m[AssetScoringPhase] Final asset score calculated[39m {"assetType":"poster","finalScore":75,"provider":"tmdb","resolution":"1000x1500","timestamp":"2025-11-18T18:35:33.489Z"}
+  console.log
+    ✅ Provider cache images table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1434:13)
+
+[32minfo[39m: [32m[AssetScoringPhase] Final asset score calculated[39m {"assetType":"poster","finalScore":72,"provider":"tmdb","resolution":"1000x1500","timestamp":"2025-11-18T18:35:33.489Z"}
+[32minfo[39m: [32m[AssetScoringPhase] Final asset score calculated[39m {"assetType":"poster","finalScore":71,"provider":"fanart.tv","resolution":"1000x1500","timestamp":"2025-11-18T18:35:33.490Z"}
+[32minfo[39m: [32m[AssetScoringPhase] Final asset score calculated[39m {"assetType":"poster","finalScore":56,"provider":"tmdb","resolution":"1000x1500","timestamp":"2025-11-18T18:35:33.490Z"}
+  console.log
+    ✅ Provider cache videos table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1464:13)
+
+[32minfo[39m: [32m[AssetScoringPhase] Final asset score calculated[39m {"assetType":"poster","finalScore":55,"provider":"fanart.tv","resolution":"1000x1500","timestamp":"2025-11-18T18:35:33.492Z"}
+[32minfo[39m: [32m[AssetScoringPhase] Final asset score calculated[39m {"assetType":"poster","finalScore":56,"provider":"tmdb","resolution":"1000x1500","timestamp":"2025-11-18T18:35:33.492Z"}
+[32minfo[39m: [32m[AssetScoringPhase] Final asset score calculated[39m {"assetType":"poster","finalScore":54,"provider":"tvdb","resolution":"1000x1500","timestamp":"2025-11-18T18:35:33.494Z"}
+[32minfo[39m: [32m[AssetScoringPhase] Final asset score calculated[39m {"assetType":"poster","finalScore":55,"provider":"fanart.tv","resolution":"1000x1500","timestamp":"2025-11-18T18:35:33.494Z"}
+[32minfo[39m: [32m[AssetScoringPhase] Final asset score calculated[39m {"assetType":"poster","finalScore":50,"provider":"tmdb","resolution":"500x750","timestamp":"2025-11-18T18:35:33.495Z"}
+[32minfo[39m: [32m[AssetScoringPhase] Final asset score calculated[39m {"assetType":"poster","finalScore":96,"provider":"tmdb","resolution":"2000x3000","timestamp":"2025-11-18T18:35:33.495Z"}
+[32minfo[39m: [32m[AssetScoringPhase] Final asset score calculated[39m {"assetType":"poster","finalScore":55,"provider":"fanart.tv","resolution":"1000x1500","timestamp":"2025-11-18T18:35:33.495Z"}
+[32minfo[39m: [32m[AssetScoringPhase] Scored and sorted assets[39m {"avgScore":"67.0","bottomScore":50,"timestamp":"2025-11-18T18:35:33.496Z","topScore":96,"totalAssets":3}
+  console.log
+    ✅ Provider cache people/cast/crew tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1514:13)
+
+[32minfo[39m: [32m[AssetScoringPhase] Scored and sorted assets[39m {"avgScore":"NaN","timestamp":"2025-11-18T18:35:33.496Z","totalAssets":0}
+[32minfo[39m: [32m[AssetScoringPhase] Final asset score calculated[39m {"assetType":"poster","finalScore":56,"provider":"tmdb","resolution":"1000x1500","timestamp":"2025-11-18T18:35:33.497Z"}
+[32minfo[39m: [32m[AssetScoringPhase] Scored and sorted assets[39m {"avgScore":"56.0","bottomScore":56,"timestamp":"2025-11-18T18:35:33.498Z","topScore":56,"totalAssets":1}
+  console.log
+    ✅ Provider cache relational tables created (genres, companies, countries, keywords)
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1595:13)
+
+PASS tests/services/enrichment/AssetScoringPhase.test.ts
+  AssetScoringPhase
+    Resolution Scoring (0-30 points)
+      ✓ should award full points for ideal poster resolution (6 ms)
+      ✓ should award bonus for higher than ideal resolution (2 ms)
+      ✓ should penalize lower resolution (1 ms)
+      ✓ should handle fanart resolution differently than posters (1 ms)
+    Aspect Ratio Scoring (0-20 points)
+      ✓ should award points for correct poster aspect ratio (2:3) (1 ms)
+      ✓ should penalize incorrect aspect ratio (1 ms)
+      ✓ should handle widescreen fanart ratio (16:9) (2 ms)
+    Language Scoring (0-20 points)
+      ✓ should award full points for preferred language match (1 ms)
+      ✓ should award high points for English when not preferred
+      ✓ should award high points for language-neutral assets (1 ms)
+      ✓ should penalize non-preferred non-English languages (1 ms)
+    Community Votes Scoring (0-20 points)
+      ✓ should award full points for high rating with many votes
+      ✓ should reduce score for few votes (low confidence) (1 ms)
+      ✓ should handle alternate vote field names (1 ms)
+    Provider Priority Scoring (0-10 points)
+      ✓ should rank TMDB highest (1 ms)
+      ✓ should rank Fanart.tv second (2 ms)
+      ✓ should rank TVDB third (1 ms)
+    scoreAssets() batch scoring
+      ✓ should score and sort multiple assets by quality (1 ms)
+      ✓ should handle empty array (1 ms)
+      ✓ should preserve original asset properties (1 ms)
+
+  console.log
+    ✅ provider_assets table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1646:13)
+
+  console.log
+    ✅ Webhook configuration table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1695:13)
+
+  console.log
+    ✅ Configuration tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1777:13)
+
+  console.log
+    🔗 Creating CASCADE delete triggers for file tables...
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1840:13)
+
+  console.log
+    ✅ CASCADE delete triggers created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1959:13)
+
+  console.log
+    ✅ Clean schema migration completed successfully!
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1960:13)
+
+[32minfo[39m: [32mReceived Lidarr webhook: Grab[39m {"albums":0,"artist":"Test Artist","timestamp":"2025-11-18T18:35:33.511Z"}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":1,"manual":false,"operation":"addJob","priority":1,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:33.512Z","type":"webhook-received"}
+[33mwarn[39m: [33mWebSocket broadcaster not initialized[39m {"timestamp":"2025-11-18T18:35:33.512Z"}
+[32minfo[39m: [32m[JobQueueService] Job added to queue[39m {"jobId":1,"operation":"addJob","priority":1,"service":"JobQueueService","timestamp":"2025-11-18T18:35:33.512Z","type":"webhook-received"}
+[32minfo[39m: [32mCreated webhook job 1 for artist: Test Artist[39m {"timestamp":"2025-11-18T18:35:33.512Z"}
+  console.log
+    🚀 Running clean schema migration...
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:35:13)
+
+  console.log
+    🧹 Cleaning up old tables if they exist...
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:41:13)
+
+  console.log
+    ✅ Old tables cleaned up
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:52:13)
+
+  console.log
+    ✅ cache_video_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:206:13)
+
+  console.log
+    ✅ cache_video_files and library_video_files tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:222:13)
+
+  console.log
+    ✅ cache_image_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:269:13)
+
+  console.log
+    ✅ library_image_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:285:13)
+
+  console.log
+    ✅ cache_audio_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:319:13)
+
+  console.log
+    ✅ library_audio_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:335:13)
+
+  console.log
+    ✅ cache_text_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:372:13)
+
+  console.log
+    ✅ library_text_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:388:13)
+
+  console.log
+    ✅ unknown_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:411:13)
+
+  console.log
+    ✅ Unified file system tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:413:13)
+
+  console.log
+    ✅ Movie tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:505:13)
+
+  console.log
+    ✅ TV show tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:644:13)
+
+  console.log
+    ✅ Music tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:747:13)
+
+  console.log
+    ✅ Stream detail tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:813:13)
+
+  console.log
+    ✅ Normalized metadata tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1093:13)
+
+  console.log
+    ✅ Cache orphan cleanup triggers created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1146:13)
+
+  console.log
+    ✅ Job queue tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1246:13)
+
+  console.log
+    ✅ Activity log table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1314:13)
+
+  console.log
+    ✅ Provider cache movies table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1368:13)
+
+  console.log
+    ✅ Provider cache collections tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1397:13)
+
+  console.log
+    ✅ Provider cache images table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1434:13)
+
+  console.log
+    ✅ Provider cache videos table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1464:13)
+
+  console.log
+    ✅ Provider cache people/cast/crew tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1514:13)
+
+PASS tests/services/enrichment/deduplication.test.ts
+  Phase 5 Deduplication Algorithm
+    Hamming Similarity Calculation
+      ✓ should calculate identical hashes as 1.0 similarity (2 ms)
+      ✓ should calculate completely different hashes as low similarity (1 ms)
+      ✓ should calculate 1-bit difference correctly
+      ✓ should calculate ~10% difference (90% similar)
+    Deduplication Correctness
+      ✓ should remove exact duplicates (2 ms)
+      ✓ should remove similar hashes above threshold (2 ms)
+      ✓ should keep dissimilar hashes below threshold
+      ✓ should handle assets without perceptual hash
+      ✓ should keep highest-scored asset when duplicates exist
+    Algorithm Equivalence
+      ✓ should produce identical results to naive algorithm (1 ms)
+      ✓ should handle large dataset correctly (50 assets) (20 ms)
+    Performance Characteristics
+      ✓ should handle 200 assets efficiently (13 ms)
+    Edge Cases
+      ✓ should handle empty array
+      ✓ should handle single asset
+      ✓ should handle all null hashes
+      ✓ should handle bucket key collisions correctly
+
+  console.log
+    ✅ Provider cache relational tables created (genres, companies, countries, keywords)
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1595:13)
+
+  console.log
+    ✅ provider_assets table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1646:13)
+
+  console.log
+    ✅ Webhook configuration table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1695:13)
+
+  console.log
+    ✅ Configuration tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1777:13)
+
+  console.log
+    🔗 Creating CASCADE delete triggers for file tables...
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1840:13)
+
+  console.log
+    ✅ CASCADE delete triggers created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1959:13)
+
+  console.log
+    ✅ Clean schema migration completed successfully!
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1960:13)
+
+[32minfo[39m: [32mReceived Radarr webhook: Download[39m {"movie":"Test Movie","timestamp":"2025-11-18T18:35:33.601Z","year":2023}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":1,"manual":false,"operation":"addJob","priority":1,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:33.601Z","type":"webhook-received"}
+[33mwarn[39m: [33mWebSocket broadcaster not initialized[39m {"timestamp":"2025-11-18T18:35:33.601Z"}
+[32minfo[39m: [32m[JobQueueService] Job added to queue[39m {"jobId":1,"operation":"addJob","priority":1,"service":"JobQueueService","timestamp":"2025-11-18T18:35:33.601Z","type":"webhook-received"}
+[32minfo[39m: [32mCreated webhook job 1 for movie: Test Movie[39m {"timestamp":"2025-11-18T18:35:33.601Z"}
+  console.log
+    🚀 Running clean schema migration...
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:35:13)
+
+  console.log
+    🧹 Cleaning up old tables if they exist...
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:41:13)
+
+  console.log
+    ✅ Old tables cleaned up
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:52:13)
+
+  console.log
+    ✅ cache_video_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:206:13)
+
+  console.log
+    ✅ cache_video_files and library_video_files tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:222:13)
+
+  console.log
+    ✅ cache_image_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:269:13)
+
+  console.log
+    ✅ library_image_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:285:13)
+
+  console.log
+    ✅ cache_audio_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:319:13)
+
+  console.log
+    ✅ library_audio_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:335:13)
+
+  console.log
+    ✅ cache_text_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:372:13)
+
+  console.log
+    ✅ library_text_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:388:13)
+
+  console.log
+    ✅ unknown_files table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:411:13)
+
+  console.log
+    ✅ Unified file system tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:413:13)
+
+[32minfo[39m: [32mLocal Provider initialized[39m {"providerId":"local","timestamp":"2025-11-18T18:35:33.625Z","version":"1.0.0"}
+[32minfo[39m: [32mLocal Provider initialized[39m {"providerId":"local","timestamp":"2025-11-18T18:35:33.628Z","version":"1.0.0"}
+[32minfo[39m: [32mLocal Provider initialized[39m {"providerId":"local","timestamp":"2025-11-18T18:35:33.629Z","version":"1.0.0"}
+  console.log
+    ✅ Movie tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:505:13)
+
+[32minfo[39m: [32mLocal Provider initialized[39m {"providerId":"local","timestamp":"2025-11-18T18:35:33.630Z","version":"1.0.0"}
+[32minfo[39m: [32mLocal Provider initialized[39m {"providerId":"local","timestamp":"2025-11-18T18:35:33.631Z","version":"1.0.0"}
+  console.log
+    ✅ TV show tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:644:13)
+
+  console.log
+    ✅ Music tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:747:13)
+
+[32minfo[39m: [32mTheAudioDB client initialized[39m {"apiKey":"1","timestamp":"2025-11-18T18:35:33.637Z"}
+[32minfo[39m: [32mTheAudioDB Provider initialized[39m {"providerId":"theaudiodb","timestamp":"2025-11-18T18:35:33.638Z","version":"1.0.0"}
+  console.log
+    ✅ Stream detail tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:813:13)
+
+[32minfo[39m: [32mTheAudioDB client initialized[39m {"apiKey":"1","timestamp":"2025-11-18T18:35:33.641Z"}
+[32minfo[39m: [32mTheAudioDB Provider initialized[39m {"providerId":"theaudiodb","timestamp":"2025-11-18T18:35:33.641Z","version":"1.0.0"}
+[32minfo[39m: [32mTheAudioDB client initialized[39m {"apiKey":"1","timestamp":"2025-11-18T18:35:33.642Z"}
+[32minfo[39m: [32mTheAudioDB Provider initialized[39m {"providerId":"theaudiodb","timestamp":"2025-11-18T18:35:33.642Z","version":"1.0.0"}
+[32minfo[39m: [32mLocal Provider initialized[39m {"providerId":"local","timestamp":"2025-11-18T18:35:33.643Z","version":"1.0.0"}
+PASS tests/providers/LocalProvider.test.ts
+  LocalProvider
+    Capabilities
+      ✓ should have correct provider ID (4 ms)
+      ✓ should support both metadata and images (1 ms)
+      ✓ should support movie, series, season, and episode (1 ms)
+      ✓ should have unlimited rate limit
+    Search
+      ✓ should throw error when directoryPath is not provided (12 ms)
+    Connection Test
+      ✓ should return success (1 ms)
+
+  console.log
+    ✅ Normalized metadata tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1093:13)
+
+[32minfo[39m: [32mTheAudioDB client initialized[39m {"apiKey":"1","timestamp":"2025-11-18T18:35:33.651Z"}
+[32minfo[39m: [32mTheAudioDB Provider initialized[39m {"providerId":"theaudiodb","timestamp":"2025-11-18T18:35:33.651Z","version":"1.0.0"}
+[32minfo[39m: [32mTheAudioDB client initialized[39m {"apiKey":"1","timestamp":"2025-11-18T18:35:33.652Z"}
+  console.log
+    ✅ Cache orphan cleanup triggers created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1146:13)
+
+[32minfo[39m: [32mTheAudioDB Provider initialized[39m {"providerId":"theaudiodb","timestamp":"2025-11-18T18:35:33.652Z","version":"1.0.0"}
+[33mwarn[39m: [33mNo MusicBrainz ID for artist 111239, skipping[39m {"timestamp":"2025-11-18T18:35:33.653Z"}
+[32minfo[39m: [32mTheAudioDB client initialized[39m {"apiKey":"1","timestamp":"2025-11-18T18:35:33.653Z"}
+[32minfo[39m: [32mTheAudioDB Provider initialized[39m {"providerId":"theaudiodb","timestamp":"2025-11-18T18:35:33.654Z","version":"1.0.0"}
+  console.log
+    ✅ Job queue tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1246:13)
+
+PASS tests/providers/TheAudioDBProvider.test.ts
+  TheAudioDBProvider
+    Capabilities
+      ✓ should have correct provider ID (5 ms)
+      ✓ should be images-only provider (2 ms)
+      ✓ should support artist and album entity types (9 ms)
+    Search
+      ✓ should search for artists (1 ms)
+    Assets
+      ✓ should handle asset requests without errors (1 ms)
+    Connection Test
+      ✓ should return success (1 ms)
+
+  console.log
+    ✅ Activity log table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1314:13)
+
+  console.log
+    ✅ Provider cache movies table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1368:13)
+
+  console.log
+    ✅ Provider cache collections tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1397:13)
+
+  console.log
+    ✅ Provider cache images table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1434:13)
+
+  console.log
+    ✅ Provider cache videos table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1464:13)
+
+  console.log
+    ✅ Provider cache people/cast/crew tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1514:13)
+
+  console.log
+    ✅ Provider cache relational tables created (genres, companies, countries, keywords)
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1595:13)
+
+  console.log
+    ✅ provider_assets table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1646:13)
+
+  console.log
+    ✅ Webhook configuration table created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1695:13)
+
+  console.log
+    ✅ Configuration tables created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1777:13)
+
+  console.log
+    🔗 Creating CASCADE delete triggers for file tables...
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1840:13)
+
+  console.log
+    ✅ CASCADE delete triggers created
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1959:13)
+
+  console.log
+    ✅ Clean schema migration completed successfully!
+
+      at Function.up (src/database/migrations/20251015_001_clean_schema.ts:1960:13)
+
+[32minfo[39m: [32mReceived Radarr webhook: Download[39m {"movie":"Test Movie","timestamp":"2025-11-18T18:35:33.669Z","year":2023}
+[32minfo[39m: [32m[SQLiteJobQueueStorage] Job created[39m {"jobId":1,"manual":false,"operation":"addJob","priority":1,"service":"SQLiteJobQueueStorage","timestamp":"2025-11-18T18:35:33.669Z","type":"webhook-received"}
+[33mwarn[39m: [33mWebSocket broadcaster not initialized[39m {"timestamp":"2025-11-18T18:35:33.669Z"}
+[32minfo[39m: [32m[JobQueueService] Job added to queue[39m {"jobId":1,"operation":"addJob","priority":1,"service":"JobQueueService","timestamp":"2025-11-18T18:35:33.669Z","type":"webhook-received"}
+[32minfo[39m: [32mCreated webhook job 1 for movie: Test Movie[39m {"timestamp":"2025-11-18T18:35:33.669Z"}
+PASS tests/unit/webhookService.test.ts (8.115 s)
+  WebhookService
+    processRadarrWebhook
+      ✓ should create job for Download event (235 ms)
+      ✓ should handle Test webhook without creating job (124 ms)
+      ✓ should create job for Rename event (91 ms)
+      ✓ should create job for Grab event (83 ms)
+      ✓ should include movie file info in payload when present (124 ms)
+    processSonarrWebhook
+      ✓ should create job for Download event (174 ms)
+      ✓ should handle Test webhook (137 ms)
+      ✓ should handle Rename event (147 ms)
+    processLidarrWebhook
+      ✓ should create job for Download event (116 ms)
+      ✓ should handle Test webhook (148 ms)
+      ✓ should handle Grab event (131 ms)
+    Job Creation
+      ✓ should create jobs with critical priority (1) (88 ms)
+      ✓ should create jobs with proper payload structure (68 ms)
+
+[32minfo[39m: [32mCircuit breaker half-open, attempting recovery[39m {"timestamp":"2025-11-18T18:35:34.240Z"}
+[32minfo[39m: [32mCircuit breaker closed, normal operation resumed[39m {"timestamp":"2025-11-18T18:35:34.339Z"}
+[33mwarn[39m: [33mCircuit breaker opened[39m {"failureCount":3,"threshold":3,"timestamp":"2025-11-18T18:35:34.341Z"}
+[32minfo[39m: [32mCircuit breaker half-open, attempting recovery[39m {"timestamp":"2025-11-18T18:35:35.341Z"}
+[33mwarn[39m: [33mCircuit breaker opened[39m {"failureCount":4,"threshold":3,"timestamp":"2025-11-18T18:35:35.442Z"}
+PASS tests/providers/CircuitBreaker.test.ts (9.892 s)
+  CircuitBreaker
+    ✓ should start in closed state (6 ms)
+    ✓ should allow successful requests (1 ms)
+    ✓ should open circuit after threshold failures (5 ms)
+    ✓ should reject requests when circuit is open (13 ms)
+    ✓ should transition to half-open after timeout (1105 ms)
+    ✓ should close circuit after successful recovery (1102 ms)
+    ✓ should reopen circuit if recovery fails (1103 ms)
+    ✓ should provide statistics
+
+Test Suites: 20 passed, 20 total
+Tests:       309 passed, 309 total
+Snapshots:   0 total
+Time:        10.598 s
+Ran all test suites.
