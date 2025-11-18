@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { z, ZodError, ZodSchema } from 'zod';
 import { logger } from './logging.js';
+import path from 'path';
 
 /**
  * Validation Middleware
@@ -146,8 +147,6 @@ export function validatePath(filePath: string, allowedBasePath?: string): boolea
   if (!filePath || typeof filePath !== 'string') {
     return false;
   }
-
-  const path = require('path');
 
   // Resolve the path first to normalize all traversal attempts
   // This converts ../../../etc/passwd to /etc/passwd (or similar)

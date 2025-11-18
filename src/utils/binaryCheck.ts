@@ -60,7 +60,9 @@ export async function checkRequiredBinaries(): Promise<void> {
   const results: BinaryCheckResult[] = [];
 
   for (const binary of binaries) {
-    const result = await checkBinary(binary.name);
+    // FFmpeg tools use single-dash version flag
+    const versionArgs = binary.name.startsWith('ff') ? ['-version'] : ['--version'];
+    const result = await checkBinary(binary.name, versionArgs);
     results.push(result);
 
     if (result.available) {
