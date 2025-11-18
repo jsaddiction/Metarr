@@ -2,7 +2,6 @@ import sqlite3 from 'sqlite3';
 import { open, Database } from 'sqlite';
 import { DatabaseConnection } from '../../src/types/database.js';
 import { CleanSchemaMigration } from '../../src/database/migrations/20251015_001_clean_schema.js';
-import { LibrarySchedulerConfigMigration } from '../../src/database/migrations/20251015_002_library_scheduler_config.js';
 
 /**
  * Test Database Utilities
@@ -72,7 +71,6 @@ export class TestDatabase {
 
     // Run migrations
     await CleanSchemaMigration.up(this.connection);
-    await LibrarySchedulerConfigMigration.up(this.connection);
 
     return this.connection;
   }
