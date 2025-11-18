@@ -149,6 +149,40 @@ export abstract class BaseProvider {
   }
 
   /**
+   * Get comprehensive provider health metrics
+   * Used by /api/providers/health endpoint for monitoring
+   */
+  getHealthMetrics() {
+    const rateLimiterStats = this.rateLimiter.getStats();
+    const circuitBreakerStats = this.circuitBreaker.getStats();
+
+    return {
+      providerId: this.capabilities.id,
+      providerName: this.capabilities.name,
+      healthy: !this.circuitBreaker.isOpen(),
+      circuitBreaker: {
+        state: circuitBreakerStats.state,
+        isOpen: this.circuitBreaker.isOpen(),
+        failureCount: circuitBreakerStats.failureCount,
+        successCount: circuitBreakerStats.successCount,
+        threshold: circuitBreakerStats.threshold,
+        lastFailureTime: circuitBreakerStats.lastFailureTime,
+      },
+      rateLimiter: {
+        requestsInWindow: rateLimiterStats.requestsInWindow,
+        remainingRequests: rateLimiterStats.remainingRequests,
+        maxRequests: rateLimiterStats.maxRequests,
+        requestsPerSecond: rateLimiterStats.requestsPerSecond,
+      },
+      backoff: {
+        consecutiveRateLimits: this.consecutiveRateLimits,
+        currentBackoffMs: this.rateLimitBackoffMs,
+        maxBackoffMs: this.MAX_BACKOFF_MS,
+      },
+    };
+  }
+
+  /**
    * Get circuit breaker statistics
    */
   getCircuitBreakerStats() {

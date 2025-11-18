@@ -37,6 +37,7 @@ import { FetchOrchestrator } from '../services/providers/FetchOrchestrator.js';
 import { SchedulerController } from '../controllers/schedulerController.js';
 import { FileScannerScheduler } from '../services/schedulers/FileScannerScheduler.js';
 import { ProviderUpdaterScheduler } from '../services/schedulers/ProviderUpdaterScheduler.js';
+import { getProviderHealth, getProviderHealthById } from '../controllers/providerHealthController.js';
 // Import validation middleware
 import { validateRequest, commonSchemas } from '../middleware/validation.js';
 import { createLibrarySchema, updateLibrarySchema } from '../validation/librarySchemas.js';
@@ -573,6 +574,9 @@ export const createApiRouter = (
     res.json({ message: 'Series endpoint coming soon' });
   });
 
+  // Provider health monitoring routes (must come before :name routes)
+  router.get('/providers/health', getProviderHealth);
+
   // Provider config routes
   router.get('/providers', (req, res) =>
     providerConfigController.getAllProviders(req, res)
@@ -580,6 +584,7 @@ export const createApiRouter = (
   router.get('/providers/:name', (req, res) =>
     providerConfigController.getProvider(req, res)
   );
+  router.get('/providers/:name/health', getProviderHealthById);
   router.post('/providers/:name', (req, res) =>
     providerConfigController.updateProvider(req, res)
   );

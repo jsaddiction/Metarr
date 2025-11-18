@@ -194,6 +194,10 @@ export class App {
       // Validate configuration
       ConfigManager.getInstance().validate();
 
+      // Check required binary dependencies
+      const { checkRequiredBinaries } = await import('./utils/binaryCheck.js');
+      await checkRequiredBinaries();
+
       // Connect to database
       await this.dbManager.connect();
       logger.info('Database connected successfully');

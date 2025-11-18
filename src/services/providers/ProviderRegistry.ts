@@ -59,6 +59,28 @@ export class ProviderRegistry {
   }
 
   /**
+   * Get all cached provider instances
+   * Returns empty array if no providers have been instantiated
+   */
+  getAllProviders(): BaseProvider[] {
+    return Array.from(this.instances.values());
+  }
+
+  /**
+   * Get a specific provider instance by ID
+   * Returns null if provider not found or not yet instantiated
+   */
+  getProvider(providerId: string): BaseProvider | null {
+    // Check if it's a provider name (tmdb, tvdb, etc.)
+    for (const [key, instance] of this.instances.entries()) {
+      if (key.startsWith(providerId)) {
+        return instance;
+      }
+    }
+    return null;
+  }
+
+  /**
    * Create provider instance from configuration
    * Returns cached instance if available
    */
