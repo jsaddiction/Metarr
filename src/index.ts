@@ -17,13 +17,44 @@ process.on('SIGINT', async () => {
 });
 
 process.on('unhandledRejection', (reason: unknown, promise: Promise<unknown>) => {
-  logger.error('Unhandled promise rejection:', { reason, promise });
-  process.exit(1);
+  logger.error('Unhandled promise rejection detected - this indicates a bug that must be fixed', {
+    reason: reason instanceof Error ? {
+      name: reason.name,
+      message: reason.message,
+      stack: reason.stack,
+    } : reason,
+    promiseState: promise,
+  });
+
+  // Attempt graceful shutdown to preserve data integrity
+  app.stop()
+    .then(() => {
+      logger.error('Server stopped after unhandled rejection');
+      process.exit(1);
+    })
+    .catch((shutdownError) => {
+      logger.error('Failed to gracefully shutdown after unhandled rejection', { shutdownError });
+      process.exit(1);
+    });
 });
 
 process.on('uncaughtException', (error: Error) => {
-  logger.error('Uncaught exception:', error);
-  process.exit(1);
+  logger.error('Uncaught exception detected - this indicates a bug that must be fixed', {
+    name: error.name,
+    message: error.message,
+    stack: error.stack,
+  });
+
+  // Attempt graceful shutdown to preserve data integrity
+  app.stop()
+    .then(() => {
+      logger.error('Server stopped after uncaught exception');
+      process.exit(1);
+    })
+    .catch((shutdownError) => {
+      logger.error('Failed to gracefully shutdown after uncaught exception', { shutdownError });
+      process.exit(1);
+    });
 });
 
 // Start the application

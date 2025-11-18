@@ -1,11 +1,11 @@
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { logger } from '../../middleware/logging.js';
 import { DatabaseConnection } from '../../types/database.js';
 import { getErrorMessage } from '../../utils/errorHandling.js';
 import { ProcessError, DatabaseError, ErrorCode } from '../../errors/index.js';
 
-const execPromise = promisify(exec);
+const execFilePromise = promisify(execFile);
 
 /**
  * FFprobe Service
@@ -113,10 +113,15 @@ export async function extractMediaInfo(filePath: string): Promise<MediaInfo> {
   try {
     const startTime = Date.now();
 
-    // Run FFprobe with JSON output
-    const command = `ffprobe -v quiet -print_format json -show_format -show_streams "${filePath}"`;
+    // Run FFprobe with JSON output (using execFile to prevent command injection)
+    const { stdout } = await execFilePromise('ffprobe', [
+      '-v', 'quiet',
+      '-print_format', 'json',
+      '-show_format',
+      '-show_streams',
+      filePath
+    ]);
 
-    const { stdout } = await execPromise(command);
     const data = JSON.parse(stdout);
 
     const videoStreams: VideoStream[] = [];

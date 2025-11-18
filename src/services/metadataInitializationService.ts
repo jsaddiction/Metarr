@@ -3,6 +3,11 @@ import { logger } from '../middleware/logging.js';
 import { FullMovieNFO, FullTVShowNFO, ActorData, RatingData } from '../types/models.js';
 import { getErrorMessage } from '../utils/errorHandling.js';
 
+/** Database row with just an ID field */
+interface IdRow {
+  id: number;
+}
+
 export class MetadataInitializationService {
   constructor(private readonly dbManager: DatabaseManager) {}
 
@@ -18,7 +23,7 @@ export class MetadataInitializationService {
 
     try {
       // Check if movie already exists
-      const existing = await db.query<any[]>('SELECT id FROM movies WHERE file_path = ?', [
+      const existing = await db.query<IdRow>('SELECT id FROM movies WHERE file_path = ?', [
         filePath,
       ]);
 
@@ -32,7 +37,7 @@ export class MetadataInitializationService {
 
       if (existing.length > 0) {
         // UPDATE existing movie
-        movieId = (existing[0] as any).id;
+        movieId = existing[0].id;
         await db.execute(
           `UPDATE movies SET
             title = ?, original_title = ?, sort_title = ?, year = ?,
@@ -137,7 +142,7 @@ export class MetadataInitializationService {
     const db = this.dbManager.getConnection();
 
     try {
-      const existing = await db.query<any[]>('SELECT id FROM series WHERE directory_path = ?', [
+      const existing = await db.query<IdRow>('SELECT id FROM series WHERE directory_path = ?', [
         folderPath,
       ]);
 
@@ -145,7 +150,7 @@ export class MetadataInitializationService {
 
       if (existing.length > 0) {
         // UPDATE existing TV show
-        tvshowId = (existing[0] as any).id;
+        tvshowId = existing[0].id;
         await db.execute(
           `UPDATE series SET
             title = ?, original_title = ?, sort_title = ?, year = ?,
@@ -240,10 +245,10 @@ export class MetadataInitializationService {
   async upsertSet(name: string, overview?: string): Promise<number> {
     const db = this.dbManager.getConnection();
 
-    const existing = await db.query<any[]>('SELECT id FROM sets WHERE name = ?', [name]);
+    const existing = await db.query<IdRow>('SELECT id FROM sets WHERE name = ?', [name]);
 
     if (existing.length > 0) {
-      const setId = (existing[0] as any).id;
+      const setId = existing[0].id;
       // Update overview if provided
       if (overview) {
         await db.execute(
@@ -269,10 +274,10 @@ export class MetadataInitializationService {
     const actorMap = new Map<string, number>();
 
     for (const actor of actorsData) {
-      const existing = await db.query<any[]>('SELECT id FROM actors WHERE name = ?', [actor.name]);
+      const existing = await db.query<IdRow>('SELECT id FROM actors WHERE name = ?', [actor.name]);
 
       if (existing.length > 0) {
-        const actorId = (existing[0] as any).id;
+        const actorId = existing[0].id;
         actorMap.set(actor.name, actorId);
         // Update thumb if provided
         if (actor.thumb) {
@@ -298,10 +303,10 @@ export class MetadataInitializationService {
     const genreMap = new Map<string, number>();
 
     for (const name of genreNames) {
-      const existing = await db.query<any[]>('SELECT id FROM genres WHERE name = ?', [name]);
+      const existing = await db.query<IdRow>('SELECT id FROM genres WHERE name = ?', [name]);
 
       if (existing.length > 0) {
-        genreMap.set(name, (existing[0] as any).id);
+        genreMap.set(name, existing[0].id);
       } else {
         const result = await db.execute('INSERT INTO genres (name) VALUES (?)', [name]);
         genreMap.set(name, result.insertId!);
@@ -319,10 +324,10 @@ export class MetadataInitializationService {
     const directorMap = new Map<string, number>();
 
     for (const name of directorNames) {
-      const existing = await db.query<any[]>('SELECT id FROM directors WHERE name = ?', [name]);
+      const existing = await db.query<IdRow>('SELECT id FROM directors WHERE name = ?', [name]);
 
       if (existing.length > 0) {
-        directorMap.set(name, (existing[0] as any).id);
+        directorMap.set(name, existing[0].id);
       } else {
         const result = await db.execute('INSERT INTO directors (name) VALUES (?)', [name]);
         directorMap.set(name, result.insertId!);
@@ -340,10 +345,10 @@ export class MetadataInitializationService {
     const writerMap = new Map<string, number>();
 
     for (const name of writerNames) {
-      const existing = await db.query<any[]>('SELECT id FROM writers WHERE name = ?', [name]);
+      const existing = await db.query<IdRow>('SELECT id FROM writers WHERE name = ?', [name]);
 
       if (existing.length > 0) {
-        writerMap.set(name, (existing[0] as any).id);
+        writerMap.set(name, existing[0].id);
       } else {
         const result = await db.execute('INSERT INTO writers (name) VALUES (?)', [name]);
         writerMap.set(name, result.insertId!);
@@ -361,10 +366,10 @@ export class MetadataInitializationService {
     const studioMap = new Map<string, number>();
 
     for (const name of studioNames) {
-      const existing = await db.query<any[]>('SELECT id FROM studios WHERE name = ?', [name]);
+      const existing = await db.query<IdRow>('SELECT id FROM studios WHERE name = ?', [name]);
 
       if (existing.length > 0) {
-        studioMap.set(name, (existing[0] as any).id);
+        studioMap.set(name, existing[0].id);
       } else {
         const result = await db.execute('INSERT INTO studios (name) VALUES (?)', [name]);
         studioMap.set(name, result.insertId!);
@@ -382,10 +387,10 @@ export class MetadataInitializationService {
     const countryMap = new Map<string, number>();
 
     for (const name of countryNames) {
-      const existing = await db.query<any[]>('SELECT id FROM countries WHERE name = ?', [name]);
+      const existing = await db.query<IdRow>('SELECT id FROM countries WHERE name = ?', [name]);
 
       if (existing.length > 0) {
-        countryMap.set(name, (existing[0] as any).id);
+        countryMap.set(name, existing[0].id);
       } else {
         const result = await db.execute('INSERT INTO countries (name) VALUES (?)', [name]);
         countryMap.set(name, result.insertId!);
@@ -403,10 +408,10 @@ export class MetadataInitializationService {
     const tagMap = new Map<string, number>();
 
     for (const name of tagNames) {
-      const existing = await db.query<any[]>('SELECT id FROM tags WHERE name = ?', [name]);
+      const existing = await db.query<IdRow>('SELECT id FROM tags WHERE name = ?', [name]);
 
       if (existing.length > 0) {
-        tagMap.set(name, (existing[0] as any).id);
+        tagMap.set(name, existing[0].id);
       } else {
         const result = await db.execute('INSERT INTO tags (name) VALUES (?)', [name]);
         tagMap.set(name, result.insertId!);

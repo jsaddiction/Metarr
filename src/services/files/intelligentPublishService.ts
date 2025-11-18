@@ -422,14 +422,23 @@ export async function publishMovie(
       result.changes
     );
 
-    // PHASE 4: Update library records (DELETE + INSERT)
-    await updateLibraryRecords(db, config.entityType, config.entityId, publishedAssets);
+    // PHASE 4: Update library records (DELETE + INSERT) in transaction
+    // Ensures database stays consistent with filesystem even if crash occurs
+    await db.beginTransaction();
+    try {
+      await updateLibraryRecords(db, config.entityType, config.entityId, publishedAssets);
 
-    // Update last_published_at
-    await db.execute(
-      `UPDATE movies SET last_published_at = CURRENT_TIMESTAMP WHERE id = ?`,
-      [config.entityId]
-    );
+      // Update last_published_at
+      await db.execute(
+        `UPDATE movies SET last_published_at = CURRENT_TIMESTAMP WHERE id = ?`,
+        [config.entityId]
+      );
+
+      await db.commit();
+    } catch (error) {
+      await db.rollback();
+      throw error;
+    }
 
     // PHASE 7: Conditional job chaining
     const hasChanges =

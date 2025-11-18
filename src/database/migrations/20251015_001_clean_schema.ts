@@ -268,6 +268,55 @@ export class CleanSchemaMigration {
 
     console.log('✅ cache_image_files table created');
 
+    // CASCADE DELETE triggers for polymorphic cache files (Audit Fix #6)
+    // Since SQLite doesn't support conditional foreign keys, use triggers to clean up orphaned cache files
+    await db.execute(`
+      CREATE TRIGGER trg_movies_delete_cache_images
+      AFTER DELETE ON movies
+      FOR EACH ROW
+      BEGIN
+        DELETE FROM cache_image_files WHERE entity_type = 'movie' AND entity_id = OLD.id;
+      END
+    `);
+
+    await db.execute(`
+      CREATE TRIGGER trg_episodes_delete_cache_images
+      AFTER DELETE ON episodes
+      FOR EACH ROW
+      BEGIN
+        DELETE FROM cache_image_files WHERE entity_type = 'episode' AND entity_id = OLD.id;
+      END
+    `);
+
+    await db.execute(`
+      CREATE TRIGGER trg_series_delete_cache_images
+      AFTER DELETE ON series
+      FOR EACH ROW
+      BEGIN
+        DELETE FROM cache_image_files WHERE entity_type = 'series' AND entity_id = OLD.id;
+      END
+    `);
+
+    await db.execute(`
+      CREATE TRIGGER trg_seasons_delete_cache_images
+      AFTER DELETE ON seasons
+      FOR EACH ROW
+      BEGIN
+        DELETE FROM cache_image_files WHERE entity_type = 'season' AND entity_id = OLD.id;
+      END
+    `);
+
+    await db.execute(`
+      CREATE TRIGGER trg_actors_delete_cache_images
+      AFTER DELETE ON actors
+      FOR EACH ROW
+      BEGIN
+        DELETE FROM cache_image_files WHERE entity_type = 'actor' AND entity_id = OLD.id;
+      END
+    `);
+
+    console.log('✅ Cache orphan cleanup triggers created');
+
     // Library Image Files (Published to media players, ephemeral - can be rebuilt from cache)
     await db.execute(`
       CREATE TABLE library_image_files (

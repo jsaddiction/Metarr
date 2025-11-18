@@ -46,7 +46,7 @@ export function validatePositiveInteger(
   if (typeof value !== 'number' || isNaN(value)) {
     throw new ValidationError(
       `${fieldName} must be a number, got ${typeof value}`,
-      { fieldName, value }
+      { metadata: { fieldName, value } }
     );
   }
 
@@ -54,7 +54,7 @@ export function validatePositiveInteger(
   if (!Number.isInteger(value)) {
     throw new ValidationError(
       `${fieldName} must be an integer, got ${value}`,
-      { fieldName, value }
+      { metadata: { fieldName, value } }
     );
   }
 
@@ -62,7 +62,7 @@ export function validatePositiveInteger(
   if (value <= 0) {
     throw new ValidationError(
       `${fieldName} must be a positive integer, got ${value}`,
-      { fieldName, value }
+      { metadata: { fieldName, value } }
     );
   }
 
@@ -86,13 +86,13 @@ export function validateFilePath(filePath: unknown): string {
   if (typeof filePath !== 'string') {
     throw new ValidationError(
       `File path must be a string, got ${typeof filePath}`,
-      { filePath }
+      { metadata: { filePath } }
     );
   }
 
   // Check for empty string
   if (filePath.trim().length === 0) {
-    throw new ValidationError('File path cannot be empty', { filePath });
+    throw new ValidationError('File path cannot be empty', { metadata: { filePath } });
   }
 
   // Normalize the path to resolve any .. or . segments
@@ -103,15 +103,14 @@ export function validateFilePath(filePath: unknown): string {
   if (normalizedPath.includes('..')) {
     throw new ValidationError(
       'File path contains invalid traversal sequence (..), which is not allowed',
-      { filePath, normalizedPath }
+      { metadata: { filePath, normalizedPath } }
     );
   }
 
   // Check for null bytes (common injection technique)
   if (normalizedPath.includes('\0')) {
     throw new ValidationError('File path contains null bytes', {
-      filePath,
-      normalizedPath,
+      metadata: { filePath, normalizedPath },
     });
   }
 
@@ -123,7 +122,7 @@ export function validateFilePath(filePath: unknown): string {
     if (invalidChars.test(pathWithoutDrive)) {
       throw new ValidationError(
         'File path contains invalid characters for Windows: < > : " | ? *',
-        { filePath, normalizedPath }
+        { metadata: { filePath, normalizedPath } }
       );
     }
   }
@@ -149,7 +148,7 @@ export function validateEntityType(
   if (typeof type !== 'string') {
     throw new ValidationError(
       `Entity type must be a string, got ${typeof type}`,
-      { type }
+      { metadata: { type } }
     );
   }
 
@@ -157,7 +156,7 @@ export function validateEntityType(
   if (!VALID_ENTITY_TYPES.includes(type as any)) {
     throw new ValidationError(
       `Invalid entity type: ${type}. Must be one of: ${VALID_ENTITY_TYPES.join(', ')}`,
-      { type, validTypes: VALID_ENTITY_TYPES }
+      { metadata: { type, validTypes: VALID_ENTITY_TYPES } }
     );
   }
 
@@ -180,13 +179,13 @@ export function validateUrl(url: unknown): string {
   // Check if it's a string
   if (typeof url !== 'string') {
     throw new ValidationError(`URL must be a string, got ${typeof url}`, {
-      url,
+      metadata: { url },
     });
   }
 
   // Check for empty string
   if (url.trim().length === 0) {
-    throw new ValidationError('URL cannot be empty', { url });
+    throw new ValidationError('URL cannot be empty', { metadata: { url } });
   }
 
   // Try to parse the URL
@@ -197,13 +196,13 @@ export function validateUrl(url: unknown): string {
     if (!['http:', 'https:', 'ftp:', 'ftps:'].includes(parsedUrl.protocol)) {
       throw new ValidationError(
         `URL must use http, https, ftp, or ftps protocol, got ${parsedUrl.protocol}`,
-        { url, protocol: parsedUrl.protocol }
+        { metadata: { url, protocol: parsedUrl.protocol } }
       );
     }
 
     // Ensure it has a hostname
     if (!parsedUrl.hostname) {
-      throw new ValidationError('URL must have a hostname', { url });
+      throw new ValidationError('URL must have a hostname', { metadata: { url } });
     }
 
     return url;
@@ -213,8 +212,7 @@ export function validateUrl(url: unknown): string {
     }
 
     throw new ValidationError(`Invalid URL format: ${(error as Error).message}`, {
-      url,
-      originalError: (error as Error).message,
+      metadata: { url, originalError: (error as Error).message },
     });
   }
 }
@@ -240,7 +238,7 @@ export function validateNonEmptyString(
   if (typeof value !== 'string') {
     throw new ValidationError(
       `${fieldName} must be a string, got ${typeof value}`,
-      { fieldName, value }
+      { metadata: { fieldName, value } }
     );
   }
 
@@ -248,8 +246,7 @@ export function validateNonEmptyString(
   const trimmed = value.trim();
   if (trimmed.length === 0) {
     throw new ValidationError(`${fieldName} cannot be empty or whitespace-only`, {
-      fieldName,
-      value,
+      metadata: { fieldName, value },
     });
   }
 
@@ -288,7 +285,7 @@ export function validateArrayOfStrings(
   if (!Array.isArray(arr)) {
     throw new ValidationError(
       `${fieldName} must be an array, got ${typeof arr}`,
-      { fieldName, value: arr }
+      { metadata: { fieldName, value: arr } }
     );
   }
 
@@ -296,7 +293,7 @@ export function validateArrayOfStrings(
   if (minLength !== undefined && arr.length < minLength) {
     throw new ValidationError(
       `${fieldName} must have at least ${minLength} element${minLength !== 1 ? 's' : ''}, got ${arr.length}`,
-      { fieldName, value: arr, minLength, actualLength: arr.length }
+      { metadata: { fieldName, value: arr, minLength, actualLength: arr.length } }
     );
   }
 
@@ -304,7 +301,7 @@ export function validateArrayOfStrings(
   if (maxLength !== undefined && arr.length > maxLength) {
     throw new ValidationError(
       `${fieldName} must have at most ${maxLength} element${maxLength !== 1 ? 's' : ''}, got ${arr.length}`,
-      { fieldName, value: arr, maxLength, actualLength: arr.length }
+      { metadata: { fieldName, value: arr, maxLength, actualLength: arr.length } }
     );
   }
 
@@ -315,7 +312,7 @@ export function validateArrayOfStrings(
     if (typeof element !== 'string') {
       throw new ValidationError(
         `${fieldName}[${i}] must be a string, got ${typeof element}`,
-        { fieldName, index: i, value: element }
+        { metadata: { fieldName, index: i, value: element } }
       );
     }
 
@@ -323,7 +320,7 @@ export function validateArrayOfStrings(
     if (!allowEmpty && element.trim().length === 0) {
       throw new ValidationError(
         `${fieldName}[${i}] cannot be empty or whitespace-only`,
-        { fieldName, index: i, value: element }
+        { metadata: { fieldName, index: i, value: element } }
       );
     }
   }

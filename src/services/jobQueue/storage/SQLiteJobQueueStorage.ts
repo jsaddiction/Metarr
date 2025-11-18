@@ -50,12 +50,20 @@ export class SQLiteJobQueueStorage implements IJobQueueStorage {
   }
 
   async pickNextJob(): Promise<Job | null> {
-    // Pick highest priority job (lowest number = highest priority)
+    // Atomic UPDATE...RETURNING to prevent race conditions
+    // SQLite 3.35+ supports RETURNING clause for atomic operations
     const jobs = await this.db.query<any>(
-      `SELECT * FROM job_queue
-       WHERE status = 'pending'
-       ORDER BY priority ASC, created_at ASC
-       LIMIT 1`
+      `UPDATE job_queue
+       SET status = 'processing',
+           started_at = CURRENT_TIMESTAMP,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = (
+         SELECT id FROM job_queue
+         WHERE status = 'pending'
+         ORDER BY priority ASC, created_at ASC
+         LIMIT 1
+       )
+       RETURNING *`
     );
 
     if (jobs.length === 0) {
@@ -63,15 +71,6 @@ export class SQLiteJobQueueStorage implements IJobQueueStorage {
     }
 
     const job = jobs[0];
-
-    // Mark as processing
-    await this.db.execute(
-      `UPDATE job_queue
-       SET status = 'processing', started_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-       WHERE id = ?`,
-      [job.id]
-    );
-
     const waitTime = Date.now() - new Date(job.created_at).getTime();
 
     logger.info('[SQLiteJobQueueStorage] Job picked', {

@@ -11,7 +11,6 @@ import { GarbageCollectionService } from './services/garbageCollectionService.js
 import { MetarrWebSocketServer } from './services/websocketServer.js';
 import { websocketBroadcaster } from './services/websocketBroadcaster.js';
 import { WebSocketController } from './controllers/websocketController.js';
-import { cacheService } from './services/cacheService.js';
 import { JobQueueService } from './services/jobQueue/JobQueueService.js';
 import { SQLiteJobQueueStorage } from './services/jobQueue/storage/SQLiteJobQueueStorage.js';
 import { NotificationConfigService } from './services/notificationConfigService.js';
@@ -219,10 +218,6 @@ export class App {
       // Initialize WebSocket controller (register message handlers)
       this.wsController.initialize();
       logger.info('WebSocket controller initialized');
-
-      // Initialize cache service
-      await cacheService.initialize(this.dbManager);
-      logger.info('Cache service initialized');
 
       // Initialize job queue service with modular storage
       const jobQueueStorage = new SQLiteJobQueueStorage(this.dbManager.getConnection());

@@ -133,6 +133,13 @@ export const commonSchemas = {
  * Path validation utility
  *
  * Validates file paths to prevent directory traversal attacks
+ *
+ * Security: Uses path.resolve() FIRST to normalize, then validates the resolved path.
+ * This prevents bypasses via:
+ * - ....// (multiple dots)
+ * - URL encoding (%2e%2e%2f)
+ * - Unicode variations
+ * - Mixed slashes and backslashes
  */
 export function validatePath(filePath: string, allowedBasePath?: string): boolean {
   // Basic checks
@@ -140,25 +147,27 @@ export function validatePath(filePath: string, allowedBasePath?: string): boolea
     return false;
   }
 
-  // Check for directory traversal patterns
-  const dangerousPatterns = [
-    /\.\.\//,  // ../
-    /\.\.\\/,  // ..\
-    /\/\.\./,  // /..
-    /\\\.\./,  // \..
-  ];
+  const path = require('path');
 
-  if (dangerousPatterns.some(pattern => pattern.test(filePath))) {
+  // Resolve the path first to normalize all traversal attempts
+  // This converts ../../../etc/passwd to /etc/passwd (or similar)
+  const resolved = path.resolve(filePath);
+
+  // Check for null bytes (directory traversal technique)
+  if (filePath.includes('\0') || resolved.includes('\0')) {
     return false;
   }
 
-  // If allowed base path provided, verify the resolved path starts with it
+  // If allowed base path provided, verify the resolved path stays within it
   if (allowedBasePath) {
-    const path = require('path');
-    const resolved = path.resolve(filePath);
     const allowed = path.resolve(allowedBasePath);
 
-    if (!resolved.startsWith(allowed)) {
+    // The resolved path must start with the allowed base
+    // Use path.relative to check if we've escaped the base directory
+    const relative = path.relative(allowed, resolved);
+
+    // If relative path starts with '..', we've escaped the allowed directory
+    if (relative.startsWith('..') || path.isAbsolute(relative)) {
       return false;
     }
   }

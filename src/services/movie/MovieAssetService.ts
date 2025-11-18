@@ -6,7 +6,6 @@ import * as fsSync from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { hashSmallFile } from '../hash/hashService.js';
-import { cacheService } from '../cacheService.js';
 import { getDefaultMaxCount } from '../../config/assetTypeDefaults.js';
 import https from 'https';
 import http from 'http';
@@ -196,26 +195,33 @@ export class MovieAssetService {
             logger.warn('Could not get image dimensions', { assetType, url: asset.url });
           }
 
-          // Store in cache using CacheService
-          const cacheMetadata: {
-            mimeType: string;
-            sourceType: 'provider';
-            sourceUrl?: string;
-            providerName?: string;
-            width?: number;
-            height?: number;
-          } = {
-            mimeType: (asset.metadata as Record<string, unknown> | undefined)?.mimeType as string || 'image/jpeg',
-            sourceType: 'provider' as const,
-          };
+          // Store in cache using content-addressed storage
+          // Compute SHA256 hash and create sharded cache path
+          const hashResult = await hashSmallFile(tempFilePath);
+          const contentHash = hashResult.hash;
+          const fileSize = hashResult.fileSize;
 
-          // Add optional properties
-          if (asset.url) cacheMetadata.sourceUrl = String(asset.url);
-          if (asset.provider) cacheMetadata.providerName = String(asset.provider);
-          if (width !== undefined) cacheMetadata.width = width;
-          if (height !== undefined) cacheMetadata.height = height;
+          // Create sharded cache path: ab/c1/abc123...jpg
+          const shard1 = contentHash.substring(0, 2);
+          const shard2 = contentHash.substring(2, 4);
+          const cacheBasePath = path.join(process.cwd(), 'data', 'cache', 'assets');
+          const extension = path.extname(tempFilePath);
+          const cachePath = path.join(cacheBasePath, shard1, shard2, `${contentHash}${extension}`);
 
-          const cacheResult = await cacheService.addAsset(tempFilePath, cacheMetadata);
+          // Ensure cache directories exist
+          await fs.mkdir(path.dirname(cachePath), { recursive: true });
+
+          // Copy file to cache if not already cached
+          try {
+            await fs.access(cachePath);
+            logger.debug('Asset already in cache', { contentHash: contentHash.substring(0, 8) });
+          } catch {
+            // File doesn't exist, copy it
+            await fs.copyFile(tempFilePath, cachePath);
+            logger.debug('Asset copied to cache', { contentHash: contentHash.substring(0, 8), cachePath });
+          }
+
+          const cacheResult = { cachePath, contentHash, fileSize, isNew: true };
 
           // Create library copy with Kodi naming convention
           const libraryFileName = `${movieFileName}-${assetType}${path.extname(tempFilePath)}`;
@@ -321,14 +327,14 @@ export class MovieAssetService {
             movieId,
             assetType,
             provider: asset.provider,
-            cacheAssetId: cacheResult.id,
+            cacheAssetId: cacheFileId,
             isNew: cacheResult.isNew,
           });
 
           return {
             success: {
               assetType,
-              cacheAssetId: cacheResult.id,
+              cacheAssetId: cacheFileId,
               cachePath: cacheResult.cachePath,
               libraryPath,
               isNew: cacheResult.isNew,

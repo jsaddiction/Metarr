@@ -10,7 +10,6 @@
 import { logger } from '../../middleware/logging.js';
 import {
   ClassificationResult,
-  ClassificationStatus,
   ProcessingDecision,
 } from '../../types/classification.js';
 

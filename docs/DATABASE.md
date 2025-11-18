@@ -49,7 +49,7 @@ CREATE TABLE movies (
   tmdb_id INTEGER,
   imdb_id TEXT,
 
-  -- Selected assets (FK to cache_assets)
+  -- Selected assets (FK to cache_image_files)
   poster_id INTEGER,
   fanart_id INTEGER,
   logo_id INTEGER,
@@ -162,40 +162,81 @@ CREATE TABLE episodes (
 
 ## Asset Management
 
-### Cache Assets (Content-Addressed Storage)
+### Cache Image Files (Protected Storage)
+
+Content-addressed image storage using polymorphic associations. Survives library deletions.
 
 ```sql
-CREATE TABLE cache_assets (
+CREATE TABLE cache_image_files (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
 
-  -- Content addressing
-  content_hash TEXT NOT NULL UNIQUE,    -- SHA256 hash
-  perceptual_hash TEXT,                  -- pHash for images
+  -- Polymorphic association
+  entity_type TEXT NOT NULL CHECK(entity_type IN ('movie', 'episode', 'series', 'season', 'actor')),
+  entity_id INTEGER NOT NULL,
 
-  -- File information
-  file_path TEXT NOT NULL,               -- /data/cache/images/{hash}.jpg
+  -- File information (content-addressed)
+  file_path TEXT UNIQUE NOT NULL,        -- /data/cache/assets/ab/c1/abc123...jpg
+  file_name TEXT NOT NULL,
   file_size INTEGER NOT NULL,
-  mime_type TEXT NOT NULL,
+  file_hash TEXT,                        -- SHA256 hash
 
-  -- Metadata
-  width INTEGER,                         -- For images/video
-  height INTEGER,
-  duration INTEGER,                       -- For video/audio (seconds)
+  -- Image hashing for similarity detection
+  perceptual_hash TEXT,
+  difference_hash TEXT,
 
-  -- Reference counting
-  reference_count INTEGER DEFAULT 0,     -- How many entities use this
+  -- Image type and dimensions
+  image_type TEXT NOT NULL CHECK(image_type IN (
+    'poster', 'fanart', 'banner', 'clearlogo', 'clearart', 'discart',
+    'landscape', 'keyart', 'thumb', 'actor_thumb', 'unknown'
+  )),
+  width INTEGER NOT NULL,
+  height INTEGER NOT NULL,
+  format TEXT NOT NULL,                  -- 'jpg', 'png', etc.
+  has_alpha BOOLEAN DEFAULT NULL,
+  foreground_ratio REAL DEFAULT NULL,    -- For classification scoring
+
+  -- Provenance tracking
+  source_type TEXT CHECK(source_type IN ('provider', 'local', 'user')),
+  source_url TEXT,                       -- Original provider URL
+  provider_name TEXT,                    -- 'tmdb', 'fanart.tv', etc.
+  classification_score INTEGER,          -- Quality score from image analysis
+
+  -- Field locking
+  is_locked BOOLEAN DEFAULT 0,
 
   -- Timestamps
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  last_accessed TIMESTAMP,
-
-  CHECK(reference_count >= 0)
+  discovered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  last_accessed_at TIMESTAMP
 );
 
-CREATE INDEX idx_cache_assets_hash ON cache_assets(content_hash);
-CREATE INDEX idx_cache_assets_phash ON cache_assets(perceptual_hash);
-CREATE INDEX idx_cache_assets_refs ON cache_assets(reference_count);
+-- Optimized composite index for entity lookups with sorting
+CREATE INDEX idx_cache_images_entity_score ON cache_image_files(
+  entity_type, entity_id, image_type,
+  classification_score DESC, discovered_at DESC
+);
+CREATE INDEX idx_cache_images_hash ON cache_image_files(file_hash);
+CREATE INDEX idx_cache_images_locked ON cache_image_files(is_locked);
 ```
+
+### Library Image Files (Published Working Copies)
+
+Working copies deployed to library directories for media player scanning. Can be rebuilt from cache.
+
+```sql
+CREATE TABLE library_image_files (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  cache_file_id INTEGER NOT NULL,
+  file_path TEXT UNIQUE NOT NULL,        -- /media/movies/Movie (2024)/movie-poster.jpg
+  published_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+  FOREIGN KEY (cache_file_id) REFERENCES cache_image_files(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_library_images_cache ON library_image_files(cache_file_id);
+CREATE INDEX idx_library_images_path ON library_image_files(file_path);
+```
+
+**Note**: Polymorphic foreign key constraints are enforced via triggers (see migration `20251015_001_clean_schema.ts` lines 271-318). When a movie/series/episode/season/actor is deleted, associated cache files are automatically cleaned up.
 
 ### Asset Candidates (Provider URLs)
 
@@ -227,13 +268,13 @@ CREATE TABLE asset_candidates (
   user_locked BOOLEAN DEFAULT 0,         -- Manual selection locked
 
   -- Cache reference
-  cache_asset_id INTEGER,                -- If downloaded
+  cache_file_id INTEGER,                 -- If downloaded (FK to cache_image_files)
 
   -- Timestamps
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   last_refreshed TIMESTAMP,
 
-  FOREIGN KEY (cache_asset_id) REFERENCES cache_assets(id),
+  FOREIGN KEY (cache_file_id) REFERENCES cache_image_files(id),
   UNIQUE(entity_type, entity_id, asset_type, url)
 );
 

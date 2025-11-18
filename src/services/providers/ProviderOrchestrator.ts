@@ -117,6 +117,7 @@ export class ProviderOrchestrator {
       strategy: strategy.strategy,
     });
 
+    // Implement fallback chain: Try preferred provider first, fall back to others if it fails
     const responses = await Promise.allSettled(
       metadataProviders.map(async config => {
         try {
@@ -133,8 +134,11 @@ export class ProviderOrchestrator {
             entityType,
           });
         } catch (error) {
-          logger.warn(`Metadata fetch failed for ${config.providerName}`, {
+          // Circuit breaker or network error - log and return null for fallback
+          logger.warn(`Metadata fetch failed for ${config.providerName}, fallback providers will be used`, {
             error: getErrorMessage(error),
+            entityType,
+            fallbackAvailable: metadataProviders.length > 1,
           });
           return null;
         }
@@ -143,13 +147,32 @@ export class ProviderOrchestrator {
 
     // Extract successful responses
     const validResponses: MetadataResponse[] = [];
-    for (const result of responses) {
+    const failedProviders: string[] = [];
+
+    for (let i = 0; i < responses.length; i++) {
+      const result = responses[i];
       if (result.status === 'fulfilled' && result.value) {
         validResponses.push(result.value);
+      } else {
+        failedProviders.push(metadataProviders[i].providerName);
       }
     }
 
+    // Log fallback chain status
+    if (failedProviders.length > 0) {
+      logger.info(`Provider fallback chain activated`, {
+        failed: failedProviders,
+        succeeded: validResponses.length,
+        total: metadataProviders.length,
+      });
+    }
+
     logger.info(`Collected metadata from ${validResponses.length} providers`);
+
+    // If no providers succeeded, throw error
+    if (validResponses.length === 0) {
+      throw new Error(`All ${metadataProviders.length} metadata providers failed for ${entityType}`);
+    }
 
     // Apply merge strategy
     if (strategy.strategy === 'preferred_first') {
@@ -177,7 +200,7 @@ export class ProviderOrchestrator {
       providers: assetProviders.map(p => p.providerName),
     });
 
-    // Parallel fetch from all providers
+    // Parallel fetch from all providers with fallback support
     const candidateLists = await Promise.allSettled(
       assetProviders.map(async config => {
         try {
@@ -204,8 +227,12 @@ export class ProviderOrchestrator {
             assetTypes: requestTypes,
           });
         } catch (error) {
-          logger.warn(`Asset fetch failed for ${config.providerName}`, {
+          // Circuit breaker or network error - log and return empty for fallback
+          logger.warn(`Asset fetch failed for ${config.providerName}, fallback providers will be used`, {
             error: getErrorMessage(error),
+            entityType,
+            assetTypes,
+            fallbackAvailable: assetProviders.length > 1,
           });
           return [];
         }
@@ -214,10 +241,24 @@ export class ProviderOrchestrator {
 
     // Aggregate all candidates
     const allCandidates: AssetCandidate[] = [];
-    for (const result of candidateLists) {
-      if (result.status === 'fulfilled') {
+    const failedProviders: string[] = [];
+
+    for (let i = 0; i < candidateLists.length; i++) {
+      const result = candidateLists[i];
+      if (result.status === 'fulfilled' && result.value.length > 0) {
         allCandidates.push(...result.value);
+      } else if (result.status === 'rejected' || (result.status === 'fulfilled' && result.value.length === 0)) {
+        failedProviders.push(assetProviders[i].providerName);
       }
+    }
+
+    // Log fallback chain status
+    if (failedProviders.length > 0 && allCandidates.length > 0) {
+      logger.info(`Asset provider fallback chain activated`, {
+        failed: failedProviders,
+        candidatesFound: allCandidates.length,
+        total: assetProviders.length,
+      });
     }
 
     logger.info(`Collected ${allCandidates.length} asset candidates`, {
