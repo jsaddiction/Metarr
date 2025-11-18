@@ -19,12 +19,19 @@ export class RateLimiter {
   private readonly windowMs: number;
   private readonly burstCapacity: number;
   private readonly requestsPerSecond: number;
+  private cleanupInterval: NodeJS.Timeout | null = null;
+  private readonly CLEANUP_INTERVAL_MS = 60000; // 1 minute
 
   constructor(config: RateLimiterConfig) {
     this.requestsPerSecond = config.requestsPerSecond;
     this.windowMs = (config.windowSeconds || 1) * 1000;
     this.maxRequests = config.requestsPerSecond * (config.windowSeconds || 1);
     this.burstCapacity = config.burstCapacity || this.maxRequests;
+
+    // Periodic cleanup to prevent memory accumulation during idle periods
+    this.cleanupInterval = setInterval(() => {
+      this.cleanOldRequests();
+    }, this.CLEANUP_INTERVAL_MS);
   }
 
   /**
@@ -117,6 +124,17 @@ export class RateLimiter {
    * Reset the rate limiter (for testing)
    */
   reset(): void {
+    this.requests = [];
+  }
+
+  /**
+   * Cleanup resources when rate limiter is no longer needed
+   */
+  destroy(): void {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = null;
+    }
     this.requests = [];
   }
 

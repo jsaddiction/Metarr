@@ -221,7 +221,9 @@ export class App {
 
       // Initialize job queue service with modular storage
       const jobQueueStorage = new SQLiteJobQueueStorage(this.dbManager.getConnection());
-      this.jobQueueService = new JobQueueService(jobQueueStorage);
+      const maxWorkers = parseInt(process.env.JOB_QUEUE_WORKERS || '5', 10);
+      this.jobQueueService = new JobQueueService(jobQueueStorage, maxWorkers);
+      logger.info(`Job queue service initialized with ${maxWorkers} workers`);
 
       // Initialize job queue (crash recovery)
       await this.jobQueueService.initialize();

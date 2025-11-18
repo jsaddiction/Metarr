@@ -28,6 +28,10 @@ export class JobQueueService {
   private processingInterval: NodeJS.Timeout | null = null;
   private readonly POLL_INTERVAL = 1000; // 1 second
 
+  // Worker pool configuration
+  private readonly MAX_WORKERS: number;
+  private activeWorkers: number = 0;
+
   // Circuit breaker state
   private consecutiveFailures: number = 0;
   private readonly MAX_CONSECUTIVE_FAILURES = 5;
@@ -39,8 +43,9 @@ export class JobQueueService {
   private lastStatsBroadcast: number = 0;
   private readonly STATS_BROADCAST_THROTTLE_MS = 2000; // 2 seconds
 
-  constructor(storage: IJobQueueStorage) {
+  constructor(storage: IJobQueueStorage, maxWorkers: number = 5) {
     this.storage = storage;
+    this.MAX_WORKERS = maxWorkers;
   }
 
   /**
@@ -115,7 +120,7 @@ export class JobQueueService {
   }
 
   /**
-   * Start processing jobs
+   * Start processing jobs with worker pool
    */
   start(): void {
     if (this.isProcessing) {
@@ -133,19 +138,29 @@ export class JobQueueService {
         return; // Skip processing while circuit is open
       }
 
-      this.processNextJob().catch((error) => {
-        logger.error('[JobQueueService] Error in job processing loop', {
-          service: 'JobQueueService',
-          operation: 'processNextJob',
-          error: getErrorMessage(error),
-        });
-        this.handleProcessingLoopError(error);
-      });
+      // Spawn workers up to MAX_WORKERS limit
+      while (this.activeWorkers < this.MAX_WORKERS) {
+        this.activeWorkers++;
+
+        this.processNextJob()
+          .catch((error) => {
+            logger.error('[JobQueueService] Error in job processing loop', {
+              service: 'JobQueueService',
+              operation: 'processNextJob',
+              error: getErrorMessage(error),
+            });
+            this.handleProcessingLoopError(error);
+          })
+          .finally(() => {
+            this.activeWorkers--;
+          });
+      }
     }, this.POLL_INTERVAL);
 
     logger.info('[JobQueueService] Job queue processor started', {
       service: 'JobQueueService',
       operation: 'start',
+      maxWorkers: this.MAX_WORKERS,
     });
   }
 

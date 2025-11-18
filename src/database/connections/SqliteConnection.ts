@@ -56,6 +56,13 @@ export class SqliteConnection implements DatabaseConnection {
         } else {
           // Enable foreign keys
           this.db!.run('PRAGMA foreign_keys = ON');
+
+          // Enable WAL mode for concurrent reads (unless explicitly disabled)
+          if (process.env.DB_ENABLE_WAL !== 'false') {
+            this.db!.run('PRAGMA journal_mode = WAL');
+            this.db!.run('PRAGMA synchronous = NORMAL'); // Faster with WAL
+          }
+
           resolve();
         }
       });
