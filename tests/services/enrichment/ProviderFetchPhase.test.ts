@@ -14,6 +14,8 @@ const mockDb = {
   prepare: jest.fn(),
   exec: jest.fn(),
   transaction: jest.fn(),
+  get: jest.fn(),
+  execute: jest.fn(),
 } as any;
 
 const mockDbManager = {
@@ -30,20 +32,9 @@ const mockProviderAssetsRepo = {
 
 describe('ProviderFetchPhase', () => {
   let phase: ProviderFetchPhase;
-  let mockGet: jest.Mock;
-  let mockRun: jest.Mock;
 
   beforeEach(() => {
     jest.clearAllMocks();
-
-    mockGet = jest.fn();
-    mockRun = jest.fn();
-
-    mockDb.prepare.mockReturnValue({
-      get: mockGet,
-      run: mockRun,
-      all: jest.fn(() => []),
-    });
 
     phase = new ProviderFetchPhase(mockDb, mockDbManager);
 
@@ -68,7 +59,7 @@ describe('ProviderFetchPhase', () => {
     });
 
     it('should process movies', async () => {
-      mockGet.mockReturnValueOnce({
+      mockDb.get.mockResolvedValueOnce({
         id: 1,
         tmdb_id: 550,
         monitored: 1,
@@ -102,7 +93,7 @@ describe('ProviderFetchPhase', () => {
 
   describe('Entity Existence', () => {
     it('should throw ResourceNotFoundError if entity does not exist', async () => {
-      mockGet.mockReturnValueOnce(undefined);
+      mockDb.get.mockResolvedValueOnce(undefined);
 
       const config: EnrichmentConfig = {
         entityId: 999,
@@ -123,7 +114,7 @@ describe('ProviderFetchPhase', () => {
         title: 'Fight Club',
       };
 
-      mockGet.mockReturnValueOnce(mockMovie);
+      mockDb.get.mockResolvedValueOnce(mockMovie);
       mockProviderCacheOrchestrator.getMovieData.mockResolvedValueOnce({
         data: { title: 'Fight Club', tmdb_id: 550, posters: [] },
         cached: false,
@@ -138,13 +129,13 @@ describe('ProviderFetchPhase', () => {
 
       await phase.execute(config);
 
-      expect(mockGet).toHaveBeenCalled();
+      expect(mockDb.get).toHaveBeenCalled();
     });
   });
 
   describe('Monitored Status', () => {
     it('should skip unmonitored entities for automated jobs', async () => {
-      mockGet.mockReturnValueOnce({
+      mockDb.get.mockResolvedValueOnce({
         id: 1,
         tmdb_id: 550,
         monitored: 0, // Not monitored
@@ -165,7 +156,7 @@ describe('ProviderFetchPhase', () => {
     });
 
     it('should process unmonitored entities for manual jobs', async () => {
-      mockGet.mockReturnValueOnce({
+      mockDb.get.mockResolvedValueOnce({
         id: 1,
         tmdb_id: 550,
         monitored: 0, // Not monitored
@@ -197,7 +188,7 @@ describe('ProviderFetchPhase', () => {
 
   describe('Provider Cache Orchestration', () => {
     it('should pass forceRefresh flag to provider cache', async () => {
-      mockGet.mockReturnValueOnce({
+      mockDb.get.mockResolvedValueOnce({
         id: 1,
         tmdb_id: 550,
         monitored: 1,
@@ -225,7 +216,7 @@ describe('ProviderFetchPhase', () => {
     });
 
     it('should include all optional data (images, videos, cast, crew)', async () => {
-      mockGet.mockReturnValueOnce({
+      mockDb.get.mockResolvedValueOnce({
         id: 1,
         tmdb_id: 550,
         monitored: 1,
@@ -257,7 +248,7 @@ describe('ProviderFetchPhase', () => {
     });
 
     it('should handle empty provider cache response', async () => {
-      mockGet.mockReturnValueOnce({
+      mockDb.get.mockResolvedValueOnce({
         id: 1,
         tmdb_id: 550,
         monitored: 1,
@@ -283,7 +274,7 @@ describe('ProviderFetchPhase', () => {
 
   describe('Lookup Parameters', () => {
     it('should use TMDB ID if available', async () => {
-      mockGet.mockReturnValueOnce({
+      mockDb.get.mockResolvedValueOnce({
         id: 1,
         tmdb_id: 550,
         imdb_id: null,
@@ -311,7 +302,7 @@ describe('ProviderFetchPhase', () => {
     });
 
     it('should use IMDB ID if available', async () => {
-      mockGet.mockReturnValueOnce({
+      mockDb.get.mockResolvedValueOnce({
         id: 1,
         tmdb_id: null,
         imdb_id: 'tt0137523',
@@ -339,7 +330,7 @@ describe('ProviderFetchPhase', () => {
     });
 
     it('should use both TMDB and IMDB IDs if available', async () => {
-      mockGet.mockReturnValueOnce({
+      mockDb.get.mockResolvedValueOnce({
         id: 1,
         tmdb_id: 550,
         imdb_id: 'tt0137523',
@@ -370,7 +361,7 @@ describe('ProviderFetchPhase', () => {
 
   describe('Asset Counting', () => {
     it('should count all asset types from provider response', async () => {
-      mockGet.mockReturnValueOnce({
+      mockDb.get.mockResolvedValueOnce({
         id: 1,
         tmdb_id: 550,
         monitored: 1,
@@ -410,7 +401,7 @@ describe('ProviderFetchPhase', () => {
     });
 
     it('should return 0 for entities with no assets', async () => {
-      mockGet.mockReturnValueOnce({
+      mockDb.get.mockResolvedValueOnce({
         id: 1,
         tmdb_id: 550,
         monitored: 1,
@@ -442,7 +433,7 @@ describe('ProviderFetchPhase', () => {
 
   describe('Error Handling', () => {
     it('should propagate provider cache errors', async () => {
-      mockGet.mockReturnValueOnce({
+      mockDb.get.mockResolvedValueOnce({
         id: 1,
         tmdb_id: 550,
         monitored: 1,
@@ -463,9 +454,7 @@ describe('ProviderFetchPhase', () => {
 
     it('should handle database errors gracefully', async () => {
       const dbError = new Error('Database connection lost');
-      mockGet.mockImplementationOnce(() => {
-        throw dbError;
-      });
+      mockDb.get.mockRejectedValueOnce(dbError);
 
       const config: EnrichmentConfig = {
         entityId: 1,

@@ -20,7 +20,7 @@ const mockImageProcessor = {
 } as any;
 
 const mockProviderAssetsRepo = {
-  getUndownloadedAssets: jest.fn(),
+  findByAssetType: jest.fn(),
   markAsDownloaded: jest.fn(),
 } as any;
 
@@ -118,7 +118,7 @@ describe('CacheMatchingPhase', () => {
         },
       ]);
 
-      mockProviderAssetsRepo.getUndownloadedAssets.mockResolvedValueOnce([]);
+      mockProviderAssetsRepo.findByAssetType.mockResolvedValueOnce([]);
 
       const config: EnrichmentConfig = {
         entityId: 1,
@@ -131,7 +131,7 @@ describe('CacheMatchingPhase', () => {
 
       expect(result.assetsMatched).toBe(0);
       // Should not attempt to match
-      expect(mockProviderAssetsRepo.getUndownloadedAssets).not.toHaveBeenCalled();
+      expect(mockProviderAssetsRepo.findByAssetType).not.toHaveBeenCalled();
     });
 
     it('should process cache files with perceptual hash', async () => {
@@ -146,7 +146,7 @@ describe('CacheMatchingPhase', () => {
         },
       ]);
 
-      mockProviderAssetsRepo.getUndownloadedAssets.mockResolvedValueOnce([
+      mockProviderAssetsRepo.findByAssetType.mockResolvedValueOnce([
         {
           id: 10,
           asset_type: 'poster',
@@ -180,7 +180,7 @@ describe('CacheMatchingPhase', () => {
       };
 
       mockDb.query.mockResolvedValueOnce([cacheFile]);
-      mockProviderAssetsRepo.getUndownloadedAssets.mockResolvedValueOnce([]);
+      mockProviderAssetsRepo.findByAssetType.mockResolvedValueOnce([]);
 
       mockImageProcessor.analyzeImage.mockResolvedValueOnce({
         perceptual_hash: 'abc123',
@@ -217,7 +217,7 @@ describe('CacheMatchingPhase', () => {
       };
 
       mockDb.query.mockResolvedValueOnce([cacheFile]);
-      mockProviderAssetsRepo.getUndownloadedAssets.mockResolvedValueOnce([]);
+      mockProviderAssetsRepo.findByAssetType.mockResolvedValueOnce([]);
 
       mockImageProcessor.analyzeImage.mockResolvedValueOnce({
         perceptual_hash: 'abc123',
@@ -255,7 +255,7 @@ describe('CacheMatchingPhase', () => {
       };
 
       mockDb.query.mockResolvedValueOnce([cacheFile]);
-      mockProviderAssetsRepo.getUndownloadedAssets.mockResolvedValueOnce([]);
+      mockProviderAssetsRepo.findByAssetType.mockResolvedValueOnce([]);
 
       const config: EnrichmentConfig = {
         entityId: 1,
@@ -284,7 +284,7 @@ describe('CacheMatchingPhase', () => {
 
       mockDb.query.mockResolvedValueOnce([cacheFile]);
 
-      mockProviderAssetsRepo.getUndownloadedAssets.mockResolvedValueOnce([
+      mockProviderAssetsRepo.findByAssetType.mockResolvedValueOnce([
         {
           id: 10,
           asset_type: 'poster',
@@ -318,7 +318,7 @@ describe('CacheMatchingPhase', () => {
 
       mockDb.query.mockResolvedValueOnce([cacheFile]);
 
-      mockProviderAssetsRepo.getUndownloadedAssets.mockResolvedValueOnce([
+      mockProviderAssetsRepo.findByAssetType.mockResolvedValueOnce([
         {
           id: 10,
           asset_type: 'poster',
@@ -352,7 +352,7 @@ describe('CacheMatchingPhase', () => {
 
       mockDb.query.mockResolvedValueOnce([cacheFile]);
 
-      mockProviderAssetsRepo.getUndownloadedAssets.mockResolvedValueOnce([
+      mockProviderAssetsRepo.findByAssetType.mockResolvedValueOnce([
         {
           id: 10,
           asset_type: 'poster',
@@ -394,7 +394,7 @@ describe('CacheMatchingPhase', () => {
 
       mockDb.query.mockResolvedValueOnce([cacheFile]);
 
-      mockProviderAssetsRepo.getUndownloadedAssets.mockResolvedValueOnce([
+      mockProviderAssetsRepo.findByAssetType.mockResolvedValueOnce([
         {
           id: 10,
           asset_type: 'fanart', // Different type
@@ -428,7 +428,7 @@ describe('CacheMatchingPhase', () => {
 
       mockDb.query.mockResolvedValueOnce([cacheFile]);
 
-      mockProviderAssetsRepo.getUndownloadedAssets.mockResolvedValueOnce([
+      mockProviderAssetsRepo.findByAssetType.mockResolvedValueOnce([
         {
           id: 10,
           asset_type: 'poster',
@@ -463,7 +463,7 @@ describe('CacheMatchingPhase', () => {
 
       mockDb.query.mockResolvedValueOnce([cacheFile]);
 
-      mockProviderAssetsRepo.getUndownloadedAssets.mockResolvedValueOnce([
+      mockProviderAssetsRepo.findByAssetType.mockResolvedValueOnce([
         {
           id: 10,
           asset_type: 'poster',
@@ -500,7 +500,7 @@ describe('CacheMatchingPhase', () => {
 
       mockDb.query.mockResolvedValueOnce([cacheFile]);
 
-      mockProviderAssetsRepo.getUndownloadedAssets.mockResolvedValueOnce([
+      mockProviderAssetsRepo.findByAssetType.mockResolvedValueOnce([
         {
           id: 10,
           asset_type: 'poster',
@@ -534,7 +534,7 @@ describe('CacheMatchingPhase', () => {
       };
 
       mockDb.query.mockResolvedValueOnce([cacheFile]);
-      mockProviderAssetsRepo.getUndownloadedAssets.mockResolvedValueOnce([]);
+      mockProviderAssetsRepo.findByAssetType.mockResolvedValueOnce([]);
 
       mockImageProcessor.analyzeImage.mockRejectedValueOnce(
         new Error('Corrupt image file')
