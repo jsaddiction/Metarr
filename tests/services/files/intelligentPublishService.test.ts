@@ -18,7 +18,20 @@ import crypto from 'crypto';
 import { jest } from '@jest/globals';
 
 // Mock dependencies
-jest.mock('fs/promises');
+jest.mock('fs/promises', () => ({
+  default: {
+    readdir: jest.fn(),
+    readFile: jest.fn(),
+    copyFile: jest.fn(),
+    rename: jest.fn(),
+    unlink: jest.fn(),
+  },
+  readdir: jest.fn(),
+  readFile: jest.fn(),
+  copyFile: jest.fn(),
+  rename: jest.fn(),
+  unlink: jest.fn(),
+}));
 jest.mock('../../../src/middleware/logging.js', () => ({
   logger: {
     debug: jest.fn(),
@@ -568,16 +581,16 @@ describe('intelligentPublishService - Transaction Atomicity', () => {
             { id: 1, file_path: '/cache/poster.jpg', file_hash: 'hash1', image_type: 'poster' },
             { id: 2, file_path: '/cache/fanart.jpg', file_hash: 'hash2', image_type: 'fanart' },
             { id: 3, file_path: '/cache/banner.jpg', file_hash: 'hash3', image_type: 'banner' },
-          ];
+          ] as any;
         }
-        return [];
+        return [] as any;
       });
 
       mockDb.get.mockImplementation(async (sql: string) => {
         if (sql.includes('cache_text_files')) {
-          return { file_path: '/cache/movie.nfo', file_hash: 'nfohash' };
+          return { file_path: '/cache/movie.nfo', file_hash: 'nfohash' } as any;
         }
-        return { nfo_cache_id: 100 };
+        return { nfo_cache_id: 100 } as any;
       });
 
       let insertCount = 0;
