@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
@@ -6,40 +6,40 @@ import { Toaster } from '@/components/ui/sonner';
 import { WebSocketProvider } from './contexts/WebSocketContext';
 import { Layout } from './components/layout/Layout';
 import { RouteErrorBoundary } from './components/error/RouteErrorBoundary';
-import { Dashboard } from './pages/Dashboard';
-import { Movies } from './pages/metadata/Movies';
-import { MovieEdit } from './pages/metadata/MovieEdit';
-import { Actors } from './pages/metadata/Actors';
-import { Series } from './pages/Series';
-import { Music } from './pages/Music';
-import { Artists } from './pages/Artists';
-import { History } from './pages/activity/History';
-import { RunningJobs } from './pages/activity/RunningJobs';
-import { BlockedAssets } from './pages/activity/BlockedAssets';
-import { System } from './pages/System';
-import { Status } from './pages/system/Status';
-import { Tasks } from './pages/system/Tasks';
-import { Backup } from './pages/system/Backup';
-import { Events } from './pages/system/Events';
-import { LogFiles } from './pages/system/LogFiles';
-import { Providers } from './pages/settings/Providers';
-import { Libraries } from './pages/settings/Libraries';
-import { MediaPlayers } from './pages/settings/MediaPlayers';
-import { Notifications } from './pages/settings/Notifications';
-import { Workflow } from './pages/settings/Workflow';
-import { SaveBarDemo } from './pages/test/SaveBarDemo';
+
+// Lazy-loaded route components for code splitting
+const Dashboard = lazy(() => import('./pages/Dashboard').then(m => ({ default: m.Dashboard })));
+const Movies = lazy(() => import('./pages/metadata/Movies').then(m => ({ default: m.Movies })));
+const MovieEdit = lazy(() => import('./pages/metadata/MovieEdit').then(m => ({ default: m.MovieEdit })));
+const Actors = lazy(() => import('./pages/metadata/Actors').then(m => ({ default: m.Actors })));
+const Series = lazy(() => import('./pages/Series').then(m => ({ default: m.Series })));
+const Music = lazy(() => import('./pages/Music').then(m => ({ default: m.Music })));
+const Artists = lazy(() => import('./pages/Artists').then(m => ({ default: m.Artists })));
+const History = lazy(() => import('./pages/activity/History').then(m => ({ default: m.History })));
+const RunningJobs = lazy(() => import('./pages/activity/RunningJobs').then(m => ({ default: m.RunningJobs })));
+const BlockedAssets = lazy(() => import('./pages/activity/BlockedAssets').then(m => ({ default: m.BlockedAssets })));
+const Status = lazy(() => import('./pages/system/Status').then(m => ({ default: m.Status })));
+const Tasks = lazy(() => import('./pages/system/Tasks').then(m => ({ default: m.Tasks })));
+const Backup = lazy(() => import('./pages/system/Backup').then(m => ({ default: m.Backup })));
+const Events = lazy(() => import('./pages/system/Events').then(m => ({ default: m.Events })));
+const LogFiles = lazy(() => import('./pages/system/LogFiles').then(m => ({ default: m.LogFiles })));
+const Providers = lazy(() => import('./pages/settings/Providers').then(m => ({ default: m.Providers })));
+const Libraries = lazy(() => import('./pages/settings/Libraries').then(m => ({ default: m.Libraries })));
+const MediaPlayers = lazy(() => import('./pages/settings/MediaPlayers').then(m => ({ default: m.MediaPlayers })));
+const Notifications = lazy(() => import('./pages/settings/Notifications').then(m => ({ default: m.Notifications })));
+const Workflow = lazy(() => import('./pages/settings/Workflow').then(m => ({ default: m.Workflow })));
+const SaveBarDemo = lazy(() => import('./pages/test/SaveBarDemo').then(m => ({ default: m.SaveBarDemo })));
 
 // Configure QueryClient
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: Infinity, // Data is fresh until explicitly invalidated
-      refetchOnWindowFocus: false, // Don't refetch on window focus
+      staleTime: 5 * 60 * 1000, // 5 minutes - data becomes stale after this time
+      refetchOnWindowFocus: 'always', // Refetch on window focus for freshness
+      refetchOnReconnect: 'always', // Refetch when network reconnects
       retry: 1, // Only retry once on failure
-      useErrorBoundary: false, // Handle errors in components, not error boundary
     },
     mutations: {
-      useErrorBoundary: false, // Handle mutation errors in components
       retry: false, // Don't retry mutations by default (user actions should be explicit)
     },
   },
@@ -79,18 +79,28 @@ function usePageTitle() {
   return pathMap[location.pathname] || 'Metarr';
 }
 
+// Loading fallback component
+function RouteLoadingFallback() {
+  return (
+    <div className="flex items-center justify-center py-32">
+      <div className="text-neutral-400">Loading...</div>
+    </div>
+  );
+}
+
 function AppRoutes() {
   const title = usePageTitle();
 
   return (
     <Layout title={title}>
-      <Routes>
-        {/* Dashboard */}
-        <Route path="/" element={
-          <RouteErrorBoundary routeName="Dashboard">
-            <Dashboard />
-          </RouteErrorBoundary>
-        } />
+      <Suspense fallback={<RouteLoadingFallback />}>
+        <Routes>
+          {/* Dashboard */}
+          <Route path="/" element={
+            <RouteErrorBoundary routeName="Dashboard">
+              <Dashboard />
+            </RouteErrorBoundary>
+          } />
 
         {/* Media routes */}
         <Route path="/media/movies" element={
@@ -210,6 +220,7 @@ function AppRoutes() {
         {/* Fallback for unknown routes */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      </Suspense>
     </Layout>
   );
 }

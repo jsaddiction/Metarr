@@ -4,9 +4,37 @@ import {
   Job,
   JobFilters,
   QueueStats,
+  JobType,
 } from '../types.js';
 import { logger } from '../../../middleware/logging.js';
 import { SqlParam } from '../../../types/database.js';
+
+/**
+ * Database row structure for job_queue table
+ */
+interface JobQueueRow {
+  id: number;
+  type: JobType;
+  priority: number;
+  payload: string; // JSON string
+  status: 'pending' | 'processing';
+  error: string | null;
+  retry_count: number;
+  max_retries: number;
+  created_at: string;
+  started_at: string | null;
+  updated_at: string;
+  manual: number; // SQLite boolean (0 or 1)
+}
+
+/**
+ * Database row structure for queue stats query
+ */
+interface QueueStatsRow {
+  pending: number | null;
+  processing: number | null;
+  oldest_pending_age: number | null;
+}
 
 /**
  * SQLite-based job queue storage
@@ -52,7 +80,7 @@ export class SQLiteJobQueueStorage implements IJobQueueStorage {
   async pickNextJob(): Promise<Job | null> {
     // Atomic UPDATE...RETURNING to prevent race conditions
     // SQLite 3.35+ supports RETURNING clause for atomic operations
-    const jobs = await this.db.query<any>(
+    const jobs = await this.db.query<JobQueueRow>(
       `UPDATE job_queue
        SET status = 'processing',
            started_at = CURRENT_TIMESTAMP,
@@ -100,7 +128,7 @@ export class SQLiteJobQueueStorage implements IJobQueueStorage {
 
   async completeJob(jobId: number, _result?: unknown): Promise<void> {
     // Get job data for logging
-    const jobs = await this.db.query<any>('SELECT * FROM job_queue WHERE id = ?', [jobId]);
+    const jobs = await this.db.query<JobQueueRow>('SELECT * FROM job_queue WHERE id = ?', [jobId]);
 
     if (jobs.length === 0) {
       logger.warn('[SQLiteJobQueueStorage] Job not found for completion', {
@@ -131,7 +159,7 @@ export class SQLiteJobQueueStorage implements IJobQueueStorage {
   }
 
   async failJob(jobId: number, error: string): Promise<void> {
-    const jobs = await this.db.query<any>('SELECT * FROM job_queue WHERE id = ?', [jobId]);
+    const jobs = await this.db.query<JobQueueRow>('SELECT * FROM job_queue WHERE id = ?', [jobId]);
 
     if (jobs.length === 0) {
       logger.warn('[SQLiteJobQueueStorage] Job not found for failure', {
@@ -180,7 +208,7 @@ export class SQLiteJobQueueStorage implements IJobQueueStorage {
   }
 
   async getJob(jobId: number): Promise<Job | null> {
-    const jobs = await this.db.query<any>('SELECT * FROM job_queue WHERE id = ?', [jobId]);
+    const jobs = await this.db.query<JobQueueRow>('SELECT * FROM job_queue WHERE id = ?', [jobId]);
 
     if (jobs.length === 0) {
       return null;
@@ -224,7 +252,7 @@ export class SQLiteJobQueueStorage implements IJobQueueStorage {
       params.push(filters.limit);
     }
 
-    const jobs = await this.db.query<any>(query, params);
+    const jobs = await this.db.query<JobQueueRow>(query, params);
 
     return jobs.map((job) => ({
       id: job.id,
@@ -270,7 +298,7 @@ export class SQLiteJobQueueStorage implements IJobQueueStorage {
 
   async getStats(): Promise<QueueStats> {
     // Get active queue stats only (no history table)
-    const queueStats = await this.db.query<any>(
+    const queueStats = await this.db.query<QueueStatsRow>(
       `SELECT
         SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
         SUM(CASE WHEN status = 'processing' THEN 1 ELSE 0 END) as processing,

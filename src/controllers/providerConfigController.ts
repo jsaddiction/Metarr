@@ -8,8 +8,8 @@ import { FanArtClient } from '../services/providers/fanart/FanArtClient.js';
 import { IMDbClient } from '../services/providers/imdb/IMDbClient.js';
 import { MusicBrainzClient } from '../services/providers/musicbrainz/MusicBrainzClient.js';
 import { TheAudioDBClient } from '../services/providers/theaudiodb/TheAudioDBClient.js';
+import { ProviderRegistry } from '../services/providers/ProviderRegistry.js';
 import { logger } from '../middleware/logging.js';
-import { tmdbService } from '../services/providers/TMDBService.js';
 import fs from 'fs/promises';
 import { getErrorMessage, getStatusCode } from '../utils/errorHandling.js';
 import {
@@ -155,11 +155,11 @@ export class ProviderConfigController {
       // Update configuration
       const updated = await this.providerConfigService.upsert(name, data);
 
-      // Reinitialize provider service if enabled
-      if (data.enabled && name === 'tmdb') {
-        tmdbService.reinitialize();
-        logger.info('Reinitialized TMDB service with new configuration');
-      }
+      // Invalidate cached provider instance so it gets recreated with new config
+      // ProviderRegistry.createProvider() will automatically use updated config on next request
+      const registry = ProviderRegistry.getInstance();
+      registry.invalidateCache(name as any); // ProviderId type
+      logger.info('Invalidated cached provider instances for updated configuration', { provider: name });
 
       const maskedConfig: ProviderConfig = {
         ...updated

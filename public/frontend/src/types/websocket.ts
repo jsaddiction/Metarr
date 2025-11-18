@@ -177,17 +177,106 @@ export interface WelcomeMessage extends BaseServerMessage {
   capabilities: string[];
 }
 
+export interface ProviderScrapeStartMessage extends BaseServerMessage {
+  type: 'providerScrapeStart';
+  movieId: number;
+  providers: string[];
+}
+
+export interface ProviderScrapeProviderStartMessage extends BaseServerMessage {
+  type: 'providerScrapeProviderStart';
+  movieId: number;
+  provider: string;
+}
+
+export interface ProviderScrapeProviderCompleteMessage extends BaseServerMessage {
+  type: 'providerScrapeProviderComplete';
+  movieId: number;
+  provider: string;
+  success: boolean;
+}
+
+export interface ProviderScrapeProviderRetryMessage extends BaseServerMessage {
+  type: 'providerScrapeProviderRetry';
+  movieId: number;
+  provider: string;
+  attempt: number;
+  maxRetries: number;
+}
+
+export interface ProviderScrapeProviderTimeoutMessage extends BaseServerMessage {
+  type: 'providerScrapeProviderTimeout';
+  movieId: number;
+  provider: string;
+}
+
+export interface ProviderScrapeCompleteMessage extends BaseServerMessage {
+  type: 'providerScrapeComplete';
+  movieId: number;
+  completedProviders: string[];
+  failedProviders: string[];
+  timedOutProviders: string[];
+}
+
+export interface ProviderScrapeErrorMessage extends BaseServerMessage {
+  type: 'providerScrapeError';
+  movieId: number;
+  error: string;
+}
+
+export interface JobStatusMessage extends BaseServerMessage {
+  type: 'jobStatus';
+  jobId: number;
+  jobType: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed' | 'retrying';
+  progress?: {
+    current: number;
+    total: number;
+    message?: string;
+  };
+  error?: string;
+  payload?: unknown;
+}
+
+export interface JobQueueStatsMessage extends BaseServerMessage {
+  type: 'jobQueueStats';
+  pending: number;
+  processing: number;
+  completed: number;
+  failed: number;
+  retrying: number;
+}
+
+export interface PlayerActivityMessage extends BaseServerMessage {
+  type: 'player:activity';
+  payload: {
+    playerId: number;
+    // Add other player activity fields as needed
+    [key: string]: unknown;
+  };
+}
+
 export type ServerMessage =
   | PongMessage
   | ResyncDataMessage
   | PlayerStatusMessage
+  | PlayerActivityMessage
   | ScanStatusMessage
   | MoviesChangedMessage
   | LibraryChangedMessage
   | AckMessage
   | ConflictMessage
   | ErrorMessage
-  | WelcomeMessage;
+  | WelcomeMessage
+  | ProviderScrapeStartMessage
+  | ProviderScrapeProviderStartMessage
+  | ProviderScrapeProviderCompleteMessage
+  | ProviderScrapeProviderRetryMessage
+  | ProviderScrapeProviderTimeoutMessage
+  | ProviderScrapeCompleteMessage
+  | ProviderScrapeErrorMessage
+  | JobStatusMessage
+  | JobQueueStatsMessage;
 
 // ============================================================================
 // Connection State Types

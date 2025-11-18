@@ -21,15 +21,16 @@ import {
 import { RateLimiter, CircuitBreaker } from './utils/index.js';
 import { logger } from '../../middleware/logging.js';
 import { getErrorMessage, isError } from '../../utils/errorHandling.js';
-import { NotImplementedError } from '../../errors/index.js';
 import {
+  NotImplementedError,
   RateLimitError,
-  NotFoundError,
-  ServerError,
+  ProviderServerError,
   AuthenticationError,
   NetworkError,
   ProviderError,
-} from '../../errors/providerErrors.js';
+  ResourceNotFoundError,
+  ErrorCode,
+} from '../../errors/index.js';
 
 export abstract class BaseProvider {
   protected readonly capabilities: ProviderCapabilities;
@@ -317,13 +318,13 @@ export abstract class BaseProvider {
    *
    * @param error - The error object (typically from axios or fetch)
    * @param resourceId - Optional resource identifier for context
-   * @returns Standardized ProviderError subclass
+   * @returns Standardized ApplicationError subclass
    */
-  protected parseHttpError(error: unknown, resourceId?: string | number): ProviderError {
+  protected parseHttpError(error: unknown, resourceId?: string | number): ProviderError | ResourceNotFoundError | AuthenticationError | NetworkError {
     const providerName = this.capabilities.id;
 
-    // Check if it's already a ProviderError
-    if (error instanceof ProviderError) {
+    // Check if it's already an ApplicationError
+    if (error instanceof ProviderError || error instanceof ResourceNotFoundError || error instanceof AuthenticationError || error instanceof NetworkError) {
       return error;
     }
 
@@ -353,40 +354,75 @@ export abstract class BaseProvider {
             }
           }
 
-          return new RateLimitError(providerName, retryAfterSeconds, message);
+          return new RateLimitError(
+            providerName,
+            retryAfterSeconds,
+            message,
+            { service: 'BaseProvider', operation: 'parseHttpError', metadata: { statusCode: status } }
+          );
         }
 
         case 404:
           // Not found
-          return new NotFoundError(providerName, resourceId || 'unknown', message);
+          return new ResourceNotFoundError(
+            'provider-resource',
+            resourceId || 'unknown',
+            message,
+            { service: 'BaseProvider', operation: 'parseHttpError', metadata: { provider: providerName } }
+          );
 
         case 401:
         case 403:
           // Authentication/authorization error
-          return new AuthenticationError(providerName, message);
+          return new AuthenticationError(
+            message,
+            { service: 'BaseProvider', operation: 'parseHttpError', metadata: { statusCode: status, provider: providerName } }
+          );
 
         case 500:
         case 502:
         case 503:
         case 504:
           // Server error
-          return new ServerError(providerName, status, message);
+          return new ProviderServerError(
+            providerName,
+            status,
+            message,
+            { service: 'BaseProvider', operation: 'parseHttpError' }
+          );
 
         default:
           // Generic provider error
-          return new ProviderError(message || `HTTP ${status} error`, providerName, status);
+          return new ProviderError(
+            message || `HTTP ${status} error`,
+            providerName,
+            ErrorCode.PROVIDER_INVALID_RESPONSE,
+            status,
+            false, // Not retryable by default
+            { service: 'BaseProvider', operation: 'parseHttpError' }
+          );
       }
     }
 
     // Handle network errors (no response received)
     if ((error as { request?: unknown }).request) {
-      return new NetworkError(providerName, error as Error);
+      return new NetworkError(
+        `Network error connecting to provider ${providerName}`,
+        ErrorCode.NETWORK_CONNECTION_FAILED,
+        undefined,
+        { service: 'BaseProvider', operation: 'parseHttpError', metadata: { provider: providerName } },
+        error as Error
+      );
     }
 
     // Generic error
     return new ProviderError(
       getErrorMessage(error) || 'Unknown error',
-      providerName
+      providerName,
+      ErrorCode.PROVIDER_INVALID_RESPONSE,
+      500,
+      false, // Not retryable by default
+      { service: 'BaseProvider', operation: 'parseHttpError' }
     );
   }
 

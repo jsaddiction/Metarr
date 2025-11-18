@@ -196,6 +196,18 @@ export class LibraryController {
         return;
       }
 
+      // Path traversal protection: Reject paths with suspicious patterns
+      if (path.includes('..') || path.includes('\0')) {
+        res.status(400).json({ error: 'Invalid path: path traversal attempts are not allowed' });
+        return;
+      }
+
+      // Additional validation: must be absolute path (starts with / or drive letter on Windows)
+      if (!path.startsWith('/') && !/^[a-zA-Z]:[\\/]/.test(path)) {
+        res.status(400).json({ error: 'Invalid path: must be an absolute path' });
+        return;
+      }
+
       const directories = await this.libraryService.browsePath(path);
 
       res.json(directories);

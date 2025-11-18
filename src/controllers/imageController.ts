@@ -109,7 +109,7 @@ export class ImageController {
         message: 'Image uploaded successfully',
         image: {
           id: cacheFileId,
-          cache_url: this.getCacheUrlFromPath(uploadedImage?.file_path),
+          cache_url: this.getCacheUrlFromPath(uploadedImage?.file_path ?? null),
         },
       });
     } catch (error) {

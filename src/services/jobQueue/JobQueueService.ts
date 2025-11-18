@@ -35,6 +35,10 @@ export class JobQueueService {
   private circuitResetTimeout: NodeJS.Timeout | null = null;
   private readonly CIRCUIT_RESET_DELAY_MS = 60000; // 1 minute
 
+  // Broadcast throttling state
+  private lastStatsBroadcast: number = 0;
+  private readonly STATS_BROADCAST_THROTTLE_MS = 2000; // 2 seconds
+
   constructor(storage: IJobQueueStorage) {
     this.storage = storage;
   }
@@ -330,9 +334,18 @@ export class JobQueueService {
   }
 
   /**
-   * Broadcast queue statistics via WebSocket
+   * Broadcast queue statistics via WebSocket (throttled to prevent excessive traffic)
    */
   async broadcastQueueStats(): Promise<void> {
+    const now = Date.now();
+
+    // Throttle: skip broadcast if within 2s of last broadcast
+    if (now - this.lastStatsBroadcast < this.STATS_BROADCAST_THROTTLE_MS) {
+      return;
+    }
+
+    this.lastStatsBroadcast = now;
+
     try {
       const stats = await this.getStats();
       websocketBroadcaster.broadcast('queue:stats', stats as unknown as Record<string, unknown>);

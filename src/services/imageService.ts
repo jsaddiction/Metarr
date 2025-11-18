@@ -40,6 +40,43 @@ export interface ProviderImage {
   providerName?: string;
 }
 
+/**
+ * Database row type for cache_image_files queries
+ */
+interface CacheImageFileRow {
+  id: number;
+  entity_type: string;
+  entity_id: number;
+  file_path: string;
+  file_name: string;
+  file_size: number;
+  file_hash: string | null;
+  perceptual_hash: string | null;
+  location: string | null;
+  image_type: string;
+  width: number | null;
+  height: number | null;
+  format: string | null;
+  source_type: string | null;
+  source_url: string | null;
+  provider_name: string | null;
+  classification_score: number | null;
+  is_published: number | null;
+  library_file_id: number | null;
+  cache_file_id: number | null;
+  reference_count: number | null;
+  discovered_at: string;
+  last_accessed_at: string | null;
+  is_locked: number;
+  locked: number | null;
+  vote_average: number | null;
+  url: string | null;
+  deleted_on: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  cache_path: string | null;
+}
+
 export class ImageService {
   private readonly cacheDir: string;
   private readonly tempDir: string;
@@ -58,7 +95,7 @@ export class ImageService {
    * Get all images for an entity (unified file system)
    * Returns cache files (location='cache') for the entity
    */
-  async getImages(entityType: string, entityId: number, imageType?: string): Promise<any[]> {
+  async getImages(entityType: string, entityId: number, imageType?: string): Promise<CacheImageFileRow[]> {
     let query = `
       SELECT
         id, entity_type, entity_id, file_path, file_name, file_size, file_hash,
@@ -84,15 +121,15 @@ export class ImageService {
 
     query += ' ORDER BY classification_score DESC, width * height DESC, discovered_at DESC';
 
-    const rows = await this.dbManager.query<any>(query, params);
+    const rows = await this.dbManager.query<CacheImageFileRow>(query, params);
     return rows;
   }
 
   /**
    * Get single image by ID (unified file system)
    */
-  async getImageById(imageId: number): Promise<any | null> {
-    const rows = await this.dbManager.query<any>(
+  async getImageById(imageId: number): Promise<CacheImageFileRow | null> {
+    const rows = await this.dbManager.query<CacheImageFileRow>(
       `SELECT
         id, entity_type, entity_id, file_path, file_name, file_size, file_hash,
         perceptual_hash, image_type, width, height, format,

@@ -254,6 +254,76 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({ children }
         }
         break;
 
+      case 'providerScrapeStart':
+        // Provider scrape started - update UI to show progress
+        console.log('[WebSocket] Provider scrape started:', message);
+        break;
+
+      case 'providerScrapeProviderStart':
+        // Individual provider started scraping
+        console.log('[WebSocket] Provider started:', (message as any).provider);
+        break;
+
+      case 'providerScrapeProviderComplete':
+        // Individual provider completed scraping
+        console.log('[WebSocket] Provider completed:', (message as any).provider, 'success:', (message as any).success);
+        break;
+
+      case 'providerScrapeProviderRetry':
+        // Provider retrying after failure
+        console.log('[WebSocket] Provider retrying:', (message as any).provider, `(${(message as any).attempt}/${(message as any).maxRetries})`);
+        break;
+
+      case 'providerScrapeProviderTimeout':
+        // Provider timed out
+        console.warn('[WebSocket] Provider timeout:', (message as any).provider);
+        break;
+
+      case 'providerScrapeComplete':
+        // All providers completed scraping
+        console.log('[WebSocket] Provider scrape complete:', {
+          completed: (message as any).completedProviders,
+          failed: (message as any).failedProviders,
+          timedOut: (message as any).timedOutProviders,
+        });
+        // Invalidate movie data after provider scrape
+        if ((message as any).movieId) {
+          queryClient.invalidateQueries({ queryKey: ['movie', (message as any).movieId] });
+          queryClient.invalidateQueries({ queryKey: ['movieImages', (message as any).movieId] });
+        }
+        break;
+
+      case 'providerScrapeError':
+        // Provider scrape encountered an error
+        console.error('[WebSocket] Provider scrape error:', (message as any).error);
+        toast.error('Provider scrape failed', {
+          description: (message as any).error,
+        });
+        break;
+
+      case 'jobStatus':
+        // Job status update
+        console.log('[WebSocket] Job status:', {
+          id: (message as any).jobId,
+          type: (message as any).jobType,
+          status: (message as any).status,
+        });
+        queryClient.invalidateQueries({ queryKey: ['jobs'] });
+        queryClient.invalidateQueries({ queryKey: ['jobStats'] });
+        break;
+
+      case 'jobQueueStats':
+      case 'queue:stats':
+        // Job queue statistics update (handle both new and old event names)
+        console.log('[WebSocket] Job queue stats:', {
+          pending: (message as any).pending,
+          processing: (message as any).processing,
+          completed: (message as any).completed,
+          failed: (message as any).failed,
+        });
+        queryClient.invalidateQueries({ queryKey: ['jobStats'] });
+        break;
+
       default:
         // Handle other message types
         break;

@@ -4,7 +4,7 @@ import {
   RadarrWebhookPayload,
   LidarrWebhookPayload,
 } from '../types/webhooks.js';
-import { ValidationError } from '../middleware/errorHandler.js';
+import { ValidationError } from '../errors/ApplicationError.js';
 import { logger } from '../middleware/logging.js';
 import { WebhookProcessingService } from '../services/webhookProcessingService.js';
 import { DatabaseManager } from '../database/DatabaseManager.js';
@@ -317,31 +317,52 @@ export class WebhookController {
 
   private validateSonarrPayload(payload: SonarrWebhookPayload): void {
     if (!payload.eventType) {
-      throw new ValidationError('Missing eventType in Sonarr webhook payload');
+      throw new ValidationError('Missing eventType in Sonarr webhook payload', {
+        service: 'WebhookController',
+        operation: 'validateSonarrPayload',
+      });
     }
 
     if (payload.eventType === 'Download' && !payload.series) {
-      throw new ValidationError('Missing series data in Sonarr download webhook');
+      throw new ValidationError('Missing series data in Sonarr download webhook', {
+        service: 'WebhookController',
+        operation: 'validateSonarrPayload',
+        metadata: { eventType: payload.eventType },
+      });
     }
   }
 
   private validateRadarrPayload(payload: RadarrWebhookPayload): void {
     if (!payload.eventType) {
-      throw new ValidationError('Missing eventType in Radarr webhook payload');
+      throw new ValidationError('Missing eventType in Radarr webhook payload', {
+        service: 'WebhookController',
+        operation: 'validateRadarrPayload',
+      });
     }
 
     if (payload.eventType === 'Download' && !payload.movie) {
-      throw new ValidationError('Missing movie data in Radarr download webhook');
+      throw new ValidationError('Missing movie data in Radarr download webhook', {
+        service: 'WebhookController',
+        operation: 'validateRadarrPayload',
+        metadata: { eventType: payload.eventType },
+      });
     }
   }
 
   private validateLidarrPayload(payload: LidarrWebhookPayload): void {
     if (!payload.eventType) {
-      throw new ValidationError('Missing eventType in Lidarr webhook payload');
+      throw new ValidationError('Missing eventType in Lidarr webhook payload', {
+        service: 'WebhookController',
+        operation: 'validateLidarrPayload',
+      });
     }
 
     if (payload.eventType === 'Download' && !payload.artist) {
-      throw new ValidationError('Missing artist data in Lidarr download webhook');
+      throw new ValidationError('Missing artist data in Lidarr download webhook', {
+        service: 'WebhookController',
+        operation: 'validateLidarrPayload',
+        metadata: { eventType: payload.eventType },
+      });
     }
   }
 

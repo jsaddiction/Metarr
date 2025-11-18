@@ -26,8 +26,11 @@ import {
   MetadataRequest,
   AssetRequest,
 } from '../../src/types/providers/index.js';
-import { ProviderUnavailableError } from '../../src/errors/index.js';
-import { ServerError, NetworkError } from '../../src/errors/providerErrors.js';
+import {
+  ProviderUnavailableError,
+  ProviderServerError,
+  NetworkError,
+} from '../../src/errors/index.js';
 import { logger } from '../../src/middleware/logging.js';
 
 // Mock logger to capture fallback logging
@@ -245,7 +248,7 @@ describe('ProviderOrchestrator - Fallback Chain', () => {
 
         const mockTmdbProvider = {
           getMetadata: jest.fn<(req: MetadataRequest) => Promise<MetadataResponse>>()
-            .mockRejectedValue(new ServerError('tmdb', 500, 'Internal server error')),
+            .mockRejectedValue(new ProviderServerError('tmdb', 500, 'Internal server error')),
           getCapabilities: jest.fn().mockReturnValue({
             id: 'tmdb',
             search: { externalIdLookup: ['tmdb', 'imdb'] },
@@ -411,7 +414,7 @@ describe('ProviderOrchestrator - Fallback Chain', () => {
 
         const mockTmdbProvider = {
           getMetadata: jest.fn<(req: MetadataRequest) => Promise<MetadataResponse>>()
-            .mockRejectedValue(new ServerError('tmdb', 503, 'Service unavailable')),
+            .mockRejectedValue(new ProviderServerError('tmdb', 503, 'Service unavailable')),
           getCapabilities: jest.fn().mockReturnValue({
             id: 'tmdb',
             search: { externalIdLookup: ['tmdb'] },
@@ -547,7 +550,7 @@ describe('ProviderOrchestrator - Fallback Chain', () => {
 
         const mockTmdbProvider = {
           getAssets: jest.fn<(req: AssetRequest) => Promise<AssetCandidate[]>>()
-            .mockRejectedValue(new ServerError('tmdb', 500, 'Internal error')),
+            .mockRejectedValue(new ProviderServerError('tmdb', 500, 'Internal error')),
           getCapabilities: jest.fn().mockReturnValue({
             id: 'tmdb',
             supportedAssetTypes: {
@@ -781,7 +784,7 @@ describe('ProviderOrchestrator - Fallback Chain', () => {
 
         const mockTmdbProvider = {
           getAssets: jest.fn<(req: AssetRequest) => Promise<AssetCandidate[]>>()
-            .mockRejectedValue(new ServerError('tmdb', 503, 'Service unavailable')),
+            .mockRejectedValue(new ProviderServerError('tmdb', 503, 'Service unavailable')),
           getCapabilities: jest.fn().mockReturnValue({
             id: 'tmdb',
             supportedAssetTypes: {
@@ -955,7 +958,7 @@ describe('ProviderOrchestrator - Fallback Chain', () => {
     it('should include error messages in fallback logs', async () => {
       configService.getAll.mockResolvedValue([tmdbConfig]);
 
-      const testError = new ServerError('tmdb', 500, 'Database connection failed');
+      const testError = new ProviderServerError('tmdb', 500, 'Database connection failed');
 
       const mockTmdbProvider = {
         getMetadata: jest.fn<(req: MetadataRequest) => Promise<MetadataResponse>>()

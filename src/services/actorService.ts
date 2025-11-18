@@ -55,6 +55,17 @@ interface ActorDatabaseRow {
   updated_at: string;
 }
 
+/**
+ * Database row type for actor movies query
+ */
+interface ActorMovieRow {
+  id: number;
+  title: string;
+  year: number | null;
+  role: string;
+  actor_order: number;
+}
+
 export class ActorService {
   constructor(private readonly db: DatabaseManager) {}
 
@@ -102,7 +113,7 @@ export class ActorService {
     `;
 
     const [rows, countResult] = await Promise.all([
-      this.db.query<any>(query, params),
+      this.db.query<ActorDatabaseRow>(query, params),
       this.db.query<{ total: number }>(countQuery, params.slice(0, -2)), // Exclude limit/offset from count
     ]);
 
@@ -124,7 +135,7 @@ export class ActorService {
       WHERE a.id = ?
     `;
 
-    const rows = await this.db.query<any>(query, [actorId]);
+    const rows = await this.db.query<ActorDatabaseRow>(query, [actorId]);
 
     if (!rows || rows.length === 0) {
       return null;
@@ -136,7 +147,7 @@ export class ActorService {
   /**
    * Get movies for an actor
    */
-  async getMoviesForActor(actorId: number): Promise<any[]> {
+  async getMoviesForActor(actorId: number): Promise<ActorMovieRow[]> {
     const query = `
       SELECT
         m.id,
@@ -150,7 +161,7 @@ export class ActorService {
       ORDER BY m.year DESC, m.title ASC
     `;
 
-    return this.db.query<any>(query, [actorId]);
+    return this.db.query<ActorMovieRow>(query, [actorId]);
   }
 
   /**
@@ -353,7 +364,7 @@ export class ActorService {
       LIMIT ?
     `;
 
-    const rows = await this.db.query<any>(query, [limit]);
+    const rows = await this.db.query<ActorDatabaseRow>(query, [limit]);
     return rows.map(row => this.mapActor(row));
   }
 

@@ -23,12 +23,11 @@ import {
 } from '../../types/providers/index.js';
 import {
   RateLimitError,
-  ServerError,
-  NotFoundError,
+  ProviderServerError,
+  ResourceNotFoundError,
   AuthenticationError,
   NetworkError,
-} from '../../errors/providerErrors.js';
-import { ResourceNotFoundError } from '../../errors/index.js';
+} from '../../errors/index.js';
 import { logger } from '../../middleware/logging.js';
 import type { Movie, Series } from '../../types/models.js';
 import { getErrorMessage } from '../../utils/errorHandling.js';
@@ -393,8 +392,8 @@ export class FetchOrchestrator {
     // Resolve provider ID from media external IDs using provider's capabilities
     const providerId = this.resolveProviderId(media, caps);
     if (!providerId) {
-      throw new NotFoundError(
-        caps.id,
+      throw new ResourceNotFoundError(
+        'provider-resource',
         media.id,
         `No compatible external ID found for ${caps.id}`
       );
@@ -508,7 +507,7 @@ export class FetchOrchestrator {
     }
 
     // Retry on server errors (5xx)
-    if (error instanceof ServerError) {
+    if (error instanceof ProviderServerError) {
       return true;
     }
 
@@ -518,7 +517,7 @@ export class FetchOrchestrator {
     }
 
     // Don't retry on 404
-    if (error instanceof NotFoundError) {
+    if (error instanceof ResourceNotFoundError) {
       return false;
     }
 
@@ -537,7 +536,7 @@ export class FetchOrchestrator {
   private isRetryableError(error: unknown): boolean {
     return (
       error instanceof RateLimitError ||
-      error instanceof ServerError ||
+      error instanceof ProviderServerError ||
       error instanceof NetworkError
     );
   }

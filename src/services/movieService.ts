@@ -7,7 +7,7 @@ import path from 'path';
 import { JobQueueService } from './jobQueue/JobQueueService.js';
 import { MovieAssetService } from './movie/MovieAssetService.js';
 import { MovieUnknownFilesService } from './movie/MovieUnknownFilesService.js';
-import { MovieWorkflowService } from './movie/MovieWorkflowService.js';
+import { MovieWorkflowService, JobTriggerResult } from './movie/MovieWorkflowService.js';
 import { getErrorMessage } from '../utils/errorHandling.js';
 import { SqlParam } from '../types/database.js';
 import { ResourceNotFoundError } from '../errors/index.js';
@@ -1147,7 +1147,7 @@ export class MovieService {
    * Trigger verify job for movie
    * Delegates to MovieWorkflowService
    */
-  async triggerVerify(movieId: number): Promise<any> {
+  async triggerVerify(movieId: number): Promise<never> {
     return this.workflowService.triggerVerify(movieId);
   }
 
@@ -1155,7 +1155,7 @@ export class MovieService {
    * Trigger enrichment job for movie
    * Delegates to MovieWorkflowService
    */
-  async triggerEnrich(movieId: number): Promise<any> {
+  async triggerEnrich(movieId: number): Promise<JobTriggerResult> {
     return this.workflowService.triggerEnrich(movieId);
   }
 
@@ -1163,7 +1163,7 @@ export class MovieService {
    * Trigger publish job for movie
    * Delegates to MovieWorkflowService
    */
-  async triggerPublish(movieId: number): Promise<any> {
+  async triggerPublish(movieId: number): Promise<JobTriggerResult> {
     return this.workflowService.triggerPublish(movieId);
   }
 

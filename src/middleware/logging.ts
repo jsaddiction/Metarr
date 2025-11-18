@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import morgan from 'morgan';
 import winston from 'winston';
+import DailyRotateFile from 'winston-daily-rotate-file';
 import { ConfigManager } from '../config/ConfigManager.js';
 
 // Create logger with default config first to avoid circular dependency
@@ -43,24 +44,30 @@ export function initializeLogger(): void {
   // Clear default transports
   logger.clear();
 
-  // Add file transport if enabled
+  // Add file transport with daily rotation if enabled
   if (config.logging.file.enabled) {
+    // Error log with daily rotation
     logger.add(
-      new winston.transports.File({
-        filename: `${config.logging.file.path}/error.log`,
+      new DailyRotateFile({
+        filename: `${config.logging.file.path}/error-%DATE%.log`,
+        datePattern: 'YYYY-MM-DD',
         level: 'error',
-        maxsize: parseInt(config.logging.file.maxSize) * 1024 * 1024,
-        maxFiles: config.logging.file.maxFiles,
-        options: { flags: 'a' }, // Append mode without exclusive lock (Windows compatibility)
+        maxSize: `${config.logging.file.maxSize}m`,
+        maxFiles: `${config.logging.file.maxFiles}d`, // Keep logs for N days
+        zippedArchive: true, // Compress old logs
+        auditFile: `${config.logging.file.path}/.audit-error.json`, // Track rotated files
       })
     );
 
+    // Application log with daily rotation
     logger.add(
-      new winston.transports.File({
-        filename: `${config.logging.file.path}/app.log`,
-        maxsize: parseInt(config.logging.file.maxSize) * 1024 * 1024,
-        maxFiles: config.logging.file.maxFiles,
-        options: { flags: 'a' }, // Append mode without exclusive lock (Windows compatibility)
+      new DailyRotateFile({
+        filename: `${config.logging.file.path}/app-%DATE%.log`,
+        datePattern: 'YYYY-MM-DD',
+        maxSize: `${config.logging.file.maxSize}m`,
+        maxFiles: `${config.logging.file.maxFiles}d`, // Keep logs for N days
+        zippedArchive: true, // Compress old logs
+        auditFile: `${config.logging.file.path}/.audit-app.json`, // Track rotated files
       })
     );
   }

@@ -338,6 +338,12 @@ export class App {
       this.garbageCollector.stop();
       logger.info('Garbage collection scheduler stopped');
 
+      // Stop health check service
+      if (this.healthCheckService) {
+        this.healthCheckService.stop();
+        logger.info('Health check service stopped');
+      }
+
       // Shutdown WebSocket server
       await this.wsServer.shutdown();
       logger.info('WebSocket server closed');

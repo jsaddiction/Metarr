@@ -1,89 +1,89 @@
 import { Request, Response, NextFunction } from 'express';
 import { logger } from './logging.js';
+import { ApplicationError } from '../errors/ApplicationError.js';
 
-export interface AppError extends Error {
-  statusCode?: number;
-  isOperational?: boolean;
-}
-
-export class ValidationError extends Error implements AppError {
-  statusCode = 400;
-  isOperational = true;
-
-  constructor(message: string) {
-    super(message);
-    this.name = 'ValidationError';
-  }
-}
-
-export class NotFoundError extends Error implements AppError {
-  statusCode = 404;
-  isOperational = true;
-
-  constructor(message: string = 'Resource not found') {
-    super(message);
-    this.name = 'NotFoundError';
-  }
-}
-
-export class UnauthorizedError extends Error implements AppError {
-  statusCode = 401;
-  isOperational = true;
-
-  constructor(message: string = 'Unauthorized') {
-    super(message);
-    this.name = 'UnauthorizedError';
-  }
-}
-
-export class DatabaseError extends Error implements AppError {
-  statusCode = 500;
-  isOperational = true;
-
-  constructor(message: string) {
-    super(message);
-    this.name = 'DatabaseError';
-  }
-}
-
+/**
+ * Unified error handler for ApplicationError
+ * Provides consistent error responses with rich logging context
+ */
 export const errorHandler = (
-  error: AppError,
+  error: Error | ApplicationError,
   req: Request,
   res: Response,
   _next: NextFunction
 ): void => {
   const isDevelopment = process.env.NODE_ENV === 'development';
 
-  // Default error response
-  const statusCode = error.statusCode || 500;
-  const message = error.isOperational ? error.message : 'Internal server error';
+  // Extract error properties
+  let statusCode: number;
+  let message: string;
+  let errorCode: string | undefined;
 
-  // Log error
-  logger.error({
-    error: {
-      name: error.name,
-      message: error.message,
-      stack: error.stack,
-    },
-    request: {
-      method: req.method,
-      url: req.url,
-      ip: req.ip,
-      userAgent: req.get('User-Agent'),
-    },
-  });
+  if (error instanceof ApplicationError) {
+    // Unified ApplicationError system with rich context
+    statusCode = error.statusCode;
+    message = error.isOperational ? error.message : 'Internal server error';
+    errorCode = error.code;
 
-  // Send error response
+    // Log with full context for debugging and monitoring
+    logger.error('Request error', {
+      error: {
+        name: error.name,
+        message: error.message,
+        code: error.code,
+        statusCode: error.statusCode,
+        isOperational: error.isOperational,
+        retryable: error.retryable,
+        context: error.context,
+        timestamp: error.timestamp.toISOString(),
+        stack: error.stack,
+        cause: error.cause ? {
+          name: error.cause.name,
+          message: error.cause.message,
+          stack: error.cause.stack,
+        } : undefined,
+      },
+      request: {
+        method: req.method,
+        url: req.url,
+        ip: req.ip,
+        userAgent: req.get('User-Agent'),
+      },
+    });
+  } else {
+    // Generic Error (fallback for unexpected errors)
+    statusCode = 500;
+    message = 'Internal server error';
+
+    // Log generic error
+    logger.error('Request error (generic)', {
+      error: {
+        name: error.name,
+        message: error.message,
+        stack: error.stack,
+      },
+      request: {
+        method: req.method,
+        url: req.url,
+        ip: req.ip,
+        userAgent: req.get('User-Agent'),
+      },
+    });
+  }
+
+  // Build error response
   const errorResponse: {
     error: {
       message: string;
       status: number;
+      code?: string;
       stack?: string;
     };
   } = {
     error: {
       message,
       status: statusCode,
+      ...(errorCode && { code: errorCode }),
     },
   };
 

@@ -27,6 +27,15 @@ import {
   NotImplementedError,
 } from '../../errors/index.js';
 
+/**
+ * Result returned when triggering a workflow job
+ */
+export interface JobTriggerResult {
+  success: boolean;
+  jobId: number;
+  message: string;
+}
+
 export class MovieWorkflowService {
   constructor(
     private readonly db: DatabaseManager,
@@ -232,7 +241,7 @@ export class MovieWorkflowService {
    * @param movieId - Movie ID
    * @returns Job details
    */
-  async triggerVerify(movieId: number): Promise<any> {
+  async triggerVerify(movieId: number): Promise<never> {
     try {
       // Verification is a maintenance operation - no workflow control check needed
       // Users should always be able to verify cache/library integrity
@@ -280,7 +289,7 @@ export class MovieWorkflowService {
    * @param movieId - Movie ID
    * @returns Job details
    */
-  async triggerEnrich(movieId: number): Promise<any> {
+  async triggerEnrich(movieId: number): Promise<JobTriggerResult> {
     const conn = this.db.getConnection();
 
     try {
@@ -364,7 +373,7 @@ export class MovieWorkflowService {
    * @param movieId - Movie ID
    * @returns Job details
    */
-  async triggerPublish(movieId: number): Promise<any> {
+  async triggerPublish(movieId: number): Promise<JobTriggerResult> {
     const conn = this.db.getConnection();
 
     try {

@@ -94,38 +94,3 @@ export type {
   RetryPolicy,
   RetryResult,
 } from './RetryStrategy.js';
-
-// ============================================
-// LEGACY PROVIDER ERRORS (DEPRECATED)
-// Kept for backward compatibility during migration
-// ============================================
-
-/**
- * @deprecated Use ProviderError from ApplicationError.ts instead
- */
-export { ProviderError as LegacyProviderError } from './providerErrors.js';
-
-/**
- * @deprecated Use RateLimitError from ApplicationError.ts instead
- */
-export { RateLimitError as LegacyRateLimitError } from './providerErrors.js';
-
-/**
- * @deprecated Ambiguous - use ResourceNotFoundError or FileNotFoundError instead
- */
-export { NotFoundError as LegacyNotFoundError } from './providerErrors.js';
-
-/**
- * @deprecated Use ProviderServerError from ApplicationError.ts instead
- */
-export { ServerError as LegacyServerError } from './providerErrors.js';
-
-/**
- * @deprecated Use AuthenticationError from ApplicationError.ts instead
- */
-export { AuthenticationError as LegacyAuthenticationError } from './providerErrors.js';
-
-/**
- * @deprecated Use NetworkError from ApplicationError.ts instead
- */
-export { NetworkError as LegacyNetworkError } from './providerErrors.js';

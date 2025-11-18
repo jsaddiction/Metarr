@@ -1,6 +1,6 @@
 import fs from 'fs/promises';
 import path from 'path';
-import { parseStringPromise } from 'xml2js';
+import { Parser } from 'xml2js';
 import { logger } from '../../middleware/logging.js';
 import { getErrorMessage } from '../../utils/errorHandling.js';
 import {
@@ -15,6 +15,32 @@ import {
   RatingData,
   SetData,
 } from '../../types/models.js';
+
+/**
+ * Secure XML parser with XXE protection
+ * Prevents XML External Entity (XXE) attacks by disabling external entity resolution
+ */
+const secureXMLParser = new Parser({
+  // XXE Protection: Disable external entity resolution
+  strict: true,
+  // Disable DTD processing to prevent entity expansion attacks
+  // Note: xml2js doesn't expose SAX parser options directly, so we rely on strict mode
+  // and input validation. For additional security, consider using a different parser
+  // that provides more granular control over DTD/entity processing.
+});
+
+/**
+ * Secure XML parsing with XXE protection
+ * @param xml XML string to parse
+ * @returns Parsed XML object
+ */
+async function parseXMLSecurely(xml: string): Promise<any> {
+  // Additional XXE protection: Reject XML with suspicious patterns
+  if (xml.includes('<!ENTITY') || xml.includes('<!DOCTYPE')) {
+    throw new Error('XML contains potentially dangerous entity or DOCTYPE declarations');
+  }
+  return secureXMLParser.parseStringPromise(xml);
+}
 
 /**
  * NFO File metadata for intelligent merging
@@ -114,7 +140,7 @@ export async function parseMovieNfos(nfoPaths: string[]): Promise<ParsedMovieNFO
       // Check if it's XML or URL-based
       if (trimmedContent.startsWith('<')) {
         // Parse XML NFO
-        const parsed = await parseStringPromise(content);
+        const parsed = await parseXMLSecurely(content);
         ids = extractMovieIds(parsed);
       } else {
         // Try to extract IDs from URLs
@@ -330,7 +356,7 @@ export async function parseTVShowNfo(nfoPath: string): Promise<ParsedTVShowNFO> 
     // Check if it's XML or URL-based
     if (trimmedContent.startsWith('<')) {
       // Parse XML NFO
-      const parsed = await parseStringPromise(content);
+      const parsed = await parseXMLSecurely(content);
       ids = extractTVShowIds(parsed);
     } else {
       // Try to extract IDs from URLs
@@ -454,7 +480,7 @@ function extractTVShowIds(parsed: unknown): NFOIds {
 export async function parseEpisodeNfo(nfoPath: string): Promise<ParsedEpisodeNFO> {
   try {
     const content = await fs.readFile(nfoPath, 'utf-8');
-    const parsed = await parseStringPromise(content);
+    const parsed = await parseXMLSecurely(content);
 
     const episode = parsed.episodedetails || parsed;
 
@@ -573,7 +599,7 @@ export async function parseFullMovieNfos(nfoPaths: string[], videoBasename?: str
       // Try XML parsing first
       if (trimmedContent.startsWith('<')) {
         try {
-          const parsed = await parseStringPromise(content);
+          const parsed = await parseXMLSecurely(content);
           movieData = extractFullMovieMetadata(parsed);
         } catch (xmlError: unknown) {
           // XML parse failed - fallback to regex extraction
@@ -918,7 +944,7 @@ export async function parseFullTVShowNfo(nfoPath: string): Promise<FullTVShowNFO
 
     if (trimmedContent.startsWith('<')) {
       // Parse XML NFO
-      const parsed = await parseStringPromise(content);
+      const parsed = await parseXMLSecurely(content);
       metadata = extractFullTVShowMetadata(parsed);
     } else {
       // URL-based NFO
@@ -1014,7 +1040,7 @@ function extractFullTVShowMetadata(parsed: unknown): Partial<FullTVShowNFO> {
 export async function parseFullEpisodeNfo(nfoPath: string): Promise<FullEpisodeNFO> {
   try {
     const content = await fs.readFile(nfoPath, 'utf-8');
-    const parsed = await parseStringPromise(content);
+    const parsed = await parseXMLSecurely(content);
 
     const episode = parsed.episodedetails || parsed;
     const metadata: Partial<FullEpisodeNFO> = {
