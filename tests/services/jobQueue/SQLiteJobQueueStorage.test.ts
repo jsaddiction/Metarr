@@ -8,10 +8,10 @@
  */
 
 import { jest } from '@jest/globals';
-import { SqliteConnection } from '../../../../database/connections/SqliteConnection.js';
-import { SQLiteJobQueueStorage } from '../SQLiteJobQueueStorage.js';
-import { Job, JOB_PRIORITY } from '../../types.js';
-import { DatabaseConnection } from '../../../../types/database.js';
+import { SqliteConnection } from '../../../src/database/connections/SqliteConnection.js';
+import { SQLiteJobQueueStorage } from '../../../src/services/jobQueue/storage/SQLiteJobQueueStorage.js';
+import { Job, JOB_PRIORITY } from '../../../src/services/jobQueue/types.js';
+import { DatabaseConnection } from '../../../src/types/database.js';
 import path from 'path';
 import fs from 'fs';
 
@@ -588,7 +588,7 @@ describe('SQLiteJobQueueStorage', () => {
       expect(job).not.toBeNull();
       expect(job!.id).toBe(jobId);
       expect(job!.type).toBe('enrich-metadata');
-      expect(job!.payload.entityId).toBe(42);
+      expect(job!.payload).toEqual({ entityType: 'movie', entityId: 42 });
       expect(job!.manual).toBe(true);
     });
 

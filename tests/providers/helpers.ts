@@ -22,8 +22,8 @@ export function createMockProviderConfig(
     id: 1,
     providerName,
     enabled: true,
-    createdAt: new Date(),
-    updatedAt: new Date(),
+    created_at: new Date(),
+    updated_at: new Date(),
     ...overrides,
   };
 }

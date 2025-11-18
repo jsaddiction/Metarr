@@ -2,7 +2,7 @@ import { DatabaseConnection } from '../../types/database.js';
 import { DatabaseManager } from '../../database/DatabaseManager.js';
 import { Job } from '../jobQueue/types.js';
 import { JobQueueService } from '../jobQueue/JobQueueService.js';
-import { EnrichmentService } from '../enrichment/EnrichmentService.js';
+import { EnrichmentOrchestrator } from '../enrichment/EnrichmentOrchestrator.js';
 import { PublishingService } from '../publishingService.js';
 import { PhaseConfigService } from '../PhaseConfigService.js';
 import { websocketBroadcaster } from '../websocketBroadcaster.js';
@@ -18,7 +18,7 @@ import { ValidationError, ResourceNotFoundError } from '../../errors/index.js';
 export class AssetJobHandlers {
   private db: DatabaseConnection;
   private jobQueue: JobQueueService;
-  private enrichment: EnrichmentService;
+  private enrichment: EnrichmentOrchestrator;
   private publishing: PublishingService;
   private phaseConfig: PhaseConfigService;
 
@@ -38,7 +38,7 @@ export class AssetJobHandlers {
         { service: 'AssetJobHandlers', operation: 'constructor', metadata: { field: 'dbManager' } }
       );
     }
-    this.enrichment = new EnrichmentService(db, dbManager, cacheDir);
+    this.enrichment = new EnrichmentOrchestrator(db, dbManager);
     this.publishing = new PublishingService(db, cacheDir);
   }
 

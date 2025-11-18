@@ -135,13 +135,25 @@ describe('AssetSelector', () => {
     const selector = new AssetSelector({
       assetType: 'poster',
       maxCount: 5,
-      pHashThreshold: 0.92, // Default threshold (92%)
+      // Uses default similarity thresholds for perceptual hash comparison
     });
 
     const candidates = [
-      createCandidate({ perceptualHash: '1111111111111111', votes: 200 }),
-      createCandidate({ perceptualHash: '1111111111111111', votes: 150 }), // Exact duplicate, should be filtered
-      createCandidate({ perceptualHash: '0000000000000000', votes: 100 }), // Different
+      createCandidate({
+        perceptualHash: 'aaaaaaaaaaaaaaaa',
+        differenceHash: 'bbbbbbbbbbbbbbbb',
+        votes: 200
+      }),
+      createCandidate({
+        perceptualHash: 'aaaaaaaaaaaaaaaa',
+        differenceHash: 'bbbbbbbbbbbbbbbb',
+        votes: 150
+      }), // Exact duplicate, should be filtered
+      createCandidate({
+        perceptualHash: '0000000000000000',
+        differenceHash: '1111111111111111',
+        votes: 100
+      }), // Different
     ];
 
     const selected = selector.selectBest(candidates);

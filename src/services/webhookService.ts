@@ -138,16 +138,18 @@ export class WebhookService {
       payload: {
         source: 'radarr',
         eventType: webhook.eventType,
-        movie: {
-          id: webhook.movie.id,
-          title: webhook.movie.title,
-          year: webhook.movie.year,
-          path: webhook.movie.folderPath,
-          tmdbId: webhook.movie.tmdbId,
-          imdbId: webhook.movie.imdbId,
-          filePath: webhook.movieFile?.path
+        data: {
+          movie: {
+            id: webhook.movie.id,
+            title: webhook.movie.title,
+            year: webhook.movie.year,
+            path: webhook.movie.folderPath,
+            tmdbId: webhook.movie.tmdbId,
+            imdbId: webhook.movie.imdbId,
+            filePath: webhook.movieFile?.path
+          }
         }
-      } as any, // Webhook-specific payload format
+      },
       retry_count: 0,
       max_retries: 3
     });
@@ -178,25 +180,27 @@ export class WebhookService {
       payload: {
         source: 'sonarr',
         eventType: webhook.eventType,
-        series: {
-          id: webhook.series.id,
-          title: webhook.series.title,
-          path: webhook.series.path,
-          tvdbId: webhook.series.tvdbId,
-          imdbId: webhook.series.imdbId
-        },
-        episodes: webhook.episodes?.map(ep => ({
-          id: ep.id,
-          episodeNumber: ep.episodeNumber,
-          seasonNumber: ep.seasonNumber,
-          title: ep.title,
-          airDate: ep.airDate
-        })),
-        episodeFile: webhook.episodeFile ? {
-          path: webhook.episodeFile.path,
-          relativePath: webhook.episodeFile.relativePath
-        } : undefined
-      } as any, // Webhook-specific payload format
+        data: {
+          series: {
+            id: webhook.series.id,
+            title: webhook.series.title,
+            path: webhook.series.path,
+            tvdbId: webhook.series.tvdbId,
+            imdbId: webhook.series.imdbId
+          },
+          episodes: webhook.episodes?.map(ep => ({
+            id: ep.id,
+            episodeNumber: ep.episodeNumber,
+            seasonNumber: ep.seasonNumber,
+            title: ep.title,
+            airDate: ep.airDate
+          })),
+          episodeFile: webhook.episodeFile ? {
+            path: webhook.episodeFile.path,
+            relativePath: webhook.episodeFile.relativePath
+          } : undefined
+        }
+      },
       retry_count: 0,
       max_retries: 3
     });
@@ -227,15 +231,17 @@ export class WebhookService {
       payload: {
         source: 'lidarr',
         eventType: webhook.eventType,
-        artist: {
-          id: webhook.artist.id,
-          name: webhook.artist.name,
-          path: webhook.artist.path,
-          mbId: webhook.artist.mbId
-        },
-        albums: webhook.albums,
-        tracks: webhook.tracks
-      } as any, // Webhook-specific payload format
+        data: {
+          artist: {
+            id: webhook.artist.id,
+            name: webhook.artist.name,
+            path: webhook.artist.path,
+            mbId: webhook.artist.mbId
+          },
+          albums: webhook.albums,
+          tracks: webhook.tracks
+        }
+      },
       retry_count: 0,
       max_retries: 3
     });

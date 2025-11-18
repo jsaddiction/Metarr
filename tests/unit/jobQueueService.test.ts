@@ -1,4 +1,5 @@
 import { JobQueueService } from '../../src/services/jobQueueService.js';
+import { SQLiteJobQueueStorage } from '../../src/services/jobQueue/storage/SQLiteJobQueueStorage.js';
 import { TestDatabase, createTestDatabase } from '../utils/testDatabase.js';
 
 describe('JobQueueService', () => {
@@ -8,7 +9,8 @@ describe('JobQueueService', () => {
   beforeEach(async () => {
     testDb = await createTestDatabase();
     const db = await testDb.create();
-    service = new JobQueueService(db);
+    const storage = new SQLiteJobQueueStorage(db);
+    service = new JobQueueService(storage);
   });
 
   afterEach(async () => {
@@ -19,9 +21,11 @@ describe('JobQueueService', () => {
   describe('addJob', () => {
     it('should add a job to the queue', async () => {
       const jobId = await service.addJob({
-        type: 'webhook',
+        type: 'webhook-received',
         priority: 1,
-        payload: { test: 'data' }
+        payload: { source: 'test', eventType: 'test', data: { test: 'data' } },
+        retry_count: 0,
+        max_retries: 3
       });
 
       expect(jobId).toBeGreaterThan(0);
@@ -29,7 +33,7 @@ describe('JobQueueService', () => {
       // Verify job was created
       const job = await service.getJob(jobId);
       expect(job).toBeDefined();
-      expect(job?.type).toBe('webhook');
+      expect(job?.type).toBe('webhook-received');
       expect(job?.priority).toBe(1);
       expect(job?.status).toBe('pending');
     });
@@ -38,7 +42,9 @@ describe('JobQueueService', () => {
       const jobId = await service.addJob({
         type: 'enrich-metadata',
         priority: 5,
-        payload: { entityId: 1 }
+        payload: { entityType: 'movie', entityId: 1 },
+        retry_count: 0,
+        max_retries: 3
       });
 
       const job = await service.getJob(jobId);
@@ -49,7 +55,8 @@ describe('JobQueueService', () => {
       const jobId = await service.addJob({
         type: 'library-scan',
         priority: 8,
-        payload: { libraryId: 1 },
+        payload: { libraryId: 1, libraryPath: '/test', libraryType: 'movies' },
+        retry_count: 0,
         max_retries: 5
       });
 
@@ -61,16 +68,18 @@ describe('JobQueueService', () => {
   describe('getJob', () => {
     it('should return job by ID', async () => {
       const jobId = await service.addJob({
-        type: 'discover-assets',
+        type: 'enrich-metadata',
         priority: 6,
-        payload: { entityId: 123 }
+        payload: { entityType: 'movie', entityId: 123 },
+        retry_count: 0,
+        max_retries: 3
       });
 
       const job = await service.getJob(jobId);
 
       expect(job).toBeDefined();
       expect(job?.id).toBe(jobId);
-      expect(job?.payload).toEqual({ entityId: 123 });
+      expect(job?.payload).toEqual({ entityType: 'movie', entityId: 123 });
     });
 
     it('should return null for non-existent job', async () => {
@@ -83,9 +92,9 @@ describe('JobQueueService', () => {
   describe('getStats', () => {
     it('should return queue statistics', async () => {
       // Add various jobs
-      await service.addJob({ type: 'webhook', priority: 1, payload: {} });
-      await service.addJob({ type: 'webhook', priority: 1, payload: {} });
-      await service.addJob({ type: 'publish', priority: 7, payload: {} });
+      await service.addJob({ type: 'webhook-received', priority: 1, payload: { source: 'test', eventType: 'test', data: {} }, retry_count: 0, max_retries: 3 });
+      await service.addJob({ type: 'webhook-received', priority: 1, payload: { source: 'test', eventType: 'test', data: {} }, retry_count: 0, max_retries: 3 });
+      await service.addJob({ type: 'publish', priority: 7, payload: { entityType: 'movie', entityId: 1 }, retry_count: 0, max_retries: 3 });
 
       const stats = await service.getStats();
 
@@ -99,39 +108,43 @@ describe('JobQueueService', () => {
   describe('getRecentJobs', () => {
     it.skip('should return recent jobs ordered by created_at', async () => {
       // Add jobs
-      await service.addJob({ type: 'webhook', priority: 1, payload: { order: 1 } });
-      await service.addJob({ type: 'webhook', priority: 1, payload: { order: 2 } });
-      await service.addJob({ type: 'webhook', priority: 1, payload: { order: 3 } });
+      await service.addJob({ type: 'webhook-received', priority: 1, payload: { source: 'test', eventType: 'test', data: { order: 1 } }, retry_count: 0, max_retries: 3 });
+      await service.addJob({ type: 'webhook-received', priority: 1, payload: { source: 'test', eventType: 'test', data: { order: 2 } }, retry_count: 0, max_retries: 3 });
+      await service.addJob({ type: 'webhook-received', priority: 1, payload: { source: 'test', eventType: 'test', data: { order: 3 } }, retry_count: 0, max_retries: 3 });
 
-      const jobs = await service.getRecentJobs(2);
+      const jobs = await service.getRecentJobs();
 
       expect(jobs).toHaveLength(2);
-      expect(jobs[0].payload.order).toBe(3); // Most recent first
-      expect(jobs[1].payload.order).toBe(2);
+      const job1 = jobs[0];
+      const job2 = jobs[1];
+      if (job1.type === 'webhook-received' && job2.type === 'webhook-received') {
+        expect((job1.payload.data as any).order).toBe(3); // Most recent first
+        expect((job2.payload.data as any).order).toBe(2);
+      }
     });
   });
 
   describe('getJobsByType', () => {
     it('should filter jobs by type', async () => {
-      await service.addJob({ type: 'webhook', priority: 1, payload: {} });
-      await service.addJob({ type: 'webhook', priority: 1, payload: {} });
-      await service.addJob({ type: 'publish', priority: 7, payload: {} });
+      await service.addJob({ type: 'webhook-received', priority: 1, payload: { source: 'test', eventType: 'test', data: {} }, retry_count: 0, max_retries: 3 });
+      await service.addJob({ type: 'webhook-received', priority: 1, payload: { source: 'test', eventType: 'test', data: {} }, retry_count: 0, max_retries: 3 });
+      await service.addJob({ type: 'publish', priority: 7, payload: { entityType: 'movie', entityId: 1 }, retry_count: 0, max_retries: 3 });
 
-      const webhookJobs = await service.getJobsByType('webhook');
+      const webhookJobs = await service.listJobs({ type: 'webhook-received' });
 
       expect(webhookJobs).toHaveLength(2);
-      expect(webhookJobs.every(j => j.type === 'webhook')).toBe(true);
+      expect(webhookJobs.every(j => j.type === 'webhook-received')).toBe(true);
     });
 
     it.skip('should filter by type and status', async () => {
-      const jobId1 = await service.addJob({ type: 'webhook', priority: 1, payload: {} });
-      await service.addJob({ type: 'webhook', priority: 1, payload: {} });
+      const jobId1 = await service.addJob({ type: 'webhook-received', priority: 1, payload: { source: 'test', eventType: 'test', data: {} }, retry_count: 0, max_retries: 3 });
+      await service.addJob({ type: 'webhook-received', priority: 1, payload: { source: 'test', eventType: 'test', data: {} }, retry_count: 0, max_retries: 3 });
 
       // Mark one as completed
       const db = await testDb.create();
       await db.execute('UPDATE job_queue SET status = ? WHERE id = ?', ['completed', jobId1]);
 
-      const pendingWebhooks = await service.getJobsByType('webhook', 'pending');
+      const pendingWebhooks = await service.listJobs({ type: 'webhook-received', status: 'pending' });
 
       expect(pendingWebhooks).toHaveLength(1);
       expect(pendingWebhooks[0].status).toBe('pending');
@@ -143,7 +156,9 @@ describe('JobQueueService', () => {
       const jobId = await service.addJob({
         type: 'library-scan',
         priority: 8,
-        payload: {}
+        payload: { libraryId: 1, libraryPath: '/test', libraryType: 'movies' },
+        retry_count: 0,
+        max_retries: 3
       });
 
       const success = await service.cancelJob(jobId);
@@ -157,9 +172,11 @@ describe('JobQueueService', () => {
 
     it('should not cancel processing/completed jobs', async () => {
       const jobId = await service.addJob({
-        type: 'webhook',
+        type: 'webhook-received',
         priority: 1,
-        payload: {}
+        payload: { source: 'test', eventType: 'test', data: {} },
+        retry_count: 0,
+        max_retries: 3
       });
 
       // Mark as processing
@@ -181,7 +198,9 @@ describe('JobQueueService', () => {
       const jobId = await service.addJob({
         type: 'enrich-metadata',
         priority: 5,
-        payload: {}
+        payload: { entityType: 'movie', entityId: 1 },
+        retry_count: 0,
+        max_retries: 3
       });
 
       // Mark as failed
@@ -204,9 +223,11 @@ describe('JobQueueService', () => {
 
     it('should not retry non-failed jobs', async () => {
       const jobId = await service.addJob({
-        type: 'webhook',
+        type: 'webhook-received',
         priority: 1,
-        payload: {}
+        payload: { source: 'test', eventType: 'test', data: {} },
+        retry_count: 0,
+        max_retries: 3
       });
 
       const success = await service.retryJob(jobId);
@@ -217,8 +238,8 @@ describe('JobQueueService', () => {
 
   describe('clearOldJobs', () => {
     it.skip('should delete completed jobs older than specified days', async () => {
-      const jobId1 = await service.addJob({ type: 'webhook', priority: 1, payload: {} });
-      const jobId2 = await service.addJob({ type: 'webhook', priority: 1, payload: {} });
+      const jobId1 = await service.addJob({ type: 'webhook-received', priority: 1, payload: { source: 'test', eventType: 'test', data: {} }, retry_count: 0, max_retries: 3 });
+      const jobId2 = await service.addJob({ type: 'webhook-received', priority: 1, payload: { source: 'test', eventType: 'test', data: {} }, retry_count: 0, max_retries: 3 });
 
       // Mark both as completed, one old
       const db = await testDb.create();

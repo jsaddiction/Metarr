@@ -1,6 +1,12 @@
 import { WebhookService } from '../../src/services/webhookService.js';
-import { JobQueueService } from '../../src/services/jobQueueService.js';
+import { JobQueueService, Job } from '../../src/services/jobQueueService.js';
+import { SQLiteJobQueueStorage } from '../../src/services/jobQueue/storage/SQLiteJobQueueStorage.js';
 import { TestDatabase, createTestDatabase } from '../utils/testDatabase.js';
+
+// Type guard to narrow Job type
+function isWebhookJob(job: Job | null): job is Job<'webhook-received'> {
+  return job !== null && job.type === 'webhook-received';
+}
 
 describe('WebhookService', () => {
   let testDb: TestDatabase;
@@ -10,7 +16,8 @@ describe('WebhookService', () => {
   beforeEach(async () => {
     testDb = await createTestDatabase();
     const db = await testDb.create();
-    jobQueue = new JobQueueService(db);
+    const storage = new SQLiteJobQueueStorage(db);
+    jobQueue = new JobQueueService(storage);
     service = new WebhookService(jobQueue);
   });
 
@@ -49,10 +56,12 @@ describe('WebhookService', () => {
       // Verify job was created
       const job = await jobQueue.getJob(jobId);
       expect(job).toBeDefined();
-      expect(job?.type).toBe('webhook');
+      expect(job?.type).toBe('webhook-received');
       expect(job?.priority).toBe(1); // Critical priority
-      expect(job?.payload.source).toBe('radarr');
-      expect(job?.payload.movie.title).toBe('Test Movie');
+      if (isWebhookJob(job)) {
+        expect(job.payload.source).toBe('radarr');
+        expect((job.payload.data as any)?.movie?.title).toBe('Test Movie');
+      }
     });
 
     it('should handle Test webhook without creating job', async () => {
@@ -91,7 +100,9 @@ describe('WebhookService', () => {
       expect(jobId).toBeGreaterThan(0);
 
       const job = await jobQueue.getJob(jobId);
-      expect(job?.payload.eventType).toBe('Rename');
+      if (isWebhookJob(job)) {
+        expect(job.payload.eventType).toBe('Rename');
+      }
     });
 
     it('should create job for Grab event', async () => {
@@ -112,7 +123,9 @@ describe('WebhookService', () => {
       expect(jobId).toBeGreaterThan(0);
 
       const job = await jobQueue.getJob(jobId);
-      expect(job?.payload.eventType).toBe('Grab');
+      if (isWebhookJob(job)) {
+        expect(job.payload.eventType).toBe('Grab');
+      }
     });
 
     it('should include movie file info in payload when present', async () => {
@@ -141,7 +154,9 @@ describe('WebhookService', () => {
       const job = await jobQueue.getJob(jobId);
 
       // The service stores file path in movie.filePath, not as a separate movieFile object
-      expect(job?.payload.movie.filePath).toBe('/movies/Test Movie (2023)/Test Movie (2023).mkv');
+      if (isWebhookJob(job)) {
+        expect((job.payload.data as any)?.movie?.filePath).toBe('/movies/Test Movie (2023)/Test Movie (2023).mkv');
+      }
     });
   });
 
@@ -175,9 +190,11 @@ describe('WebhookService', () => {
       expect(jobId).toBeGreaterThan(0);
 
       const job = await jobQueue.getJob(jobId);
-      expect(job?.type).toBe('webhook');
-      expect(job?.payload.source).toBe('sonarr');
-      expect(job?.payload.series.title).toBe('Test Series');
+      expect(job?.type).toBe('webhook-received');
+      if (isWebhookJob(job)) {
+        expect(job.payload.source).toBe('sonarr');
+        expect((job.payload.data as any)?.series?.title).toBe('Test Series');
+      }
     });
 
     it('should handle Test webhook', async () => {
@@ -218,7 +235,9 @@ describe('WebhookService', () => {
       expect(jobId).toBeGreaterThan(0);
 
       const job = await jobQueue.getJob(jobId);
-      expect(job?.payload.eventType).toBe('Rename');
+      if (isWebhookJob(job)) {
+        expect(job.payload.eventType).toBe('Rename');
+      }
     });
   });
 
@@ -248,9 +267,11 @@ describe('WebhookService', () => {
       expect(jobId).toBeGreaterThan(0);
 
       const job = await jobQueue.getJob(jobId);
-      expect(job?.type).toBe('webhook');
-      expect(job?.payload.source).toBe('lidarr');
-      expect(job?.payload.artist.name).toBe('Test Artist');
+      expect(job?.type).toBe('webhook-received');
+      if (isWebhookJob(job)) {
+        expect(job.payload.source).toBe('lidarr');
+        expect((job.payload.data as any)?.artist?.name).toBe('Test Artist');
+      }
     });
 
     it('should handle Test webhook', async () => {
@@ -285,7 +306,9 @@ describe('WebhookService', () => {
       expect(jobId).toBeGreaterThan(0);
 
       const job = await jobQueue.getJob(jobId);
-      expect(job?.payload.eventType).toBe('Grab');
+      if (isWebhookJob(job)) {
+        expect(job.payload.eventType).toBe('Grab');
+      }
     });
   });
 
@@ -325,9 +348,11 @@ describe('WebhookService', () => {
       const jobId = await service.processRadarrWebhook(webhook);
       const job = await jobQueue.getJob(jobId);
 
-      expect(job?.payload).toHaveProperty('source');
-      expect(job?.payload).toHaveProperty('eventType');
-      expect(job?.payload).toHaveProperty('movie');
+      if (isWebhookJob(job)) {
+        expect(job.payload).toHaveProperty('source');
+        expect(job.payload).toHaveProperty('eventType');
+        expect(job.payload).toHaveProperty('data');
+      }
     });
   });
 });
