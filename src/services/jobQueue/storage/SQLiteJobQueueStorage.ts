@@ -59,8 +59,8 @@ export class SQLiteJobQueueStorage implements IJobQueueStorage {
     const result = await this.db.execute(
       `INSERT INTO job_queue (
         type, priority, payload, status, retry_count, max_retries, manual, created_at, updated_at
-      ) VALUES (?, ?, ?, 'pending', 0, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-      [job.type, job.priority, JSON.stringify(job.payload), job.max_retries || 3, job.manual ? 1 : 0]
+      ) VALUES (?, ?, ?, 'pending', ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+      [job.type, job.priority, JSON.stringify(job.payload), job.retry_count || 0, job.max_retries || 3, job.manual ? 1 : 0]
     );
 
     const jobId = result.insertId!;
