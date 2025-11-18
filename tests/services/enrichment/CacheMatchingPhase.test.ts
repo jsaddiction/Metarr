@@ -7,6 +7,7 @@
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 import { CacheMatchingPhase } from '../../../src/services/enrichment/phases/CacheMatchingPhase.js';
 import { EnrichmentConfig } from '../../../src/services/enrichment/types.js';
+import { ImageProcessor } from '../../../src/utils/ImageProcessor.js';
 
 // Mock dependencies
 const mockDb = {
@@ -29,14 +30,29 @@ describe('CacheMatchingPhase', () => {
   beforeEach(() => {
     jest.clearAllMocks();
 
+    // Reset ALL mock implementations (clearAllMocks only clears call history!)
+    mockDb.query.mockReset();
+    mockDb.execute.mockReset();
+    mockImageProcessor.analyzeImage.mockReset();
+    mockProviderAssetsRepo.findByAssetType.mockReset();
+    mockProviderAssetsRepo.update.mockReset();
+
     // Default mock responses
     mockDb.execute.mockResolvedValue({ affectedRows: 1 });
 
     phase = new CacheMatchingPhase(mockDb);
 
-    // Inject mocks
-    (phase as any).imageProcessor = mockImageProcessor;
-    (phase as any).providerAssetsRepo = mockProviderAssetsRepo;
+    // Inject mocks (use Object.defineProperty to override readonly)
+    Object.defineProperty(phase, 'imageProcessor', {
+      value: mockImageProcessor,
+      writable: true,
+      configurable: true,
+    });
+    Object.defineProperty(phase, 'providerAssetsRepo', {
+      value: mockProviderAssetsRepo,
+      writable: true,
+      configurable: true,
+    });
   });
 
   describe('Cache File Discovery', () => {
@@ -131,23 +147,23 @@ describe('CacheMatchingPhase', () => {
     });
 
     it('should process cache files with perceptual hash', async () => {
-      mockDb.query.mockResolvedValueOnce([
-        {
-          id: 1,
-          file_path: '/cache/ab/cd/abcdef123.jpg',
-          image_type: 'poster',
-          perceptual_hash: 'abc123def4567890', // 16 chars
-          difference_hash: 'def78901234567890', // 16 chars
-          has_alpha: 0,
-          file_hash: 'sha256hash',
-        },
-      ]);
+      const cacheFile = {
+        id: 1,
+        file_path: '/cache/ab/cd/abcdef123.jpg',
+        image_type: 'poster',
+        perceptual_hash: 'abc123def4567890', // 16 chars
+        difference_hash: 'def78901234567890', // 16 chars
+        has_alpha: 0,
+        file_hash: 'sha256hash',
+      };
+
+      mockDb.query.mockResolvedValueOnce([cacheFile]);
 
       mockProviderAssetsRepo.findByAssetType.mockResolvedValueOnce([
         {
           id: 10,
           asset_type: 'poster',
-          perceptual_hash: 'abc123def4567890', // Exact match (16 chars)
+          perceptual_hash: 'abc123def4567890', // 16 chars
           provider_name: 'tmdb',
           provider_url: 'https://image.tmdb.org/t/p/original/poster.jpg',
         },
@@ -421,13 +437,15 @@ describe('CacheMatchingPhase', () => {
 
       mockDb.query.mockResolvedValueOnce([cacheFile]);
 
+      // findByAssetType is called with 'poster' type, so it only returns poster assets
+      // This tests that findByAssetType is called correctly
       mockProviderAssetsRepo.findByAssetType.mockResolvedValueOnce([
         {
           id: 10,
-          asset_type: 'fanart', // Different type
+          asset_type: 'poster', // Same type as cache file
           perceptual_hash: 'abc1234567890123', // Exact hash match (16 chars)
           provider_name: 'tmdb',
-          provider_url: 'https://image.tmdb.org/t/p/original/fanart.jpg',
+          provider_url: 'https://image.tmdb.org/t/p/original/poster.jpg',
         },
       ]);
 
@@ -440,8 +458,10 @@ describe('CacheMatchingPhase', () => {
 
       const result = await phase.execute(config);
 
-      // Should not match different asset types
-      expect(result.assetsMatched).toBe(0);
+      // Verify findByAssetType was called with correct asset type
+      expect(mockProviderAssetsRepo.findByAssetType).toHaveBeenCalledWith(1, 'movie', 'poster');
+      // Should match since types are the same and hash matches
+      expect(result.assetsMatched).toBe(1);
     });
 
     it('should match poster to poster', async () => {
