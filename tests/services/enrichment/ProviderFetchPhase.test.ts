@@ -28,6 +28,9 @@ const mockProviderCacheOrchestrator = {
 
 const mockProviderAssetsRepo = {
   insertProviderAssets: jest.fn(),
+  findByUrl: jest.fn(),
+  create: jest.fn(),
+  update: jest.fn(),
 } as any;
 
 describe('ProviderFetchPhase', () => {
@@ -76,6 +79,11 @@ describe('ProviderFetchPhase', () => {
           logos: [],
         },
         cached: false,
+        metadata: {
+          source: 'tmdb',
+          providers: ['tmdb'],
+          cacheAge: 0,
+        },
       });
 
       const config: EnrichmentConfig = {
@@ -118,6 +126,11 @@ describe('ProviderFetchPhase', () => {
       mockProviderCacheOrchestrator.getMovieData.mockResolvedValueOnce({
         data: { title: 'Fight Club', tmdb_id: 550, posters: [] },
         cached: false,
+        metadata: {
+          source: 'tmdb',
+          providers: ['tmdb'],
+          cacheAge: 0,
+        },
       });
 
       const config: EnrichmentConfig = {
@@ -171,6 +184,11 @@ describe('ProviderFetchPhase', () => {
           backdrops: [],
         },
         cached: false,
+        metadata: {
+          source: 'tmdb',
+          providers: ['tmdb'],
+          cacheAge: 0,
+        },
       });
 
       const config: EnrichmentConfig = {
@@ -198,6 +216,11 @@ describe('ProviderFetchPhase', () => {
       mockProviderCacheOrchestrator.getMovieData.mockResolvedValueOnce({
         data: { title: 'Fight Club', tmdb_id: 550, posters: [] },
         cached: false,
+        metadata: {
+          source: 'tmdb',
+          providers: ['tmdb'],
+          cacheAge: 0,
+        },
       });
 
       const config: EnrichmentConfig = {
@@ -225,6 +248,11 @@ describe('ProviderFetchPhase', () => {
       mockProviderCacheOrchestrator.getMovieData.mockResolvedValueOnce({
         data: { title: 'Fight Club', tmdb_id: 550, posters: [] },
         cached: false,
+        metadata: {
+          source: 'tmdb',
+          providers: ['tmdb'],
+          cacheAge: 0,
+        },
       });
 
       const config: EnrichmentConfig = {
@@ -257,6 +285,11 @@ describe('ProviderFetchPhase', () => {
       mockProviderCacheOrchestrator.getMovieData.mockResolvedValueOnce({
         data: null,
         cached: false,
+        metadata: {
+          source: 'tmdb',
+          providers: ['tmdb'],
+          cacheAge: 0,
+        },
       });
 
       const config: EnrichmentConfig = {
@@ -284,6 +317,11 @@ describe('ProviderFetchPhase', () => {
       mockProviderCacheOrchestrator.getMovieData.mockResolvedValueOnce({
         data: { title: 'Fight Club', posters: [] },
         cached: false,
+        metadata: {
+          source: 'tmdb',
+          providers: ['tmdb'],
+          cacheAge: 0,
+        },
       });
 
       const config: EnrichmentConfig = {
@@ -312,6 +350,11 @@ describe('ProviderFetchPhase', () => {
       mockProviderCacheOrchestrator.getMovieData.mockResolvedValueOnce({
         data: { title: 'Fight Club', posters: [] },
         cached: false,
+        metadata: {
+          source: 'tmdb',
+          providers: ['tmdb'],
+          cacheAge: 0,
+        },
       });
 
       const config: EnrichmentConfig = {
@@ -341,6 +384,11 @@ describe('ProviderFetchPhase', () => {
       mockProviderCacheOrchestrator.getMovieData.mockResolvedValueOnce({
         data: { title: 'Fight Club', posters: [] },
         cached: false,
+        metadata: {
+          source: 'tmdb',
+          providers: ['tmdb'],
+          cacheAge: 0,
+        },
       });
 
       const config: EnrichmentConfig = {
@@ -371,21 +419,23 @@ describe('ProviderFetchPhase', () => {
         data: {
           title: 'Fight Club',
           tmdb_id: 550,
-          posters: [
-            { url: 'http://example.com/poster1.jpg', provider: 'tmdb' },
-            { url: 'http://example.com/poster2.jpg', provider: 'tmdb' },
-          ],
-          backdrops: [
-            { url: 'http://example.com/backdrop1.jpg', provider: 'tmdb' },
-          ],
-          logos: [
-            { url: 'http://example.com/logo1.png', provider: 'fanart' },
+          images: [
+            { image_type: 'poster', provider_name: 'tmdb', file_path: '/poster1.jpg' },
+            { image_type: 'poster', provider_name: 'tmdb', file_path: '/poster2.jpg' },
+            { image_type: 'backdrop', provider_name: 'tmdb', file_path: '/backdrop1.jpg' },
+            { image_type: 'logo', provider_name: 'fanart', file_path: '/logo1.png' },
           ],
         },
         cached: false,
+        metadata: {
+          source: 'tmdb',
+          providers: ['tmdb'],
+          cacheAge: 0,
+        },
       });
 
-      mockProviderAssetsRepo.insertProviderAssets.mockResolvedValueOnce(undefined);
+      mockProviderAssetsRepo.findByUrl.mockResolvedValue(null);
+      mockProviderAssetsRepo.create.mockResolvedValue(1);
 
       const config: EnrichmentConfig = {
         entityId: 1,
@@ -416,6 +466,11 @@ describe('ProviderFetchPhase', () => {
           logos: [],
         },
         cached: false,
+        metadata: {
+          source: 'tmdb',
+          providers: ['tmdb'],
+          cacheAge: 0,
+        },
       });
 
       const config: EnrichmentConfig = {
