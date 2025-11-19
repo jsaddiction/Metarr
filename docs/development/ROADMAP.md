@@ -3,8 +3,7 @@
 Last updated: 2025-11-19
 
 ## In Progress
-- [ ] Test planning workflow with a real feature
-- [ ] Review planning workflow documentation for clarity
+- [ ] TBD - awaiting user direction
 
 ## Next Up (Priority Order)
 - [ ] Implement first feature using new planning workflow
