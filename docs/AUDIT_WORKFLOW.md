@@ -2,9 +2,46 @@
 
 ## Purpose
 
-The Audit Workflow is a comprehensive, multi-agent analysis system designed to evaluate the codebase after major feature implementations or before release milestones. The goal is to identify opportunities for simplification, performance improvement, consistency enhancement, and reliability increases.
+The Audit Workflow is a comprehensive, multi-agent analysis system that evaluates the codebase through the lens of specialized technical experts. Each agent represents a domain expert who examines the codebase from their specialized perspective and identifies issues that matter to their field.
 
-**Key Principle**: "How can we refactor to be more simple, performant, maintainable, and reliable?"
+**Key Principle**: "Expert agents identify problems with impact analysis, AI remediation agents decide how to fix."
+
+---
+
+## Core Design Philosophy
+
+### Specialized Expert Team
+
+Instead of generic code reviewers, we deploy a team of specialized experts mirroring a real enterprise development team:
+
+- **Database Engineer** - Schema design, query optimization, data integrity
+- **Application Architect** - Service patterns, SOLID principles, system design
+- **DevOps Engineer** - Job orchestration, worker pools, system reliability
+- **Storage Architect** - Cache integrity, asset lifecycle, file operations
+- **Integration Engineer** - External APIs, rate limiting, fallback strategies
+- **Security Engineer** - Vulnerabilities, input validation, secret management
+- **Performance Engineer** - Bottlenecks, memory leaks, algorithmic efficiency
+- **Frontend Architect** - React patterns, component design, state management
+- **UX Engineer** - Accessibility, design systems, user experience
+- **QA Engineer** - Test coverage, testability, integration testing
+- **Documentation Lead** - Doc-code alignment, API contracts, accuracy
+
+### Execution Model
+
+- **Maximum 6 concurrent agents** (resource management)
+- **Wave-based execution** (logical grouping)
+- **Multi-file output** (each agent writes their own report immediately)
+- **Summary index report** (navigation and remediation planning)
+- **Impact-focused findings** (what/why, not how)
+
+### Output Philosophy
+
+Each finding includes:
+- **What** is wrong (location references)
+- **Why** it matters (impact, consequences)
+- **Expected behavior** (goal state)
+- NO code snippets (reduces bloat, avoids staleness)
+- YES file:line references (easy navigation)
 
 ---
 
@@ -12,932 +49,959 @@ The Audit Workflow is a comprehensive, multi-agent analysis system designed to e
 
 - After completing major features
 - Before release milestones
-- When codebase feels complex or unwieldy
-- Periodically as "optimization passes" (quarterly recommended)
-- Developer-initiated at any time
+- When complexity feels unwieldy
 - After significant dependency upgrades
+- Quarterly optimization passes
+- When documentation drifts from implementation
 
 ---
 
-## Audit Scope
+## Expert Agent Team
 
-**Default**: Full codebase analysis including:
-- Backend services and controllers
-- Frontend components and hooks
-- Database schema and migrations
-- Documentation (including CLAUDE.md)
-- Configuration files
-- Scripts and utilities
-- API contracts and types
-- Job queue and worker implementations
-- Provider integrations
-- Cache management system
+### Wave 1: Backend Foundation (6 agents)
 
-**Optional**: Target specific areas (phases, services, frontend modules, etc.)
+**Run in parallel, no dependencies**
 
----
+#### 1. Database Engineer
 
-## Multi-Agent Architecture
+**Expertise**: PostgreSQL/SQLite schema design, indexing strategies, query optimization, migration safety
 
-The audit employs **six specialized agents** working in **four sequential phases**. This structure balances comprehensive coverage with manageable execution time (~10-13 hours total).
+**Focus Areas**:
+- Schema normalization and design patterns
+- Index coverage for foreign keys and query patterns
+- Relationship integrity and cascade rules
+- N+1 query detection
+- Migration reversibility and safety
+- Data integrity constraints
 
-**Execution Strategy**:
-- **Phase 1**: Agents 1 & 2 run in parallel (foundation)
-- **Phase 2**: Agent 3 runs solo (depends on Phase 1 findings)
-- **Phase 3**: Agents 4 & 5 run in parallel (integration layer)
-- **Phase 4**: Agent 6 runs solo (final polish and documentation)
+**Evaluation Questions**:
+- Are all foreign keys indexed?
+- Are frequently queried columns (WHERE/JOIN/ORDER BY) indexed?
+- Do migrations have tested up/down paths?
+- Are there N+1 query patterns in service layer?
+- Is ON DELETE/ON UPDATE cascade behavior correct for the relationships?
+- Are there possibilities for orphaned records?
+- Are constraints enforcing data integrity appropriately?
 
-**Why This Order**: Later phases depend on findings from earlier phases. Architecture issues (Agent 1) must be understood before evaluating error handling (Agent 3). Complete system understanding needed before documentation audit (Agent 6).
-
----
-
-## Phase 1: Foundation Analysis
-
-Agents 1 and 2 run **in parallel** (no dependencies between them).
+**Files to Analyze**:
+- [src/database/schema.sql](src/database/schema.sql)
+- [src/database/migrations/](src/database/migrations/)
+- Query patterns in [src/services/](src/services/)
 
 ---
 
-### Agent 1: Code Quality & Architecture
+#### 2. Application Architect
 
-**Priority**: Highest
-**Duration**: 3-4 hours
-**Focus**: SOLID principles, service patterns, complexity, testability
+**Expertise**: SOLID principles, dependency injection, service patterns, architectural design
 
-#### Evaluation Criteria
+**Focus Areas**:
+- Single Responsibility Principle violations
+- Service lifecycle management (singleton/application-scoped/request-scoped)
+- Dependency injection and testability
+- Circular dependencies
+- God objects and high coupling
+- Code complexity metrics
 
-1. **SOLID Principles & Design Patterns**
-   - **Single Responsibility**: Do classes/functions do one thing well?
-   - **Open/Closed**: Are components extensible without modification?
-   - **Liskov Substitution**: Are inheritance hierarchies sound?
-   - **Interface Segregation**: Are interfaces lean and focused?
-   - **Dependency Inversion**: Do we depend on abstractions?
-   - **Service Instantiation Patterns**: Compliance with DEVELOPMENT.md (3 patterns: Singleton, Application-Scoped, Request-Scoped)
+**Evaluation Questions**:
+- Does each service have a single, clear responsibility?
+- Are service lifetimes appropriate for their usage patterns?
+- Are stateful services properly managed to avoid concurrency issues?
+- Are dependencies injected via constructor for testability?
+- Are there circular dependencies in the import graph?
+- Are there God objects (>500 lines) that should be decomposed?
+- Are functions too complex (>50 lines, >5 parameters, >3 nesting levels)?
 
-2. **Service Architecture Compliance**
-   - **Singleton Pattern** (Only 3 allowed: CacheService, WebSocketBroadcaster, ProviderRegistry)
-     - Private constructor enforced?
-     - getInstance() pattern correct?
-     - Deferred initialization with dependencies?
-   - **Application-Scoped Services** (Job queue, connection managers, schedulers)
-     - Lifecycle management (start/stop) implemented?
-     - Created once in app.ts?
-     - Background processing properly managed?
-   - **Request-Scoped Services** (CRUD, orchestrators, utilities)
-     - Truly stateless?
-     - Dependencies injected via constructor?
-     - No shared mutable state?
+**Files to Analyze**:
+- [src/services/](src/services/)
+- [src/controllers/](src/controllers/)
+- [src/app.ts](src/app.ts) (service instantiation)
+- [src/utils/](src/utils/)
 
-3. **Dependency Injection & Testability**
-   - Constructor injection used over global imports?
-   - Services mockable without internal rewrites?
-   - Circular dependency detection (use import graph analysis)
-   - Database abstraction enables in-memory testing?
-   - Provider calls mockable without API keys?
+---
 
-4. **Code Complexity**
-   - **Cyclomatic complexity**: >10 (warning), >15 (critical)
-   - **Cognitive complexity**: Hard-to-understand code even with low branches
-   - **Function length**: >50 lines (warning), >100 (critical)
-   - **Function parameters**: >5 params (refactor to config object)
-   - **Class size**: >500 lines (God object warning)
-   - **Nested conditionals**: >3 levels deep
-   - **Callback hell or promise chains**
+#### 3. DevOps Engineer
 
-5. **DRY Violations**
-   - Duplicated logic across services
-   - Copy-pasted code blocks
-   - Similar patterns that could be abstracted
-   - Redundant utility functions
+**Expertise**: Job orchestration, worker pools, concurrency, reliability patterns
 
-6. **TypeScript Best Practices**
-   - **Type safety**: No excessive `any`, proper type definitions
-   - **Interface vs type**: Appropriateness for use case
-   - **Generics**: Usage and constraints
-   - **Union vs intersection**: Correct type composition
-   - **Enum vs const assertions**: Modern patterns
-   - **Null handling**: Consistent optional chaining and nullish coalescing
+**Focus Areas**:
+- Job idempotency (safe to retry)
+- Concurrency and race conditions
+- Circuit breaker configuration
+- Retry logic and backoff strategies
+- Queue backpressure and health
+- Worker pool sizing
 
-7. **Naming Conventions**
-   - Consistent casing (camelCase, PascalCase)
-   - Descriptive names that reveal intent
-   - Avoid abbreviations unless standard (API, URL, ID)
-   - Service/Controller/Model naming patterns
-   - Magic numbers replaced with named constants
-   - Boolean flag parameters (indicates function does two things)
+**Evaluation Questions**:
+- Are all jobs safe to run twice without corruption?
+- Are file writes atomic (temp file → rename)?
+- Are database updates wrapped in transactions where necessary?
+- Are circuit breakers configured appropriately for external dependencies?
+- Is exponential backoff implemented for retries?
+- Is max queue size enforced to prevent memory issues?
+- Are worker pool sizes appropriate for the workload?
 
-8. **Dead Code & Code Hygiene**
-   - Unused imports
-   - Unreferenced functions
-   - Commented-out code blocks
-   - Deprecated utilities
-   - Unused type definitions
-   - Abstraction level mixing (high-level + low-level in same function)
+**Files to Analyze**:
+- [src/services/JobQueue*.ts](src/services/)
+- [src/workers/](src/workers/)
+- Circuit breaker configuration
+- Job handlers in services
 
-9. **Test Coverage**
-   - Critical paths have unit tests (enrichment, cache operations)?
-   - Integration tests for phase boundaries?
-   - Test coverage percentage for services (target: >70%)
-   - E2E tests for complete workflows?
+---
 
-#### Output Format
+#### 4. Storage Architect
+
+**Expertise**: File systems, cache coherence, asset lifecycle, content-addressed storage
+
+**Focus Areas**:
+- Cache-library two-copy integrity
+- SHA256 sharding correctness
+- Asset tier transitions (Candidate → Cache → Library)
+- Orphaned asset detection
+- Cache eviction policies
+- Atomic file operations
+
+**Evaluation Questions**:
+- Is SHA256 sharding implemented correctly for content addressing?
+- Are cache and library always kept in sync?
+- Are deletions ordered to prevent orphaned files?
+- Are downloads atomic (temp file → rename)?
+- Are file handles closed in all code paths (try/finally)?
+- Is cache verification detecting all inconsistencies?
+- Are recycle bin policies preventing unbounded growth?
+
+**Files to Analyze**:
+- [src/services/CacheService.ts](src/services/CacheService.ts)
+- [src/services/AssetManager.ts](src/services/AssetManager.ts)
+- Cache verification tasks
+- Recycle bin implementation
+
+---
+
+#### 5. Integration Engineer
+
+**Expertise**: External APIs, HTTP clients, rate limiting, resilience patterns
+
+**Focus Areas**:
+- Provider rate limiting compliance
+- Fallback chain implementation
+- Provider health monitoring
+- Metadata normalization across providers
+- API version compatibility
+- Circuit breakers per provider
+
+**Evaluation Questions**:
+- Are rate limiters correctly configured per provider's documented limits?
+- Are documented fallback chains actually implemented in code?
+- Is provider health polling accurate and actionable?
+- Are different provider ID schemes normalized consistently?
+- Are API versions pinned or validated at runtime?
+- Do circuit breakers prevent cascading failures to external providers?
+- Are provider-specific quirks documented and handled?
+
+**Files to Analyze**:
+- [src/services/providers/](src/services/providers/)
+- Provider adapters (TMDB, TVDB, Fanart.tv)
+- Rate limiter configuration
+- [docs/providers/](docs/providers/) - Compare implementation to docs
+
+---
+
+#### 6. API Engineer
+
+**Expertise**: REST API design, input validation, middleware patterns, security
+
+**Focus Areas**:
+- Input validation coverage
+- API contract consistency
+- Response shape uniformity
+- Security vulnerabilities (path traversal, SQL injection, command injection)
+- Middleware application
+- Error response formats
+
+**Evaluation Questions**:
+- Are all controller inputs validated (preferably with schema validation like Zod)?
+- Are response shapes consistent across endpoints?
+- Are pagination patterns uniform?
+- Are user-provided paths sanitized against path traversal?
+- Are all database queries parameterized (no string concatenation)?
+- Is error handling middleware catching all errors?
+- Are security headers configured appropriately?
+
+**Files to Analyze**:
+- [src/controllers/](src/controllers/)
+- [src/routes/](src/routes/)
+- [src/validation/](src/validation/)
+- [src/middleware/](src/middleware/)
+
+---
+
+### Wave 2: Frontend & Cross-Cutting (6 agents)
+
+**Run after Wave 1 completes**
+
+#### 7. Security Engineer
+
+**Expertise**: Security vulnerabilities, error handling, secrets management, resource cleanup
+
+**Focus Areas**:
+- Input sanitization (path traversal, command injection, SQL injection)
+- Error propagation and logging
+- Secret management (env vars, no hardcoding)
+- Resource cleanup (file handles, connections, listeners)
+- XML/HTML sanitization (XSS, XXE prevention)
+- CORS configuration
+
+**Evaluation Questions**:
+- Are user-provided paths sanitized against traversal attacks?
+- Is command execution using safe APIs (execFile over exec)?
+- Are all database queries parameterized?
+- Are API keys loaded from environment variables, not hardcoded?
+- Are file handles closed in finally blocks?
+- Are secrets redacted from logs at all levels?
+- Is user-generated content sanitized before XML/HTML output?
+- Is CORS configured appropriately for the deployment model?
+
+**Files to Analyze**:
+- All [src/](src/) files
+- Error handling middleware
+- Logging configuration
+- [src/config/](src/config/) - Environment usage
+
+---
+
+#### 8. Performance Engineer
+
+**Expertise**: Profiling, optimization, memory management, algorithmic efficiency
+
+**Focus Areas**:
+- N+1 query patterns
+- Sequential operations that could be parallelized
+- Memory leaks (listeners, retained objects)
+- Algorithmic complexity (O(n²) loops)
+- Cache effectiveness
+- Stream usage for large data
+
+**Evaluation Questions**:
+- Are there loops with database queries inside (N+1 pattern)?
+- Are independent async operations using Promise.all() for parallelism?
+- Are event listeners cleaned up properly?
+- Are there O(n²) patterns that could use Map/Set for O(n)?
+- Are large files streamed instead of loaded into memory?
+- Are expensive provider responses cached with appropriate TTL?
+- Are hot paths optimized for performance?
+
+**Files to Analyze**:
+- [src/services/](src/services/)
+- Database query patterns
+- Job workers
+- Provider adapters
+
+---
+
+#### 9. Frontend Architect
+
+**Expertise**: React patterns, component composition, hooks, state management
+
+**Focus Areas**:
+- Component size and responsibility
+- Prop drilling depth
+- Custom hook patterns
+- React best practices (keys, useEffect deps, memo usage)
+- Error boundaries
+- Server state management
+
+**Evaluation Questions**:
+- Are components appropriately sized and focused?
+- Is prop drilling excessive (>3 levels suggests need for context)?
+- Is reusable logic extracted to custom hooks?
+- Are keys stable and unique (not array indices)?
+- Are useEffect dependencies correct and exhaustive?
+- Is server state managed separately from local UI state?
+- Are error boundaries catching component errors appropriately?
+
+**Files to Analyze**:
+- [public/frontend/src/components/](public/frontend/src/components/)
+- [public/frontend/src/pages/](public/frontend/src/pages/)
+- [public/frontend/src/hooks/](public/frontend/src/hooks/)
+
+---
+
+#### 10. UX Engineer
+
+**Expertise**: WCAG accessibility, design systems, user experience, styling
+
+**Focus Areas**:
+- WCAG 2.1 Level AA compliance
+- Design system consistency
+- Color contrast ratios
+- Keyboard navigation and focus management
+- Loading/error/empty states
+- Semantic HTML
+
+**Evaluation Questions**:
+- Do meaningful images have alt text?
+- Is color contrast ratio compliant (4.5:1 for normal text, 3:1 for large)?
+- Are interactive elements keyboard accessible?
+- Do modals trap focus and restore on close?
+- Are loading states shown for all async operations?
+- Are error messages user-friendly (no technical jargon or stack traces)?
+- Is semantic HTML used (nav, main, article, etc.)?
+- Are form inputs properly labeled?
+
+**Files to Analyze**:
+- [public/frontend/src/components/](public/frontend/src/components/)
+- [public/frontend/src/styles/](public/frontend/src/styles/)
+- Tailwind/styling configuration
+
+---
+
+#### 11. Frontend Performance Engineer
+
+**Expertise**: Bundle optimization, rendering performance, network efficiency
+
+**Focus Areas**:
+- Bundle size optimization
+- Code splitting and lazy loading
+- Unnecessary re-renders
+- WebSocket message volume
+- Image optimization
+- Virtual scrolling for large lists
+
+**Evaluation Questions**:
+- Is production bundle size reasonable (<500kb gzipped is good target)?
+- Are routes lazy-loaded with code splitting?
+- Are expensive components wrapped with React.memo where beneficial?
+- Are WebSocket messages throttled/debounced appropriately?
+- Are large lists virtualized?
+- Are expensive calculations memoized?
+- Are images lazy-loaded and optimized?
+
+**Files to Analyze**:
+- [public/frontend/src/](public/frontend/src/)
+- Vite/build configuration
+- WebSocket message handlers
+
+---
+
+#### 12. QA Engineer
+
+**Expertise**: Test coverage, test quality, testability patterns, integration testing
+
+**Focus Areas**:
+- Critical path coverage
+- Integration tests for system boundaries
+- Test quality and maintainability
+- Service mockability
+- Test organization
+- E2E workflow coverage
+
+**Evaluation Questions**:
+- Do critical services have good test coverage (aim for >80%)?
+- Are system boundaries tested with integration tests?
+- Are tests using clear patterns (Arrange-Act-Assert)?
+- Are services mockable via dependency injection?
+- Are test utilities shared appropriately to avoid duplication?
+- Are there E2E tests for complete workflows?
+- Are tests stable and not brittle?
+
+**Files to Analyze**:
+- `**/*.test.ts`
+- `**/*.spec.ts`
+- Test utilities
+- Service testability patterns
+
+---
+
+### Wave 3: Documentation & Integration (5 agents)
+
+**Run after Wave 2 completes**
+
+#### 13. Documentation Lead
+
+**Expertise**: Documentation accuracy, code-doc alignment, API documentation
+
+**Focus Areas**:
+- Core documentation reflects current architecture
+- Phase docs match implementation
+- Code examples compile and execute
+- API endpoint documentation accuracy
+- Environment variable documentation
+- Configuration schema docs
+
+**Evaluation Questions**:
+- Does CLAUDE.md reflect current architecture and patterns?
+- Do phase docs match actual implementation?
+- Do code examples in docs compile and run?
+- Do all documented endpoints exist in routes?
+- Are all environment variables in .env.example actually used in code?
+- Does database schema documentation match schema.sql?
+- Are file paths in examples accurate to current structure?
+
+**Why This Matters**:
+Documentation misalignment creates false mental models for AI agents, causing:
+- Debugging non-existent features
+- Wrong assumptions during fixes
+- Wasted time on phantom issues
+- Incorrect remediation approaches
+
+**Files to Analyze**:
+- [CLAUDE.md](CLAUDE.md)
+- [docs/](docs/) - All markdown files
+- Compare code examples to actual source
+- Verify API docs against [src/routes/](src/routes/)
+- Check env vars in docs vs [src/config/](src/config/)
+
+---
+
+#### 14. Contract Engineer
+
+**Expertise**: Frontend-backend integration, type safety, API contracts, WebSocket schemas
+
+**Focus Areas**:
+- Frontend TypeScript types match backend responses
+- Null handling consistency
+- Pagination pattern uniformity
+- WebSocket message type safety
+- Error response shape consistency
+- Query parameter validation
+
+**Evaluation Questions**:
+- Do frontend types match backend response shapes?
+- Are backend nullable fields reflected in frontend optional types?
+- Are pagination patterns consistent across all endpoints?
+- Do frontend WebSocket types match backend emissions?
+- Are error responses using a consistent shape?
+- Are query parameters validated on the backend?
+- Is there type-safe communication between frontend and backend?
+
+**Files to Analyze**:
+- [src/types/](src/types/)
+- [public/frontend/src/types/](public/frontend/src/types/)
+- [src/controllers/](src/controllers/) - Response shapes
+- [public/frontend/src/api/](public/frontend/src/api/)
+- WebSocket message definitions
+
+---
+
+#### 15. TypeScript Engineer
+
+**Expertise**: Type safety, generics, type patterns, null handling
+
+**Focus Areas**:
+- Type safety levels
+- Generic usage and constraints
+- Type patterns (interface vs type, enum vs const)
+- Null handling patterns
+- Type sharing and reuse
+
+**Evaluation Questions**:
+- Is `any` usage minimized and justified where used?
+- Are all functions properly typed with return types?
+- Is `@ts-ignore` usage justified (count and evaluate necessity)?
+- Are generics used correctly with appropriate constraints?
+- Is nullish coalescing (??) preferred over || operator for null checks?
+- Are types shared to avoid duplication?
+- Are union and intersection types used appropriately?
+
+**Files to Analyze**:
+- All `**/*.ts` and `**/*.tsx` files
+- [src/types/](src/types/)
+- Evaluate `any` and `@ts-ignore` usage patterns
+
+---
+
+#### 16. State Management Engineer
+
+**Expertise**: React state, TanStack Query, cache invalidation, derived state
+
+**Focus Areas**:
+- State placement (local vs global)
+- Derived state (computed, not stored)
+- Query cache patterns
+- Redundant state elimination
+- Immutable update patterns
+- Query dependencies
+
+**Evaluation Questions**:
+- Is state at the appropriate level (not over-globalized)?
+- Is derived state computed rather than duplicated and stored?
+- Are query keys stable and consistent?
+- Do mutations invalidate the correct queries?
+- Are optimistic updates rolling back on error?
+- Are dependent queries disabled when parent is loading?
+- Are immutable update patterns used consistently?
+
+**Files to Analyze**:
+- [public/frontend/src/hooks/](public/frontend/src/hooks/)
+- [public/frontend/src/api/](public/frontend/src/api/)
+- TanStack Query usage across components
+
+---
+
+#### 17. Configuration Engineer
+
+**Expertise**: Environment configuration, dependency management, external binaries
+
+**Focus Areas**:
+- Config validation at startup
+- Environment variable coverage
+- Dependency version management
+- Security vulnerabilities
+- External binary availability
+- Development vs production configs
+
+**Evaluation Questions**:
+- Is all configuration validated at startup (preferably with schema validation)?
+- Do environment variables have sensible defaults?
+- Are npm dependencies using appropriate version ranges?
+- Are there security vulnerabilities (run npm audit)?
+- Are external binary dependencies (FFprobe, etc.) checked at startup?
+- Are binary paths configurable via environment?
+- Is there graceful degradation when optional dependencies are missing?
+
+**Files to Analyze**:
+- [src/config/](src/config/)
+- [.env.example](.env.example)
+- [package.json](package.json)
+- Binary dependency usage
+
+---
+
+## Severity Classification
+
+### 🔴 Critical
+
+**Fix immediately before any other work.**
+
+**Criteria**:
+- Data loss or corruption possible
+- Security breach possible
+- System becomes unusable
+- Core value proposition violated
+
+**Examples**:
+- Cache-library sync bugs causing asset loss
+- SQL injection vulnerabilities
+- Memory leaks causing crashes
+- Phase boundary violations breaking automation chain
+
+---
+
+### 🟠 High
+
+**Fix in current or next sprint.**
+
+**Criteria**:
+- Major architecture violations
+- Significant performance degradation (>500ms impact)
+- Important features broken or missing
+- Testing extremely difficult
+
+**Examples**:
+- God objects with hundreds of lines
+- Missing indexes causing full table scans on large tables
+- Provider fallback chains not implemented (docs say they exist)
+- N+1 queries in hot paths
+
+---
+
+### 🟡 Medium
+
+**Fix in next 2-3 sprints or prioritize in backlog.**
+
+**Criteria**:
+- Code quality issues
+- Moderate technical debt
+- Minor feature gaps
+- Documentation needs updating
+
+**Examples**:
+- Functions that are too long (>50-100 lines)
+- Naming inconsistencies causing confusion
+- Outdated documentation (accurate but references old patterns)
+- Missing accessibility on non-critical paths
+
+---
+
+### 🟢 Low
+
+**Fix opportunistically when touching that code.**
+
+**Criteria**:
+- Polish and cleanup
+- No functional impact
+- Opportunistic improvements
+
+**Examples**:
+- Nice-to-have refactoring
+- Stylistic inconsistencies
+- Micro-optimizations with minimal gain
+- Documentation polish (typos, better examples)
+
+---
+
+### 📚 Documentation Misalignment
+
+**Always treated as high priority regardless of content.**
+
+Documentation that doesn't match implementation corrupts AI agent mental models:
+- Agents debug non-existent features
+- Wrong assumptions during fixes
+- Wasted time on phantom issues
+- Incorrect remediation approaches
+
+**Rule**: Fix documentation issues BEFORE other remediation.
+
+---
+
+## Output Format
+
+### Multi-File Architecture
+
+The audit produces **multiple markdown files** to preserve findings, reduce context usage, and enable targeted remediation:
+
+#### Individual Agent Reports
+
+**Location**: `docs/audits/YYYY-MM-DD_agent_{agent-name}.md`
+
+Each agent writes their own report **immediately upon completion**. This ensures:
+- Findings are preserved permanently
+- Context limits don't lose data
+- Remediation agents can read only relevant reports
+- Large audits remain manageable
+
+**Agent Report Structure**:
 
 ```markdown
-### [SEVERITY] Issue Title
-**Location**: `path/to/file.ts:123-145`
-**Agent**: Code Quality & Architecture
-**Category**: SOLID | Service Pattern | Complexity | TypeScript | DRY | Testability | Naming
+# {Agent Name} Audit Report
 
-**Why it matters**:
-Brief explanation of impact on Metarr specifically
-
-**Current pattern**:
-```typescript
-// Show problematic code snippet
-```
-
-**Suggested pattern**:
-```typescript
-// Show refactored approach
-```
-
-**Estimated effort**: Small (<1hr) | Medium (2-4hr) | Large (>4hr)
-**Risk if not fixed**: Low | Medium | High | Critical
-**Phase impact**: Which elemental phases are affected
-```
+**Date**: YYYY-MM-DD HH:MM UTC
+**Agent**: {Agent Name}
+**Focus Area**: {Brief description}
+**Wave**: {1|2|3}
 
 ---
 
-### Agent 2: Data Integrity & Concurrency
+## Summary
 
-**Priority**: Highest
-**Duration**: 3-4 hours
-**Focus**: Database design, cache coherence, job queue safety, migration integrity
+| Metric | Count |
+|--------|-------|
+| Total Issues | XX |
+| 🔴 Critical | X |
+| 🟠 High | X |
+| 🟡 Medium | X |
+| 🟢 Low | X |
+| 📚 Documentation | X |
 
-#### Evaluation Criteria
+---
 
-1. **Database Schema Design**
-   - **Normalization**: Redundant columns, data that should be normalized
-   - **Column design**: Unused columns, incorrect data types, missing NOT NULL constraints
-   - **Default values**: Make sense for business logic?
-   - **Composite keys vs surrogate keys**: Appropriateness
+## Findings
 
-2. **Database Indexing**
-   - Missing indexes on foreign keys
-   - Missing indexes on frequently queried columns (WHERE, JOIN, ORDER BY)
-   - Unused indexes (overhead without benefit)
-   - Composite index opportunities
+### {AGENT-PREFIX}-001: Brief descriptive title
 
-3. **Database Relationship Integrity**
-   - Missing foreign key constraints
-   - Incorrect cascade rules (ON DELETE, ON UPDATE)
-   - Orphaned record possibilities
-   - Many-to-many junction tables properly designed?
+**Severity**: 🔴 Critical | 🟠 High | 🟡 Medium | 🟢 Low | 📚 Documentation
+**Location**: [src/path/to/file.ts:123-145](src/path/to/file.ts#L123-L145)
 
-4. **Transaction Management**
-   - Transactions used for multi-step operations?
-   - Transaction nesting avoided?
-   - Lock ordering consistent (prevent deadlocks)?
-   - Timeout on all transactions?
-   - Rollback strategies in place?
+**What is wrong**:
+Clear description of the problem. Reference specific locations using markdown links.
 
-5. **Cache-Library Coherence** (Critical for Metarr's value proposition)
-   - **Two-copy system integrity**: Cache ↔ Library sync patterns correct?
-   - **Asset tier transitions**: Candidate → Cache → Library flow safe?
-   - **SHA256 sharding**: First 2 chars / next 2 chars / full hash correct?
-   - **Orphaned asset detection**: Assets in cache without DB records?
-   - **Asset deduplication**: Content-addressed storage working correctly?
-   - **Cache verification**: Scheduled verification tasks cover all scenarios?
+Example: The EnrichmentService loads movie metadata in a loop, executing a database query for each movie's actors. This N+1 pattern causes 50+ queries when processing a batch of movies.
 
-6. **Cache Lifecycle Management**
-   - Cache eviction policies defined and implemented?
-   - Recycle bin policies (when to purge deleted assets)?
-   - Cache size monitoring and limits?
-   - Cache corruption detection and recovery?
+**Why this matters**:
+- Enrichment jobs take 30+ seconds for a batch of 50 movies
+- Database connection pool exhaustion under load
+- User-facing timeout errors on large libraries
+- Violates performance expectations
 
-7. **Job Queue Idempotency** (Critical for phase independence)
-   - **All jobs idempotent**: Can run twice safely without corruption?
-   - **Enrichment jobs**: Overwrite metadata cleanly?
-   - **Publishing jobs**: Atomic file operations (write temp, rename)?
-   - **Scan jobs**: Handle existing entries correctly?
-   - **Asset selection jobs**: Concurrent selections don't conflict?
+**Expected behavior**:
+Actor data should be loaded in bulk for all movies in the batch. Enrichment batch processing should complete in <5 seconds for 50 movies.
 
-8. **Concurrency & Race Conditions**
-   - File writes atomic (write to temp, then rename)?
-   - Database updates use transactions?
-   - Concurrent asset selections coordinated?
-   - Shared resource access synchronized?
+**Affected components**:
+- Enrichment job workers
+- Movie detail page (depends on enrichment data)
 
-9. **Job Queue Health**
-   - **Circuit breakers**: Configured per job type?
-   - **Retry logic**: Exponential backoff implemented correctly?
-   - **Max retry counts**: Sensible limits (3-5)?
-   - **Queue backpressure**: Max queue size enforced?
-   - **Job priority**: Priority inversion prevented?
-   - **Worker pool sizing**: Appropriate for workload?
-   - **Job cancellation**: Safe mid-execution cancellation?
+**Related issues**: PERF-012
 
-10. **Migration Safety**
-    - **Reversibility**: Migrations can be rolled back?
-    - **Data transformations**: Tested with production-like data?
-    - **Up + down migrations**: Both tested?
-    - **Schema version consistency**: Tracking reliable?
-    - **Breaking changes**: Identified and documented?
-    - **Backup strategies**: Destructive operations have backups?
+---
 
-#### Query Pattern Analysis
+[Repeat for each finding with sequential numbering: {AGENT-PREFIX}-002, {AGENT-PREFIX}-003, etc.]
+```
 
-Include example of problematic queries:
+**Agent Prefix Mapping**:
+- Database Engineer: `DB`
+- Application Architect: `ARCH`
+- DevOps Engineer: `DEVOPS`
+- Storage Architect: `STORAGE`
+- Integration Engineer: `INTEGRATION`
+- API Engineer: `API`
+- Security Engineer: `SECURITY`
+- Performance Engineer: `PERF`
+- Frontend Architect: `FE-ARCH`
+- UX Engineer: `UX`
+- Frontend Performance Engineer: `FE-PERF`
+- QA Engineer: `QA`
+- Documentation Lead: `DOC`
+- Contract Engineer: `CONTRACT`
+- TypeScript Engineer: `TS`
+- State Management Engineer: `STATE`
+- Configuration Engineer: `CONFIG`
+
+---
+
+#### Consolidated Summary Report
+
+**Location**: `docs/audits/YYYY-MM-DD_audit_summary.md`
+
+The summary report is created **after all agents complete** and serves as:
+- Navigation index to all agent reports
+- Executive summary with aggregate metrics
+- Remediation roadmap and prioritization
+- Entry point for remediation agents
+
+**Summary Report Structure**:
 
 ```markdown
-**Example query**:
-```sql
--- Current (N+1 problem)
-SELECT * FROM movies WHERE monitored = 1;
--- Then for each movie:
-SELECT * FROM cache_assets WHERE id = movie.poster_id;
-```
-
-**Suggested**:
-```sql
--- Fixed with JOIN
-SELECT m.*, p.file_path as poster_path
-FROM movies m
-LEFT JOIN cache_assets p ON m.poster_id = p.id
-WHERE m.monitored = 1;
-```
-
-**Performance impact**: ~500ms → ~50ms for 100 movies
-```
-
----
-
-## Phase 2: Safety Net Analysis
-
-Agent 3 runs **solo** (depends on findings from Agents 1 & 2).
-
----
-
-### Agent 3: Error Handling, Security & Resilience
-
-**Priority**: High
-**Duration**: 2-3 hours
-**Focus**: Error propagation, security vulnerabilities, resilience patterns, observability
-
-**Why Sequential**: Must understand architecture (Agent 1) and data flows (Agent 2) before auditing how errors propagate and are handled.
-
-#### Evaluation Criteria
-
-1. **Error Handling Patterns**
-   - **Error boundaries**: Frontend routes wrapped in ErrorBoundary?
-   - **Global error handler**: Catches all unhandled rejections in backend?
-   - **Phase boundary errors**: Errors don't leak between phases?
-   - **Error propagation**: AppError subclasses used consistently?
-   - **Error context**: Rich context (stack traces, request IDs, user actions)?
-
-2. **Retry Strategy Consistency**
-   - All provider calls use `RetryStrategy`?
-   - Retry backoff appropriate (exponential vs linear)?
-   - Max retry counts sensible (3-5)?
-   - Idempotent operations marked correctly?
-   - Non-idempotent operations don't retry?
-
-3. **Error Message Quality**
-   - **User-facing errors**: Friendly, actionable, non-technical?
-   - **Developer errors**: Include stack traces, context, debugging info?
-   - **Error codes**: Consistent across services?
-   - **I18n ready**: Error messages can be localized?
-
-4. **Graceful Degradation**
-   - Enrichment fails → movie still usable with partial data?
-   - Provider down → fallback to cached metadata?
-   - Database read fails → retry with backoff or show stale data?
-   - FFprobe fails → skip stream info but continue?
-   - WebSocket fails → poll fallback works?
-
-5. **Circuit Breaker Usage**
-   - Job queue circuit breakers configured per job type?
-   - Provider circuit breakers prevent thundering herd?
-   - Circuit breaker state observable (metrics/logs)?
-   - Circuit breaker thresholds appropriate (failure rate, timeout)?
-
-6. **Security & Input Validation**
-   - **Path traversal**: User paths sanitized with `path.basename()`?
-     ```typescript
-     // ❌ Vulnerable
-     const cachePath = path.join(CACHE_PATH, userFilename);
-
-     // ✅ Safe
-     const cachePath = path.join(CACHE_PATH, path.basename(userFilename));
-     ```
-   - **Command injection**: `execFile()` used over `exec()`?
-     ```typescript
-     // ❌ Vulnerable
-     exec(`ffprobe "${userFilePath}"`);
-
-     // ✅ Safe
-     execFile('ffprobe', [userFilePath]);
-     ```
-   - **SQL injection**: Parameterized queries or query builder?
-   - **Input validation**: All controller inputs validated with Zod?
-   - **NFO XML sanitization**: User data escaped before XML generation (XXE prevention)?
-
-7. **Secret Management**
-   - API keys loaded from environment, not hardcoded?
-   - Embedded defaults clearly marked as development-only?
-   - Secrets not logged (even at DEBUG level)?
-   - Sensitive paths redacted in error messages?
-
-8. **CORS & Request Security**
-   - CORS configuration appropriate for deployment?
-   - Request size limits enforced?
-   - Rate limiting for public endpoints?
-   - Helmet.js security headers configured?
-
-9. **Resource Cleanup**
-   - File handles closed properly (try/finally)?
-   - Database connections returned to pool?
-   - WebSocket connections cleaned up on disconnect?
-   - Event listeners removed when components unmount?
-   - Streams properly closed?
-
-10. **Observability & Logging**
-    - **Log levels**: Consistent usage (ERROR, WARN, INFO, DEBUG)?
-    - **Structured logging**: JSON format for production?
-    - **Sensitive data**: Not logged (API keys, user credentials, full file paths)?
-    - **Correlation IDs**: Jobs traceable across phases?
-    - **Performance logging**: Each phase logs duration?
-    - **Log rotation**: Configured and tested?
-    - **Error context**: Errors include request ID, user action, phase?
-
----
-
-## Phase 3: Integration Analysis
-
-Agents 4 and 5 run **in parallel** (both depend on foundation from Phase 1).
-
----
-
-### Agent 4: Integration & External Dependencies
-
-**Priority**: High
-**Duration**: 2-3 hours
-**Focus**: Provider APIs, frontend-backend contracts, external binaries, configuration
-
-#### Evaluation Criteria
-
-1. **Provider Integration Integrity**
-   - **Rate limiters**: Correct per-provider limits (TMDB: 40/10s, TVDB, Fanart.tv)?
-   - **Provider fallback chains**: TMDB fails → TVDB backup implemented?
-   - **Capability matrix**: docs/providers/ matches implementation?
-   - **Health checks**: Provider health polling accurate?
-   - **Cache adapters**: Consistent patterns across TMDB, TVDB, Fanart.tv adapters?
-   - **Metadata normalization**: Different provider ID schemes handled?
-   - **Stale data detection**: Provider data refresh logic correct?
-
-2. **Provider API Version Compatibility**
-   - API versions pinned or checked at runtime?
-   - Breaking change detection (provider schema validation)?
-   - Provider deprecation warnings handled?
-
-3. **Frontend-Backend API Contracts**
-   - **Response shape consistency**: Backend returns what TypeScript types expect?
-   - **Null handling**: Backend nulls match frontend optional types?
-   - **Pagination patterns**: Consistent across all list endpoints?
-   - **Query parameters**: Validated on backend, typed on frontend?
-   - **Error responses**: Consistent shape (`{ success: false, error: {...} }`)?
-
-4. **WebSocket Message Schemas**
-   - Frontend WebSocket types match backend emission?
-   - Message versioning for backward compatibility?
-   - Reconnection logic handles missed messages?
-   - WebSocket fallback to polling works?
-
-5. **TanStack Query Patterns**
-   - **Query keys**: Stable and consistent across components?
-   - **Cache invalidation**: Mutations invalidate correct queries?
-   - **Optimistic updates**: Rollback on error works correctly?
-   - **Stale time**: Appropriate for data volatility?
-   - **Query dependencies**: Dependent queries disabled when parent loading?
-
-6. **External Binary Dependencies**
-   - **FFprobe**: Availability checked at startup?
-   - **FFprobe errors**: Graceful handling (missing file, corrupt media)?
-   - **ImageMagick (phash)**: Optional dependency gracefully degrades?
-   - **Sharp**: Image processing errors don't crash app?
-   - **Binary paths**: Configurable via environment variables?
-
-7. **Dependency Version Management**
-   - **npm dependencies**: Pinned exact versions or sensible ranges (^)?
-   - **Security vulnerabilities**: `npm audit` results reviewed?
-   - **Deprecated dependencies**: Identified and migration planned?
-   - **License compatibility**: All dependencies compatible with project license?
-
-8. **Configuration Management**
-   - **Schema validation**: All config validated with Zod at startup?
-   - **Environment variables**: Documented, validated, have defaults?
-   - **Configuration dependencies**: Provider priority affects asset selection (tested)?
-   - **Runtime reloading**: Config changes require restart or hot-reload safely?
-   - **Configuration documentation**: .env.example matches actual usage?
-
----
-
-### Agent 5: Performance & Resource Management
-
-**Priority**: Medium
-**Duration**: 2-3 hours
-**Focus**: Query optimization, async patterns, memory leaks, frontend performance
-
-#### Evaluation Criteria
-
-1. **Database Query Performance**
-   - **N+1 queries**: Loop with query inside → JOIN or batch load?
-   - **Missing eager loading**: Related data fetched with main query?
-   - **Full table scans**: All frequently-queried columns indexed?
-   - **Inefficient JOINs**: Subquery opportunities or denormalization?
-   - **Query result size**: Large results paginated?
-   - **Connection pooling**: Pool size appropriate for load?
-
-2. **Async & Parallelism Patterns**
-   - **Sequential awaits**: Could use `Promise.all()` for parallel execution?
-   - **Blocking operations**: Synchronous file I/O in async context?
-   - **Hot path performance**: Critical paths (enrichment, publishing) optimized?
-   - **Asset downloads**: Parallelism tuned (not too many, not too few)?
-
-3. **Memory Management**
-   - **Event listeners**: Cleanup on component unmount (React) or service shutdown?
-   - **Large objects**: Retained longer than necessary?
-   - **Stream handling**: Large files processed with streams, not loaded fully?
-   - **Cache size limits**: In-memory caches have max size?
-   - **Memory profiling**: Long-running jobs monitored for leaks?
-
-4. **Frontend Performance**
-   - **Bundle size**: Production bundle analyzed and optimized?
-   - **Code splitting**: Routes lazy-loaded?
-   - **React re-renders**: Unnecessary renders (React.memo opportunities)?
-   - **Heavy computations**: Moved outside render or memoized?
-   - **WebSocket message volume**: Throttling/debouncing where appropriate?
-   - **Image optimization**: Lazy loading, responsive images?
-
-5. **Algorithmic Efficiency**
-   - **O(n²) loops**: Could be O(n) with Map/Set?
-   - **Repeated regex compilation**: Compile once, reuse?
-   - **Unnecessary array iterations**: Filter + map → reduce?
-   - **FFprobe batching**: Multiple files probed in parallel?
-
-6. **Caching Strategies**
-   - **Provider responses**: Cached appropriately (TTL set)?
-   - **Database query results**: Hot queries cached in-memory?
-   - **Asset metadata**: Read from cache before filesystem?
-   - **Cache invalidation**: Stale data purged correctly?
-
-7. **Logging Performance**
-   - Expensive operations (JSON.stringify) avoided in hot paths?
-   - Debug logging disabled in production?
-   - Log levels checked before string interpolation?
-
----
-
-## Phase 4: User Experience Analysis
-
-Agent 6 runs **solo** (needs complete picture from all prior agents).
-
----
-
-### Agent 6: User Experience & Documentation
-
-**Priority**: Medium
-**Duration**: 2-3 hours
-**Focus**: Component patterns, accessibility, styling, documentation accuracy
-
-**Why Sequential**: Can't verify documentation accuracy until system is fully understood.
-
-#### Evaluation Criteria
-
-1. **Component Architecture & Composition**
-   - **Component size**: Components >300 lines should be split?
-   - **Composition opportunities**: Repeated patterns abstracted?
-   - **Prop drilling**: >3 levels deep → context or state management?
-   - **Custom hooks**: Reusable logic extracted to hooks?
-   - **Hook patterns**: TanStack Query used consistently?
-
-2. **React Best Practices**
-   - **Key props**: Lists use stable, unique keys (not index)?
-   - **useEffect dependencies**: Exhaustive and correct?
-   - **useMemo/useCallback**: Used where beneficial (not over-optimized)?
-   - **Side effects in render**: None present?
-   - **Error boundaries**: Catch component errors?
-
-3. **State Management**
-   - **Local vs global**: State at appropriate level?
-   - **Derived state**: Computed, not stored?
-   - **Redundant state**: Same data duplicated across components?
-   - **Server state**: Always managed by TanStack Query, never local state?
-
-4. **WCAG 2.1 Accessibility (Level AA Target)**
-   - **Images**: Alt text provided for all meaningful images?
-   - **Color contrast**: Text meets 4.5:1 ratio (normal text), 3:1 (large text)?
-   - **ARIA labels**: Interactive elements without text have aria-label?
-   - **Keyboard navigation**: All interactive elements focusable and operable?
-   - **Focus management**: Modals trap focus, restore on close?
-   - **Screen reader**: Semantic HTML used (nav, main, article)?
-   - **Form labels**: All inputs have associated labels?
-
-5. **Styling Consistency**
-   - **Tailwind v4 patterns**: Modern syntax (`@theme` directive)?
-   - **Violet primary**: `#8b5cf6` used consistently?
-   - **Component variants**: shadcn/ui variant patterns followed?
-   - **Spacing scale**: Tailwind spacing units used (no arbitrary values)?
-   - **Typography scale**: Consistent font sizes and weights?
-   - **Dark mode**: Colors work in both light and dark themes?
-
-6. **Error User Experience**
-   - **Error messages**: User-friendly (no stack traces shown to users)?
-   - **Loading states**: All async operations show loading UI?
-   - **Empty states**: Helpful messages when no data?
-   - **Fallback UI**: Missing data doesn't break layout?
-   - **Toast notifications**: Appropriate usage (success/error, not info overload)?
-
-7. **Documentation Accuracy & Completeness**
-   - **CLAUDE.md**: Reflects current architecture and workflows?
-   - **Phase docs**: Match implementation (scan, enrich, publish, player sync)?
-   - **File structure**: Examples in docs match actual structure?
-   - **Commands**: npm scripts in docs work as described?
-   - **Environment variables**: All variables documented in .env.example?
-   - **Configuration examples**: Tested and functional?
-
-8. **Code Comments & JSDoc**
-   - **Public APIs**: JSDoc comments for exported functions/classes?
-   - **Complex algorithms**: "Why" explained, not just "what"?
-   - **Outdated comments**: Updated after refactors?
-   - **Over-commenting**: Obvious code not commented?
-   - **Non-obvious decisions**: Edge cases and quirks documented?
-
-9. **Technical Documentation**
-   - **Provider API quirks**: Documented (rate limits, pagination)?
-   - **Complex workflows**: Sequence diagrams or flowcharts?
-   - **Design decisions**: Architecture Decision Records (ADRs)?
-   - **Deprecated features**: Migration guides provided?
-   - **Getting started**: Still works for new developers?
-
-10. **Documentation Cleanup**
-    - **Broken links**: All internal links work?
-    - **Obsolete docs**: Old design docs removed or archived?
-    - **Removed features**: Documentation deleted?
-    - **Outdated screenshots**: UI images match current interface?
-
----
-
-## Severity Levels
-
-Use these guidelines to assign severity ratings:
-
-### Critical
-- **Data corruption risk**: Cache-library sync bugs, migration issues
-- **Security vulnerability**: Path traversal, command injection, XSS
-- **System instability**: Deadlocks, memory leaks, cascading failures
-- **Complete phase failure**: Phase boundary violations that break automation
-
-**Fix immediately** before any other work.
-
----
-
-### High
-- **Significant SOLID violations**: God objects, high coupling
-- **Performance issues**: >500ms impact on user operations
-- **Important documentation out of sync**: Phase docs don't match implementation
-- **Missing critical indexes**: Full table scans on large tables
-- **Broken fallback chains**: Provider failures cascade
-
-**Fix in current sprint** or next sprint at latest.
-
----
-
-### Medium
-- **Moderate complexity**: Functions 50-100 lines, 3-level nesting
-- **Minor performance**: <500ms impact but noticeable
-- **Naming inconsistencies**: Confusing but not breaking
-- **Outdated documentation**: Accurate but references old patterns
-- **Unused code**: Increases maintenance burden
-- **Missing accessibility**: WCAG failures on non-critical paths
-
-**Fix in next 2-3 sprints** or add to backlog with priority.
-
----
-
-### Low
-- **Nice-to-have refactoring**: Could be simpler but works fine
-- **Stylistic inconsistencies**: Minor deviations from patterns
-- **Optional optimizations**: Micro-optimizations with minimal gain
-- **Documentation polish**: Typos, better examples
-- **Code style**: Formatting, import organization
-
-**Add to backlog** or fix when touching that code anyway.
-
----
-
-## Audit Report Structure
-
-Reports are saved to `docs/audits/YYYY-MM-DD_audit_report.md`
-
-```markdown
-# Metarr Codebase Audit Report
-
-**Date**: YYYY-MM-DD
-**Scope**: Full codebase | Specific area description
-**Duration**: X hours across 4 phases
-**Auditor**: AI Assistant | Developer Name
+# Metarr Audit Summary
+
+**Date**: YYYY-MM-DD HH:MM UTC
+**Status**: ✅ Complete (17/17 agents)
+**Workflow Version**: 5.0
+**Report ID**: audit-YYYY-MM-DD-HHMMSS
 
 ---
 
 ## Executive Summary
 
-**Total Findings**: X (Critical: X, High: X, Medium: X, Low: X)
+| Metric | Value | Status |
+|--------|-------|--------|
+| Total Issues | XXX | - |
+| 🔴 Critical | XX | FIX FIRST |
+| 🟠 High | XX | FIX NEXT |
+| 🟡 Medium | XX | BACKLOG |
+| 🟢 Low | XX | POLISH |
+| 📚 Doc Issues | XX | URGENT |
+| Code Health | XX/100 | 🔴/🟡/🟢 |
 
-**Code Health Score**: X/100
-(Starting at 100, subtract: Critical=-20, High=-10, Medium=-5, Low=-1)
-
-**Top 3 Priority Areas**:
-1. [Most critical issue category with count]
-2. [Second priority with count]
-3. [Third priority with count]
-
-**Overall Assessment**: Brief paragraph on codebase health
-
----
-
-## Phase 1: Foundation Analysis
-
-### Agent 1: Code Quality & Architecture
-**Findings**: X total (C: X, H: X, M: X, L: X)
-
-#### SOLID Principles & Design Patterns
-[Findings...]
-
-#### Service Architecture Compliance
-[Findings...]
-
-#### Dependency Injection & Testability
-[Findings...]
-
-#### Code Complexity
-[Findings...]
-
-#### TypeScript Best Practices
-[Findings...]
-
-#### Dead Code & Code Hygiene
-[Findings...]
+**Agent Completion**:
+✅✅✅✅✅✅ Wave 1: Backend Foundation (6/6)
+✅✅✅✅✅✅ Wave 2: Frontend & Cross-Cutting (6/6)
+✅✅✅✅✅ Wave 3: Documentation & Integration (5/5)
 
 ---
 
-### Agent 2: Data Integrity & Concurrency
-**Findings**: X total (C: X, H: X, M: X, L: X)
+## Code Health Score Calculation
 
-#### Database Schema & Indexing
-[Findings...]
+**Formula**: `100 - (Critical×10 + High×5 + Medium×2 + Low×0.5 + Doc×3)`
 
-#### Cache-Library Coherence
-[Findings...]
-
-#### Job Queue Idempotency & Safety
-[Findings...]
-
-#### Migration Safety
-[Findings...]
+Capped at 0 minimum. Score interpretation:
+- **90-100**: 🟢 Excellent - Production ready
+- **70-89**: 🟡 Good - Minor improvements needed
+- **50-69**: 🟠 Fair - Significant technical debt
+- **0-49**: 🔴 Poor - Major issues require immediate attention
 
 ---
 
-## Phase 2: Safety Net Analysis
+## Agent Reports
 
-### Agent 3: Error Handling, Security & Resilience
-**Findings**: X total (C: X, H: X, M: X, L: X)
+### Wave 1: Backend Foundation
 
-#### Error Handling Patterns
-[Findings...]
+| Agent | Issues | Critical | High | Medium | Low | Doc | Report |
+|-------|--------|----------|------|--------|-----|-----|--------|
+| Database Engineer | XX | X | X | X | X | X | [View Report](YYYY-MM-DD_agent_database-engineer.md) |
+| Application Architect | XX | X | X | X | X | X | [View Report](YYYY-MM-DD_agent_application-architect.md) |
+| DevOps Engineer | XX | X | X | X | X | X | [View Report](YYYY-MM-DD_agent_devops-engineer.md) |
+| Storage Architect | XX | X | X | X | X | X | [View Report](YYYY-MM-DD_agent_storage-architect.md) |
+| Integration Engineer | XX | X | X | X | X | X | [View Report](YYYY-MM-DD_agent_integration-engineer.md) |
+| API Engineer | XX | X | X | X | X | X | [View Report](YYYY-MM-DD_agent_api-engineer.md) |
 
-#### Security & Input Validation
-[Findings...]
+### Wave 2: Frontend & Cross-Cutting
 
-#### Resilience & Circuit Breakers
-[Findings...]
+| Agent | Issues | Critical | High | Medium | Low | Doc | Report |
+|-------|--------|----------|------|--------|-----|-----|--------|
+| Security Engineer | XX | X | X | X | X | X | [View Report](YYYY-MM-DD_agent_security-engineer.md) |
+| Performance Engineer | XX | X | X | X | X | X | [View Report](YYYY-MM-DD_agent_performance-engineer.md) |
+| Frontend Architect | XX | X | X | X | X | X | [View Report](YYYY-MM-DD_agent_frontend-architect.md) |
+| UX Engineer | XX | X | X | X | X | X | [View Report](YYYY-MM-DD_agent_ux-engineer.md) |
+| Frontend Performance Engineer | XX | X | X | X | X | X | [View Report](YYYY-MM-DD_agent_frontend-performance-engineer.md) |
+| QA Engineer | XX | X | X | X | X | X | [View Report](YYYY-MM-DD_agent_qa-engineer.md) |
 
-#### Observability & Logging
-[Findings...]
+### Wave 3: Documentation & Integration
 
----
-
-## Phase 3: Integration Analysis
-
-### Agent 4: Integration & External Dependencies
-**Findings**: X total (C: X, H: X, M: X, L: X)
-
-#### Provider Integration
-[Findings...]
-
-#### Frontend-Backend Contracts
-[Findings...]
-
-#### External Dependencies
-[Findings...]
-
-#### Configuration Management
-[Findings...]
+| Agent | Issues | Critical | High | Medium | Low | Doc | Report |
+|-------|--------|----------|------|--------|-----|-----|--------|
+| Documentation Lead | XX | X | X | X | X | X | [View Report](YYYY-MM-DD_agent_documentation-lead.md) |
+| Contract Engineer | XX | X | X | X | X | X | [View Report](YYYY-MM-DD_agent_contract-engineer.md) |
+| TypeScript Engineer | XX | X | X | X | X | X | [View Report](YYYY-MM-DD_agent_typescript-engineer.md) |
+| State Management Engineer | XX | X | X | X | X | X | [View Report](YYYY-MM-DD_agent_state-management-engineer.md) |
+| Configuration Engineer | XX | X | X | X | X | X | [View Report](YYYY-MM-DD_agent_configuration-engineer.md) |
 
 ---
 
-### Agent 5: Performance & Resource Management
-**Findings**: X total (C: X, H: X, M: X, L: X)
+## Critical Issues Overview
 
-#### Database Performance
-[Findings...]
+**🔴 FIX IMMEDIATELY** - XX issues total
 
-#### Async & Parallelism
-[Findings...]
+| ID | Title | Agent | Primary File(s) |
+|----|-------|-------|-----------------|
+| DB-XXX | Brief title | Database Engineer | [file.ts:line](path) |
+| ARCH-XXX | Brief title | Application Architect | [file.ts:line](path) |
 
-#### Memory Management
-[Findings...]
+[List all critical issues across all agents with links to detailed findings]
 
-#### Frontend Performance
-[Findings...]
+**Action Required**: Address these before any other work. See individual agent reports for full details.
 
 ---
 
-## Phase 4: User Experience Analysis
+## Documentation Misalignment Overview
 
-### Agent 6: User Experience & Documentation
-**Findings**: X total (C: X, H: X, M: X, L: X)
+**📚 FIX BEFORE REMEDIATION** - XX issues total
 
-#### Component Architecture
-[Findings...]
+Documentation issues corrupt AI agent mental models and must be fixed first.
 
-#### Accessibility (WCAG 2.1)
-[Findings...]
+| ID | Title | Affected Documentation | Fix Priority |
+|----|-------|------------------------|--------------|
+| DOC-XXX | Brief title | [doc/path.md](path) | URGENT |
 
-#### Styling Consistency
-[Findings...]
+[List all documentation issues]
 
-#### Documentation Accuracy
-[Findings...]
+**Action Required**: Fix these FIRST to ensure remediation agents have accurate context.
 
 ---
 
-## Cross-Agent Themes
+## High Priority Overview
 
-**Patterns appearing across multiple agents**:
-1. [Theme 1 - e.g., "Inconsistent error handling across services"]
-   - Agent 1 findings: [count]
-   - Agent 3 findings: [count]
-2. [Theme 2 - e.g., "Provider fallback chains incomplete"]
-   - Agent 3 findings: [count]
-   - Agent 4 findings: [count]
-3. [Theme 3]
+**🟠 FIX IN CURRENT/NEXT SPRINT** - XX issues total
 
----
+| ID | Title | Agent | Impact Area |
+|----|-------|-------|-------------|
+| PERF-XXX | Brief title | Performance Engineer | Enrichment pipeline |
 
-## Metrics Dashboard
-
-| Metric | Current | Target | Status |
-|--------|---------|--------|--------|
-| **Code Health Score** | X/100 | 85/100 | 🔴 <70 / 🟡 70-84 / 🟢 ≥85 |
-| **Critical Issues** | X | 0 | 🔴 >0 / 🟢 0 |
-| **High Issues** | X | <5 | 🔴 >10 / 🟡 5-10 / 🟢 <5 |
-| **Test Coverage** | X% | 80% | 🔴 <60% / 🟡 60-79% / 🟢 ≥80% |
-| **`any` Usage** | X | <10 | 🔴 >20 / 🟡 10-20 / 🟢 <10 |
-| **`@ts-ignore` Count** | X | 0 | 🔴 >5 / 🟡 1-5 / 🟢 0 |
-| **Documented APIs** | X% | 100% | 🔴 <80% / 🟡 80-99% / 🟢 100% |
-| **WCAG Compliance** | X% | 95% | 🔴 <70% / 🟡 70-94% / 🟢 ≥95% |
+[List high priority issues by impact area for easier batching]
 
 ---
 
-## Prioritized Remediation Roadmap
+## Quick Wins
 
-### Immediate (This Sprint) - Critical & Selected High
+High-impact fixes requiring minimal effort (complete these first for immediate value):
 
-**Estimated effort**: X hours
-
-1. **[CRITICAL] Issue Title** - Agent 2, Cache Coherence
-   - Location: `path/to/file.ts:123`
-   - Effort: Medium (2-4hr)
-   - Impact: Prevents cache corruption
-
-2. **[CRITICAL] Issue Title** - Agent 3, Security
-   - Location: `path/to/file.ts:456`
-   - Effort: Small (<1hr)
-   - Impact: Closes path traversal vulnerability
-
-[Continue for all Critical and critical High issues...]
+1. **{ISSUE-ID}** ({Agent}) - {One-line description} → {Impact}
+2. **{ISSUE-ID}** ({Agent}) - {One-line description} → {Impact}
+3. **{ISSUE-ID}** ({Agent}) - {One-line description} → {Impact}
 
 ---
 
-### Short Term (Next 2-3 Sprints) - High & Selected Medium
+## Remediation Roadmap
 
-**Estimated effort**: X hours
+### Phase 1: Documentation Alignment ⚠️ DO FIRST
 
-1. **[HIGH] Issue Title** - Agent 1, Architecture
-   - Location: `path/to/file.ts:789`
-   - Effort: Large (>4hr)
-   - Impact: Reduces coupling, improves testability
+**Why First**: Prevents AI confusion and wasted effort during remediation.
 
-[Continue...]
+**Issues**: DOC-001, DOC-002, DOC-003, etc.
 
----
-
-### Long Term (Backlog) - Medium & Low
-
-**Estimated effort**: X hours
-
-1. **[MEDIUM] Issue Title** - Agent 5, Performance
-   - Effort: Medium
-   - Impact: Improves enrichment speed by ~100ms
-
-[Continue...]
+**Estimated Effort**: X hours
 
 ---
 
-### Technical Debt Accepted (Deferred with Rationale)
+### Phase 2: Critical Security & Data Integrity
 
-1. **[MEDIUM] Issue Title** - Agent 6, Documentation
-   - **Reason**: Low user impact, will address during next documentation sprint
-   - **Revisit**: 2024-Q2
+**Dependency**: Requires Phase 1 completion (accurate docs).
 
-2. **[LOW] Issue Title** - Agent 5, Micro-optimization
-   - **Reason**: Negligible performance gain (<10ms), high refactor risk
-   - **Revisit**: Only if profiling shows bottleneck
+**Issues**: SECURITY-XXX, DB-XXX, STORAGE-XXX (Critical severity only)
 
----
+**Estimated Effort**: XX hours
 
-## Testing Recommendations
-
-Based on findings, prioritize adding tests for:
-
-1. **[Component/Service Name]**
-   - Type: Unit | Integration | E2E
-   - Reason: [Critical path with no coverage, found by Agent X]
-
-2. **[Component/Service Name]**
-   - Type: Unit | Integration | E2E
-   - Reason: [Complex logic, error-prone, found by Agent X]
+**Order**:
+1. Security vulnerabilities (SECURITY-*)
+2. Data integrity issues (DB-*, STORAGE-*)
+3. System stability (DEVOPS-*, ARCH-*)
 
 ---
 
-## Architectural Improvements
+### Phase 3: Critical Performance & UX
 
-High-level refactoring opportunities:
+**Dependency**: Can run parallel to Phase 2 if resources allow.
 
-1. **[Refactoring Name]**
-   - **Scope**: Multiple services/components
-   - **Benefit**: Reduces coupling, improves testability
-   - **Effort**: X hours
-   - **Found by**: Agents 1, 2
+**Issues**: PERF-XXX, UX-XXX (Critical severity only)
 
-2. **[Refactoring Name]**
-   - **Scope**: Provider integration layer
-   - **Benefit**: Consistent error handling, easier to add providers
-   - **Effort**: X hours
-   - **Found by**: Agents 3, 4
+**Estimated Effort**: XX hours
 
 ---
 
-## Documentation Action Items
+### Phase 4: High Priority Fixes
 
-1. **Update CLAUDE.md**:
-   - Section: [Phase descriptions]
-   - Change: [Reflect current job queue implementation]
+**Dependency**: After all critical issues resolved.
 
-2. **Update docs/phases/ENRICHMENT.md**:
-   - Change: [Document new asset selection algorithm]
+**Issues**: All High severity across agents
 
-3. **Add missing JSDoc**:
-   - Files: `[list of files]`
-   - Focus: Public API methods
+**Strategy**: Group by subsystem to minimize context switching.
+
+**Estimated Effort**: XX hours
 
 ---
 
-## Dependency Updates
+### Phase 5: Medium/Low Priority
 
-| Package | Current | Latest | Security | Breaking | Priority |
-|---------|---------|--------|----------|----------|----------|
-| `package-name` | 1.2.3 | 2.0.0 | 🔴 Critical | Yes | High |
-| `package-name` | 4.5.6 | 4.5.9 | 🟢 None | No | Low |
+**Strategy**: Fix opportunistically when touching related code.
 
----
+**Issues**: All Medium and Low severity
 
-## Conclusion
-
-[2-3 paragraph summary]:
-- Overall codebase health assessment
-- Most critical risks and immediate actions
-- Positive observations (what's working well)
-- Recommended focus for next sprint
-- Long-term architectural direction
-
-**Next Audit Recommended**: [Date, typically 3-6 months or after next major feature]
+**Tracking**: Move to backlog for incremental improvement.
 
 ---
 
-**Report Version**: 2.0
-**Workflow Version**: 2.0
-**Generated**: YYYY-MM-DD HH:MM
+## Issue Dependency Graph
+
+Critical dependencies that must be resolved in order:
+
+```
+DOC-* (All documentation) ─┬─► SECURITY-XXX (Fix security first)
+                           ├─► DB-XXX (Database integrity)
+                           └─► ALL OTHER FIXES (Accurate docs enable all work)
+
+DB-XXX (Schema fixes) ─────► PERF-XXX (Query optimization builds on schema)
+
+STORAGE-XXX (Cache sync) ──► DEVOPS-XXX (Job reliability requires cache stability)
+```
+
+---
+
+## Metrics Trends
+
+| Date | Health | Crit | High | Med | Low | Docs | Notes |
+|------|--------|------|------|-----|-----|------|-------|
+| YYYY-MM-DD | XX/100 | XX | XX | XX | XX | XX | Current audit |
+| Previous | XX/100 | XX | XX | XX | XX | XX | Baseline for comparison |
+
+**Trend**: ✅ Improving / 🔴 Declining / ➡️ Stable
+
+---
+
+## For Remediation Agents
+
+When asked to fix issues from this audit:
+
+1. **Start here**: Read this summary to understand overall priorities
+2. **Read relevant agent report(s)**: Navigate to specific agent reports for detailed findings
+3. **Check dependencies**: Consult the dependency graph before starting
+4. **Verify documentation**: Ensure DOC-* issues in your area are fixed first
+5. **Update metrics**: After fixes, update the trends table
+
+**Example Workflow**:
+```
+User: "Fix the database issues from the audit"
+Agent:
+1. Read YYYY-MM-DD_audit_summary.md (this file)
+2. Identify database-related issues in Executive Summary
+3. Read docs/audits/YYYY-MM-DD_agent_database-engineer.md
+4. Check if DOC-* issues affect database documentation
+5. Follow remediation roadmap phase ordering
+6. Fix issues, run tests, update documentation
+```
+
+---
+
+**Next Audit**: Recommended in 3 months (YYYY-MM-DD)
+**Version**: 5.0
 ```
 
 ---
@@ -947,190 +1011,186 @@ High-level refactoring opportunities:
 ### Preparation
 
 1. **Ensure stable state**:
-   - All tests passing (`npm test`)
-   - No uncommitted changes (optional but recommended)
-   - Latest dependencies installed (`npm install`)
-   - Development environment clean (`npm run dev:clean`)
+   ```bash
+   npm test                  # All tests passing
+   npm run typecheck         # No TypeScript errors
+   npm install               # Latest dependencies
+   ```
 
-2. **Set scope**: Full codebase or specific area?
-
-3. **Allocate time**: Block 10-13 hours or split across multiple days
+2. **Determine scope**:
+   - Full codebase (standard)
+   - Targeted subsystem
+   - Incremental (changed files only)
 
 ---
 
 ### Execution
 
-#### Request Format for AI Assistant
+Request an audit from your AI assistant:
 
-**Full Audit**:
 ```
-Please run a full codebase audit following the docs/audit_workflow.md process.
-Use the 6-agent, 4-phase structure.
-Save the report to docs/audits/YYYY-MM-DD_audit_report.md
+Please run a full codebase audit following docs/AUDIT_WORKFLOW.md.
+
+Use the 17-agent, 3-wave expert team structure with max 6 concurrent agents.
+
+IMPORTANT: Each agent must write their own report to docs/audits/YYYY-MM-DD_agent_{agent-name}.md
+immediately upon completion. After all agents finish, generate the consolidated summary report.
+
+Focus on impact analysis (what/why) not implementation (how).
+Use markdown file:line references, avoid code snippets.
 ```
 
-**Targeted Audit**:
-```
-Please audit [specific area: enrichment phase / frontend components / cache system]
-following the audit_workflow.md process.
-Focus on Agents [list relevant agents: 1, 2, 5].
-Save findings to docs/audits/YYYY-MM-DD_[area]_audit_report.md
-```
+The AI will:
+1. Launch Wave 1 (6 agents in parallel)
+   - Each agent writes their report to `docs/audits/YYYY-MM-DD_agent_{name}.md`
+2. Wait for completion, then launch Wave 2 (6 agents)
+   - Each agent writes their report to `docs/audits/YYYY-MM-DD_agent_{name}.md`
+3. Wait for completion, then launch Wave 3 (5 agents)
+   - Each agent writes their report to `docs/audits/YYYY-MM-DD_agent_{name}.md`
+4. Generate consolidated summary report at `docs/audits/YYYY-MM-DD_audit_summary.md`
+   - Aggregates metrics from all 17 individual reports
+   - Creates navigation index with links to agent reports
+   - Builds remediation roadmap and prioritization
 
 ---
 
-### Agent Execution Sequence
+### Agent Execution Guidelines
 
-**Phase 1: Foundation (3-4 hours)**
-- Launch Agent 1 (Code Quality & Architecture)
-- Launch Agent 2 (Data Integrity & Concurrency)
-- **Run in parallel**
-- Wait for both to complete
-
-**Phase 2: Safety Net (2-3 hours)**
-- Review Phase 1 findings
-- Launch Agent 3 (Error Handling, Security & Resilience)
-- **Runs solo** (needs architecture and data flow understanding)
-
-**Phase 3: Integration (2-3 hours)**
-- Review Phase 2 findings
-- Launch Agent 4 (Integration & External Dependencies)
-- Launch Agent 5 (Performance & Resource Management)
-- **Run in parallel**
-
-**Phase 4: Polish (2-3 hours)**
-- Review Phases 1-3 findings
-- Launch Agent 6 (User Experience & Documentation)
-- **Runs solo** (needs complete system understanding)
-
----
-
-### Each Agent Should
+Each agent should:
 
 1. **Read thoroughly**:
-   - Relevant source files (controllers, services, components)
-   - Configuration files
-   - Documentation
-   - Test files
+   - All files in their focus area
+   - Related configuration and documentation
+   - Test files for coverage assessment
 
 2. **Apply evaluation criteria**:
-   - Use specific metrics (complexity thresholds, pattern compliance)
-   - Show code examples for every finding
-   - Estimate effort and risk
+   - Answer specific evaluation questions
+   - Provide file:line references (markdown links)
+   - Focus on impact, not implementation details
 
 3. **Document findings**:
-   - Use standard format (location, category, effort, risk)
-   - Link related findings across agents
-   - Identify phase impacts
+   - What is wrong (clear description)
+   - Why it matters (impact, consequences, violated principles)
+   - Expected behavior (goal state)
+   - Affected components
+   - Related issues
 
 4. **Prioritize by severity**:
-   - Critical: Data corruption, security, system stability
-   - High: Architecture violations, performance, important docs
-   - Medium: Moderate complexity, outdated docs, accessibility
-   - Low: Nice-to-haves, polish, micro-optimizations
+   - Critical: Data loss, security, system stability
+   - High: Architecture violations, major performance issues
+   - Medium: Code quality, outdated docs
+   - Low: Polish, style, micro-optimizations
 
-5. **Provide actionable recommendations**:
-   - Show current pattern vs suggested pattern
-   - Explain specific benefits for Metarr
-   - Estimate remediation effort
+5. **Save report immediately**: ⚠️ CRITICAL STEP
+   - Write report to `docs/audits/YYYY-MM-DD_agent_{agent-name}.md`
+   - Use the Individual Agent Report structure from Output Format section
+   - Include summary metrics table at top
+   - List all findings with sequential issue numbering
+   - **Save before completing the agent task** to prevent data loss
 
 ---
 
 ### Post-Audit
 
-1. **Review report** (1-2 hours):
+1. **Review report**:
    - Read executive summary
    - Understand code health score
-   - Identify cross-agent themes
+   - Review remediation roadmap
 
-2. **Prioritize findings** (1 hour):
+2. **Prioritize fixes**:
    - Critical → immediate
-   - High → current or next sprint
-   - Medium → backlog with priority
-   - Low → opportunistic fixes
+   - High → current/next sprint
+   - Medium → backlog
+   - Low → opportunistic
 
-3. **Create action plan**:
-   - Sprint 1: Critical + selected High
-   - Sprint 2-3: High + selected Medium
-   - Backlog: Medium + Low
+3. **Create plan**:
+   - Start with documentation alignment (DOC-* issues)
+   - Follow dependency graph
+   - Tackle quick wins for immediate value
 
-4. **Track technical debt**:
-   - Document deferred items with rationale
-   - Set revisit dates
-   - Update tracking system
-
-5. **Schedule remediation**:
-   - Block time for fixes
-   - Test after each fix
-   - Update documentation
-
-6. **Next audit**:
-   - Schedule 3-6 months out
-   - After next major feature
-   - Track improvement over time
+4. **Track progress**:
+   - Update metrics trends
+   - Monitor code health score
+   - Schedule next audit (quarterly recommended)
 
 ---
 
 ## Best Practices
 
-### For AI Assistants Conducting Audits
+### For AI Agents Conducting Audits
 
 ✅ **Do**:
-1. **Be specific**: Exact file paths and line numbers
-2. **Show examples**: Quote relevant code snippets (5-15 lines)
-3. **Explain impact**: Why does this matter to Metarr specifically?
-4. **Suggest solutions**: Don't just identify problems
-5. **Consider context**: Metarr's phase-based architecture and elemental phases
-6. **Check everything**: Code, tests, docs, configs, scripts
-7. **No false positives**: Only flag genuine issues with evidence
-8. **Estimate effort**: Help prioritize work (Small/Medium/Large)
-9. **Link findings**: Reference related issues across agents
-10. **Track metrics**: Calculate code health score and other metrics
+- Be thorough and specific with file:line references
+- Use markdown links for navigation ([file.ts:42](src/file.ts#L42))
+- Explain impact specific to this application's architecture
+- Focus on what/why, not prescriptive how
+- Evaluate patterns based on sound engineering principles
+- Link related findings
+- Calculate accurate metrics
+- **Write your report to file IMMEDIATELY** using the Individual Agent Report structure
+- Save to `docs/audits/YYYY-MM-DD_agent_{agent-name}.md` before completing
 
 ❌ **Don't**:
-1. Skip reading files (audit requires thorough reading)
-2. Make assumptions without evidence
-3. Flag style preferences as issues
-4. Ignore positive patterns (mention what's working well)
-5. Overwhelm with low-priority issues (focus on Critical/High)
-6. Use vague locations ("multiple files")
-7. Suggest complex refactors without justification
-8. Miss cross-agent themes
+- Include code snippets (adds bloat, becomes stale)
+- Skip reading files
+- Make assumptions without evidence
+- Use vague locations ("multiple files")
+- Prescribe detailed implementation
+- Enforce arbitrary rules without evaluating if they make sense
+- Miss documentation alignment issues
+- **Return findings without saving to file** (context limits will lose everything)
 
 ---
 
-### For Developers Using Audits
+### For AI Agents During Remediation
 
 ✅ **Do**:
-1. **Take time**: Don't rush through findings (10-13hr audit + 2-3hr review)
-2. **Ask questions**: Clarify reasoning if unclear
-3. **Push back**: Not all findings may be valid (context matters)
-4. **Batch similar**: Group related fixes together
-5. **Test after**: Verify fixes don't break functionality
-6. **Update docs**: Keep documentation in sync with changes
-7. **Track debt**: Not everything needs immediate fixing
-8. **Celebrate**: Acknowledge improvements in metrics over time
+- Read issue completely before coding
+- Understand impact and consequences
+- Check related issues for context
+- Follow dependency graph
+- Update documentation as specified
+- Run tests after each fix
 
 ❌ **Don't**:
-1. Fix everything at once (prioritize Critical → High → Medium → Low)
-2. Skip testing after fixes
-3. Ignore architectural findings (address root causes, not symptoms)
-4. Defer Critical issues (data corruption, security = immediate fix)
-5. Forget to update docs after refactors
-6. Treat audit as checklist (understand the "why")
+- Jump to coding without understanding
+- Ignore "why this matters"
+- Skip documentation updates
+- Fix out of dependency order
+- Assume one solution fits all
+
+---
+
+### For Human Developers
+
+✅ **Do**:
+- Allocate sufficient review time
+- Question findings if unclear
+- Prioritize documentation first
+- Batch related fixes
+- Test thoroughly
+- Update metrics
+- Celebrate improvements
+
+❌ **Don't**:
+- Rush through findings
+- Fix everything at once
+- Skip testing
+- Defer Critical issues
+- Ignore documentation
+- Treat as checklist without understanding
 
 ---
 
 ## Continuous Improvement
 
-This workflow document should evolve based on experience:
-
-- **Add new criteria**: As patterns emerge in codebase
-- **Adjust severity thresholds**: Based on real impact
-- **Refine agent responsibilities**: If overlap or gaps found
-- **Update industry standards**: As React, TypeScript, Node.js evolve
-- **Incorporate new tools**: Linters, static analyzers, profilers
-- **Track metrics over time**: Code health score, test coverage trends
+This workflow evolves based on experience:
+- Add evaluation criteria as patterns emerge
+- Adjust severity thresholds based on real impact
+- Refine agent responsibilities if overlap/gaps found
+- Update for technology evolution
+- Track metrics trends over audits
+- Question and update guidelines that become outdated
 
 ---
 
@@ -1138,13 +1198,13 @@ This workflow document should evolve based on experience:
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 1.0 | 2025-10-26 | Initial version (original 6 agents) |
-| 2.0 | 2025-01-17 | Enhanced to consolidated 6-agent, 4-phase structure with deeper evaluation criteria |
+| 1.0 | 2025-10-26 | Initial version (6 agents, 4 phases) |
+| 2.0 | 2025-01-17 | Enhanced structure (6 agents, deeper criteria) |
+| 3.0 | 2025-01-18 | 17 specialized agents, 3 waves, AI remediation focus |
+| 4.0 | 2025-11-18 | Expert team model, markdown-optimized output, principle-based evaluation (not rigid rules) |
+| 5.0 | 2025-11-18 | **Current** - Multi-file architecture: each agent saves own report immediately, summary report serves as navigation index for remediation agents |
 
 ---
 
-**Next Review**: After first full audit execution with new structure
-
 **Maintained by**: Development team + AI assistant audits
-
-**Feedback**: Create issue in GitHub with "audit-workflow" label
+**Feedback**: GitHub issue with "audit-workflow" label
