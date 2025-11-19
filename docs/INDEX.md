@@ -134,6 +134,7 @@ Complete documentation map for Metarr - intelligent metadata management for medi
 |----------|-------------|
 | [WORKFLOW.md](development/WORKFLOW.md) | **Complete development workflow (CRITICAL)** |
 | [ROADMAP.md](development/ROADMAP.md) | **Current tasks and priorities (CRITICAL)** |
+| [PLANNING_WORKFLOW.md](development/PLANNING_WORKFLOW.md) | **Planning mode with named agents (CRITICAL)** |
 | [DOCUMENTATION_RULES.md](development/DOCUMENTATION_RULES.md) | Meta-documentation guidelines |
 | [TESTING.md](development/TESTING.md) | Test infrastructure and strategy |
 | [CODING_STANDARDS.md](development/CODING_STANDARDS.md) | TypeScript/React coding standards |
@@ -142,7 +143,7 @@ Complete documentation map for Metarr - intelligent metadata management for medi
 
 ## Navigation Tips
 
-**For AI Assistants**: Always read [CLAUDE.md](/CLAUDE.md), [WORKFLOW.md](development/WORKFLOW.md), and [ROADMAP.md](development/ROADMAP.md) at session start.
+**For AI Assistants**: Always read [CLAUDE.md](/CLAUDE.md), [WORKFLOW.md](development/WORKFLOW.md), [ROADMAP.md](development/ROADMAP.md), and [PLANNING_WORKFLOW.md](development/PLANNING_WORKFLOW.md) at session start.
 
 **For Developers**: Start with [WORKFLOW.md](development/WORKFLOW.md) for complete development process.
 

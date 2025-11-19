@@ -4,10 +4,11 @@
 
 **Related Docs**:
 - Parent: [CLAUDE.md](/CLAUDE.md) - Quick reference
-- Related: [ROADMAP.md](./ROADMAP.md), [TESTING.md](./TESTING.md), [CODING_STANDARDS.md](./CODING_STANDARDS.md)
+- Related: [ROADMAP.md](./ROADMAP.md), [PLANNING_WORKFLOW.md](./PLANNING_WORKFLOW.md), [TESTING.md](./TESTING.md), [CODING_STANDARDS.md](./CODING_STANDARDS.md)
 
 ## Quick Reference
 
+- **Planning vs Implementation**: AI infers when planning is needed, switches modes
 - Small, frequent commits (not large batches)
 - Read ROADMAP.md before starting any work
 - ALWAYS read files before editing
@@ -15,6 +16,7 @@
 - Run all pre-commit checks before committing
 - Update docs when changing behavior
 - Never run/kill server processes (AI rule)
+- Max 6 concurrent agents for parallel tasks
 
 ---
 
@@ -48,6 +50,82 @@
 
 ---
 
+## Planning vs Implementation Modes
+
+### Overview
+
+AI infers whether a task needs planning based on complexity, systems affected, and ambiguity. Simple changes bypass planning; complex features go through structured planning with named agents.
+
+**Planning Mode**: Alex (Product Owner) + specialized agents (Morgan, Casey, Jordan, Taylor, Riley)
+**Implementation Mode**: Sam (Implementation Coordinator) + task-specific agents
+
+**Full details**: See [PLANNING_WORKFLOW.md](./PLANNING_WORKFLOW.md)
+
+### When Planning is Needed (AI Infers)
+
+**Triggers**:
+- Multi-system changes (database + API + UI)
+- New features (not just modifications)
+- Ambiguous requirements
+- User says "plan", "design", "what if we..."
+
+**Process**:
+1. AI becomes Alex (Product Owner)
+2. Creates feature branch: `git checkout -b feature/[name]`
+3. Consults planning agents sequentially
+4. Creates `.feature-spec.md` in branch
+5. Commits: `"plan: [feature] spec"`
+6. Push for machine transition safety
+7. User approves → transition to implementation
+
+### When Direct Implementation is OK
+
+**Simple changes**:
+- Single file modifications
+- Styling/text updates
+- Bug fixes in isolated areas
+- Configuration changes
+- Documentation updates
+
+**Process**: Implement directly, no planning phase
+
+### Feature Branch Workflow
+
+**All planning + implementation happens in feature branches**:
+
+```bash
+# Planning Phase
+git checkout -b feature/[name]
+# ... planning agents consulted ...
+git add .feature-spec.md
+git commit -m "plan: [feature] spec"
+git push -u origin feature/[name]
+
+# Implementation Phase (Sam coordinates)
+# ... small, frequent commits ...
+git push  # After each session for machine transitions
+
+# Pre-Merge
+git rm .feature-spec.md
+git commit -m "chore: remove feature spec before merge"
+git push
+
+# Merge to Main
+git checkout main
+git merge feature/[name] --no-ff
+git push
+git branch -d feature/[name]
+```
+
+**Abort scenario** (low ROI):
+```bash
+git checkout main
+git branch -D feature/[name]  # Force delete
+# All work discarded, clean slate
+```
+
+---
+
 ## Pre-Work Checklist
 
 **MANDATORY: Complete before starting ANY task**
@@ -55,9 +133,10 @@
 ```
 [ ] Read ROADMAP.md - Understand current priorities and context
 [ ] Check git status - Ensure clean working directory or understand uncommitted changes
-[ ] Pull latest changes - git pull origin master
+[ ] Pull latest changes - git pull origin main
 [ ] Verify dev environment - Confirm npm run dev:all is running (if applicable)
 [ ] Review related docs - Read relevant documentation for the area you'll work in
+[ ] Check for feature branch - If continuing feature work, checkout and pull
 ```
 
 **Why this matters**:
@@ -65,6 +144,7 @@
 - Ensures awareness of in-progress work
 - Avoids merge conflicts
 - Provides necessary context for decisions
+- Resumes feature work correctly after machine transitions
 
 ---
 
@@ -189,6 +269,11 @@ Fix bug + Add feature + Update docs + Refactor → Test everything → One big c
     - Move completed tasks to "Completed Recently"
     - Add new tasks if discovered during work
     - Update "In Progress" section
+
+[ ] .feature-spec.md deleted if in feature branch preparing for merge
+    - CRITICAL: Must be deleted before merging to main
+    - Commit deletion: "chore: remove feature spec before merge"
+    - Verify: ls -la .feature-spec.md should error
 
 [ ] No TODOs left in code without GitHub issue
     - Either fix TODOs before committing

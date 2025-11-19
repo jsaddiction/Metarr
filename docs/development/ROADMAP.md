@@ -3,18 +3,21 @@
 Last updated: 2025-11-19
 
 ## In Progress
-- [ ] Review new documentation structure and provide feedback
-- [ ] Begin normal feature development with new workflow
+- [ ] Test planning workflow with a real feature
+- [ ] Review planning workflow documentation for clarity
 
 ## Next Up (Priority Order)
-- [ ] TBD - awaiting user direction after documentation review
+- [ ] Implement first feature using new planning workflow
+- [ ] Refine workflow based on practical experience
+- [ ] TBD - awaiting user direction
 
 ## Completed Recently
+- [x] Planning workflow documentation complete (2025-11-19)
+- [x] PLANNING_WORKFLOW.md created with named agents (2025-11-19)
+- [x] WORKFLOW.md updated with planning mode integration (2025-11-19)
+- [x] CLAUDE.md updated with planning mode brief (2025-11-19)
+- [x] INDEX.md updated to include planning workflow (2025-11-19)
 - [x] Documentation migration complete - all waves (2025-11-19)
-- [x] Documentation migration Wave 2 - getting-started, operations, reference, root files (2025-11-19)
-- [x] Documentation migration Wave 1 - archive, architecture, phases, providers, players, frontend, development (2025-11-19)
-- [x] Documentation migration planning (2025-11-19)
-- [x] Documentation review and consolidation strategy (2025-11-19)
 
 ## Backlog
 - [ ] TBD - to be populated based on project priorities

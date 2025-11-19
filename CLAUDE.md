@@ -100,6 +100,25 @@ Before starting ANY task:
 
 **Parallel Agent Limit**: **Maximum 6 concurrent agents** (hardware limit)
 
+### Planning vs Implementation Modes
+
+**AI infers** when planning is needed based on complexity and systems affected.
+
+**Planning Mode** (Alex + specialized agents):
+- Trigger: Multi-system features, ambiguous requirements, new features
+- Process: Create feature branch → consult agents → create `.feature-spec.md` → commit & push
+- Agents: Morgan (architect), Casey (frontend), Jordan (backend), Taylor (QA), Riley (devops)
+- Output: Feature specification in branch-tracked `.feature-spec.md`
+
+**Implementation Mode** (Sam + task agents):
+- Trigger: User approves plan
+- Process: Read spec → spawn agents (max 6) → implement → small commits → delete spec before merge
+- Pre-merge: Delete `.feature-spec.md`, verify all checks pass, merge to main
+
+**Abort**: If ROI too low, `git branch -D feature/[name]` discards all work
+
+**Full details**: [docs/development/PLANNING_WORKFLOW.md](docs/development/PLANNING_WORKFLOW.md)
+
 ### Pre-Commit Verification (MANDATORY)
 
 Before EVERY commit, verify ALL items:
