@@ -67,13 +67,21 @@ export class AssetAnalysisPhase {
 
       // Step 2: Process up to 10 assets concurrently
       let assetsAnalyzed = 0;
+      let assetsFailed = 0;
 
       await pMap(
         unanalyzed,
         async (asset) => {
-          const analyzed = await this.analyzeAsset(asset);
-          if (analyzed) {
+          try {
+            await this.analyzeAsset(asset);
             assetsAnalyzed++;
+          } catch (error) {
+            assetsFailed++;
+            logger.warn('[AssetAnalysisPhase] Failed to analyze asset', {
+              assetId: asset.id,
+              url: asset.provider_url,
+              error: getErrorMessage(error),
+            });
           }
         },
         { concurrency: 10 }
@@ -86,7 +94,16 @@ export class AssetAnalysisPhase {
         entityType,
         entityId,
         assetsAnalyzed,
+        assetsFailed,
+        successRate: `${((assetsAnalyzed / unanalyzed.length) * 100).toFixed(1)}%`,
       });
+
+      // Throw error if too many failures (> 50%)
+      if (assetsFailed > assetsAnalyzed) {
+        throw new Error(
+          `Asset analysis had high failure rate: ${assetsFailed} failed out of ${unanalyzed.length} total`
+        );
+      }
 
       return { assetsAnalyzed };
     } catch (error) {
@@ -100,7 +117,7 @@ export class AssetAnalysisPhase {
   /**
    * Analyze a single asset
    */
-  private async analyzeAsset(asset: ProviderAsset): Promise<boolean> {
+  private async analyzeAsset(asset: ProviderAsset): Promise<void> {
     const tempPath = path.join(this.tempDir, `metarr-analyze-${crypto.randomUUID()}.tmp`);
 
     try {
@@ -171,30 +188,87 @@ export class AssetAnalysisPhase {
         height: metadata.height,
       });
 
-      return true;
-    } catch (error) {
-      logger.warn('[AssetAnalysisPhase] Failed to analyze asset', {
-        assetId: asset.id,
-        url: asset.provider_url,
-        error: getErrorMessage(error),
-      });
-      return false;
-    } finally {
-      // Always delete temp file
+      // Delete temp file on success
       await fs.unlink(tempPath).catch(() => {});
+    } catch (error) {
+      // Delete temp file on error
+      await fs.unlink(tempPath).catch(() => {});
+
+      // Re-throw for caller to handle
+      throw error;
     }
   }
 
   /**
-   * Download file from URL to destination path
+   * Download file from URL to destination path with retry logic
    */
   private async downloadFile(url: string, destPath: string): Promise<void> {
-    const response = await axios.get(url, {
-      responseType: 'arraybuffer',
-      timeout: 30000,
-    });
+    const maxRetries = 3;
 
-    await fs.writeFile(destPath, response.data);
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const response = await axios.get(url, {
+          responseType: 'arraybuffer',
+          timeout: 30000, // 30 second timeout
+        });
+
+        await fs.writeFile(destPath, response.data);
+        return; // Success!
+      } catch (error) {
+        const isLastAttempt = attempt === maxRetries;
+        const isNetworkError = this.isNetworkError(error);
+
+        logger.debug('[AssetAnalysisPhase] Download attempt failed', {
+          url,
+          attempt,
+          maxRetries,
+          isNetworkError,
+          error: getErrorMessage(error),
+        });
+
+        // If not a network error or last attempt, give up
+        if (!isNetworkError || isLastAttempt) {
+          throw new Error(
+            `Failed to download after ${attempt} attempts: ${getErrorMessage(error)}`
+          );
+        }
+
+        // Exponential backoff: 2s, 4s, 8s
+        const delayMs = Math.pow(2, attempt) * 1000;
+        logger.debug('[AssetAnalysisPhase] Retrying download after delay', {
+          url,
+          attempt: attempt + 1,
+          delayMs,
+        });
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+    }
+  }
+
+  /**
+   * Check if error is a network error (retryable)
+   */
+  private isNetworkError(error: unknown): boolean {
+    const errorMessage = getErrorMessage(error).toLowerCase();
+    const errorCode = (error as any)?.code?.toLowerCase() || '';
+
+    const networkErrors = [
+      'timeout',
+      'econnrefused',
+      'econnreset',
+      'etimedout',
+      'network',
+      'socket',
+      'enotfound',
+      'enetunreach',
+      'ehostunreach',
+      'econnaborted',
+    ];
+
+    return (
+      networkErrors.some((ne) => errorMessage.includes(ne) || errorCode.includes(ne)) ||
+      errorMessage.includes('status code 5') // 5xx errors are retryable
+    );
   }
 
   /**

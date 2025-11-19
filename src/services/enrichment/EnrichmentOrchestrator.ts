@@ -28,11 +28,13 @@ export class EnrichmentOrchestrator {
   private readonly assetAnalysisPhase: AssetAnalysisPhase;
   private readonly assetSelectionPhase: AssetSelectionPhase;
   private readonly actorEnrichmentPhase: ActorEnrichmentPhase;
+  private readonly db: DatabaseConnection;
 
   constructor(
     db: DatabaseConnection,
     dbManager: DatabaseManager
   ) {
+    this.db = db;
     const cacheDir = path.join(process.cwd(), 'data', 'cache');
     const tempDir = path.join(process.cwd(), 'data', 'temp');
 
@@ -96,6 +98,9 @@ export class EnrichmentOrchestrator {
         thumbnailsDownloaded: phase5CResult.thumbnailsDownloaded,
       });
 
+      // Update entity enrichment status
+      await this.updateEnrichmentStatus(entityType, entityId);
+
       logger.info('[EnrichmentOrchestrator] Enrichment workflow complete', {
         entityType,
         entityId,
@@ -126,5 +131,54 @@ export class EnrichmentOrchestrator {
         errors,
       };
     }
+  }
+
+  /**
+   * Update entity enrichment status to 'enriched'
+   */
+  private async updateEnrichmentStatus(entityType: string, entityId: number): Promise<void> {
+    try {
+      const table = this.getTableForEntityType(entityType);
+      if (!table) {
+        logger.warn('[EnrichmentOrchestrator] Unknown entity type, cannot update status', {
+          entityType,
+        });
+        return;
+      }
+
+      await this.db.execute(
+        `UPDATE ${table} SET identification_status = 'enriched', enriched_at = CURRENT_TIMESTAMP WHERE id = ?`,
+        [entityId]
+      );
+
+      logger.info('[EnrichmentOrchestrator] Updated enrichment status', {
+        entityType,
+        entityId,
+        status: 'enriched',
+      });
+    } catch (error) {
+      logger.error('[EnrichmentOrchestrator] Failed to update enrichment status', {
+        entityType,
+        entityId,
+        error: getErrorMessage(error),
+      });
+      // Don't throw - status update failure shouldn't fail enrichment
+    }
+  }
+
+  /**
+   * Get database table name for entity type
+   */
+  private getTableForEntityType(entityType: string): string | null {
+    const tableMap: Record<string, string> = {
+      movie: 'movies',
+      series: 'series',
+      season: 'seasons',
+      episode: 'episodes',
+      artist: 'artists',
+      album: 'albums',
+      actor: 'actors',
+    };
+    return tableMap[entityType] || null;
   }
 }

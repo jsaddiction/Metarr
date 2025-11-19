@@ -269,40 +269,65 @@ export class ProviderFetchPhase {
         // Find or create actor
         let actorId: number;
 
-        const existingActor = await this.db.get<{ id: number }>(
-          'SELECT id FROM actors WHERE name = ?',
-          [castMember.person.name]
-        );
+        // Try to find existing actor by tmdb_id first, then by name
+        let existingActor = null;
+        if (castMember.person.tmdb_person_id) {
+          existingActor = await this.db.get<{ id: number }>(
+            'SELECT id FROM actors WHERE tmdb_id = ?',
+            [castMember.person.tmdb_person_id]
+          );
+        }
+
+        if (!existingActor) {
+          existingActor = await this.db.get<{ id: number }>(
+            'SELECT id FROM actors WHERE name = ?',
+            [castMember.person.name]
+          );
+        }
 
         if (existingActor) {
           actorId = existingActor.id;
 
-          // Update actor profile if we have better data
-          if (castMember.person.profile_path) {
-            await this.db.execute(
-              'UPDATE actors SET imdb_person_id = ?, profile_path = ? WHERE id = ?',
-              [castMember.person.imdb_person_id || null, castMember.person.profile_path, actorId]
-            );
-          }
+          // Update actor IDs if we have better data
+          await this.db.execute(
+            'UPDATE actors SET tmdb_id = COALESCE(?, tmdb_id), imdb_id = COALESCE(?, imdb_id) WHERE id = ?',
+            [castMember.person.tmdb_person_id || null, castMember.person.imdb_person_id || null, actorId]
+          );
         } else {
           // Create new actor
+          const nameNormalized = this.normalizeActorName(castMember.person.name);
           const result = await this.db.execute(
-            'INSERT INTO actors (name, imdb_person_id, profile_path) VALUES (?, ?, ?)',
-            [castMember.person.name, castMember.person.imdb_person_id || null, castMember.person.profile_path || null]
+            'INSERT INTO actors (name, name_normalized, tmdb_id, imdb_id) VALUES (?, ?, ?, ?)',
+            [
+              castMember.person.name,
+              nameNormalized,
+              castMember.person.tmdb_person_id || null,
+              castMember.person.imdb_person_id || null
+            ]
           );
           actorId = result.insertId!;
           actorsCreated++;
         }
 
-        // Link actor to movie
-        await this.db.execute(
-          `INSERT INTO movie_actors (movie_id, actor_id, role, actor_order)
-           VALUES (?, ?, ?, ?)
-           ON CONFLICT(movie_id, actor_id) DO UPDATE SET
-             role = excluded.role,
-             actor_order = excluded.actor_order`,
-          [movieId, actorId, castMember.character_name || null, castMember.cast_order || null]
+        // Link actor to movie (check if exists first since table has no UNIQUE constraint)
+        const existingLink = await this.db.get<{ id: number }>(
+          'SELECT id FROM movie_actors WHERE movie_id = ? AND actor_id = ?',
+          [movieId, actorId]
         );
+
+        if (existingLink) {
+          // Update existing link
+          await this.db.execute(
+            'UPDATE movie_actors SET role = ?, actor_order = ? WHERE id = ?',
+            [castMember.character_name || null, castMember.cast_order || null, existingLink.id]
+          );
+        } else {
+          // Create new link
+          await this.db.execute(
+            'INSERT INTO movie_actors (movie_id, actor_id, role, actor_order) VALUES (?, ?, ?, ?)',
+            [movieId, actorId, castMember.character_name || null, castMember.cast_order || null]
+          );
+        }
 
         linksCreated++;
       }
@@ -428,5 +453,13 @@ export class ProviderFetchPhase {
 
     // Default: assume full URL
     return filePath;
+  }
+
+  /**
+   * Normalize actor name for deduplication
+   * Converts to lowercase and removes extra whitespace
+   */
+  private normalizeActorName(name: string): string {
+    return name.toLowerCase().trim().replace(/\s+/g, ' ');
   }
 }

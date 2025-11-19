@@ -21,6 +21,7 @@ import { ImageProcessor } from '../../../utils/ImageProcessor.js';
 import { EnrichmentConfig, ScoredAsset } from '../types.js';
 import { logger } from '../../../middleware/logging.js';
 import { getErrorMessage } from '../../../utils/errorHandling.js';
+import { getAssetTypesForMediaType } from '../../../config/assetTypeDefaults.js';
 import fs from 'fs/promises';
 import path from 'path';
 import sharp from 'sharp';
@@ -60,12 +61,20 @@ export class AssetSelectionPhase {
       const phaseConfig = await this.phaseConfigService.getConfig('enrichment');
       const userPreferredLanguage = phaseConfig.preferredLanguage;
 
+      // Get valid asset types for this entity type (filters out actor_thumb for movies, etc.)
+      const validAssetTypes = this.getValidAssetTypesForEntity(entityType);
+
       let totalSelected = 0;
 
       // Process each asset type independently
       for (const [assetType, maxAllowable] of Object.entries(assetLimits)) {
         if (maxAllowable === 0) {
           continue; // Asset type disabled
+        }
+
+        // Skip asset types that don't apply to this entity type
+        if (!validAssetTypes.includes(assetType)) {
+          continue;
         }
 
         // Check if asset type is locked
@@ -534,6 +543,32 @@ export class AssetSelectionPhase {
     const axios = (await import('axios')).default;
     const response = await axios.get(url, { responseType: 'arraybuffer' });
     await fs.writeFile(destPath, response.data);
+  }
+
+  /**
+   * Get valid asset types for entity type
+   * Maps entity types to media types for assetTypeDefaults
+   */
+  private getValidAssetTypesForEntity(entityType: string): string[] {
+    switch (entityType) {
+      case 'movie':
+        return getAssetTypesForMediaType('movie');
+      case 'series':
+        return getAssetTypesForMediaType('tvshow');
+      case 'season':
+        return getAssetTypesForMediaType('season');
+      case 'episode':
+        return getAssetTypesForMediaType('episode');
+      case 'artist':
+        return getAssetTypesForMediaType('artist');
+      case 'album':
+        return getAssetTypesForMediaType('album');
+      case 'actor':
+        return ['actor_thumb']; // Actors only have thumbnails
+      default:
+        logger.warn('[AssetSelectionPhase] Unknown entity type', { entityType });
+        return [];
+    }
   }
 
   /**
