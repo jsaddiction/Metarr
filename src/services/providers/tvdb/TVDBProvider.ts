@@ -82,9 +82,20 @@ export class TVDBProvider extends BaseProvider {
       version: '1.0.0',
       category: 'both',
 
-      supportedEntityTypes: ['series', 'season', 'episode'],
+      supportedEntityTypes: ['movie', 'series', 'season', 'episode'],
 
       supportedMetadataFields: {
+        movie: [
+          'title',
+          'originalTitle',
+          'plot',
+          'releaseDate',
+          'runtime',
+          'ratings',
+          'genres',
+          'actors',
+          'country',
+        ],
         series: [
           'title',
           'originalTitle',
@@ -111,6 +122,7 @@ export class TVDBProvider extends BaseProvider {
       },
 
       supportedAssetTypes: {
+        movie: ['poster', 'fanart', 'banner', 'clearlogo', 'clearart'],
         series: ['poster', 'fanart', 'banner', 'clearlogo', 'clearart'],
         season: ['poster'],
         episode: ['thumb'],

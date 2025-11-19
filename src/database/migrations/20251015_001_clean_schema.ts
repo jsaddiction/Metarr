@@ -427,6 +427,7 @@ export class CleanSchemaMigration {
         file_hash TEXT,
         tmdb_id INTEGER,
         imdb_id TEXT,
+        tvdb_id INTEGER,
         title TEXT NOT NULL,
         original_title TEXT,
         sort_title TEXT,
@@ -471,6 +472,7 @@ export class CleanSchemaMigration {
     await db.execute('CREATE INDEX idx_movies_library ON movies(library_id)');
     await db.execute('CREATE INDEX idx_movies_tmdb ON movies(tmdb_id)');
     await db.execute('CREATE INDEX idx_movies_imdb ON movies(imdb_id)');
+    await db.execute('CREATE INDEX idx_movies_tvdb ON movies(tvdb_id)');
     await db.execute('CREATE INDEX idx_movies_monitored ON movies(monitored)');
     await db.execute('CREATE INDEX idx_movies_identification ON movies(identification_status)');
     await db.execute('CREATE INDEX idx_movies_deleted ON movies(deleted_at)');

@@ -148,7 +148,7 @@ export class ProviderFetchPhase {
     title: string;
     tmdb_id: number | null;
     imdb_id: string | null;
-    tvdb_id?: number | null;
+    tvdb_id: number | null;
     monitored: number;
   } | null> {
     if (entityType === 'movie') {

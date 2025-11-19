@@ -44,7 +44,7 @@ export interface MovieDatabaseRow {
   title: string;
   tmdb_id: number | null;
   imdb_id: string | null;
-  tvdb_id?: number | null;
+  tvdb_id: number | null;
   monitored: number;
   title_locked?: number;
   plot_locked?: number;
