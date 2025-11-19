@@ -1,8 +1,8 @@
-# Metarr - Intelligent Media Metadata Manager
+# Metarr - AI Assistant Instructions
 
 ## What is Metarr?
 
-Metarr is a Docker-first metadata management application that bridges your media downloaders (*arr stack) and media players (Kodi/Jellyfin/Plex). It provides intelligent automation with complete user control, maintaining a protected cache of all metadata and artwork to prevent data loss during media upgrades.
+Metarr is a Docker-first metadata management application that bridges media downloaders (*arr stack) and media players (Kodi/Jellyfin/Plex). It provides intelligent automation with complete user control, maintaining a protected cache of all metadata and artwork.
 
 **Core Value Proposition:**
 - **Automated enrichment** from multiple providers (TMDB, TVDB, Fanart.tv)
@@ -10,14 +10,19 @@ Metarr is a Docker-first metadata management application that bridges your media
 - **Granular field locking** preserves manual edits from automation
 - **Disaster recovery** built-in via content-addressed storage
 
-## Core Philosophy
+**Technology Stack:**
+- Backend: Node.js 20+ with TypeScript, Express.js, SQLite/PostgreSQL
+- Frontend: React 18+ with TypeScript, Vite, Tailwind CSS v4
+- Job Queue: SQLite-based with worker pool
+- Communication: REST API + WebSocket for real-time updates
 
-**"Intelligent Defaults with Manual Override Capability"**
+**Core Philosophy**: "Intelligent Defaults with Manual Override Capability"
+- User Control First: Every automated decision can be overridden
+- Field-Level Locking: Manual edits are sacred and preserved
+- Protected Cache: Source of truth that survives all external changes
+- Graceful Degradation: Each phase optional except scanning
 
-1. **User Control First**: Every automated decision can be overridden
-2. **Field-Level Locking**: Manual edits are sacred and preserved
-3. **Protected Cache**: Source of truth that survives all external changes
-4. **Graceful Degradation**: Each phase optional except scanning
+---
 
 ## Quick Start
 
@@ -31,172 +36,174 @@ npm install
 npm run dev:all         # Starts backend (port 3000) and frontend (port 3001)
 
 # Production
-npm run build          # Build backend
-npm run build:frontend # Build frontend
-npm start             # Run production server
+npm run build           # Build backend
+npm run build:frontend  # Build frontend
+npm start              # Run production server
 ```
 
 **Zero Configuration**: Metarr includes embedded API keys for all providers. Clone → Install → Run. No API signup required for development.
 
-## Elemental Phases
+---
 
-Metarr operates through independent, idempotent phases that form an automated chain. Each phase adds value and can run multiple times safely.
+## Architecture at a Glance
 
-### Phase Rules
-1. **Independence**: Each phase operates standalone
-2. **Idempotency**: Safe to run multiple times without corruption
-3. **Recoverable**: Destructive operations use recycle bin
-4. **Optional**: All phases except scanning can be disabled
-5. **Observable**: All phases emit progress events
-6. **Chainable**: Phases trigger subsequent phases via job queue
+### Phase-Based System
 
-### Phase Overview
+Metarr operates through independent, idempotent phases that form an automated chain:
 
-| Phase | Status | Purpose | Triggers | Required |
-|-------|--------|---------|----------|----------|
-| **[Scanning](docs/phases/SCANNING.md)** | ✅ Implemented | Discover & classify files | Manual, webhook, schedule | Yes |
-| **[Enrichment](docs/phases/ENRICHMENT.md)** | ✅ Implemented | Fetch metadata & select assets | Post-scan, manual, refresh | No |
-| **[Publishing](docs/phases/PUBLISHING.md)** | ✅ Implemented | Deploy assets to library | Post-selection, manual | No |
-| **[Player Sync](docs/phases/PLAYER_SYNC.md)** | ⚠️ Partial | Update media players | Post-publish, manual | No |
-| **[Notification](docs/phases/NOTIFICATION.md)** | ✅ Implemented | Send filtered notifications | Phase events, workflow completion | No* |
-| **[Verification](docs/phases/VERIFICATION.md)** | ✅ Implemented | Ensure cache↔library consistency | Manual, schedule | No* |
+1. **Scanning** - Discover and classify files (REQUIRED)
+2. **Enrichment** - Fetch metadata and select assets (optional)
+3. **Publishing** - Deploy assets to library (optional)
+4. **Player Sync** - Update media players (optional)
+5. **Verification** - Ensure cache↔library consistency (optional)
+6. **Notification** - Send filtered notifications (optional)
 
-\* Notification and Verification phases run independently and are not part of the sequential automation chain
+**See**: [docs/phases/OVERVIEW.md](docs/phases/OVERVIEW.md) for complete phase documentation.
 
-**Implementation Notes:**
-- **Player Sync**: Media player updates are handled via `MediaPlayerConnectionManager` but not yet integrated as a dedicated workflow phase
-- **Verification**: Cache verification runs as part of scheduled cleanup tasks
-- All phases support WebSocket progress updates for real-time UI feedback
+### Asset Tiers
+
+```
+CANDIDATES → CACHE → LIBRARY
+
+CANDIDATES: Provider URLs in database (provider_assets table)
+CACHE:      Downloaded files in protected storage (cache_image_files table)
+LIBRARY:    Working copies for media players (library_image_files table)
+```
+
+**Two-Copy System:**
+- **Cache** (`/data/cache/`): Protected SHA256-sharded storage
+- **Library** (`/media/movies/`): Working copies with Kodi naming conventions
+
+**See**: [docs/architecture/ASSET_MANAGEMENT/](docs/architecture/ASSET_MANAGEMENT/) for complete asset system details.
 
 ### Job-Driven Automation
 
+Phases trigger sequentially via job queue. Each phase checks configuration and either processes or skips to next phase. **See**: [docs/architecture/JOB_QUEUE.md](docs/architecture/JOB_QUEUE.md)
+
+---
+
+## Critical AI Assistant Rules
+
+### Pre-Work Checklist
+
+Before starting ANY task:
+- [ ] Read [docs/development/ROADMAP.md](docs/development/ROADMAP.md) - understand current priorities
+- [ ] Read [docs/development/WORKFLOW.md](docs/development/WORKFLOW.md) - complete workflow rules
+- [ ] Check git status - ensure clean working directory
+- [ ] Verify dev environment if needed (user controls `npm run dev:all`)
+
+### Development Workflow Summary
+
+**Full workflow in**: [docs/development/WORKFLOW.md](docs/development/WORKFLOW.md)
+
+**Key Rules**: Small commits, read before edit, use TodoWrite, test incrementally
+
+**Parallel Agent Limit**: **Maximum 6 concurrent agents** (hardware limit)
+
+### Pre-Commit Verification (MANDATORY)
+
+Before EVERY commit, verify ALL items:
+
+**Code Quality**:
+- [ ] TypeScript errors resolved (`npm run typecheck`)
+- [ ] No ESLint errors (`npm run lint`)
+- [ ] Backend build succeeds (`npm run build`)
+- [ ] Frontend build succeeds (`npm run build:frontend`)
+
+**Testing**:
+- [ ] New tests added for new features
+- [ ] All existing tests pass (`npm test`)
+- [ ] Manual testing in browser completed
+- [ ] No console errors in browser
+
+**Documentation**:
+- [ ] Relevant docs updated (see checklist in WORKFLOW.md)
+- [ ] ROADMAP.md updated if feature work
+- [ ] No TODOs left in code without GitHub issue
+
+**Git**:
+- [ ] Changes staged appropriately
+- [ ] Commit message follows convention (see WORKFLOW.md)
+- [ ] No secrets in commit (API keys, credentials)
+- [ ] No debug code left in (console.log, debugger)
+
+### Documentation Update Requirements
+
+**When to update docs** (brief - full list in [docs/development/WORKFLOW.md](docs/development/WORKFLOW.md)):
+
+| Change Type | Update These Docs |
+|-------------|-------------------|
+| New API endpoint | docs/architecture/API.md |
+| Database change | docs/architecture/DATABASE.md |
+| Phase behavior | docs/phases/[PHASE].md |
+| New configuration | docs/getting-started/CONFIGURATION.md |
+| Component pattern | docs/frontend/COMPONENTS.md |
+| Provider change | docs/providers/[PROVIDER].md |
+| Asset system change | docs/architecture/ASSET_MANAGEMENT/ |
+
+### Git Commit Standards
+
+**Format**: Conventional commits (see [docs/development/WORKFLOW.md](docs/development/WORKFLOW.md))
+
 ```
-User Action / Webhook → Job Created → Worker Processes → Next Phase Job
-                                    ↓
-                            Phase Disabled?
-                                   ↓
-                            Skip to Next Phase
-                                   ↓
-                       (Optionally create notification job)
-```
+type(scope): subject
 
-Each phase completion triggers the next phase via job creation. Workers check phase configuration and either process or skip to the next phase. Phases may also create independent notification jobs for significant events.
-
-## Technology Stack
-
-### Backend
-- **Runtime**: Node.js 20+ with TypeScript
-- **Framework**: Express.js
-- **Database**: SQLite (default) / PostgreSQL (supported)
-- **Job Queue**: SQLite-based with worker pool
-- **Communication**: REST API + WebSocket
-
-### Frontend
-- **Framework**: React 18+ with TypeScript
-- **Build**: Vite
-- **Styling**: Tailwind CSS v4 (violet primary)
-- **Components**: shadcn/ui + custom AnimatedTabs
-- **State**: React hooks + WebSocket updates
-
-### External Integrations
-- **Providers**: TMDB, TVDB, Fanart.tv, MusicBrainz
-- **Players**: Kodi, Jellyfin, Plex
-- **Downloaders**: Radarr, Sonarr, Lidarr (webhooks)
-
-## Asset Management Architecture
-
-### Two-Copy System
-```
-CACHE (Protected)              LIBRARY (Working)
-/data/cache/                   /media/movies/
-  ├── assets/                    ├── Movie (2024)/
-  │   └── ab/                    │   ├── movie.mkv
-  │       └── c1/                │   ├── movie-poster.jpg
-  │           └── abc123...jpg   │   └── movie-fanart.jpg
-  └── actors/                    └── ...
-      └── ab/
-          └── c1/
-              └── abc123...jpg
-```
-
-**Cache**: SHA256-sharded storage (first 2 chars / next 2 chars / full hash)
-**Library**: Kodi naming convention for player compatibility
-
-### Asset Tiers Explained
-
-1. **CANDIDATES**: Provider URLs and metadata stored in database (not files)
-2. **CACHE**: Downloaded files in protected storage (source of truth)
-3. **LIBRARY**: Working copies for media player scanning
-
-## Cross-Cutting Documentation
-
-### System Design
-- **[Database Schema](docs/DATABASE.md)** - Complete data model
-- **[API Architecture](docs/API.md)** - REST + WebSocket patterns
-
-### Frontend
-- **[Frontend Architecture](docs/frontend/README.md)** - Overview and quick start
-- **[Components](docs/frontend/COMPONENTS.md)** - File organization and composition
-- **[Types](docs/frontend/TYPES.md)** - TypeScript conventions and patterns
-- **[Hooks Layer](docs/frontend/HOOKS_LAYER.md)** - State management with TanStack Query
-- **[API Layer](docs/frontend/API_LAYER.md)** - Network communication patterns
-- **[Error Handling](docs/frontend/ERROR_HANDLING.md)** - Error strategy and user feedback
-- **[UI Standards](docs/frontend/UI_STANDARDS.md)** - Design system and styling
-
-### Development
-- **[Git Workflow](docs/technical/GIT_WORKFLOW.md)** - Commit conventions
-- **[Testing](docs/DEVELOPMENT.md#testing)** - Test infrastructure
-- **[Backend Rules](docs/DEVELOPMENT.md#backend-rules)** - Coding standards
-
-### Technical Details
-- **[Provider APIs](docs/providers/)** - TMDB, TVDB integration details
-- **[Player APIs](docs/players/)** - Kodi, Jellyfin protocols
-- **[NFO Format](docs/technical/NFO_PARSING.md)** - Kodi NFO structure
-- **[Webhooks](docs/technical/WEBHOOKS.md)** - *arr webhook handling
-
-## Configuration
-
-### Environment Variables (Optional)
-```env
-# Database (defaults to SQLite)
-DB_TYPE=sqlite|postgres
-DATABASE_URL=postgresql://user:pass@localhost/metarr
-
-# API Keys (embedded defaults provided)
-TMDB_API_KEY=your_personal_key
-TVDB_API_KEY=your_personal_key
-FANART_TV_API_KEY=your_personal_key
-
-# Paths
-CACHE_PATH=/data/cache
-LIBRARY_PATH=/media
+body (optional)
 ```
 
-### Monitored vs Unmonitored
+**Types**: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`
 
-- **Monitored**: Metarr manages all metadata and assets
-- **Unmonitored**: Global lock on downloadable content
-  - Still processes webhooks for renames/deletions
-  - Still updates stream info from upgrades
-  - Preserves all user customizations
+**CRITICAL**:
+- ❌ **NO AI signatures** in commit messages
+- ❌ **NO** "Generated with Claude" or similar
+- ❌ **NO** "Co-Authored-By: Claude" lines
+- ✅ Clean, focused commit messages only
 
-## Development Commands
+### Server Control Prohibitions
 
-```bash
-# Development
-npm run dev:all        # Full stack development
-npm run lint          # ESLint check
-npm run format        # Prettier format
-npm run typecheck     # TypeScript validation
+**AI MUST NEVER**:
+- Run `npm start`, `npm run dev`, `npm run dev:all`
+- Kill Node.js processes
+- Restart servers
+- Execute `pm2` or similar process managers
 
-# Building
-npm run build         # Build backend
-npm run build:frontend # Build frontend
+**User controls all servers**. AI can:
+- Run linters (`npm run lint`)
+- Run type checks (`npm run typecheck`)
+- Run builds (`npm run build`)
+- Run tests (`npm test`)
 
-# Testing
-npm test              # Run test suite
-npm run test:watch    # Watch mode
-```
+### Context Efficiency Rules
+
+**Always load**: CLAUDE.md, WORKFLOW.md, ROADMAP.md
+
+**Load as needed**: Phase docs, architecture docs, frontend docs (use directory READMEs first)
+
+### Testing Requirements
+
+Tests mandatory for: business logic, API endpoints, database ops, algorithms
+
+Run: `npm test` or `npm run test:watch`
+
+**See**: [docs/development/TESTING.md](docs/development/TESTING.md)
+
+---
+
+## Documentation Navigation
+
+**Complete map**: [docs/INDEX.md](docs/INDEX.md)
+
+**Critical docs** (read every session):
+- [docs/development/WORKFLOW.md](docs/development/WORKFLOW.md) - Complete workflow
+- [docs/development/ROADMAP.md](docs/development/ROADMAP.md) - Current priorities
+
+**Key references**:
+- Architecture: [docs/architecture/](docs/architecture/)
+- Phases: [docs/phases/](docs/phases/)
+- Frontend: [docs/frontend/](docs/frontend/)
+- Reference: [docs/reference/](docs/reference/)
+
+---
 
 ## Project Structure
 
@@ -225,55 +232,23 @@ data/                # Runtime data (git-ignored)
 ├── recycle/         # Deleted items
 └── metarr.sqlite    # Database
 
-docs/
-├── phases/          # Elemental phase docs
-├── providers/       # Provider specifics
-├── players/         # Player protocols
-├── technical/       # Implementation details
-├── architecture/    # Architecture decision docs
-└── frontend/        # Frontend-specific docs
+docs/                # Documentation
+├── INDEX.md         # Documentation map
+├── getting-started/ # Installation, setup
+├── architecture/    # System design
+├── phases/          # Phase documentation
+├── providers/       # Provider integrations
+├── players/         # Media player APIs
+├── frontend/        # Frontend docs
+├── reference/       # Technical references
+├── operations/      # Troubleshooting, monitoring
+└── development/     # Development workflow
 ```
 
-## Troubleshooting
-
-### Common Issues
-
-1. **Port conflicts**: Check ports 3000 (backend) and 3001 (frontend)
-2. **Database locked**: Ensure single instance running
-3. **API rate limits**: Check provider rate limiting in logs
-4. **Player connection**: Verify network and credentials
-
-### Log Monitoring
-
-```bash
-# Windows PowerShell
-Get-Content logs/app.log -Tail 50 -Wait
-Get-Content logs/error.log -Tail 50 -Wait
-
-# Linux/Mac
-tail -f logs/app.log
-tail -f logs/error.log
-```
-
-## Critical Developer Rules
-
-### For AI Assistants (Claude, etc.)
-
-1. **NO Git Attribution**: Never add AI signatures to commits
-2. **NO Server Control**: Never run/kill Node.js processes
-3. **Read First**: Always read files before editing
-4. **Use TodoWrite**: Track all multi-step tasks
-
-### For Human Developers
-
-1. **You control servers**: Only you run `npm run dev`
-2. **Monitor logs**: Keep `logs/app.log` and `logs/error.log` visible
-3. **Test changes**: Verify in browser before committing
-
-See [Git Workflow](docs/technical/GIT_WORKFLOW.md) for complete guidelines.
+---
 
 ## Getting Help
 
-- **Documentation**: Start with phase docs in `docs/phases/`
-- **Issues**: Report bugs at [GitHub Issues](https://github.com/yourusername/metarr/issues)
-- **Discord**: Join community at [Discord Server](https://discord.gg/metarr)
+- **Documentation**: Start with [docs/INDEX.md](docs/INDEX.md)
+- **Issues**: [GitHub Issues](https://github.com/yourusername/metarr/issues)
+- **Development Questions**: See [docs/development/WORKFLOW.md](docs/development/WORKFLOW.md)

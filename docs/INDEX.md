@@ -1,170 +1,151 @@
 # Metarr Documentation Index
 
-## Quick Navigation
-
-### 🚀 Getting Started
-- **[Executive Summary](../CLAUDE.md)** - Start here! Complete overview
-- **[Quick Start](../CLAUDE.md#quick-start)** - Get running in minutes
-- **[Documentation Guide](README.md)** - How to navigate these docs
-
-### 📊 Implementation Status
-
-| Component | Status | Documentation |
-|-----------|--------|---------------|
-| **Core Infrastructure** | | |
-| Database Schema | ✅ Implemented | [DATABASE.md](DATABASE.md) |
-| REST API | ✅ Implemented | [API.md](API.md) |
-| Job Queue | ✅ Implemented | [DATABASE.md#job-queue](DATABASE.md#job-queue) |
-| WebSocket | 🚧 Partial | [API.md#websocket-events](API.md#websocket-events) |
-| **Phases** | | |
-| Scanning | 📋 Design Complete | [SCANNING.md](phases/SCANNING.md) |
-| Enrichment | 🚧 TMDB Basic | [ENRICHMENT.md](phases/ENRICHMENT.md) |
-| Publishing | 📋 Design Complete | [PUBLISHING.md](phases/PUBLISHING.md) |
-| Player Sync | 📋 Design Complete | [PLAYER_SYNC.md](phases/PLAYER_SYNC.md) |
-| Verification | 📋 Design Complete | [VERIFICATION.md](phases/VERIFICATION.md) |
-| **Providers** | | |
-| TMDB | ✅ Basic Client | [TMDB.md](providers/TMDB.md) |
-| TVDB | 📋 Planned | [TVDB.md](providers/TVDB.md) |
-| Fanart.tv | 📋 Planned | [FANART.md](providers/FANART.md) |
-| **Players** | | |
-| Kodi | 📋 Design Complete | [KODI.md](players/KODI.md) |
-| Jellyfin | 📋 Design Complete | [JELLYFIN.md](players/JELLYFIN.md) |
-| Plex | 📋 Design Complete | [PLEX.md](players/PLEX.md) |
-| **Frontend** | | |
-| React Setup | ✅ Implemented | [UI_STANDARDS.md](UI_STANDARDS.md) |
-| Movie Table | ✅ Basic View | [UI_STANDARDS.md#tables](UI_STANDARDS.md#tables) |
-| Asset Selection | 📋 Planned | [UI_STANDARDS.md#asset-selection-ui](UI_STANDARDS.md#asset-selection-ui) |
-
-**Legend**: ✅ Implemented | 🚧 Partial | 📋 Planned/Designed
-
-### 🔄 Processing Pipeline
-
-```
-1. SCANNING → 2. ENRICHMENT → 3. PUBLISHING → 4. PLAYER_SYNC
-                                                        ↓
-                                              5. VERIFICATION (Independent)
-```
-
-### 🏗️ System Architecture
-
-#### Core Systems
-- **[Database Schema](DATABASE.md)** - Complete data model
-- **[API Architecture](API.md)** - REST + WebSocket
-- **[UI Standards](UI_STANDARDS.md)** - Frontend design system
-- **[Development](DEVELOPMENT.md)** - Coding standards
-
-#### Technical References
-- **[Git Workflow](technical/GIT_WORKFLOW.md)** - Commit conventions
-- **[Webhooks](technical/WEBHOOKS.md)** - *arr integration
-- **[NFO Parsing](technical/NFO_PARSING.md)** - Kodi NFO format
-- **[Path Mapping](technical/PATH_MAPPING.md)** - Multi-system paths
-
-### 📁 Directory Map
-
-```
-CLAUDE.md                    # Executive summary (START HERE)
-docs/
-├── INDEX.md                # This file - complete navigation
-├── README.md               # Documentation guide
-├── phases/                 # Core processing pipeline
-│   ├── SCANNING.md         # File discovery
-│   ├── ENRICHMENT.md       # Metadata fetching
-│   ├── PUBLISHING.md       # Asset deployment
-│   ├── PLAYER_SYNC.md      # Player updates
-│   └── VERIFICATION.md     # Consistency checks
-├── providers/              # External metadata sources
-│   ├── OVERVIEW.md         # Provider system design
-│   ├── TMDB.md            # The Movie Database
-│   ├── TVDB.md            # TheTVDB
-│   └── FANART.md          # Fanart.tv
-├── players/               # Media player integrations
-│   ├── KODI.md            # Kodi JSON-RPC
-│   ├── JELLYFIN.md        # Jellyfin REST API
-│   └── PLEX.md            # Plex Media Server
-├── technical/             # Implementation details
-│   ├── GIT_WORKFLOW.md    # Git conventions
-│   ├── WEBHOOKS.md        # Webhook handling
-│   ├── NFO_PARSING.md     # NFO format
-│   └── PATH_MAPPING.md    # Path translation
-├── DATABASE.md            # Schema & data model
-├── API.md                 # REST & WebSocket
-├── UI_STANDARDS.md        # Frontend standards
-└── DEVELOPMENT.md         # Dev guidelines
-```
-
-### 🎯 Common Tasks
-
-| Task | Documentation |
-|------|---------------|
-| **Add a new movie** | [SCANNING.md](phases/SCANNING.md) → [ENRICHMENT.md](phases/ENRICHMENT.md) |
-| **Change a poster** | [UI_STANDARDS.md#asset-selection-ui](UI_STANDARDS.md#asset-selection-ui) |
-| **Configure Kodi** | [KODI.md](players/KODI.md) |
-| **Set up webhooks** | [WEBHOOKS.md](technical/WEBHOOKS.md) |
-| **Write a test** | [DEVELOPMENT.md#testing](DEVELOPMENT.md#testing) |
-| **Add API endpoint** | [API.md](API.md) + [DEVELOPMENT.md#backend-rules](DEVELOPMENT.md#backend-rules) |
-| **Create UI component** | [UI_STANDARDS.md](UI_STANDARDS.md) |
-| **Debug job queue** | [DATABASE.md#job-queue](DATABASE.md#job-queue) |
-
-### 📚 Reading Paths
-
-#### For Backend Developers
-1. [CLAUDE.md](../CLAUDE.md) - Overview
-2. [DATABASE.md](DATABASE.md) - Data model
-3. [API.md](API.md) - Endpoints
-4. [DEVELOPMENT.md](DEVELOPMENT.md) - Standards
-5. Phase docs as needed
-
-#### For Frontend Developers
-1. [CLAUDE.md](../CLAUDE.md) - Overview
-2. [UI_STANDARDS.md](UI_STANDARDS.md) - Design system
-3. [API.md](API.md) - Backend integration
-4. [DEVELOPMENT.md#frontend](DEVELOPMENT.md) - Frontend patterns
-
-#### For DevOps/Deployment
-1. [CLAUDE.md#configuration](../CLAUDE.md#configuration) - Config options
-2. [DATABASE.md#migration-strategy](DATABASE.md#migration-strategy) - Migrations
-3. [WEBHOOKS.md](technical/WEBHOOKS.md) - External integration
-
-#### For Contributors
-1. [README.md](README.md) - Documentation structure
-2. [GIT_WORKFLOW.md](technical/GIT_WORKFLOW.md) - Git conventions
-3. [DEVELOPMENT.md](DEVELOPMENT.md) - Coding standards
-4. [INDEX.md](#implementation-status) - What needs work
-
-### 🔍 Quick Reference
-
-#### Key Concepts
-- **Monitored**: Metarr manages metadata (vs unmonitored = locked)
-- **Cache**: Protected storage in `/data/cache/` (source of truth)
-- **Library**: Working copies for players (can be rebuilt)
-- **Field Locking**: User edits preserved from automation
-- **Job Queue**: Background processing with priorities
-
-#### Important Paths
-```
-/data/cache/        # Protected assets (never deleted)
-/data/recycle/      # Deleted items (30-day retention)
-/media/movies/      # Library directory (player scans)
-/logs/              # Application logs
-```
-
-#### Configuration Hierarchy
-1. Environment variables (highest priority)
-2. Configuration table in database
-3. Default values in code
-
-#### Job Priorities
-1. Webhooks (critical)
-2. User actions (high)
-3. Auto-enrichment (medium)
-4. Library scans (low)
-5. Verification (background)
-
-### 📈 Documentation Stats
-- **Total Files**: 19 core + archived
-- **Total Lines**: ~3,500 (down from ~15,000)
-- **Coverage**: All major systems documented
-- **Status**: Production-ready documentation
+Complete documentation map for Metarr - intelligent metadata management for media libraries.
 
 ---
-*Last updated: 2025-10-24*
+
+## Quick Start
+
+**New to Metarr?** Start here:
+1. [Installation](getting-started/INSTALLATION.md) - Setup and deployment
+2. [Configuration](getting-started/CONFIGURATION.md) - Configure libraries and providers
+3. [First Run](getting-started/FIRST_RUN.md) - Initial scan and workflow
+
+**For Developers**:
+- [CLAUDE.md](/CLAUDE.md) - AI assistant workflow rules (CRITICAL)
+- [WORKFLOW.md](development/WORKFLOW.md) - Development workflow (CRITICAL)
+- [ROADMAP.md](development/ROADMAP.md) - Current priorities (CRITICAL)
+
+---
+
+## Getting Started
+
+| Document | Description |
+|----------|-------------|
+| [INSTALLATION.md](getting-started/INSTALLATION.md) | Installation steps (bare metal, Docker, NAS) |
+| [DOCKER.md](getting-started/DOCKER.md) | Docker Compose configuration |
+| [CONFIGURATION.md](getting-started/CONFIGURATION.md) | Environment variables, libraries, providers |
+| [FIRST_RUN.md](getting-started/FIRST_RUN.md) | Initial scan workflow and verification |
+| [MIGRATION.md](getting-started/MIGRATION.md) | Migrating from other systems |
+
+---
+
+## Architecture
+
+### Core System
+| Document | Description |
+|----------|-------------|
+| [OVERVIEW.md](architecture/OVERVIEW.md) | System architecture at a glance |
+| [DATABASE.md](architecture/DATABASE.md) | Complete database schema reference |
+| [JOB_QUEUE.md](architecture/JOB_QUEUE.md) | Job system and worker pool |
+| [API.md](architecture/API.md) | REST API + WebSocket communication |
+
+### Asset Management
+| Document | Description |
+|----------|-------------|
+| [ASSET_MANAGEMENT/README.md](architecture/ASSET_MANAGEMENT/README.md) | Asset system overview (two-copy architecture) |
+| [ASSET_MANAGEMENT/ASSET_TYPES.md](architecture/ASSET_MANAGEMENT/ASSET_TYPES.md) | Media-specific asset types |
+| [ASSET_MANAGEMENT/CONTENT_ADDRESSING.md](architecture/ASSET_MANAGEMENT/CONTENT_ADDRESSING.md) | SHA256 sharding system |
+| [ASSET_MANAGEMENT/TWO_COPY_SYSTEM.md](architecture/ASSET_MANAGEMENT/TWO_COPY_SYSTEM.md) | Cache vs library architecture |
+| [ASSET_MANAGEMENT/FIELD_LOCKING.md](architecture/ASSET_MANAGEMENT/FIELD_LOCKING.md) | Field locking behavior |
+
+---
+
+## Phases (Workflow System)
+
+| Document | Description |
+|----------|-------------|
+| [OVERVIEW.md](phases/OVERVIEW.md) | Phase system introduction |
+| [SCANNING.md](phases/SCANNING.md) | File discovery and classification (REQUIRED phase) |
+| [ENRICHMENT.md](phases/ENRICHMENT.md) | Metadata fetching and asset selection |
+| [PUBLISHING.md](phases/PUBLISHING.md) | Asset deployment to library |
+| [PLAYER_SYNC.md](phases/PLAYER_SYNC.md) | Media player library updates |
+| [VERIFICATION.md](phases/VERIFICATION.md) | Cache↔library consistency checks |
+| [NOTIFICATION.md](phases/NOTIFICATION.md) | Filtered notification system |
+
+---
+
+## Providers
+
+| Document | Description |
+|----------|-------------|
+| [OVERVIEW.md](providers/OVERVIEW.md) | Provider system architecture |
+| [RATE_LIMITING.md](providers/RATE_LIMITING.md) | Rate limiting and backoff strategies |
+| [TMDB.md](providers/TMDB.md) | TMDB API integration |
+| [TVDB.md](providers/TVDB.md) | TVDB API integration |
+| [FANART.md](providers/FANART.md) | Fanart.tv integration |
+| [MUSICBRAINZ.md](providers/MUSICBRAINZ.md) | MusicBrainz integration (planned) |
+| [LOCAL_BACKUP.md](providers/LOCAL_BACKUP.md) | Local provider fallback |
+| [GETTING_API_KEYS.md](providers/GETTING_API_KEYS.md) | How to obtain API keys |
+
+---
+
+## Media Players
+
+| Document | Description |
+|----------|-------------|
+| [OVERVIEW.md](players/OVERVIEW.md) | Player integration overview |
+| [KODI.md](players/KODI.md) | Kodi JSON-RPC integration (WebSocket + HTTP) |
+| [JELLYFIN.md](players/JELLYFIN.md) | Jellyfin API integration (planned) |
+| [PLEX.md](players/PLEX.md) | Plex API integration (planned) |
+
+---
+
+## Frontend
+
+| Document | Description |
+|----------|-------------|
+| [ARCHITECTURE.md](frontend/ARCHITECTURE.md) | Frontend architecture and structure |
+| [COMPONENTS.md](frontend/COMPONENTS.md) | Component organization and patterns |
+| [STATE_MANAGEMENT.md](frontend/STATE_MANAGEMENT.md) | TanStack Query + hooks |
+| [API_LAYER.md](frontend/API_LAYER.md) | API communication patterns |
+| [ERROR_HANDLING.md](frontend/ERROR_HANDLING.md) | Error strategy and user feedback |
+| [UI_STANDARDS.md](frontend/UI_STANDARDS.md) | Design system and styling |
+
+---
+
+## Reference (Technical Details)
+
+| Document | Description |
+|----------|-------------|
+| [ASSET_SCORING.md](reference/ASSET_SCORING.md) | Asset scoring algorithm deep dive |
+| [NFO_FORMAT.md](reference/NFO_FORMAT.md) | Complete Kodi NFO specification |
+| [PATH_MAPPING.md](reference/PATH_MAPPING.md) | Docker/NAS path mapping scenarios |
+| [WEBHOOKS.md](reference/WEBHOOKS.md) | Radarr/Sonarr/Lidarr webhook handling |
+| [CLI_REFERENCE.md](reference/CLI_REFERENCE.md) | npm scripts and commands |
+
+---
+
+## Operations
+
+| Document | Description |
+|----------|-------------|
+| [TROUBLESHOOTING.md](operations/TROUBLESHOOTING.md) | Common issues and solutions |
+| [PERFORMANCE.md](operations/PERFORMANCE.md) | Performance tuning and optimization |
+| [BACKUP_RECOVERY.md](operations/BACKUP_RECOVERY.md) | Backup strategies and disaster recovery |
+| [SECURITY.md](operations/SECURITY.md) | Security best practices |
+| [MONITORING.md](operations/MONITORING.md) | Logging, metrics, and monitoring |
+
+---
+
+## Development
+
+| Document | Description |
+|----------|-------------|
+| [WORKFLOW.md](development/WORKFLOW.md) | **Complete development workflow (CRITICAL)** |
+| [ROADMAP.md](development/ROADMAP.md) | **Current tasks and priorities (CRITICAL)** |
+| [DOCUMENTATION_RULES.md](development/DOCUMENTATION_RULES.md) | Meta-documentation guidelines |
+| [TESTING.md](development/TESTING.md) | Test infrastructure and strategy |
+| [CODING_STANDARDS.md](development/CODING_STANDARDS.md) | TypeScript/React coding standards |
+
+---
+
+## Navigation Tips
+
+**For AI Assistants**: Always read [CLAUDE.md](/CLAUDE.md), [WORKFLOW.md](development/WORKFLOW.md), and [ROADMAP.md](development/ROADMAP.md) at session start.
+
+**For Developers**: Start with [WORKFLOW.md](development/WORKFLOW.md) for complete development process.
+
+**For Users**: Start with [Getting Started](#getting-started) section above.
+
+**Context Efficiency**: Use directory READMEs (e.g., [ASSET_MANAGEMENT/README.md](architecture/ASSET_MANAGEMENT/README.md)) as entry points, then load specific files as needed.

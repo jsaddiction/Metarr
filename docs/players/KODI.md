@@ -1,1416 +1,624 @@
-# Kodi JSON-RPC API Reference
+# Kodi Integration
 
-This document provides comprehensive reference for Kodi's JSON-RPC API used by Metarr for media player integration.
+**Purpose**: Comprehensive Kodi media player integration via JSON-RPC API with WebSocket and HTTP support.
 
-**API Version**: v13 (Kodi 20 Nexus / Kodi 21 Omega)
-**Data Source**: Live introspect from Kodi instance with 1510 movies
-**Last Updated**: 2025-10-02
+**Related Docs**:
+- [Player Overview](./OVERVIEW.md) - All player capabilities
+- [NFO Format](../reference/NFO_FORMAT.md) - Kodi NFO specification
+- [Publishing Phase](../phases/PUBLISHING.md) - Asset deployment to Kodi library
+- [Kodi JSON-RPC Docs](https://kodi.wiki/view/JSON-RPC_API/v12) - Official API reference
 
-All method signatures, parameters, and response examples are derived from `JSONRPC.Introspect` and verified against real API responses.
+## Quick Reference
 
-## Connection Architecture
+**Protocol**: JSON-RPC v12 over WebSocket (preferred) or HTTP (fallback)
 
-### Transport Protocols
+**Ports**:
+- WebSocket: `9090` (default)
+- HTTP: `8080` (default)
 
-Kodi supports two transport protocols:
+**Sync Strategy**: Item-level refresh (push sync)
 
-1. **HTTP JSON-RPC** (`/jsonrpc`)
-   - One-off requests
-   - Polling for status
-   - Configuration changes
-   - Library operations
+**Key Features**:
+- Real-time bidirectional communication
+- Active player detection (skip if watching)
+- Multiple instances supported (Kodi groups)
+- Path mapping for Docker/NAS
 
-2. **WebSocket JSON-RPC** (`ws://host:port/jsonrpc`)
-   - Persistent connection
-   - Real-time notifications
-   - Playback events
-   - Library updates
+**Prerequisites**:
+- Kodi 19 (Matrix) or later
+- Remote control enabled
+- Network accessible
 
-### Connection Pattern
+## Setup
 
-```typescript
-class KodiWebSocketClient {
-  // Primary: WebSocket for real-time events
-  private ws: WebSocket;
+### Enable Remote Control (Kodi Settings)
 
-  // Fallback: HTTP for operations when WS unavailable
-  private httpClient: HttpClient;
+1. **Navigate to Settings**:
+   - Settings ’ Services ’ Control
 
-  // Connection lifecycle
-  connect() â†’ establish WebSocket â†’ subscribe to notifications
-  disconnect() â†’ close WebSocket â†’ cleanup
-  reconnect() â†’ exponential backoff strategy
+2. **Enable HTTP Control**:
+   -  Allow remote control via HTTP
+   - Port: `8080` (default)
+   - Username: (optional)
+   - Password: (optional)
+
+3. **Enable WebSocket (if available)**:
+   -  Allow remote control from applications on other systems
+   - WebSocket port: `9090` (default)
+
+4. **Test Connection**:
+   - From browser: `http://kodi-ip:8080/jsonrpc`
+   - Should return JSON-RPC version info
+
+### Add Kodi to Metarr
+
+**Via UI**:
+1. Settings ’ Players ’ Add Player
+2. **Type**: Kodi
+3. **Name**: "Living Room Kodi"
+4. **Host**: `192.168.1.10`
+5. **Port**: `8080` (HTTP)
+6. **Username/Password**: (if configured)
+7. **Test Connection**
+8. **Save**
+
+**Via API**:
+```bash
+POST /api/players
+{
+  "name": "Living Room Kodi",
+  "type": "kodi",
+  "host": "192.168.1.10",
+  "port": 8080,
+  "group_id": 1,
+  "path_mappings": []
 }
 ```
 
-### Authentication
+## JSON-RPC API
 
-Both protocols support HTTP Basic Auth:
-- **Username**: Kodi web interface username (default: `kodi`)
-- **Password**: Kodi web interface password
-- **Header**: `Authorization: Basic <base64(username:password)>`
+### Communication Protocols
 
-## JSON-RPC Message Format
+**WebSocket** (Preferred):
+```
+ws://kodi-ip:9090/jsonrpc
+```
 
-### Request Structure
+**Advantages**:
+- Bidirectional (receive events)
+- Lower latency
+- Persistent connection
+- Real-time player state
+
+**Fallback to HTTP**:
+```
+POST http://kodi-ip:8080/jsonrpc
+Content-Type: application/json
+```
+
+**When Used**:
+- WebSocket unavailable
+- Connection lost
+- Initial connection attempt
+
+### JSON-RPC Request Format
 
 ```json
 {
   "jsonrpc": "2.0",
-  "method": "Namespace.Method",
-  "params": { /* method-specific parameters */ },
+  "method": "VideoLibrary.Refresh",
+  "params": {
+    "movieid": 123
+  },
   "id": 1
 }
 ```
 
-### Response Structure
+**Fields**:
+- `jsonrpc`: Always "2.0"
+- `method`: API method to call
+- `params`: Method parameters (optional)
+- `id`: Request ID for matching response
+
+### JSON-RPC Response Format
 
 ```json
 {
   "jsonrpc": "2.0",
-  "id": 1,
-  "result": { /* method-specific result */ }
+  "result": "OK",
+  "id": 1
 }
 ```
 
-### Error Response
+**Fields**:
+- `jsonrpc`: Always "2.0"
+- `result`: Method result (varies by method)
+- `id`: Matches request ID
 
+**Error Response**:
 ```json
 {
   "jsonrpc": "2.0",
-  "id": 1,
   "error": {
-    "code": -32601,
-    "message": "Method not found"
-  }
-}
-```
-
-### Notification Structure (WebSocket Only)
-
-```json
-{
-  "jsonrpc": "2.0",
-  "method": "Notification.Event",
-  "params": {
-    "sender": "xbmc",
-    "data": { /* event-specific data */ }
-  }
-}
-```
-
-## Property Reference
-
-### Video.Fields.Movie (Available Movie Properties)
-
-Complete list of properties that can be requested in `VideoLibrary.GetMovies` and `VideoLibrary.GetMovieDetails`:
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `title` | string | Movie title |
-| `originaltitle` | string | Original language title |
-| `sorttitle` | string | Title for alphabetical sorting |
-| `year` | integer | Release year |
-| `rating` | number | Default rating (deprecated, use `ratings`) |
-| `ratings` | object | Multi-source ratings (IMDB, TMDB, Rotten Tomatoes) |
-| `userrating` | integer | User's personal rating (0-10) |
-| `votes` | integer | Vote count (deprecated, use `ratings`) |
-| `playcount` | integer | Number of times played |
-| `lastplayed` | string | ISO timestamp of last playback |
-| `dateadded` | string | ISO timestamp when added to library |
-| `premiered` | string | Release date (YYYY-MM-DD) |
-| `runtime` | integer | Duration in seconds |
-| `mpaa` | string | Content rating (G, PG, PG-13, R, etc.) |
-| `plot` | string | Full synopsis |
-| `plotoutline` | string | Short summary |
-| `tagline` | string | Movie tagline |
-| `file` | string | Full file path |
-| `imdbnumber` | string | IMDB ID (deprecated, use `uniqueid`) |
-| `uniqueid` | object | Provider IDs (`{imdb: "tt0133093", tmdb: "603"}`) |
-| `genre` | array | List of genres |
-| `director` | array | List of directors |
-| `writer` | array | List of writers |
-| `studio` | array | List of studios |
-| `country` | array | List of countries |
-| `tag` | array | User-defined tags |
-| `cast` | array | Actors with roles, order, thumbnails |
-| `set` | string | Movie set/collection name |
-| `setid` | integer | Movie set ID |
-| `showlink` | array | Related TV shows |
-| `top250` | integer | IMDb Top 250 ranking |
-| `trailer` | string | Trailer URL |
-| `art` | object | All artwork types |
-| `thumbnail` | string | Poster URL (deprecated, use `art`) |
-| `fanart` | string | Backdrop URL (deprecated, use `art`) |
-| `resume` | object | Resume position data |
-| `streamdetails` | object | Video/audio codec information |
-
-### Player.Property.Name (Available Player Properties)
-
-Properties that can be requested in `Player.GetProperties`:
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `type` | string | Media type (video, audio, picture) |
-| `partymode` | boolean | Party mode enabled |
-| `speed` | integer | Playback speed (0=paused, 1=normal, 2=2x, etc.) |
-| `time` | object | Current position (`{hours, minutes, seconds, milliseconds}`) |
-| `percentage` | number | Playback progress (0-100) |
-| `totaltime` | object | Total duration |
-| `playlistid` | integer | Active playlist ID |
-| `position` | integer | Position in playlist |
-| `repeat` | string | Repeat mode (off, one, all) |
-| `shuffled` | boolean | Shuffle enabled |
-| `canseek` | boolean | Seeking supported |
-| `canchangespeed` | boolean | Speed change supported |
-| `canmove` | boolean | Playlist reordering supported |
-| `canzoom` | boolean | Zoom supported |
-| `canrotate` | boolean | Rotation supported |
-| `canshuffle` | boolean | Shuffle supported |
-| `canrepeat` | boolean | Repeat supported |
-| `currentaudiostream` | object | Active audio stream info |
-| `audiostreams` | array | All available audio streams |
-| `subtitleenabled` | boolean | Subtitles enabled |
-| `currentsubtitle` | object | Active subtitle info |
-| `subtitles` | array | All available subtitles |
-| `live` | boolean | Live stream indicator |
-| `currentvideostream` | object | Active video stream info |
-| `videostreams` | array | All available video streams |
-| `cachepercentage` | number | Buffer cache percentage |
-
-## Core API Methods
-
-### JSONRPC Namespace
-
-#### JSONRPC.Ping
-Test connection to Kodi instance.
-
-**Request:**
-```json
-{
-  "jsonrpc": "2.0",
-  "method": "JSONRPC.Ping",
+    "code": -32602,
+    "message": "Invalid params"
+  },
   "id": 1
 }
 ```
 
-**Response:**
+## Key Methods Used
+
+### Library Scanning
+
+**Scan Movies Library**:
 ```json
 {
-  "jsonrpc": "2.0",
-  "id": 1,
-  "result": "pong"
-}
-```
-
-#### JSONRPC.Version
-Get Kodi JSON-RPC API version.
-
-**Request:**
-```json
-{
-  "jsonrpc": "2.0",
-  "method": "JSONRPC.Version",
-  "id": 1
-}
-```
-
-**Response:**
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "result": {
-    "version": {
-      "major": 13,
-      "minor": 0,
-      "patch": 0
-    }
-  }
-}
-```
-
-#### JSONRPC.Introspect
-Get full API schema (for debugging/discovery).
-
-**Request:**
-```json
-{
-  "jsonrpc": "2.0",
-  "method": "JSONRPC.Introspect",
-  "id": 1
-}
-```
-
-**Response:** Returns complete API schema (very large response).
-
-### VideoLibrary Namespace
-
-#### VideoLibrary.Scan
-Scans the video sources for new library items.
-
-**Parameters (from introspect):**
-- `directory` (string, optional, default: `""`) - Specific directory to scan, or empty for all sources
-- `showdialogs` (boolean, optional, default: `true`) - Whether to show progress dialogs in Kodi UI
-
-**Request:**
-```json
-{
-  "jsonrpc": "2.0",
   "method": "VideoLibrary.Scan",
-  "params": {
-    "directory": "/var/nfs/movies/",
-    "showdialogs": false
-  },
-  "id": 1
+  "params": { "directory": "/media/movies/" }
 }
 ```
 
-**Response:**
+**Scan TV Shows Library**:
 ```json
 {
-  "jsonrpc": "2.0",
-  "id": 1,
-  "result": "OK"
+  "method": "VideoLibrary.Scan",
+  "params": { "directory": "/media/tv/" }
 }
 ```
 
-**Note**: Scan runs asynchronously. Use `VideoLibrary.OnScanStarted` and `VideoLibrary.OnScanFinished` notifications (WebSocket) to track progress.
-
-#### VideoLibrary.Clean
-Cleans the video library for non-existent items.
-
-**Parameters (from introspect):**
-- `showdialogs` (boolean, optional, default: `true`) - Whether to show progress dialogs
-- `content` (string, optional, default: `"video"`) - Content type to clean
-- `directory` (string, optional, default: `""`) - Specific directory to clean
-
-**Request:**
+**Refresh Specific Movie**:
 ```json
 {
-  "jsonrpc": "2.0",
-  "method": "VideoLibrary.Clean",
-  "params": {
-    "showdialogs": false,
-    "content": "video"
-  },
-  "id": 1
+  "method": "VideoLibrary.Refresh",
+  "params": { "movieid": 123 }
 }
 ```
 
-**Response:**
+**Refresh Specific TV Show**:
 ```json
 {
-  "jsonrpc": "2.0",
-  "id": 1,
-  "result": "OK"
+  "method": "VideoLibrary.Refresh",
+  "params": { "tvshowid": 456 }
 }
 ```
 
-**Note**: Clean operation removes database entries for files that no longer exist on disk.
+### Library Queries
 
-#### VideoLibrary.GetMovies
-Retrieve movies from library.
-
-**Request:**
+**Get Movies**:
 ```json
 {
-  "jsonrpc": "2.0",
   "method": "VideoLibrary.GetMovies",
   "params": {
-    "properties": [
-      "title",
-      "year",
-      "rating",
-      "playcount",
-      "file",
-      "lastplayed",
-      "dateadded",
-      "imdbnumber",
-      "mpaa",
-      "runtime",
-      "genre",
-      "director",
-      "studio",
-      "plot",
-      "originaltitle",
-      "thumbnail",
-      "fanart"
-    ],
-    "limits": {
-      "start": 0,
-      "end": 50
-    },
-    "sort": {
-      "order": "ascending",
-      "method": "title"
-    }
-  },
-  "id": 1
-}
-```
-
-**Response Example (from real Kodi instance with 1510 movies):**
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "result": {
-    "limits": {
-      "start": 0,
-      "end": 3,
-      "total": 1510
-    },
-    "movies": [
-      {
-        "movieid": 9757,
-        "title": "Dune: Part Two",
-        "year": 2024,
-        "rating": 8.5,
-        "ratings": {
-          "imdb": {
-            "default": true,
-            "rating": 8.5,
-            "votes": 661737
-          },
-          "themoviedb": {
-            "default": false,
-            "rating": 8.1,
-            "votes": 7004
-          },
-          "tomatometerallcritics": {
-            "default": false,
-            "rating": 9.2,
-            "votes": 0
-          }
-        },
-        "playcount": 0,
-        "file": "/var/nfs/movies/Dune Sequel ()/Dune Part Two (tt15239678).mkv",
-        "imdbnumber": "693134",
-        "uniqueid": {
-          "imdb": "tt15239678",
-          "tmdb": "693134"
-        },
-        "mpaa": "PG-13",
-        "runtime": 10020,
-        "genre": ["Science Fiction", "Adventure"],
-        "director": ["Denis Villeneuve"],
-        "studio": ["Legendary Pictures"],
-        "plot": "Follow the mythic journey of Paul Atreides as he unites with Chani and the Fremen while on a path of revenge against the conspirators who destroyed his family. Facing a choice between the love of his life and the fate of the known universe, Paul endeavors to prevent a terrible future only he can foresee.",
-        "cast": [
-          {
-            "name": "TimothÃ©e Chalamet",
-            "role": "Paul Atreides",
-            "order": 0,
-            "thumbnail": "image://https%3a%2f%2fimage.tmdb.org%2ft%2fp%2foriginal%2fBE2sdjpgsa2rNTFa66f7upkaOP.jpg/"
-          },
-          {
-            "name": "Zendaya",
-            "role": "Chani",
-            "order": 1,
-            "thumbnail": "image://https%3a%2f%2fimage.tmdb.org%2ft%2fp%2foriginal%2f3WdOloHpjtjL96uVOhFRRCcYSwq.jpg/"
-          },
-          {
-            "name": "Rebecca Ferguson",
-            "role": "Jessica",
-            "order": 2,
-            "thumbnail": "image://https%3a%2f%2fimage.tmdb.org%2ft%2fp%2foriginal%2flJloTOheuQSirSLXNA3JHsrMNfH.jpg/"
-          }
-        ]
-      }
-    ]
+    "properties": ["title", "year", "file"],
+    "filter": { "field": "title", "operator": "is", "value": "The Matrix" }
   }
 }
 ```
 
-**Note**: Runtime is in seconds (10020 = 167 minutes). The `rating` field shows the default rating, while `ratings` object provides multi-source ratings with vote counts.
-
-#### VideoLibrary.GetMovieDetails
-Get detailed information for specific movie.
-
-**Request:**
+**Get TV Shows**:
 ```json
 {
-  "jsonrpc": "2.0",
-  "method": "VideoLibrary.GetMovieDetails",
-  "params": {
-    "movieid": 1,
-    "properties": [
-      "title",
-      "year",
-      "rating",
-      "playcount",
-      "file",
-      "imdbnumber",
-      "cast",
-      "writer",
-      "set",
-      "tag",
-      "streamdetails"
-    ]
-  },
-  "id": 1
-}
-```
-
-**Response:**
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "result": {
-    "moviedetails": {
-      "movieid": 1,
-      "title": "The Matrix",
-      "year": 1999,
-      "cast": [
-        {
-          "name": "Keanu Reeves",
-          "role": "Neo",
-          "order": 0,
-          "thumbnail": "image://..."
-        }
-      ],
-      "streamdetails": {
-        "video": [
-          {
-            "codec": "h264",
-            "width": 1920,
-            "height": 1080,
-            "duration": 8160
-          }
-        ],
-        "audio": [
-          {
-            "codec": "dts",
-            "language": "eng",
-            "channels": 6
-          }
-        ],
-        "subtitle": [
-          {
-            "language": "eng"
-          }
-        ]
-      }
-    }
-  }
-}
-```
-
-#### VideoLibrary.SetMovieDetails
-Update movie metadata.
-
-**Parameters (from introspect):**
-- `movieid` (integer, REQUIRED) - Movie ID to update
-- `title` (string, optional) - Movie title
-- `originaltitle` (string, optional) - Original language title
-- `sorttitle` (string, optional) - Sort title
-- `playcount` (integer, optional) - Play count
-- `runtime` (integer, optional) - Runtime in seconds
-- `director` (array of strings, optional) - Directors
-- `studio` (array of strings, optional) - Studios
-- `year` (integer, optional) - Release year
-- `plot` (string, optional) - Full plot
-- `plotoutline` (string, optional) - Short plot
-- `genre` (array of strings, optional) - Genres
-- `rating` (number, optional) - Rating (deprecated, use `ratings`)
-- `mpaa` (string, optional) - Content rating
-- `imdbnumber` (string, optional) - IMDB number (deprecated, use `uniqueid`)
-- `votes` (integer, optional) - Vote count
-- `lastplayed` (string, optional) - Last played timestamp
-- `trailer` (string, optional) - Trailer URL
-- `tagline` (string, optional) - Movie tagline
-- `writer` (array of strings, optional) - Writers
-- `country` (array of strings, optional) - Countries
-- `top250` (integer, optional) - Top 250 ranking
-- `set` (string, optional) - Movie set name
-- `showlink` (array of strings, optional) - Related TV shows
-- `thumbnail` (string, optional) - Thumbnail URL
-- `fanart` (string, optional) - Fanart URL
-- `tag` (array of strings, optional) - Tags
-- `art` (object, optional) - All artwork types
-- `resume` (object, optional) - Resume position
-- `userrating` (integer, optional) - User rating (0-10)
-- `ratings` (object, optional) - Multi-source ratings
-- `dateadded` (string, optional) - Date added timestamp
-- `premiered` (string, optional) - Premiere date (YYYY-MM-DD)
-- `uniqueid` (object, optional) - Provider IDs (`{imdb: "...", tmdb: "..."}`)
-
-**Request Example:**
-```json
-{
-  "jsonrpc": "2.0",
-  "method": "VideoLibrary.SetMovieDetails",
-  "params": {
-    "movieid": 9757,
-    "title": "Updated Title",
-    "year": 2024,
-    "plot": "Updated plot...",
-    "userrating": 9,
-    "playcount": 5,
-    "tag": ["Action", "Favorite"],
-    "uniqueid": {
-      "imdb": "tt15239678",
-      "tmdb": "693134"
-    }
-  },
-  "id": 1
-}
-```
-
-**Response:**
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "result": "OK"
-}
-```
-
-**Note**: All parameters except `movieid` are optional. Set to `null` to clear a value.
-
-#### VideoLibrary.GetTVShows
-Retrieve TV shows from library.
-
-**Request:**
-```json
-{
-  "jsonrpc": "2.0",
   "method": "VideoLibrary.GetTVShows",
   "params": {
-    "properties": [
-      "title",
-      "year",
-      "rating",
-      "playcount",
-      "genre",
-      "studio",
-      "plot",
-      "imdbnumber",
-      "premiered",
-      "episode",
-      "watchedepisodes",
-      "thumbnail",
-      "fanart"
-    ]
-  },
-  "id": 1
-}
-```
-
-**Response:**
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "result": {
-    "tvshows": [
-      {
-        "tvshowid": 1,
-        "title": "Breaking Bad",
-        "year": 2008,
-        "episode": 62,
-        "watchedepisodes": 45,
-        "imdbnumber": "tt0903747"
-      }
-    ]
+    "properties": ["title", "year", "file"]
   }
 }
 ```
 
-#### VideoLibrary.GetEpisodes
-Retrieve episodes for a TV show.
-
-**Request:**
+**Get Movie Details**:
 ```json
 {
-  "jsonrpc": "2.0",
-  "method": "VideoLibrary.GetEpisodes",
+  "method": "VideoLibrary.GetMovieDetails",
   "params": {
-    "tvshowid": 1,
-    "season": 1,
-    "properties": [
-      "title",
-      "season",
-      "episode",
-      "runtime",
-      "rating",
-      "playcount",
-      "file",
-      "plot",
-      "firstaired",
-      "showtitle"
-    ]
-  },
-  "id": 1
-}
-```
-
-**Response:**
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "result": {
-    "episodes": [
-      {
-        "episodeid": 1,
-        "title": "Pilot",
-        "season": 1,
-        "episode": 1,
-        "runtime": 58,
-        "rating": 8.9,
-        "playcount": 2,
-        "file": "/tv/Breaking Bad/Season 01/S01E01.mkv",
-        "showtitle": "Breaking Bad"
-      }
-    ]
+    "movieid": 123,
+    "properties": ["title", "year", "plot", "file", "art"]
   }
 }
 ```
 
-### Player Namespace
+### Player State
 
-#### Player.GetActivePlayers
-Check if any media is currently playing.
-
-**Request:**
+**Get Active Players**:
 ```json
 {
-  "jsonrpc": "2.0",
-  "method": "Player.GetActivePlayers",
-  "id": 1
+  "method": "Player.GetActivePlayers"
 }
 ```
 
-**Response:**
+**Response** (when playing):
 ```json
 {
-  "jsonrpc": "2.0",
-  "id": 1,
   "result": [
     {
       "playerid": 1,
-      "playertype": "internal",
-      "type": "video"
+      "type": "video",
+      "playertype": "internal"
     }
   ]
 }
 ```
 
-**Empty Response (Nothing Playing):**
+**Response** (when idle):
 ```json
 {
-  "jsonrpc": "2.0",
-  "id": 1,
   "result": []
 }
 ```
 
-#### Player.GetItem
-Get currently playing item details.
+## WebSocket Events
 
-**Request:**
+### Listening for Events
+
+Metarr subscribes to these events for real-time updates:
+
+**VideoLibrary.OnScanFinished**:
 ```json
 {
-  "jsonrpc": "2.0",
-  "method": "Player.GetItem",
-  "params": {
-    "playerid": 1,
-    "properties": [
-      "title",
-      "season",
-      "episode",
-      "duration",
-      "showtitle",
-      "tvshowid",
-      "file"
-    ]
-  },
-  "id": 1
-}
-```
-
-**Response:**
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "result": {
-    "item": {
-      "id": 1,
-      "type": "episode",
-      "title": "Pilot",
-      "season": 1,
-      "episode": 1,
-      "showtitle": "Breaking Bad",
-      "tvshowid": 1,
-      "file": "/tv/Breaking Bad/Season 01/S01E01.mkv"
-    }
-  }
-}
-```
-
-#### Player.GetProperties
-Get playback status (position, speed, etc.).
-
-**Request:**
-```json
-{
-  "jsonrpc": "2.0",
-  "method": "Player.GetProperties",
-  "params": {
-    "playerid": 1,
-    "properties": [
-      "time",
-      "totaltime",
-      "percentage",
-      "speed",
-      "position"
-    ]
-  },
-  "id": 1
-}
-```
-
-**Response:**
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "result": {
-    "percentage": 32.5,
-    "position": 0,
-    "speed": 1,
-    "time": {
-      "hours": 0,
-      "minutes": 15,
-      "seconds": 30,
-      "milliseconds": 0
-    },
-    "totaltime": {
-      "hours": 0,
-      "minutes": 58,
-      "seconds": 0,
-      "milliseconds": 0
-    }
-  }
-}
-```
-
-#### Player.PlayPause
-Pauses or unpauses playback and returns the new state.
-
-**Parameters (from introspect):**
-- `playerid` (integer, REQUIRED) - Player ID (get from Player.GetActivePlayers)
-- `play` (Global.Toggle, optional, default: `"toggle"`) - Playback action:
-  - `"toggle"` - Toggle between play and pause
-  - `true` - Force play
-  - `false` - Force pause
-
-**Request:**
-```json
-{
-  "jsonrpc": "2.0",
-  "method": "Player.PlayPause",
-  "params": {
-    "playerid": 1,
-    "play": "toggle"
-  },
-  "id": 1
-}
-```
-
-**Response:**
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "result": {
-    "speed": 0
-  }
-}
-```
-
-**Speed Values:**
-- `0` - Paused
-- `1` - Normal playback
-- `2`, `4`, `8`, etc. - Fast forward at 2x, 4x, 8x speed
-- `-2`, `-4`, `-8`, etc. - Rewind at 2x, 4x, 8x speed
-
-#### Player.Stop
-Stop playback.
-
-**Request:**
-```json
-{
-  "jsonrpc": "2.0",
-  "method": "Player.Stop",
-  "params": {
-    "playerid": 1
-  },
-  "id": 1
-}
-```
-
-**Response:**
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "result": "OK"
-}
-```
-
-### Files Namespace
-
-#### Files.GetDirectory
-Browse filesystem or library sources.
-
-**Request:**
-```json
-{
-  "jsonrpc": "2.0",
-  "method": "Files.GetDirectory",
-  "params": {
-    "directory": "/movies/",
-    "media": "video",
-    "properties": [
-      "file",
-      "filetype",
-      "size",
-      "dateadded"
-    ]
-  },
-  "id": 1
-}
-```
-
-**Response:**
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "result": {
-    "files": [
-      {
-        "file": "/movies/The Matrix (1999)/",
-        "filetype": "directory",
-        "label": "The Matrix (1999)",
-        "type": "directory"
-      }
-    ]
-  }
-}
-```
-
-#### Files.GetSources
-Get library source paths.
-
-**Request:**
-```json
-{
-  "jsonrpc": "2.0",
-  "method": "Files.GetSources",
-  "params": {
-    "media": "video"
-  },
-  "id": 1
-}
-```
-
-**Response:**
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "result": {
-    "sources": [
-      {
-        "file": "/mnt/movies/",
-        "label": "Movies"
-      },
-      {
-        "file": "/mnt/tv/",
-        "label": "TV Shows"
-      }
-    ]
-  }
-}
-```
-
-### Application Namespace
-
-#### Application.GetProperties
-Get Kodi application info.
-
-**Request:**
-```json
-{
-  "jsonrpc": "2.0",
-  "method": "Application.GetProperties",
-  "params": {
-    "properties": [
-      "version",
-      "name",
-      "volume",
-      "muted"
-    ]
-  },
-  "id": 1
-}
-```
-
-**Response:**
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "result": {
-    "muted": false,
-    "name": "Kodi",
-    "version": {
-      "major": 20,
-      "minor": 2,
-      "revision": "20230708-5af1e33d77",
-      "tag": "stable"
-    },
-    "volume": 75
-  }
-}
-```
-
-## WebSocket Notifications
-
-When connected via WebSocket, Kodi sends real-time notifications for various events.
-
-### Connection Lifecycle
-
-1. **Connect**: Establish WebSocket connection
-2. **Subscribe**: No explicit subscription needed - all notifications sent automatically
-3. **Receive**: Handle incoming notification messages
-4. **Reconnect**: Implement exponential backoff on disconnect
-
-### Notification Events
-
-#### VideoLibrary.OnScanStarted
-Library scan has started.
-
-**Notification:**
-```json
-{
-  "jsonrpc": "2.0",
-  "method": "VideoLibrary.OnScanStarted",
-  "params": {
-    "sender": "xbmc",
-    "data": null
-  }
-}
-```
-
-#### VideoLibrary.OnScanFinished
-Library scan completed.
-
-**Notification:**
-```json
-{
-  "jsonrpc": "2.0",
   "method": "VideoLibrary.OnScanFinished",
   "params": {
-    "sender": "xbmc",
     "data": null
   }
 }
 ```
 
-#### VideoLibrary.OnUpdate
-Library item metadata updated.
-
-**Notification:**
+**Player.OnPlay**:
 ```json
 {
-  "jsonrpc": "2.0",
-  "method": "VideoLibrary.OnUpdate",
-  "params": {
-    "sender": "xbmc",
-    "data": {
-      "id": 1,
-      "type": "movie",
-      "playcount": 3
-    }
-  }
-}
-```
-
-#### VideoLibrary.OnRemove
-Item removed from library.
-
-**Notification:**
-```json
-{
-  "jsonrpc": "2.0",
-  "method": "VideoLibrary.OnRemove",
-  "params": {
-    "sender": "xbmc",
-    "data": {
-      "id": 5,
-      "type": "movie"
-    }
-  }
-}
-```
-
-#### Player.OnPlay
-Playback started.
-
-**Notification:**
-```json
-{
-  "jsonrpc": "2.0",
   "method": "Player.OnPlay",
   "params": {
-    "sender": "xbmc",
     "data": {
-      "item": {
-        "id": 1,
-        "type": "movie",
-        "title": "The Matrix"
-      },
-      "player": {
-        "playerid": 1,
-        "speed": 1
-      }
+      "player": { "playerid": 1 },
+      "item": { "type": "movie", "title": "The Matrix" }
     }
   }
 }
 ```
 
-#### Player.OnPause
-Playback paused.
-
-**Notification:**
+**Player.OnStop**:
 ```json
 {
-  "jsonrpc": "2.0",
-  "method": "Player.OnPause",
-  "params": {
-    "sender": "xbmc",
-    "data": {
-      "item": {
-        "id": 1,
-        "type": "movie"
-      },
-      "player": {
-        "playerid": 1,
-        "speed": 0
-      }
-    }
-  }
-}
-```
-
-#### Player.OnStop
-Playback stopped.
-
-**Notification:**
-```json
-{
-  "jsonrpc": "2.0",
   "method": "Player.OnStop",
   "params": {
-    "sender": "xbmc",
-    "data": {
-      "end": true,  // true = reached end, false = manually stopped
-      "item": {
-        "id": 1,
-        "type": "movie"
-      }
-    }
+    "data": { "item": { "type": "movie" } }
   }
 }
 ```
 
-#### Player.OnSeek
-User seeked to different position.
+### Event Handling in Metarr
 
-**Notification:**
+```typescript
+wsClient.on('VideoLibrary.OnScanFinished', (data) => {
+  logger.info('Kodi scan finished', { playerId, data });
+  // Mark sync job complete
+  updateActivityState(playerId, 'idle');
+});
+
+wsClient.on('Player.OnPlay', (data) => {
+  logger.info('Kodi playback started', { playerId, data });
+  updateActivityState(playerId, 'playing');
+});
+
+wsClient.on('Player.OnStop', (data) => {
+  logger.info('Kodi playback stopped', { playerId, data });
+  updateActivityState(playerId, 'idle');
+});
+```
+
+## Sync Workflow
+
+### Item-Level Sync (Metarr Default)
+
+**Goal**: Refresh only the item that was enriched
+
+**Steps**:
+1. Metarr publishes assets for "The Matrix (1999)"
+2. Metarr queries Kodi for movie by file path
+3. Kodi returns `movieid: 123`
+4. Metarr sends `VideoLibrary.Refresh(movieid=123)`
+5. Kodi refreshes only that movie (reads new NFO, scans new images)
+6. Kodi sends `VideoLibrary.OnScanFinished` event
+7. Metarr marks sync complete
+
+**Advantages**:
+- Fast (2-5 seconds)
+- Doesn't rescan entire library
+- Verifiable success
+
+### Library-Level Sync (Fallback)
+
+**Goal**: Scan entire library section
+
+**Steps**:
+1. Metarr publishes assets
+2. Metarr sends `VideoLibrary.Scan(directory="/media/movies/")`
+3. Kodi scans entire Movies library
+4. Kodi sends `VideoLibrary.OnScanFinished` event
+5. Metarr marks sync complete
+
+**When Used**:
+- Can't map file path to Kodi ID
+- First-time setup
+- Manual "Rescan All" action
+
+## Active Player Detection
+
+**Purpose**: Skip sync if user actively watching
+
+**Implementation**:
+```typescript
+async function shouldSkipSync(playerId: number): Promise<boolean> {
+  const group = await getPlayerGroup(playerId);
+
+  if (!group.skip_active) {
+    return false; // Setting disabled, always sync
+  }
+
+  const activePlayers = await kodiClient.getActivePlayers();
+
+  if (activePlayers.length > 0) {
+    logger.info('Skipping sync, player active', { playerId });
+    return true;
+  }
+
+  return false;
+}
+```
+
+**Behavior**:
+- Checks before every sync operation
+- Logs skip reason
+- Queues sync for retry later (optional)
+
+**Configuration**:
 ```json
 {
-  "jsonrpc": "2.0",
-  "method": "Player.OnSeek",
-  "params": {
-    "sender": "xbmc",
-    "data": {
-      "item": {
-        "id": 1,
-        "type": "movie"
-      },
-      "player": {
-        "playerid": 1,
-        "time": {
-          "hours": 0,
-          "minutes": 30,
-          "seconds": 15
-        }
-      }
-    }
+  "group": {
+    "skip_active": true
   }
 }
 ```
 
-#### Player.OnSpeedChanged
-Playback speed changed (fast forward, rewind).
+## Kodi Groups (Multiple Instances)
 
-**Notification:**
+**Use Case**: Multiple Kodi devices in household
+
+**Example Setup**:
+- Living Room Kodi (192.168.1.10)
+- Bedroom Kodi (192.168.1.11)
+- Office Kodi (192.168.1.12)
+
+**Group Configuration**:
 ```json
 {
-  "jsonrpc": "2.0",
-  "method": "Player.OnSpeedChanged",
-  "params": {
-    "sender": "xbmc",
-    "data": {
-      "player": {
-        "playerid": 1,
-        "speed": 2  // 2x speed
-      }
+  "group": {
+    "name": "Home Kodis",
+    "type": "kodi",
+    "max_members": null,
+    "skip_active": true
+  }
+}
+```
+
+**Sync Behavior**:
+1. Metarr publishes assets
+2. Metarr iterates all group members
+3. For each Kodi:
+   - Check if active (skip if playing)
+   - Send refresh command
+   - Wait for completion (via WebSocket) or timeout
+4. Report success if ANY member synced successfully
+
+**Parallel Sync**:
+- All members synced in parallel
+- Independent timeouts per member
+- Failure of one doesn't block others
+
+## Path Mapping
+
+**Problem**: Metarr and Kodi see different paths to same files
+
+**Common Scenarios**:
+
+### Docker Containers
+
+**Metarr** (inside container):
+```
+/media/movies/The Matrix (1999)/movie.mkv
+```
+
+**Kodi** (host system):
+```
+/mnt/media/movies/The Matrix (1999)/movie.mkv
+```
+
+**Path Mapping**:
+```json
+{
+  "path_mappings": [
+    {
+      "metarr_path": "/media",
+      "player_path": "/mnt/media"
     }
-  }
+  ]
 }
 ```
 
-## Error Codes
+### Network Shares
 
-| Code | Message | Description |
-|------|---------|-------------|
-| -32700 | Parse error | Invalid JSON received |
-| -32600 | Invalid Request | JSON is not valid request object |
-| -32601 | Method not found | Method does not exist |
-| -32602 | Invalid params | Invalid method parameters |
-| -32603 | Internal error | Internal JSON-RPC error |
-| -32100 | Failed | Method call failed |
+**Metarr** (NFS mount):
+```
+/mnt/nas/media/movies/...
+```
 
-## Common Patterns
+**Kodi** (SMB mount):
+```
+smb://nas/media/movies/...
+```
 
-### Testing Connection
-
-```typescript
-async testConnection(): Promise<boolean> {
-  try {
-    const response = await this.sendRequest({
-      jsonrpc: '2.0',
-      method: 'JSONRPC.Ping',
-      id: 1
-    });
-    return response.result === 'pong';
-  } catch (error) {
-    return false;
-  }
+**Path Mapping**:
+```json
+{
+  "path_mappings": [
+    {
+      "metarr_path": "/mnt/nas/media",
+      "player_path": "smb://nas/media"
+    }
+  ]
 }
 ```
 
-### Triggering Library Scan
+## NFO Files and Kodi
 
-```typescript
-async scanLibrary(path?: string): Promise<void> {
-  await this.sendRequest({
-    jsonrpc: '2.0',
-    method: 'VideoLibrary.Scan',
-    params: {
-      directory: path,
-      showdialogs: false
-    },
-    id: Date.now()
-  });
+Metarr writes NFO files in Kodi format for seamless integration.
+
+**Movie NFO** (`movie.nfo`):
+- Placed adjacent to movie file
+- Kodi reads on library scan
+- Contains all metadata (title, plot, cast, ratings)
+
+**TV Show NFO** (`tvshow.nfo`):
+- Placed in show root directory
+- Contains series-level metadata
+
+**Episode NFO** (`S01E01.nfo`):
+- Placed adjacent to episode file
+- Contains episode-specific metadata
+
+See [NFO_FORMAT.md](../reference/NFO_FORMAT.md) for complete NFO specification.
+
+## Troubleshooting
+
+### WebSocket Connection Issues
+
+**Symptoms**: "Could not establish WebSocket connection"
+
+**Causes**:
+- Kodi remote control disabled
+- Firewall blocking port 9090
+- Kodi version too old (<19)
+
+**Solutions**:
+1. Enable remote control in Kodi settings
+2. Open port 9090 in firewall
+3. Upgrade Kodi to version 19+
+4. Use HTTP fallback (automatic)
+
+### HTTP Fallback Works But No Events
+
+**Symptoms**: Sync works but no real-time updates
+
+**Cause**: HTTP polling only, no WebSocket
+
+**Behavior**:
+- Metarr polls for completion every 3 seconds
+- 30-second timeout
+- No event-driven updates
+
+**Solution**: Fix WebSocket connection for real-time updates
+
+### "Movie not found in Kodi library"
+
+**Symptoms**: Item-level refresh fails
+
+**Causes**:
+- Path mapping incorrect
+- Movie not yet scanned by Kodi
+- File path mismatch
+
+**Solutions**:
+1. Verify path mapping configuration
+2. Run full library scan in Kodi first
+3. Check Kodi logs for file path Kodi sees
+
+### Active Player Detection Not Working
+
+**Symptoms**: Sync runs during playback
+
+**Causes**:
+- `skip_active` disabled
+- Player state not updated
+- WebSocket connection lost
+
+**Solutions**:
+1. Enable `skip_active` in group settings
+2. Check WebSocket connection status
+3. Review player activity logs
+
+### Sync Timeout
+
+**Symptoms**: "Kodi sync timed out after 30 seconds"
+
+**Causes**:
+- Large library taking too long
+- Kodi overloaded
+- Network latency
+
+**Solutions**:
+1. Increase timeout in settings
+2. Use item-level sync instead of full scan
+3. Check Kodi system resources
+
+## Configuration
+
+### Player Settings
+
+```json
+{
+  "name": "Living Room Kodi",
+  "type": "kodi",
+  "host": "192.168.1.10",
+  "port": 8080,
+  "websocket_port": 9090,
+  "username": "",
+  "password": "",
+  "timeout_seconds": 30,
+  "path_mappings": [
+    {
+      "metarr_path": "/media",
+      "player_path": "/mnt/media"
+    }
+  ]
 }
 ```
 
-### Checking Playback Status
+### Group Settings
 
-```typescript
-async getPlaybackStatus(): Promise<PlaybackStatus | null> {
-  // First, check if any players are active
-  const playersResponse = await this.sendRequest({
-    jsonrpc: '2.0',
-    method: 'Player.GetActivePlayers',
-    id: 1
-  });
-
-  if (!playersResponse.result || playersResponse.result.length === 0) {
-    return null; // Nothing playing
-  }
-
-  const playerId = playersResponse.result[0].playerid;
-
-  // Get item details
-  const itemResponse = await this.sendRequest({
-    jsonrpc: '2.0',
-    method: 'Player.GetItem',
-    params: {
-      playerid: playerId,
-      properties: ['title', 'season', 'episode', 'showtitle']
-    },
-    id: 2
-  });
-
-  // Get playback properties
-  const propsResponse = await this.sendRequest({
-    jsonrpc: '2.0',
-    method: 'Player.GetProperties',
-    params: {
-      playerid: playerId,
-      properties: ['time', 'totaltime', 'percentage', 'speed']
-    },
-    id: 3
-  });
-
-  return {
-    item: itemResponse.result.item,
-    position: propsResponse.result.time,
-    duration: propsResponse.result.totaltime,
-    percentage: propsResponse.result.percentage,
-    speed: propsResponse.result.speed
-  };
+```json
+{
+  "name": "Home Kodis",
+  "type": "kodi",
+  "max_members": null,
+  "skip_active": true,
+  "sync_strategy": "item-level",
+  "parallel_sync": true
 }
 ```
 
-### Updating Movie Metadata
+## Performance Tips
 
-```typescript
-async updateMovieMetadata(movieId: number, metadata: MovieMetadata): Promise<void> {
-  await this.sendRequest({
-    jsonrpc: '2.0',
-    method: 'VideoLibrary.SetMovieDetails',
-    params: {
-      movieid: movieId,
-      ...metadata
-    },
-    id: Date.now()
-  });
-}
-```
-
-### Handling WebSocket Notifications
-
-```typescript
-handleNotification(notification: any): void {
-  const { method, params } = notification;
-
-  switch (method) {
-    case 'Player.OnPlay':
-      this.emit('playbackStarted', params.data);
-      break;
-
-    case 'Player.OnStop':
-      this.emit('playbackStopped', params.data);
-      break;
-
-    case 'VideoLibrary.OnScanStarted':
-      this.emit('scanStarted');
-      break;
-
-    case 'VideoLibrary.OnScanFinished':
-      this.emit('scanFinished');
-      break;
-
-    case 'VideoLibrary.OnUpdate':
-      this.emit('libraryUpdated', params.data);
-      break;
-
-    default:
-      // Log unknown notifications for debugging
-      console.log('Unknown notification:', method);
-  }
-}
-```
-
-## Connection State Management
-
-### States
-
-```typescript
-enum ConnectionState {
-  DISCONNECTED = 'disconnected',
-  CONNECTING = 'connecting',
-  CONNECTED = 'connected',
-  RECONNECTING = 'reconnecting',
-  ERROR = 'error'
-}
-```
-
-### Reconnection Strategy
-
-```typescript
-class ReconnectionManager {
-  private attempts = 0;
-  private maxAttempts = 5;
-  private baseDelay = 1000; // 1 second
-
-  getReconnectDelay(): number {
-    // Exponential backoff: 1s, 2s, 4s, 8s, 16s
-    return Math.min(
-      this.baseDelay * Math.pow(2, this.attempts),
-      30000 // Max 30 seconds
-    );
-  }
-
-  reset(): void {
-    this.attempts = 0;
-  }
-
-  incrementAttempts(): boolean {
-    this.attempts++;
-    return this.attempts < this.maxAttempts;
-  }
-}
-```
-
-## Best Practices
-
-### 1. Use WebSocket for Real-Time Updates
-- Establish persistent WebSocket connection for notifications
-- Fall back to HTTP for one-off operations if WebSocket unavailable
-
-### 2. Implement Proper Error Handling
-- Catch connection errors and implement retry logic
-- Handle JSON-RPC error responses gracefully
-- Log errors with context for debugging
-
-### 3. Request ID Management
-- Use unique IDs for each request (timestamp or incrementing counter)
-- Match responses to requests using ID field
-
-### 4. Optimize API Calls
-- Request only needed properties to reduce response size
-- Use pagination for large result sets
-- Batch related operations when possible
-
-### 5. Handle Connection State
-- Track connection state and emit events
-- Implement exponential backoff for reconnection
-- Notify application layer of connection changes
-
-### 6. Notification Processing
-- Process notifications asynchronously
-- Emit events for application layer to consume
-- Handle unknown notifications gracefully
-
-### 7. Library Path Mapping
-- Get library sources using `Files.GetSources`
-- Map Metarr library paths to Kodi source paths
-- Handle path format differences (Windows vs. Linux)
+1. **Use WebSocket**: 10x faster than HTTP polling
+2. **Item-Level Sync**: Refresh only changed items
+3. **Skip Active Players**: Avoid disrupting playback
+4. **Path Mapping**: Ensure accurate for fast ID lookup
+5. **Parallel Groups**: Sync multiple Kodis simultaneously
 
 ## Kodi Version Compatibility
 
-- **Kodi 18 (Leia)**: JSON-RPC API v10
-- **Kodi 19 (Matrix)**: JSON-RPC API v12
-- **Kodi 20 (Nexus)**: JSON-RPC API v13
-- **Kodi 21 (Omega)**: JSON-RPC API v13
+| Kodi Version | JSON-RPC | WebSocket | Support |
+|--------------|----------|-----------|---------|
+| **19 (Matrix)** | v12 |  |  Full |
+| **20 (Nexus)** | v12 |  |  Full |
+| **21 (Omega)** | v13 |  |  Full |
+| **18 (Leia)** | v11 |  |   Limited |
+| **17 and older** | <v11 |  | L Unsupported |
 
-Most methods remain stable across versions. Use `JSONRPC.Version` to detect capabilities.
+**Recommendation**: Kodi 19+ for best experience.
 
-## Resources
+## See Also
 
-- **Official API Documentation**: https://kodi.wiki/view/JSON-RPC_API
-- **Interactive API Browser**: Available in Kodi settings (Web interface)
-- **WebSocket Testing**: Use browser console or WebSocket client tools
+- [Player Overview](./OVERVIEW.md) - All player capabilities
+- [NFO Format Reference](../reference/NFO_FORMAT.md) - Complete NFO specification
+- [Publishing Phase](../phases/PUBLISHING.md) - Asset deployment workflow
+- [Kodi JSON-RPC API Docs](https://kodi.wiki/view/JSON-RPC_API/v12) - Official API documentation
+- [Kodi Wiki](https://kodi.wiki/) - Complete Kodi documentation

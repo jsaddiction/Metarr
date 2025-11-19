@@ -1,261 +1,163 @@
-# Component Layer
+# Component Organization
 
-**Purpose**: Component organization and composition patterns following React best practices.
+**Purpose**: Component file organization, composition patterns, and atomic design hierarchy for Metarr frontend.
 
-**Industry Standards**: Atomic Design, Composition Pattern, Single Responsibility Principle
+**Related Docs**:
+- Related: [ARCHITECTURE.md](./ARCHITECTURE.md), [STATE_MANAGEMENT.md](./STATE_MANAGEMENT.md), [UI_STANDARDS.md](./UI_STANDARDS.md)
 
 ---
 
-## Quick Decision Matrix
+## Quick Reference (TL;DR)
 
-| Question | Answer | Location |
-|----------|--------|----------|
-| Reusable button/input/card? | UI Primitive | `components/ui/` |
-| Movie/Player/Library specific? | Domain Component | `components/[domain]/` |
-| Entire page view? | Page Component | `pages/` |
-| Sidebar/Header/Layout? | Layout Component | `components/layout/` |
-| Component > 200 lines? | Extract subcomponents | Same directory |
-| Complex logic needed? | Extract custom hook | `hooks/` |
-| Shared across domains? | Lift to `components/ui/` | Move up |
+- **Atomic Design**: UI primitives (\`ui/\`) → Domain components (\`[domain]/\`) → Pages
+- **PascalCase** file names matching component names
+- **Colocate** related components and tests
+- **Extract** when >200 lines or repeated patterns
+- **Props**: Specific interfaces, no \`any\` types
+- **Composition**: Build complex from simple
 
 ---
 
 ## File Organization
 
 ### Directory Structure
-```
+\`\`\`
 components/
-├── ui/                # Atomic components (no domain knowledge)
-│   ├── Button.tsx
-│   ├── Card.tsx
-│   ├── AnimatedTabs.tsx
-│   └── Dialog.tsx
-├── layout/            # App structure
-│   ├── Sidebar.tsx
-│   ├── Header.tsx
-│   └── Layout.tsx
-└── [domain]/          # Feature-specific (uses domain hooks)
-    ├── MovieCard.tsx
-    ├── MovieTable.tsx
-    └── AssetSelector.tsx
+├── ui/                  # Atoms: Reusable primitives
+├── layout/              # App structure
+├── movie/               # Movie domain
+├── library/             # Library domain
+├── provider/            # Provider domain
+├── mediaPlayer/         # Media player domain
+├── asset/               # Asset selection
+├── dashboard/           # Dashboard widgets
+└── error/               # Error boundaries
 
-pages/                 # Route components (composition roots)
+pages/                   # Route components
 ├── Dashboard.tsx
-├── movies/
-│   ├── MovieList.tsx
-│   └── MovieEdit.tsx
-└── settings/
-    └── Players.tsx
-```
+├── Movies.tsx
+├── settings/
+│   ├── Providers.tsx
+│   ├── Libraries.tsx
+│   └── MediaPlayers.tsx
+├── activity/
+│   ├── History.tsx
+│   └── RunningJobs.tsx
+└── system/
+    ├── Status.tsx
+    └── Events.tsx
+\`\`\`
 
 ### Naming Conventions
-- **PascalCase** for all component files: `MovieCard.tsx`
-- **Match component name**: File `MovieCard.tsx` exports `MovieCard`
-- **Descriptive names**: `AssetSelector` not `Selector`
-- **Avoid generic names**: `MovieList` not `List`
-
-### Colocation Rules
-- Keep related files together
-- Tests next to components: `MovieCard.test.tsx`
-- Styles only if CSS modules: `MovieCard.module.css`
-- Subcomponents in same directory if not reused
+- **Components**: PascalCase (\`MovieCard.tsx\`)
+- **Files match exports**: File \`MovieCard.tsx\` exports \`MovieCard\`
+- **Descriptive names**: \`AssetSelectionDialog\` not \`Dialog\`
+- **Tests colocated**: \`MovieCard.test.tsx\`
 
 ---
 
-## Component Hierarchy (Atomic Design)
+## Atomic Design Hierarchy
 
-### Level 1: Atoms (`components/ui/`)
-**Purpose**: Reusable primitives with no business logic
-**Rules**:
-- No domain hooks (`useMovies`, `usePlayers`)
-- Only UI state (open/closed, selected/unselected)
-- Accept data via props
-- Generic, reusable
+### Level 1: Atoms (UI Primitives)
+**Location**: \`components/ui/\`
+**Purpose**: Generic, reusable building blocks
 
-**Example**:
-```typescript
-// components/ui/Button.tsx
-interface ButtonProps {
-  variant?: 'primary' | 'secondary' | 'danger';
-  onClick?: () => void;
-  children: React.ReactNode;
-}
+**Characteristics**:
+- No domain knowledge
+- No data fetching hooks
+- Only UI state
+- Accept all data via props
 
-export const Button: React.FC<ButtonProps> = ({ variant = 'primary', onClick, children }) => {
-  return (
-    <button className={`btn btn-${variant}`} onClick={onClick}>
-      {children}
-    </button>
-  );
-};
-```
+**Examples**: Button, Card, Dialog, AnimatedTabs
 
-### Level 2: Molecules (`components/[domain]/`)
-**Purpose**: Domain-specific compositions
-**Rules**:
+### Level 2: Molecules (Domain Components)
+**Location**: \`components/[domain]/\`
+**Purpose**: Feature-specific compositions
+
+**Characteristics**:
 - Can use domain hooks
 - Compose atoms together
 - Single responsibility
 
-**Example**:
-```typescript
-// components/movie/MovieCard.tsx
-interface MovieCardProps {
-  movie: Movie;
-  onEdit?: (id: number) => void;
-}
+**Examples**: MovieCard, LibraryCard, AssetThumbnail
 
-export const MovieCard: React.FC<MovieCardProps> = ({ movie, onEdit }) => {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{movie.title}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <p>{movie.year}</p>
-        <Button onClick={() => onEdit?.(movie.id)}>Edit</Button>
-      </CardContent>
-    </Card>
-  );
-};
-```
+### Level 3: Organisms (Feature Sections)
+**Location**: \`components/[domain]/\`
+**Purpose**: Complex sections with data fetching
 
-### Level 3: Organisms (`components/[domain]/`)
-**Purpose**: Complex feature sections
-**Rules**:
+**Characteristics**:
 - Use hooks for data fetching
 - Manage local state
-- Compose molecules
+- Handle loading/error states
 
-**Example**:
-```typescript
-// components/movie/MovieTable.tsx
-export const MovieTable: React.FC = () => {
-  const { data: movies, isLoading, error } = useMovies();
+**Examples**: VirtualizedMovieTable, AssetSelectionDialog, MediaPlayerWizard
 
-  if (isLoading) return <LoadingSpinner />;
-  if (error) return <ErrorMessage error={error} />;
+### Level 4: Pages (Route Components)
+**Location**: \`pages/\`
+**Purpose**: Full page views
 
-  return (
-    <table>
-      {movies?.map(movie => (
-        <MovieRow key={movie.id} movie={movie} />
-      ))}
-    </table>
-  );
-};
-```
+**Characteristics**:
+- Route-level composition
+- Handle URL params
+- Page-level state only
 
-### Level 4: Pages (`pages/`)
-**Purpose**: Route-level composition roots
-**Rules**:
-- Compose organisms and molecules
-- Handle routing params
-- Manage page-level state
-- No styling logic (delegate to components)
-
-**Example**:
-```typescript
-// pages/movies/MovieList.tsx
-export const MovieList: React.FC = () => {
-  const [filters, setFilters] = useState({});
-
-  return (
-    <PageLayout>
-      <PageHeader title="Movies" />
-      <MovieFilters filters={filters} onChange={setFilters} />
-      <MovieTable filters={filters} />
-    </PageLayout>
-  );
-};
-```
+**Examples**: Dashboard, Movies, settings/Providers
 
 ---
 
 ## Composition Patterns
 
 ### Children Pattern
-**Use when**: Wrapper components, layouts
-```typescript
+\`\`\`typescript
 interface CardProps {
   children: React.ReactNode;
+  className?: string;
 }
 
-export const Card: React.FC<CardProps> = ({ children }) => {
-  return <div className="card">{children}</div>;
+export const Card: React.FC<CardProps> = ({ children, className }) => {
+  return <div className={cn("rounded-lg border", className)}>{children}</div>;
 };
-
-// Usage
-<Card>
-  <h1>Title</h1>
-  <p>Content</p>
-</Card>
-```
+\`\`\`
 
 ### Render Props Pattern
-**Use when**: Sharing logic with custom rendering
-```typescript
+\`\`\`typescript
 interface DataListProps<T> {
   data: T[];
-  renderItem: (item: T) => React.ReactNode;
+  renderItem: (item: T, index: number) => React.ReactNode;
 }
 
 export function DataList<T>({ data, renderItem }: DataListProps<T>) {
-  return <div>{data.map(renderItem)}</div>;
+  return <div>{data.map((item, index) => renderItem(item, index))}</div>;
 }
+\`\`\`
 
-// Usage
-<DataList
-  data={movies}
-  renderItem={(movie) => <MovieCard movie={movie} />}
-/>
-```
-
-### Compound Components Pattern
-**Use when**: Related components work together
-```typescript
-// components/ui/Tabs.tsx
+### Compound Components
+\`\`\`typescript
 const TabsContext = createContext<TabsContextValue | null>(null);
 
-export const Tabs: React.FC<TabsProps> = ({ children, activeTab, onChange }) => {
+export const Tabs: React.FC<TabsProps> = ({ children, value, onValueChange }) => {
   return (
-    <TabsContext.Provider value={{ activeTab, onChange }}>
-      <div className="tabs">{children}</div>
+    <TabsContext.Provider value={{ value, onValueChange }}>
+      {children}
     </TabsContext.Provider>
   );
 };
 
-export const TabList: React.FC = ({ children }) => (
-  <div className="tab-list">{children}</div>
-);
-
 export const Tab: React.FC<TabProps> = ({ value, children }) => {
-  const { activeTab, onChange } = useContext(TabsContext)!;
+  const { value: activeValue, onValueChange } = useContext(TabsContext)!;
   return (
-    <button
-      className={activeTab === value ? 'active' : ''}
-      onClick={() => onChange(value)}
-    >
-      {children}
-    </button>
+    <button onClick={() => onValueChange(value)}>{children}</button>
   );
 };
-
-// Usage
-<Tabs activeTab={tab} onChange={setTab}>
-  <TabList>
-    <Tab value="one">Tab 1</Tab>
-    <Tab value="two">Tab 2</Tab>
-  </TabList>
-</Tabs>
-```
+\`\`\`
 
 ---
 
-## Props Patterns
+## Props Design
 
-### Interface Design
-```typescript
+### Interface Best Practices
+
+\`\`\`typescript
 // ✅ Good: Specific, typed, documented
 interface MovieCardProps {
   /** Movie entity to display */
@@ -272,179 +174,167 @@ interface CardProps {
   onClick: Function;
   mode: string;
 }
-```
+\`\`\`
 
-### Optional vs Required Props
-```typescript
-// Required for core functionality
-interface ButtonProps {
-  children: React.ReactNode;      // Required
-  onClick?: () => void;            // Optional - not all buttons need it
-  variant?: 'primary' | 'secondary'; // Optional - has default
-  disabled?: boolean;              // Optional - has default (false)
-}
-```
+### Event Handler Naming
+**Pattern**: \`on[Event]\` for props, \`handle[Event]\` for internal
 
-### Event Handlers
-**Naming**: `on[Event]` for props, `handle[Event]` for internal
-```typescript
+\`\`\`typescript
 interface MovieCardProps {
-  onEdit?: (id: number) => void;     // Prop
-  onDelete?: (id: number) => void;   // Prop
+  onEdit?: (id: number) => void;
+  onDelete?: (id: number) => void;
 }
 
 export const MovieCard: React.FC<MovieCardProps> = ({ movie, onEdit, onDelete }) => {
-  const handleEdit = () => {         // Internal handler
-    onEdit?.(movie.id);
-  };
-
-  const handleDelete = () => {       // Internal handler
-    if (confirm('Delete?')) {
-      onDelete?.(movie.id);
-    }
+  const handleEdit = () => onEdit?.(movie.id);
+  const handleDelete = () => {
+    if (confirm('Delete?')) onDelete?.(movie.id);
   };
 
   return (
-    <div>
-      <button onClick={handleEdit}>Edit</button>
-      <button onClick={handleDelete}>Delete</button>
-    </div>
+    <Card>
+      <Button onClick={handleEdit}>Edit</Button>
+      <Button onClick={handleDelete}>Delete</Button>
+    </Card>
   );
 };
-```
+\`\`\`
 
 ---
 
-## State Management Rules
+## State Management in Components
 
 ### Component State (useState)
 **Use for**: UI-only state
-```typescript
-const [isOpen, setIsOpen] = useState(false);      // Modal open/closed
-const [selectedTab, setSelectedTab] = useState('metadata'); // Tab selection
-const [searchQuery, setSearchQuery] = useState(''); // Search input
-```
+
+\`\`\`typescript
+const [isOpen, setIsOpen] = useState(false);
+const [selectedTab, setSelectedTab] = useState('metadata');
+const [searchQuery, setSearchQuery] = useState('');
+\`\`\`
 
 ### Server State (TanStack Query)
 **Use for**: Backend data
-```typescript
-const { data: movies } = useMovies();           // Use hook, not useState
-const { data: player } = usePlayer(id);         // Never fetch in component
-```
+
+\`\`\`typescript
+// ✅ Correct
+const { data: movies, isLoading } = useMovies();
+
+// ❌ Wrong
+const [movies, setMovies] = useState([]);
+useEffect(() => {
+  fetchMovies().then(setMovies);
+}, []);
+\`\`\`
 
 ### When to Lift State
-- **Lift when**: Multiple siblings need the same state
-- **Keep local when**: Only one component needs it
 
-```typescript
-// ❌ Bad: Lifted unnecessarily
+**Lift when**: Multiple siblings need state
+\`\`\`typescript
 const Parent = () => {
-  const [hoveredId, setHoveredId] = useState<number | null>(null);
-  return <MovieCard onHover={setHoveredId} />;
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  return (
+    <>
+      <MovieList onSelect={setSelectedId} />
+      <MovieDetail movieId={selectedId} />
+    </>
+  );
 };
+\`\`\`
 
-// ✅ Good: Keep local
+**Keep local when**: Only one component needs it
+\`\`\`typescript
 const MovieCard = () => {
   const [isHovered, setIsHovered] = useState(false);
   return <div onMouseEnter={() => setIsHovered(true)} />;
 };
-```
+\`\`\`
 
 ---
 
 ## When to Extract
 
-### Extract to New Component When:
+### Extract to Component When:
 1. Component exceeds 200 lines
-2. Repeated JSX patterns (DRY principle)
-3. Single responsibility violated
+2. Repeated JSX patterns (DRY)
+3. Single Responsibility Principle violated
 4. Testing becomes difficult
 
-### Extract to Custom Hook When:
+### Extract to Hook When:
 1. Complex state logic
 2. Reusable logic across components
 3. Side effects management
-4. Computation/memoization
 
-**Example**:
-```typescript
-// ❌ Bad: Complex logic in component
+\`\`\`typescript
+// ❌ Complex logic in component
 const MovieList = () => {
   const [movies, setMovies] = useState([]);
   const [loading, setLoading] = useState(false);
-
   useEffect(() => {
     setLoading(true);
     fetchMovies().then(setMovies).finally(() => setLoading(false));
   }, []);
-
-  return /* ... */;
 };
 
-// ✅ Good: Extracted to hook
+// ✅ Extracted to hook
 const useMovies = () => {
   return useQuery({
     queryKey: ['movies'],
     queryFn: () => movieApi.getAll(),
   });
 };
-
-const MovieList = () => {
-  const { data: movies, isLoading } = useMovies();
-  return /* ... */;
-};
-```
+\`\`\`
 
 ---
 
 ## Common Patterns
 
 ### Loading States
-```typescript
-const Component = () => {
-  const { data, isLoading, error } = useQuery(/* ... */);
+\`\`\`typescript
+const { data, isLoading, error } = useMovies();
 
-  if (isLoading) return <LoadingSpinner />;
-  if (error) return <ErrorMessage error={error} />;
-  if (!data) return <EmptyState />;
+if (isLoading) return <LoadingSpinner />;
+if (error) return <ErrorMessage error={error} />;
+if (!data || data.length === 0) return <EmptyState />;
 
-  return <DataView data={data} />;
-};
-```
+return <DataView data={data} />;
+\`\`\`
 
 ### Conditional Rendering
-```typescript
-// ✅ Good: Early returns for clarity
+\`\`\`typescript
+// ✅ Good: Early returns
 if (isLoading) return <Loading />;
 if (error) return <Error />;
 
-// ✅ Good: Logical AND for optional elements
+// ✅ Good: Logical AND
 {user?.isAdmin && <AdminPanel />}
 
+// ✅ Good: Ternary for either/or
+{view === 'grid' ? <GridView /> : <ListView />}
+
 // ❌ Bad: Nested ternaries
-{isLoading ? <Loading /> : error ? <Error /> : <Data />}
-```
+{isLoading ? <Loading /> : error ? <Error /> : data ? <Data /> : <Empty />}
+\`\`\`
 
 ### Lists and Keys
-```typescript
-// ✅ Good: Stable, unique keys
+\`\`\`typescript
+// ✅ Good: Stable unique keys
 {movies.map(movie => (
   <MovieCard key={movie.id} movie={movie} />
 ))}
 
-// ❌ Bad: Index as key (unstable)
+// ❌ Bad: Index as key
 {movies.map((movie, index) => (
   <MovieCard key={index} movie={movie} />
 ))}
-```
+\`\`\`
 
 ---
 
 ## Performance
 
-### Memoization
-**Use sparingly** - Only when proven slow
-```typescript
+### Memoization (Use Sparingly)
+\`\`\`typescript
 // Expensive computation
 const sortedMovies = useMemo(
   () => movies.sort((a, b) => a.title.localeCompare(b.title)),
@@ -453,27 +343,86 @@ const sortedMovies = useMemo(
 
 // Prevent re-renders
 const MemoizedCard = memo(MovieCard);
-```
+\`\`\`
 
 ### Callback Stability
-```typescript
-// ✅ Good: Stable callback
+\`\`\`typescript
 const handleDelete = useCallback((id: number) => {
   deleteMovie(id);
 }, [deleteMovie]);
+\`\`\`
 
-// ❌ Bad: New function every render
-const handleDelete = (id: number) => {
-  deleteMovie(id);
-};
-```
-
-**Note**: Only optimize after measuring. Premature optimization adds complexity.
+### Virtualization
+\`\`\`typescript
+// For large lists (>100 items)
+<VirtualizedMovieTable movies={movies} />
+\`\`\`
 
 ---
 
-## Related Documentation
+## Real-World Examples
 
-- [Hooks Layer](./HOOKS_LAYER.md) - Extract complex logic to custom hooks
-- [Types](./TYPES.md) - Component props interfaces
-- [UI Standards](./UI_STANDARDS.md) - Styling patterns
+### Simple Molecule
+\`\`\`typescript
+interface ConnectionBadgeProps {
+  status: 'connected' | 'disconnected' | 'error';
+}
+
+export const ConnectionBadge: React.FC<ConnectionBadgeProps> = ({ status }) => {
+  const colors = {
+    connected: 'bg-green-500',
+    disconnected: 'bg-gray-500',
+    error: 'bg-red-500',
+  };
+  return <div className={cn("h-2 w-2 rounded-full", colors[status])} />;
+};
+\`\`\`
+
+### Complex Organism
+\`\`\`typescript
+export const AssetSelectionDialog: React.FC<Props> = ({ movieId, assetType, onClose }) => {
+  const { data: candidates, isLoading } = useAssetCandidates(movieId, assetType);
+  const selectMutation = useSelectAsset();
+  const [selected, setSelected] = useState<string | null>(null);
+
+  const handleSelect = async () => {
+    if (!selected) return;
+    await selectMutation.mutateAsync({ movieId, assetType, url: selected });
+    onClose();
+  };
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Select {assetType}</DialogTitle>
+        </DialogHeader>
+
+        {isLoading ? (
+          <LoadingSpinner />
+        ) : (
+          <AssetCandidateGrid
+            candidates={candidates}
+            selected={selected}
+            onSelect={setSelected}
+          />
+        )}
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={handleSelect} disabled={!selected}>Select</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+};
+\`\`\`
+
+---
+
+## See Also
+
+- [ARCHITECTURE.md](./ARCHITECTURE.md) - Overall frontend architecture
+- [STATE_MANAGEMENT.md](./STATE_MANAGEMENT.md) - TanStack Query patterns
+- [UI_STANDARDS.md](./UI_STANDARDS.md) - Design system and styling
+- [ERROR_HANDLING.md](./ERROR_HANDLING.md) - Error boundaries and patterns

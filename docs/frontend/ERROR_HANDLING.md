@@ -1,31 +1,44 @@
 # Error Handling
 
-**Purpose**: Unified error handling strategy across frontend layers.
+**Purpose**: Unified error handling strategy across all frontend layers.
 
-**Industry Standards**: Error Boundaries (React), Progressive Enhancement, Graceful Degradation
+**Related Docs**:
+- Parent: [Frontend README](./README.md)
+- Related: [STATE_MANAGEMENT.md](./STATE_MANAGEMENT.md), [COMPONENTS.md](./COMPONENTS.md), [API_LAYER.md](./API_LAYER.md)
 
 ---
 
-## Quick Decision Matrix
+## Quick Reference (TL;DR)
+
+- **Render errors**: Caught by Error Boundary → fallback UI
+- **Query errors**: Component handles → inline error message
+- **Mutation errors**: Hook shows toast → automatic feedback
+- **Validation errors**: Form-level → inline field errors
+- **No query toasts**: Queries are passive, mutations are active
+- **Always show retry**: Give users recovery path
+
+---
+
+## Error Types and Handlers
 
 | Error Type | Where | Handler | User Feedback |
 |------------|-------|---------|---------------|
-| Render error | Component | Error Boundary | Fallback UI |
-| Network error (query) | Component | Handle in render | Error message |
-| Network error (mutation) | Hook | `onError` callback | Toast notification |
-| Validation error | Form | Form state | Inline validation |
-| 404/Route not found | Router | Route config | 404 page |
-| Unhandled promise | Window | Global handler | Log + fallback |
+| Render error | Component | Error Boundary | Fallback UI with retry |
+| Network error (query) | Component | Inline display | Error message + retry button |
+| Network error (mutation) | Hook | Toast | Toast notification |
+| Validation error | Form | Form state | Inline field errors |
+| 404 Route | Router | Route config | 404 page |
+| WebSocket error | Context | Connection handler | Connection status banner |
 
 ---
 
-## Three Error Types
+## 1. Render Errors (Component Crashes)
 
-### 1. Render Errors (Component Crashes)
-**What**: JavaScript errors during render
-**Examples**: Undefined property access, type errors, infinite loops
+**What**: JavaScript errors during component render
+**Examples**: Undefined property access, null reference, type errors
 
-**Handler**: Error Boundary
+### Error Boundary Component
+
 ```typescript
 // components/ErrorBoundary.tsx
 import { Component, ErrorInfo, ReactNode } from 'react';
@@ -58,10 +71,14 @@ export class ErrorBoundary extends Component<Props, State> {
   render() {
     if (this.state.hasError) {
       return this.props.fallback || (
-        <div className="error-boundary">
-          <h2>Something went wrong</h2>
-          <p>{this.state.error?.message}</p>
-          <button onClick={() => this.setState({ hasError: false })}>
+        <div className="flex flex-col items-center justify-center min-h-screen p-6">
+          <div className="text-red-500 text-6xl mb-4">⚠️</div>
+          <h2 className="text-2xl font-bold mb-2">Something went wrong</h2>
+          <p className="text-neutral-400 mb-4">{this.state.error?.message}</p>
+          <button
+            onClick={() => this.setState({ hasError: false })}
+            className="px-4 py-2 bg-violet-500 text-white rounded hover:bg-violet-600"
+          >
             Try again
           </button>
         </div>
@@ -73,7 +90,8 @@ export class ErrorBoundary extends Component<Props, State> {
 }
 ```
 
-**Usage**:
+### Usage
+
 ```typescript
 // App.tsx - Wrap entire app
 <ErrorBoundary>
@@ -88,15 +106,14 @@ export class ErrorBoundary extends Component<Props, State> {
 
 ---
 
-### 2. Network Errors (API Failures)
+## 2. Network Errors (API Failures)
 
-#### Query Errors (Read Operations)
-**Handler**: Component decides UI
-**No toasts** - Queries are passive operations
+### Query Errors (Read Operations)
+**Rule**: Component decides how to show error (no automatic toasts)
 
 ```typescript
-const MovieList: React.FC = () => {
-  const { data, isLoading, error } = useMovies();
+export const MovieList: React.FC = () => {
+  const { data: movies, isLoading, error, refetch } = useMovies();
 
   if (isLoading) {
     return <LoadingSpinner />;
@@ -107,16 +124,25 @@ const MovieList: React.FC = () => {
       <ErrorMessage
         title="Failed to load movies"
         message={error.message}
-        retry={() => queryClient.invalidateQueries({ queryKey: ['movies'] })}
+        retry={refetch}
       />
     );
   }
 
-  return <div>{/* Render data */}</div>;
+  if (!movies || movies.length === 0) {
+    return <EmptyState />;
+  }
+
+  return (
+    <div className="grid gap-4">
+      {movies.map(movie => <MovieCard key={movie.id} movie={movie} />)}
+    </div>
+  );
 };
 ```
 
-**Error Message Component**:
+### ErrorMessage Component
+
 ```typescript
 interface ErrorMessageProps {
   title?: string;
@@ -130,16 +156,16 @@ export const ErrorMessage: React.FC<ErrorMessageProps> = ({
   retry,
 }) => {
   return (
-    <div className="rounded-md bg-red-50 p-4">
-      <div className="flex">
-        <ExclamationTriangleIcon className="h-5 w-5 text-red-400" />
-        <div className="ml-3">
-          <h3 className="text-sm font-medium text-red-800">{title}</h3>
-          <p className="mt-1 text-sm text-red-700">{message}</p>
+    <div className="rounded-md bg-red-500/10 border border-red-500/20 p-6">
+      <div className="flex items-start gap-4">
+        <FontAwesomeIcon icon={faExclamationTriangle} className="text-red-500 text-2xl" />
+        <div className="flex-1">
+          <h3 className="text-lg font-semibold text-red-500 mb-1">{title}</h3>
+          <p className="text-sm text-neutral-300">{message}</p>
           {retry && (
             <button
               onClick={retry}
-              className="mt-2 text-sm text-red-800 underline"
+              className="mt-3 text-sm text-violet-400 hover:text-violet-300 underline"
             >
               Try again
             </button>
@@ -151,51 +177,51 @@ export const ErrorMessage: React.FC<ErrorMessageProps> = ({
 };
 ```
 
-#### Mutation Errors (Write Operations)
-**Handler**: Hook shows toast automatically
-**Always show feedback** - User initiated action
+### Mutation Errors (Write Operations)
+**Rule**: Hook shows toast automatically (user initiated action needs feedback)
 
 ```typescript
-// Hook handles error
 export const useCreateMovie = () => {
   const queryClient = useQueryClient();
 
-  return useMutation<Movie, Error, MovieFormData>({
-    mutationFn: (data) => movieApi.create(data),
+  return useMutation({
+    mutationFn: (data: MovieFormData) => movieApi.create(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['movies'] });
-      showSuccessToast('Movie created successfully');
+      toast.success('Movie created successfully');
     },
-    onError: (error) => {
-      showErrorToast(error, 'Create movie'); // Automatic toast
+    onError: (error: Error) => {
+      toast.error('Create movie failed', {
+        description: error.message,
+      });
     },
   });
 };
 
 // Component just calls mutation
-const Component = () => {
-  const createMutation = useCreateMovie();
+const createMutation = useCreateMovie();
 
-  const handleSubmit = async (data: MovieFormData) => {
-    try {
-      await createMutation.mutateAsync(data);
-      // Success toast already shown by hook
-      navigate('/movies');
-    } catch (error) {
-      // Error toast already shown by hook
-      // Optionally handle UI state (keep form open, etc.)
-    }
-  };
+const handleSubmit = async (data: MovieFormData) => {
+  try {
+    await createMutation.mutateAsync(data);
+    // Success toast already shown by hook
+    navigate('/movies');
+  } catch (error) {
+    // Error toast already shown by hook
+    // Optionally handle UI state (keep form open, etc.)
+  }
 };
 ```
 
 ---
 
-### 3. Validation Errors (User Input)
-**Handler**: Form-level validation (before API call)
+## 3. Validation Errors (User Input)
+
+**Rule**: Validate before API call, show inline field errors
 
 ```typescript
-const MovieForm: React.FC = () => {
+export const MovieForm: React.FC = () => {
+  const [formData, setFormData] = useState<MovieFormData>({ title: '', year: 2024 });
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const validateForm = (data: MovieFormData): boolean => {
@@ -206,28 +232,61 @@ const MovieForm: React.FC = () => {
     }
 
     if (data.year < 1900 || data.year > new Date().getFullYear() + 5) {
-      newErrors.year = 'Invalid year';
+      newErrors.year = 'Year must be between 1900 and ' + (new Date().getFullYear() + 5);
     }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = async (data: MovieFormData) => {
-    if (!validateForm(data)) return;
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
 
-    // Proceed with API call
+    if (!validateForm(formData)) {
+      return;
+    }
+
+    // Proceed with mutation
+    await createMutation.mutateAsync(formData);
   };
 
   return (
-    <form onSubmit={handleSubmit}>
+    <form onSubmit={handleSubmit} className="space-y-4">
       <div>
-        <label>Title</label>
-        <input type="text" name="title" />
+        <label className="block text-sm font-medium mb-1">Title</label>
+        <input
+          type="text"
+          value={formData.title}
+          onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+          className={cn(
+            "w-full rounded border px-3 py-2",
+            errors.title ? "border-red-500" : "border-neutral-700"
+          )}
+        />
         {errors.title && (
-          <p className="text-sm text-red-600">{errors.title}</p>
+          <p className="text-sm text-red-500 mt-1">{errors.title}</p>
         )}
       </div>
+
+      <div>
+        <label className="block text-sm font-medium mb-1">Year</label>
+        <input
+          type="number"
+          value={formData.year}
+          onChange={(e) => setFormData({ ...formData, year: parseInt(e.target.value) })}
+          className={cn(
+            "w-full rounded border px-3 py-2",
+            errors.year ? "border-red-500" : "border-neutral-700"
+          )}
+        />
+        {errors.year && (
+          <p className="text-sm text-red-500 mt-1">{errors.year}</p>
+        )}
+      </div>
+
+      <Button type="submit" disabled={createMutation.isPending}>
+        {createMutation.isPending ? 'Creating...' : 'Create Movie'}
+      </Button>
     </form>
   );
 };
@@ -235,10 +294,9 @@ const MovieForm: React.FC = () => {
 
 ---
 
-## Error Utilities
+## Error Utility Functions
 
-### Error Parsing
-**File**: `utils/errorHandling.ts`
+**Location**: `utils/errorHandling.ts`
 
 ```typescript
 /**
@@ -255,18 +313,6 @@ export function getErrorMessage(error: unknown): string {
     return String(error.message);
   }
   return 'An unknown error occurred';
-}
-
-/**
- * Parse API error response from fetch Response object
- */
-export async function parseApiError(response: Response): Promise<string> {
-  try {
-    const data = await response.json();
-    return data.message || data.error || `Request failed: ${response.statusText}`;
-  } catch {
-    return `Request failed: ${response.statusText}`;
-  }
 }
 
 /**
@@ -288,10 +334,7 @@ export function showSuccessToast(title: string, description?: string) {
     description,
   });
 }
-```
 
-### Network Error Detection
-```typescript
 /**
  * Check if error is network-related
  */
@@ -305,111 +348,15 @@ export function isNetworkError(error: unknown): boolean {
   }
   return false;
 }
-
-/**
- * Check if error is timeout
- */
-export function isTimeoutError(error: unknown): boolean {
-  if (error instanceof Error) {
-    return (
-      error.message.includes('timeout') ||
-      error.message.includes('timed out')
-    );
-  }
-  return false;
-}
-
-/**
- * Check if error is authentication-related
- */
-export function isAuthError(error: unknown): boolean {
-  if (error instanceof Error) {
-    return (
-      error.message.includes('401') ||
-      error.message.includes('403') ||
-      error.message.includes('Unauthorized')
-    );
-  }
-  return false;
-}
 ```
 
 ---
 
-## User Feedback Patterns
-
-### Toast Notifications (Mutations)
-**Use for**: User-initiated actions
-- Create, update, delete operations
-- Import/export actions
-- Settings changes
-
-```typescript
-// Success
-showSuccessToast('Movie created successfully');
-showSuccessToast('Settings saved', 'Changes will take effect immediately');
-
-// Error
-showErrorToast(error, 'Create movie');
-showErrorToast(error, 'Save settings');
-```
-
-### Inline Error Messages (Queries)
-**Use for**: Data loading failures
-- List views
-- Detail pages
-- Dashboard widgets
-
-```typescript
-{error && (
-  <ErrorMessage
-    message={error.message}
-    retry={() => refetch()}
-  />
-)}
-```
-
-### Form Validation Errors
-**Use for**: User input validation
-- Form fields
-- Search inputs
-- Filters
-
-```typescript
-<div className="space-y-2">
-  <input
-    type="text"
-    className={errors.title ? 'border-red-500' : ''}
-  />
-  {errors.title && (
-    <p className="text-sm text-red-600">{errors.title}</p>
-  )}
-</div>
-```
-
-### Empty States (Not Errors)
-**Use for**: No data (not an error condition)
-
-```typescript
-{data?.length === 0 && (
-  <EmptyState
-    icon={FilmIcon}
-    title="No movies found"
-    description="Add a library or scan for media to get started"
-    action={{
-      label: 'Add Library',
-      onClick: () => navigate('/libraries/new'),
-    }}
-  />
-)}
-```
-
----
-
-## Error Recovery Strategies
+## Recovery Strategies
 
 ### Automatic Retry (Queries)
-TanStack Query handles this automatically:
+TanStack Query handles automatically:
+
 ```typescript
 const { data, error } = useQuery({
   queryKey: ['movies'],
@@ -420,6 +367,7 @@ const { data, error } = useQuery({
 ```
 
 ### Manual Retry (User-Initiated)
+
 ```typescript
 const { data, error, refetch } = useMovies();
 
@@ -434,6 +382,7 @@ if (error) {
 ```
 
 ### Fallback Data (Graceful Degradation)
+
 ```typescript
 const { data: movies = [] } = useMovies(); // Default to empty array
 
@@ -446,7 +395,7 @@ return (
 ```
 
 ### Optimistic Updates Rollback
-Handled automatically by TanStack Query:
+
 ```typescript
 export const useUpdateMovie = () => {
   const queryClient = useQueryClient();
@@ -454,19 +403,17 @@ export const useUpdateMovie = () => {
   return useMutation({
     mutationFn: ({ id, updates }) => movieApi.update(id, updates),
     onMutate: async ({ id, updates }) => {
-      // Cancel queries and snapshot
       await queryClient.cancelQueries({ queryKey: ['movie', id] });
       const previous = queryClient.getQueryData(['movie', id]);
 
       // Optimistic update
-      queryClient.setQueryData(['movie', id], (old) => ({ ...old, ...updates }));
+      queryClient.setQueryData(['movie', id], (old: any) => ({ ...old, ...updates }));
 
-      // Return context for rollback
       return { previous };
     },
-    onError: (err, variables, context) => {
+    onError: (err, { id }, context) => {
       // Automatic rollback on error
-      queryClient.setQueryData(['movie', variables.id], context.previous);
+      queryClient.setQueryData(['movie', id], context?.previous);
       showErrorToast(err, 'Update movie');
     },
   });
@@ -475,90 +422,155 @@ export const useUpdateMovie = () => {
 
 ---
 
+## User Feedback Patterns
+
+### Toast Notifications (Mutations)
+**Use for**: User-initiated actions
+
+```typescript
+// Success
+toast.success('Movie created successfully');
+toast.success('Settings saved', { description: 'Changes will take effect immediately' });
+
+// Error
+toast.error('Create movie failed', { description: error.message });
+toast.error('Connection failed', { description: 'Check your network' });
+```
+
+### Inline Error Messages (Queries)
+**Use for**: Data loading failures
+
+```typescript
+{error && (
+  <ErrorMessage
+    title="Failed to load movies"
+    message={error.message}
+    retry={() => refetch()}
+  />
+)}
+```
+
+### Empty States (Not Errors)
+**Use for**: No data (not an error condition)
+
+```typescript
+{data?.length === 0 && (
+  <div className="text-center py-12">
+    <FontAwesomeIcon icon={faFilm} className="text-neutral-600 text-6xl mb-4" />
+    <h3 className="text-xl font-semibold mb-2">No movies found</h3>
+    <p className="text-neutral-400 mb-6">Add a library or scan for media to get started</p>
+    <Button onClick={() => navigate('/libraries/new')}>Add Library</Button>
+  </div>
+)}
+```
+
+---
+
+## WebSocket Error Handling
+
+```typescript
+// contexts/WebSocketContext.tsx
+export const WebSocketProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const [ws, setWs] = useState<WebSocket | null>(null);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!ws) return;
+
+    const handleError = (error: Event) => {
+      console.error('WebSocket error:', error);
+      setConnectionError('Real-time connection lost. Updates may be delayed.');
+    };
+
+    const handleClose = () => {
+      setConnectionError('Connection closed. Reconnecting...');
+      // Implement reconnection logic
+    };
+
+    ws.addEventListener('error', handleError);
+    ws.addEventListener('close', handleClose);
+
+    return () => {
+      ws.removeEventListener('error', handleError);
+      ws.removeEventListener('close', handleClose);
+    };
+  }, [ws]);
+
+  // Show connection error banner
+  return (
+    <>
+      {connectionError && (
+        <div className="bg-yellow-500/10 border-b border-yellow-500/20 px-4 py-2 text-center">
+          <p className="text-sm text-yellow-500">{connectionError}</p>
+        </div>
+      )}
+      {children}
+    </>
+  );
+};
+```
+
+---
+
 ## Global Error Handling
 
 ### Unhandled Promise Rejections
+
 ```typescript
-// App.tsx or main.tsx
+// main.tsx or App.tsx
 window.addEventListener('unhandledrejection', (event) => {
   console.error('Unhandled promise rejection:', event.reason);
 
-  // Optional: Show user feedback
   toast.error('An unexpected error occurred', {
     description: 'Please try refreshing the page',
   });
 
-  // Prevent default browser behavior
   event.preventDefault();
 });
 ```
 
-### WebSocket Errors
-```typescript
-// contexts/WebSocketContext.tsx
-useEffect(() => {
-  if (!ws) return;
-
-  const handleError = (error: Event) => {
-    console.error('WebSocket error:', error);
-    setConnectionError('Real-time connection lost. Updates may be delayed.');
-  };
-
-  ws.addEventListener('error', handleError);
-  return () => ws.removeEventListener('error', handleError);
-}, [ws]);
-```
-
 ---
 
-## Error Logging
+## Common Patterns
 
-### Development
+### Loading → Error → Empty → Data
+
 ```typescript
-if (import.meta.env.DEV) {
-  console.error('Error details:', {
-    message: error.message,
-    stack: error.stack,
-    context: 'useMovies hook',
-  });
-}
-```
+const Component = () => {
+  const { data, isLoading, error } = useMovies();
 
-### Production
-```typescript
-// TODO: Integrate error reporting service
-function logError(error: Error, context?: string) {
-  if (import.meta.env.PROD) {
-    // Sentry.captureException(error, { tags: { context } });
-  } else {
-    console.error(`[${context}]`, error);
-  }
-}
-```
+  if (isLoading) return <LoadingSpinner />;
+  if (error) return <ErrorMessage error={error} retry={refetch} />;
+  if (!data || data.length === 0) return <EmptyState />;
 
----
-
-## Testing Error Scenarios
-
-### Simulating Errors
-```typescript
-// For testing error boundaries and error states
-
-// Mock API error
-vi.spyOn(movieApi, 'getAll').mockRejectedValue(new Error('API error'));
-
-// Test error boundary
-const ThrowError = () => {
-  throw new Error('Test error');
+  return <DataView data={data} />;
 };
+```
 
-render(
-  <ErrorBoundary>
-    <ThrowError />
-  </ErrorBoundary>
-);
+### Form Submission with Error Handling
 
-expect(screen.getByText('Something went wrong')).toBeInTheDocument();
+```typescript
+const [errors, setErrors] = useState<Record<string, string>>({});
+const createMutation = useCreateMovie();
+
+const handleSubmit = async (data: FormData) => {
+  // Clear previous errors
+  setErrors({});
+
+  // Validate
+  if (!validateForm(data)) {
+    return;
+  }
+
+  try {
+    await createMutation.mutateAsync(data);
+    // Success toast shown by hook
+    navigate('/movies');
+  } catch (error) {
+    // Error toast shown by hook
+    // Keep form open for correction
+  }
+};
 ```
 
 ---
@@ -572,14 +584,15 @@ When handling errors:
 - [ ] Mutation errors show toast notification?
 - [ ] Validation errors shown inline?
 - [ ] User can retry failed operations?
-- [ ] Error messages are user-friendly?
-- [ ] Errors logged for debugging?
+- [ ] Error messages are user-friendly (not technical)?
 - [ ] Loading states shown before errors can occur?
+- [ ] Empty states distinct from error states?
 
 ---
 
-## Related Documentation
+## See Also
 
-- [Hooks Layer](./HOOKS_LAYER.md) - Error handling in mutations
-- [Components](./COMPONENTS.md) - Error UI patterns
-- [UI Standards](./UI_STANDARDS.md) - Error state styling
+- [STATE_MANAGEMENT.md](./STATE_MANAGEMENT.md) - Error handling in mutations
+- [COMPONENTS.md](./COMPONENTS.md) - Error UI patterns
+- [UI_STANDARDS.md](./UI_STANDARDS.md) - Error state styling
+- [API_LAYER.md](./API_LAYER.md) - ApiError class

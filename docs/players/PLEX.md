@@ -1,513 +1,536 @@
-# Plex Player
+# Plex Integration
 
-**API Version**: v2
-**Documentation**: https://www.plexapp.com/developer/
+**Purpose**: Plex Media Server integration via Plex Media Server API for library synchronization.
 
-## Overview
+**Status**:   Partial Implementation - Basic library scanning supported
 
-Plex Media Server provides a comprehensive REST API for library management, metadata updates, and playback control. Metarr integrates with Plex to maintain synchronized metadata and trigger targeted library updates.
+**Related Docs**:
+- [Player Overview](./OVERVIEW.md) - All player capabilities
+- [Kodi Integration](./KODI.md) - Reference for full implementation
+- [Publishing Phase](../phases/PUBLISHING.md) - Asset deployment workflow
+- [Plex API Docs](https://www.plexopedia.com/plex-media-server/api/) - Unofficial API reference
 
-## Configuration
+## Quick Reference
 
-```typescript
-interface PlexConfig {
-  host: string;                // Hostname or IP
-  port: number;                // Default: 32400
-  token: string;               // X-Plex-Token (required)
-  https: boolean;              // Use HTTPS
-  clientIdentifier: string;    // UUID for this client
-  product: string;             // "Metarr"
-  version: string;             // "1.0.0"
-  device: string;              // "Metarr Server"
+**Protocol**: Plex Media Server API (HTTP/HTTPS)
+
+**Port**: `32400` (default)
+
+**Sync Strategy**: Library-level scan (pull sync)
+
+**Key Features**:
+- Plex Media Server API
+- X-Plex-Token authentication
+- Library section scanning
+- Path mapping support
+
+**Limitations** (Current Implementation):
+- No item-level refresh
+- No real-time events (without Plex Pass webhooks)
+- No active player detection
+- Polling only for completion
+- Single instance per group
+
+**Prerequisites**:
+- Plex Media Server installed
+- Plex account
+- X-Plex-Token generated
+- Network accessible
+
+## Setup
+
+### Get X-Plex-Token
+
+**Method 1: Via XML (Easiest)**:
+
+1. **Navigate to Library**:
+   - Open Plex Web App
+   - Navigate to any library item
+
+2. **Get XML**:
+   - Click "..." menu on any item
+   - Click "Get Info"
+   - Click "View XML"
+
+3. **Extract Token**:
+   - Look at URL: `https://plex.tv/...?X-Plex-Token=YOUR_TOKEN_HERE`
+   - Copy token (long alphanumeric string)
+
+**Method 2: Via Plex Sign In (API)**:
+
+```bash
+# Sign in to get token
+curl -X POST 'https://plex.tv/users/sign_in.json' \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  -d 'user[login]=your_email@example.com' \
+  -d 'user[password]=your_password'
+```
+
+**Response**:
+```json
+{
+  "user": {
+    "authToken": "YOUR_PLEX_TOKEN_HERE",
+    "username": "your_username"
+  }
 }
 ```
 
-## Authentication
+**Method 3: Via Preferences (Advanced)**:
 
-### Getting a Plex Token
+1. Plex Web App ’ Settings ’ General
+2. Network ’ Show Advanced
+3. Temporary file ’ Right click ’ Inspect Element
+4. Find `X-Plex-Token` in network requests
 
-```typescript
-// Option 1: Username/Password authentication
-async function getPlexToken(username: string, password: string): Promise<string> {
-  const response = await fetch('https://plex.tv/users/sign_in.json', {
-    method: 'POST',
-    headers: {
-      'X-Plex-Client-Identifier': uuid(),
-      'X-Plex-Product': 'Metarr',
-      'X-Plex-Version': '1.0.0'
-    },
-    body: JSON.stringify({
-      user: {
-        login: username,
-        password: password
-      }
-    })
-  });
+### Add Plex to Metarr
 
-  const data = await response.json();
-  return data.user.authToken;
-}
+**Via UI**:
+1. Settings ’ Players ’ Add Player
+2. **Type**: Plex
+3. **Name**: "Plex Server"
+4. **Host**: `192.168.1.30`
+5. **Port**: `32400`
+6. **X-Plex-Token**: Paste token
+7. **Test Connection**
+8. **Save**
 
-// Option 2: PIN-based authentication
-async function getPlexPin(): Promise<PlexPin> {
-  const response = await fetch('https://plex.tv/pins.json', {
-    method: 'POST',
-    headers: getPlexHeaders()
-  });
-
-  return response.json();
-  // User authorizes at: https://app.plex.tv/auth#?code={pin.code}
-  // Then poll GET /pins/{id} until authorized
+**Via API**:
+```bash
+POST /api/players
+{
+  "name": "Plex Server",
+  "type": "plex",
+  "host": "192.168.1.30",
+  "port": 32400,
+  "plex_token": "your_plex_token_here",
+  "group_id": 3,
+  "path_mappings": []
 }
 ```
 
-### Request Headers
+## Plex Media Server API
 
-```typescript
-function getPlexHeaders(): Headers {
-  return {
-    'X-Plex-Token': config.token,
-    'X-Plex-Client-Identifier': config.clientIdentifier,
-    'X-Plex-Product': config.product,
-    'X-Plex-Version': config.version,
-    'X-Plex-Device': config.device,
-    'Accept': 'application/json'
-  };
-}
-```
+### Authentication
 
-## Key Endpoints
+All requests require X-Plex-Token:
 
-### Library Sections
-
-```typescript
-// Get all library sections
+```http
 GET /library/sections
-Response: {
-  MediaContainer: {
-    Directory: [{
-      key: string,           // Section ID
-      type: string,          // 'movie', 'show', 'artist'
-      title: string,         // Library name
-      location: [{
-        id: number,
-        path: string         // Filesystem path
-      }],
-      refreshing: boolean
-    }]
-  }
-}
-
-// Refresh library section
-GET /library/sections/{sectionId}/refresh
-
-// Partial scan specific path
-GET /library/sections/{sectionId}/refresh?path={encodedPath}
-
-// Get items in section
-GET /library/sections/{sectionId}/all
+Host: plex-ip:32400
+X-Plex-Token: your_plex_token_here
 ```
 
-### Metadata API
+**Headers**:
+- `X-Plex-Token`: Authentication token (required)
+- `Accept`: `application/json` (optional, default XML)
 
-```typescript
-// Get metadata by path
-GET /library/sections/{sectionId}/all?path={path}
+### Key Endpoints Used
 
-// Get item metadata
-GET /library/metadata/{ratingKey}
-Response: {
-  MediaContainer: {
-    Metadata: [{
-      ratingKey: string,
-      guid: string,          // plex://movie/5d776b2e88a0f1001f2ec767
-      type: 'movie',
-      title: string,
-      originalTitle: string,
-      summary: string,
-      rating: number,
-      year: number,
-      Media: [{              // Media files
-        Part: [{
-          file: string       // File path
-        }]
-      }]
-    }]
-  }
-}
+#### Library Sections
 
-// Update metadata
-PUT /library/metadata/{ratingKey}
-Query params:
-  - title={title}
-  - originalTitle={originalTitle}
-  - summary={summary}
-  - rating={rating}
-  - year={year}
-
-// Match to agent (TMDB/TVDB)
-PUT /library/metadata/{ratingKey}/match
-Query params:
-  - guid=com.plexapp.agents.themoviedb://{tmdbId}
-  - name={title}
+**Get Library Sections**:
+```http
+GET /library/sections
+X-Plex-Token: {token}
+Accept: application/json
 ```
 
-### Image Management
-
-```typescript
-// Upload poster
-PUT /library/metadata/{ratingKey}/posters
-Query params:
-  - url={imageUrl}    // Remote URL
-  OR
-POST /library/metadata/{ratingKey}/posters
-Body: Binary image data
-
-// Upload art (fanart/background)
-PUT /library/metadata/{ratingKey}/arts
-Query params:
-  - url={imageUrl}
-
-// Select active poster/art
-PUT /library/metadata/{ratingKey}
-Query params:
-  - includeExternalMedia=1
-  - thumb={posterRatingKey}  // Select specific poster
-  - art={artRatingKey}       // Select specific art
-```
-
-### Webhooks
-
-```typescript
-// Plex webhooks configuration (via web UI or API)
-POST /:/websockets/listen
-WebSocket message format: {
-  NotificationContainer: {
-    type: string,
-    PlaySessionStateNotification?: [{
-      sessionKey: string,
-      state: 'playing' | 'paused' | 'stopped'
-    }],
-    ActivityNotification?: [{
-      event: 'ended',
-      Activity: {
-        type: 'library.refresh.items'
+**Response**:
+```json
+{
+  "MediaContainer": {
+    "Directory": [
+      {
+        "key": "1",
+        "title": "Movies",
+        "type": "movie",
+        "Location": [
+          { "path": "/media/movies" }
+        ]
+      },
+      {
+        "key": "2",
+        "title": "TV Shows",
+        "type": "show",
+        "Location": [
+          { "path": "/media/tv" }
+        ]
       }
-    }]
+    ]
   }
 }
 ```
 
-## Library Sync Implementation
+**Scan Library Section**:
+```http
+GET /library/sections/{section_id}/refresh
+X-Plex-Token: {token}
+```
 
-```typescript
-class PlexPlayer implements IMediaPlayer {
-  async updateLibrary(items: MediaItem[]): Promise<void> {
-    // Get library sections
-    const sections = await this.getSections();
+**Scan Specific Path** (Partial Scan):
+```http
+GET /library/sections/{section_id}/refresh?path={url_encoded_path}
+X-Plex-Token: {token}
+```
 
-    // Group items by section
-    const itemsBySection = this.groupBySection(items, sections);
+#### Server Information
 
-    for (const [sectionId, sectionItems] of itemsBySection) {
-      if (config.targetedScan) {
-        // Targeted path scanning (efficient)
-        await this.scanPaths(sectionId, sectionItems);
-      } else {
-        // Full section refresh (slower)
-        await this.refreshSection(sectionId);
+**Get Server Identity**:
+```http
+GET /identity
+X-Plex-Token: {token}
+```
+
+**Response**:
+```json
+{
+  "MediaContainer": {
+    "machineIdentifier": "abc123...",
+    "version": "1.32.8.7639"
+  }
+}
+```
+
+**Get Sessions** (Active Playback):
+```http
+GET /status/sessions
+X-Plex-Token: {token}
+```
+
+**Response** (when someone watching):
+```json
+{
+  "MediaContainer": {
+    "Metadata": [
+      {
+        "type": "movie",
+        "title": "The Matrix",
+        "Player": {
+          "state": "playing",
+          "machineIdentifier": "client-id"
+        }
       }
-    }
-  }
-
-  private async scanPaths(
-    sectionId: string,
-    items: MediaItem[]
-  ): Promise<void> {
-    // Plex supports scanning specific paths
-    for (const item of items) {
-      const plexPath = this.mapPath(item.library_path);
-      const encodedPath = encodeURIComponent(plexPath);
-
-      await this.api.get(
-        `/library/sections/${sectionId}/refresh?path=${encodedPath}`
-      );
-    }
-  }
-
-  private async refreshSection(sectionId: string): Promise<void> {
-    await this.api.get(`/library/sections/${sectionId}/refresh`);
-
-    // Monitor refresh status
-    await this.waitForRefreshComplete(sectionId);
-  }
-
-  private async waitForRefreshComplete(sectionId: string): Promise<void> {
-    let refreshing = true;
-    let attempts = 0;
-
-    while (refreshing && attempts < 60) {
-      const sections = await this.getSections();
-      const section = sections.find(s => s.key === sectionId);
-
-      refreshing = section?.refreshing || false;
-
-      if (refreshing) {
-        await sleep(5000);
-        attempts++;
-      }
-    }
+    ]
   }
 }
 ```
 
-## Metadata Matching
+## Sync Workflow
 
-```typescript
-async function matchMovieToAgent(
-  movie: Movie,
-  plexItem: PlexMetadata
-): Promise<void> {
-  // Match to TMDB
-  if (movie.tmdb_id) {
-    await plex.put(`/library/metadata/${plexItem.ratingKey}/match`, {
-      guid: `com.plexapp.agents.themoviedb://${movie.tmdb_id}`,
-      name: movie.title
-    });
-  }
+### Library-Level Scan (Current Implementation)
 
-  // Update metadata fields
-  await plex.put(`/library/metadata/${plexItem.ratingKey}`, {
-    title: movie.title,
-    originalTitle: movie.original_title,
-    summary: movie.plot,
-    rating: movie.rating,
-    year: movie.year,
-    tagline: movie.tagline,
+**Goal**: Trigger Plex to scan library section
 
-    // Genres (pipe-separated)
-    genre: movie.genres.map(g => g.name).join('|'),
+**Steps**:
+1. Metarr publishes assets for "The Matrix (1999)"
+2. Metarr determines library section (Movies = section 1)
+3. Metarr sends `GET /library/sections/1/refresh`
+4. Plex queues scan
+5. Metarr polls for completion (timeout after 60 seconds)
+6. Plex scans entire Movies library
+7. Metarr reports success on timeout (assumes complete)
 
-    // Directors (pipe-separated)
-    director: movie.directors.map(d => d.name).join('|'),
+**Limitations**:
+- Scans entire section, not just changed item
+- No reliable completion detection
+- Timeout-based success (unreliable)
+- Slow for large libraries
 
-    // Writers (pipe-separated)
-    writer: movie.writers.map(w => w.name).join('|')
-  });
-}
+### Path-Specific Scan (Partial Implementation)
+
+**Goal**: Scan specific directory
+
+**Endpoint**: `GET /library/sections/{id}/refresh?path={path}`
+
+**Example**:
+```http
+GET /library/sections/1/refresh?path=%2Fmedia%2Fmovies%2FThe%20Matrix%20(1999)
+X-Plex-Token: {token}
 ```
 
-## Advanced Metadata
+**Status**: Implemented but requires accurate path mapping
 
-```typescript
-// Analyze media files (deep analysis)
-PUT /library/metadata/{ratingKey}/analyze
-
-// Fix match (re-match to agent)
-PUT /library/metadata/{ratingKey}/unmatch
-PUT /library/metadata/{ratingKey}/match?guid={guid}
-
-// Refresh metadata from agent
-PUT /library/metadata/{ratingKey}/refresh
-
-// Get available agents
-GET /system/agents
-Response: {
-  MediaContainer: {
-    Agent: [{
-      name: string,
-      identifier: string,   // com.plexapp.agents.themoviedb
-      primary: boolean
-    }]
-  }
-}
-```
+**Advantages**:
+- Faster than full section scan
+- More targeted
+- Better for automation
 
 ## Path Mapping
 
-```typescript
-function mapMetarrToPlex(metarrPath: string): string {
-  // Plex may see different paths than Metarr
-  const mapping = config.pathMappings.find(m =>
-    metarrPath.startsWith(m.metarr_path)
-  );
+Critical for Plex due to containerization and network shares.
 
-  if (mapping) {
-    return metarrPath.replace(
-      mapping.metarr_path,
-      mapping.plex_path
-    );
-  }
+### Docker Scenario
 
-  return metarrPath;
-}
-
-// Example mappings:
-// Metarr:  /data/media/movies/The Matrix (1999)/
-// Plex:    /movies/The Matrix (1999)/   (Docker volume mount)
+**Metarr** (container):
+```
+/media/movies/The Matrix (1999)/
 ```
 
-## Error Handling
+**Plex** (different container):
+```
+/data/movies/The Matrix (1999)/
+```
 
-```typescript
-class PlexProvider {
-  async request(method: string, endpoint: string, options?: any): Promise<any> {
-    try {
-      const url = this.buildUrl(endpoint);
-      const response = await fetch(url, {
-        method,
-        headers: getPlexHeaders(),
-        ...options
-      });
-
-      if (response.status === 401) {
-        throw new AuthError('Invalid Plex token');
-      }
-
-      if (response.status === 404) {
-        return null; // Item not found is common
-      }
-
-      if (!response.ok) {
-        const error = await response.text();
-        throw new PlayerError(`Plex error ${response.status}: ${error}`);
-      }
-
-      const contentType = response.headers.get('content-type');
-      if (contentType?.includes('application/json')) {
-        return response.json();
-      }
-
-      return response.text();
-
-    } catch (error) {
-      if (error.code === 'ECONNREFUSED') {
-        throw new PlayerError('Plex server unavailable');
-      }
-      throw error;
+**Path Mapping**:
+```json
+{
+  "path_mappings": [
+    {
+      "metarr_path": "/media/movies",
+      "player_path": "/data/movies"
     }
-  }
+  ]
 }
 ```
 
-## Performance Optimization
+### Remote Server Scenario
 
-```typescript
-interface PlexOptimization {
-  // Scanning strategy
-  targetedScan: true,         // Path-specific vs full section
-  parallelScans: 3,           // Concurrent scan operations
-
-  // Metadata updates
-  batchMetadata: false,       // Plex doesn't support batch
-  asyncRefresh: true,         // Don't wait for completion
-
-  // Connection
-  keepAlive: true,
-  timeout: 30000,
-
-  // Caching
-  cacheSections: true,        // Cache library sections
-  cacheExpiry: 3600000       // 1 hour
-}
-
-async function optimizedUpdate(items: MediaItem[]): Promise<void> {
-  // Sort by section to minimize section lookups
-  const sorted = items.sort((a, b) =>
-    a.section_id.localeCompare(b.section_id)
-  );
-
-  // Process in parallel up to limit
-  const chunks = chunk(sorted, config.parallelScans);
-  for (const chunk of chunks) {
-    await Promise.all(
-      chunk.map(item => plex.scanPath(item))
-    );
-  }
-}
+**Metarr** (local):
+```
+/mnt/nas/media/movies/
 ```
 
-## Activity Monitoring
+**Plex** (remote server):
+```
+/volume1/media/movies/
+```
 
-```typescript
-// Get current activity
-GET /activities
-Response: {
-  MediaContainer: {
-    Activity: [{
-      uuid: string,
-      type: string,           // 'library.refresh.items'
-      cancellable: boolean,
-      userID: number,
-      title: string,
-      subtitle: string,
-      progress: number        // 0-100
-    }]
-  }
-}
-
-// Cancel activity
-DELETE /activities/{uuid}
-
-// Monitor refresh progress
-async function monitorRefresh(activityId: string): Promise<void> {
-  let activity;
-
-  do {
-    const activities = await plex.get('/activities');
-    activity = activities.MediaContainer.Activity.find(
-      a => a.uuid === activityId
-    );
-
-    if (activity) {
-      console.log(`Refresh progress: ${activity.progress}%`);
-      await sleep(1000);
+**Path Mapping**:
+```json
+{
+  "path_mappings": [
+    {
+      "metarr_path": "/mnt/nas/media",
+      "player_path": "/volume1/media"
     }
-  } while (activity);
+  ]
 }
 ```
 
-## Best Practices
+## Metadata and Plex
 
-1. **Use targeted path scans** for efficiency
-2. **Match to agents** (TMDB/TVDB) for better metadata
-3. **Cache library sections** to reduce API calls
-4. **Monitor activities** for long-running operations
-5. **Handle token expiry** with re-authentication
-6. **Map paths correctly** for Docker/network setups
-7. **Respect rate limits** (no official limits, but be reasonable)
+Plex has its own metadata system but respects local assets:
 
-## Plex-Specific Features
+**Plex Agents**:
+- Plex Movie (default): Plex metadata database
+- Plex Series (default): Plex metadata database
+- Personal Media: Local files only
 
-```typescript
-interface PlexFeatures {
-  // Collections
-  collections: {
-    create: true,
-    autoCollections: true,    // Automatic based on metadata
-    smartCollections: true    // Filter-based collections
-  },
+**Local Assets Priority**:
+1. Configure library ’ Advanced ’ Prefer local metadata
+2. Plex reads local assets (posters, fanart)
+3. Plex may override with own metadata unless locked
 
-  // Intro detection
-  intros: {
-    detect: true,
-    skip: true
-  },
+**Recommended**: Use "Personal Media" agent or enable "Prefer local metadata" for Metarr-managed libraries.
 
-  // Thumbnails
-  thumbnails: {
-    generate: true,           // Video thumbnails
-    interval: 'auto'          // Auto or specific seconds
-  },
+**Image Assets** (Plex Naming):
+- `poster.jpg` or `folder.jpg`: Primary image
+- `art.jpg` or `fanart.jpg`: Background
+- `banner.jpg`: Wide banner
+- `thumb.jpg`: Thumbnail
 
-  // Streaming
-  transcoding: true,
-  optimizedVersions: true,
-  bandwidth: 'unlimited'
+**NFO Files**:
+- Plex does NOT read Kodi NFO files by default
+- Requires "XBMCnfoMoviesImporter" agent (community plugin)
+- Metarr writes NFOs for Kodi/Jellyfin compatibility
+
+## Plex Pass Features
+
+**Webhooks** (Plex Pass Subscribers Only):
+- Real-time notifications on library changes
+- Webhook on scan completion
+- Webhook on playback events
+
+**Setup Webhooks**:
+1. Plex Settings ’ Webhook
+2. Add webhook URL: `http://metarr-ip:3000/api/webhooks/plex`
+3. Metarr receives events in real-time
+
+**Events**:
+- `library.new`: New item added
+- `library.on.deck`: Item added to on deck
+- `media.play`: Playback started
+- `media.stop`: Playback stopped
+
+**Status**: Webhook support not yet implemented in Metarr.
+
+## Limitations
+
+### Current Implementation
+
+**No Item-Level Refresh**:
+- Cannot refresh specific movie/show
+- Must scan entire section or path
+- Slower than Kodi item-level sync
+
+**No Event System** (Without Plex Pass):
+- No scan completion events
+- Polling-based with timeout
+- Webhook support not implemented
+
+**No Active Player Detection**:
+- `/status/sessions` not queried
+- Cannot skip sync during playback
+- May cause buffering
+
+**Single Instance Only**:
+- One Plex server per group
+- Cannot sync multiple Plex servers
+- Enforced by group `max_members: 1`
+
+### Planned Improvements
+
+**Webhook Integration** (Priority 1):
+- Receive real-time scan completion
+- Detect playback events
+- Skip sync if user watching
+
+**Session Monitoring** (Priority 2):
+- Query `/status/sessions`
+- Skip sync during active playback
+- Better user experience
+
+**Metadata Agent** (Priority 3):
+- Plex agent to read Metarr metadata
+- Full integration without "Prefer local metadata"
+- Advanced use case
+
+## Configuration
+
+### Player Settings
+
+```json
+{
+  "name": "Plex Server",
+  "type": "plex",
+  "host": "192.168.1.30",
+  "port": 32400,
+  "use_https": false,
+  "plex_token": "your_plex_token_here",
+  "timeout_seconds": 60,
+  "path_mappings": []
 }
 ```
 
-## Related Documentation
+### Group Settings
 
-- [Player Sync Phase](../phases/PLAYER_SYNC.md) - How Plex is integrated
-- [Path Mapping](../technical/PATH_MAPPING.md) - Path translation details
+```json
+{
+  "name": "Plex",
+  "type": "plex",
+  "max_members": 1,
+  "skip_active": false,
+  "sync_strategy": "library-level"
+}
+```
+
+### Library Settings (Plex)
+
+For best Metarr integration:
+
+1. **Library ’ Edit ’ Advanced**:
+   -  Prefer local metadata
+   -  Enable local assets only (optional)
+
+2. **Agent**: Consider "Personal Media" for full local control
+
+## Troubleshooting
+
+### "Authentication failed"
+
+**Causes**:
+- Invalid X-Plex-Token
+- Token expired
+- Wrong Plex server
+
+**Solutions**:
+1. Regenerate X-Plex-Token
+2. Verify token in browser: `http://plex-ip:32400/library/sections?X-Plex-Token=YOUR_TOKEN`
+3. Check host/port configuration
+
+### "Library scan not completing"
+
+**Symptoms**: Timeout after 60 seconds
+
+**Cause**: Large library still scanning
+
+**Solutions**:
+1. Increase timeout in settings
+2. Use path-specific scan
+3. Check Plex dashboard for scan status
+
+### "Connection refused"
+
+**Causes**:
+- Plex Media Server not running
+- Firewall blocking port 32400
+- Wrong host/port
+
+**Solutions**:
+1. Verify Plex accessible: `http://plex-ip:32400/web`
+2. Check firewall rules
+3. Verify host/port configuration
+
+### "Path not found"
+
+**Causes**:
+- Path mapping incorrect
+- Plex can't access path
+- Permission issues
+
+**Solutions**:
+1. Configure path mappings
+2. Check Plex library paths in Plex settings
+3. Verify Plex user has file permissions
+
+### Plex Ignoring Local Assets
+
+**Symptoms**: Plex uses own metadata despite local assets present
+
+**Causes**:
+- "Prefer local metadata" disabled
+- Plex agent overriding
+- Assets not named correctly
+
+**Solutions**:
+1. Enable "Prefer local metadata" in library settings
+2. Use "Personal Media" agent
+3. Verify image naming matches Plex conventions
+4. Force refresh: Library ’ ... ’ Refresh All Metadata
+
+## Plex Version Compatibility
+
+| Plex Version | API | Support |
+|--------------|-----|---------|
+| **1.32.x** | Latest |  Tested |
+| **1.30.x - 1.31.x** | Compatible |  Compatible |
+| **1.29.x and older** | Legacy |   Untested |
+
+**Recommendation**: Latest Plex Media Server for best experience.
+
+## Future Enhancements
+
+**Priority 1**:
+- [ ] Webhook integration (Plex Pass)
+- [ ] Real-time scan completion
+- [ ] Playback event handling
+
+**Priority 2**:
+- [ ] Session monitoring
+- [ ] Skip sync during playback
+- [ ] Active player detection
+
+**Priority 3**:
+- [ ] Custom Plex agent
+- [ ] Item-level metadata updates
+- [ ] Multiple instance support
+
+## See Also
+
+- [Player Overview](./OVERVIEW.md) - All player capabilities
+- [Kodi Integration](./KODI.md) - Full-featured reference implementation
+- [Jellyfin Integration](./JELLYFIN.md) - Similar REST API player
+- [Publishing Phase](../phases/PUBLISHING.md) - Asset deployment workflow
+- [Plex Media Server API](https://www.plexopedia.com/plex-media-server/api/) - Unofficial API docs
+- [Plex Support](https://support.plex.tv/) - Official Plex documentation

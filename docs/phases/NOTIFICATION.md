@@ -2,28 +2,40 @@
 
 **Purpose**: Send filtered notifications about phase completion or workflow events through configured notification channels.
 
-**Status**: Design phase, implementation pending
+**Related Docs**:
+- Parent: [Phase Overview](OVERVIEW.md)
+- Related: [Kodi Player](../players/KODI.md) (for on-screen notifications)
+
+## Quick Reference
+
+- **Independent phase**: Runs outside the main automation chain
+- **Event-driven**: Any phase can trigger notification jobs
+- **Idempotent**: Multiple notification attempts cause no harm
+- **Filtered**: Only sends notifications matching channel configuration
+- **Fault-tolerant**: Failed channels don't block others
+- **Configurable**: Per-channel event filtering
+
+---
 
 ## Overview
 
 The notification phase operates independently from the main automation chain. Any phase can trigger a notification job when significant events occur (completion, failure, etc.), and the completion of an entire workflow can trigger a summary notification. This allows users to stay informed about media library changes without being overwhelmed by notification fatigue.
 
-## Phase Rules
+**Key Difference**: Unlike the main phase chain (Scan → Enrich → Publish → Sync), notification runs independently based on events.
 
-1. **Idempotent**: Multiple notification attempts cause no harm
-2. **Filtered**: Only sends notifications matching channel configuration
-3. **Fault-tolerant**: Failed channels don't block others
-4. **Configurable**: Per-channel event filtering
-5. **Observable**: Reports notification delivery status
-6. **Independent**: Runs outside the main phase chain
+---
 
 ## Triggers
 
-- **Phase completion**: Any phase can create notification jobs (scan, enrich, publish, player sync)
-- **Phase failure**: Error conditions trigger notifications
-- **Workflow completion**: End-to-end automation chain completion
-- **Manual**: User explicitly requests notification for specific events
-- **Verification**: After verification finds and repairs issues
+| Trigger Type | Description | Priority |
+|--------------|-------------|----------|
+| **Phase completion** | Any phase can create notification jobs | 1 (LOWEST) |
+| **Phase failure** | Error conditions trigger notifications | 5 (NORMAL) |
+| **Workflow completion** | End-to-end automation chain completion | 1 (LOWEST) |
+| **Manual** | User explicitly requests notification | 10 (HIGH) |
+| **Verification** | After verification finds and repairs issues | 5 (NORMAL) |
+
+---
 
 ## Process Flow
 
@@ -54,6 +66,8 @@ The notification phase operates independently from the main automation chain. An
    └── Mark notification job as complete
 ```
 
+---
+
 ## Notification Event Types
 
 All event types use **past tense naming** to indicate completed actions.
@@ -74,6 +88,8 @@ All event types use **past tense naming** to indicate completed actions.
 | `upgrade_completed` | Media upgraded to better quality | Yes |
 | `error_occurred` | System errors, provider failures | Yes |
 
+---
+
 ## Notification Channels
 
 ### Supported Channels
@@ -84,7 +100,7 @@ All event types use **past tense naming** to indicate completed actions.
 4. **Telegram** - Bot API integration
 5. **Slack** - Webhook integration
 
-**Note:** Email/SMTP intentionally not supported due to complexity.
+**Note**: Email/SMTP intentionally not supported due to complexity.
 
 ### Channel Configuration
 
@@ -97,9 +113,9 @@ interface NotificationChannelConfig {
 }
 ```
 
-## Implementation Details
+---
 
-### Event Payload Structure
+## Event Payload Structure
 
 ```typescript
 interface NotificationEvent {
@@ -118,60 +134,20 @@ interface NotificationEvent {
 }
 ```
 
-### Notification Service
+---
 
-```typescript
-async function sendNotifications(event: NotificationEvent): Promise<void> {
-  // Load enabled channels
-  const channels = await db.notification_config.findAll({
-    where: { enabled: true },
-  });
+## Channel Implementations
 
-  // Filter channels interested in this event type
-  const interestedChannels = channels.filter(channel =>
-    channel.event_types.includes(event.type)
-  );
-
-  if (interestedChannels.length === 0) {
-    logger.debug(`No channels interested in event: ${event.type}`);
-    return;
-  }
-
-  // Send to all interested channels in parallel
-  const results = await Promise.allSettled(
-    interestedChannels.map(channel => sendToChannel(channel, event))
-  );
-
-  // Log results
-  for (let i = 0; i < results.length; i++) {
-    const result = results[i];
-    const channel = interestedChannels[i];
-
-    if (result.status === 'fulfilled') {
-      logger.info(`Notification sent: ${channel.channel} - ${event.type}`);
-    } else {
-      logger.error(
-        `Notification failed: ${channel.channel} - ${event.type}`,
-        result.reason
-      );
-    }
-  }
-}
-```
-
-### Channel Implementations
-
-#### Kodi On-Screen
+### Kodi On-Screen
 
 ```typescript
 async function sendKodiNotification(
   event: NotificationEvent,
   config: KodiNotificationConfig
 ): Promise<void> {
-  const players =
-    config.player_ids === 'all'
-      ? await db.getAllKodiPlayers()
-      : await db.getKodiPlayers(config.player_ids);
+  const players = config.player_ids === 'all'
+    ? await db.getAllKodiPlayers()
+    : await db.getKodiPlayers(config.player_ids);
 
   for (const player of players) {
     await kodiClient.rpc(player, 'GUI.ShowNotification', {
@@ -184,7 +160,7 @@ async function sendKodiNotification(
 }
 ```
 
-#### Discord Webhook
+### Discord Webhook
 
 ```typescript
 async function sendDiscordNotification(
@@ -215,7 +191,7 @@ async function sendDiscordNotification(
 }
 ```
 
-#### Pushover
+### Pushover
 
 ```typescript
 async function sendPushoverNotification(
@@ -238,7 +214,7 @@ async function sendPushoverNotification(
 }
 ```
 
-#### Telegram
+### Telegram
 
 ```typescript
 async function sendTelegramNotification(
@@ -259,7 +235,7 @@ async function sendTelegramNotification(
 }
 ```
 
-#### Slack
+### Slack
 
 ```typescript
 async function sendSlackNotification(
@@ -278,6 +254,8 @@ async function sendSlackNotification(
   });
 }
 ```
+
+---
 
 ## Configuration
 
@@ -326,62 +304,64 @@ interface NotificationConfig {
 }
 ```
 
+**Configuration via UI**: Settings → Notifications
+**Configuration via API**: `GET/PATCH /api/v1/settings/notifications`
+
+---
+
 ## Error Handling
 
-- **Channel offline**: Log failure, don't retry
-- **Invalid credentials**: Disable channel, alert user
-- **Timeout**: Log warning, continue with other channels
-- **Rate limited**: Back off and retry once
-- **Network error**: Log failure, continue with other channels
+| Error Type | Behavior |
+|------------|----------|
+| **Channel offline** | Log failure, don't retry |
+| **Invalid credentials** | Disable channel, alert user |
+| **Timeout** | Log warning, continue with other channels |
+| **Rate limited** | Back off and retry once |
+| **Network error** | Log failure, continue with other channels |
+
+---
 
 ## Performance Considerations
 
 - **Parallel delivery**: Send to all channels simultaneously
 - **Timeout protection**: 10-second timeout per channel
 - **Non-blocking**: Notification failures don't block workflow completion
+- **Debouncing**: Batch similar events within 30 seconds (future enhancement)
 
-## Activity Logging
+---
 
-```typescript
-// Log notification activity
-await db.activity_log.create({
-  timestamp: new Date().toISOString(),
-  event_type: 'notification_sent',
-  severity: 'info',
-  description: `Notification sent: ${event.title}`,
-  metadata: {
-    notification_type: event.type,
-    channels_sent: ['discord', 'kodi'],
-    channels_failed: [],
-  },
-});
-```
+## Trigger Patterns
 
-## Related Documentation
+### Individual Phase Notifications
 
-- [Activity Logging](../archive/NOTIFICATIONS_AND_LOGGING.md) - Full notification system details
-- [Kodi Player](../players/KODI.md) - Kodi JSON-RPC integration
-- [Database Schema](../DATABASE.md) - Notification configuration tables
-- [API Architecture](../API.md) - Notification endpoints
+Each phase can create notification jobs for significant events:
+- `scan_completed`, `enrichment_failed`, `publishing_completed`
+
+### Workflow Completion Notifications
+
+The final phase (Player Sync) can create a summary notification:
+- Includes results from the entire automation chain
+- Example: "Download processed: The Matrix (1999) - scanned, enriched, published, synced"
+
+### Independent Notifications
+
+- Verification phase creates notifications outside the chain
+- Manual user actions can trigger notifications
+- System errors can generate immediate notifications
+
+---
 
 ## Phase Independence
 
 The notification phase is **not part of the sequential automation chain**. Instead, it operates as an independent job that can be triggered by any phase or workflow event.
 
-### Trigger Patterns
+**Chain Position**: Not in chain (independent)
 
-**Individual Phase Notifications:**
-- Each phase can create notification jobs for significant events
-- Example: `scan_completed`, `enrichment_failed`, `publishing_completed`
+---
 
-**Workflow Completion Notifications:**
-- The final phase (Player Sync) can create a summary notification
-- Includes results from the entire automation chain
-- Example: "Download processed: The Matrix (1999) - scanned, enriched, published, synced"
+## See Also
 
-**Independent Notifications:**
-- Verification phase creates notifications outside the chain
-- Manual user actions can trigger notifications
-- System errors can generate immediate notifications
-
-The [Verification Phase](VERIFICATION.md) also runs independently on schedule and is not part of the standard automation chain.
+- [Phase Overview](OVERVIEW.md) - Phase system architecture
+- [Verification Phase](VERIFICATION.md) - Another independent phase
+- [Kodi Player](../players/KODI.md) - Kodi JSON-RPC integration for on-screen notifications
+- [Database Schema](../architecture/DATABASE.md) - Notification configuration tables

@@ -2,26 +2,39 @@
 
 **Purpose**: Ensure consistency between cache and library, detecting and repairing discrepancies to maintain data integrity.
 
-**Status**: Design phase, implementation pending
+**Related Docs**:
+- Parent: [Phase Overview](OVERVIEW.md)
+- Related: [Two-Copy System](../architecture/ASSET_MANAGEMENT/TWO_COPY_SYSTEM.md), [Database Schema](../architecture/DATABASE.md)
+
+## Quick Reference
+
+- **Independent phase**: Runs outside the main automation chain
+- **Self-healing**: Automatically repairs detected issues
+- **Idempotent**: Multiple verifications cause no harm
+- **Non-destructive**: Preserves user files unless configured otherwise
+- **Comprehensive**: Checks both existence and integrity
+- **Observable**: Reports detailed verification results
+
+---
 
 ## Overview
 
-The verification phase is a maintenance operation that ensures Metarr's desired state (cache + database) matches the actual state (library filesystem). It detects unauthorized changes, missing files, and corruption, then repairs issues to maintain consistency.
+Verification is a maintenance operation that ensures Metarr's desired state (cache + database) matches the actual state (library filesystem). It detects unauthorized changes, missing files, and corruption, then repairs issues to maintain consistency.
 
-## Phase Rules
+**Key Difference**: Unlike the main phase chain (Scan → Enrich → Publish → Sync), verification runs independently on schedule or manual trigger.
 
-1. **Idempotent**: Multiple verifications cause no harm
-2. **Self-healing**: Automatically repairs detected issues
-3. **Non-destructive**: Preserves user files unless configured otherwise
-4. **Comprehensive**: Checks both existence and integrity
-5. **Observable**: Reports detailed verification results
+---
 
 ## Triggers
 
-- **Manual**: User clicks "Verify Library" or "Verify Movie"
-- **Scheduled**: Daily/weekly maintenance (configurable)
-- **Post-incident**: After crash or unexpected shutdown
-- **Selective**: Verify specific items or directories
+| Trigger Type | Description | Priority |
+|--------------|-------------|----------|
+| **Manual** | User clicks "Verify Library" or "Verify Movie" | 10 (HIGH) |
+| **Scheduled** | Daily/weekly maintenance (configurable) | 3 (LOW) |
+| **Post-incident** | After crash or unexpected shutdown | 5 (NORMAL) |
+| **Selective** | Verify specific items or directories | 10 (HIGH) |
+
+---
 
 ## Process Flow
 
@@ -36,6 +49,7 @@ The verification phase is a maintenance operation that ensures Metarr's desired 
    ├── Verify file sizes match
    ├── Check SHA256 hashes (optional)
    ├── Validate NFO structure
+   └── Validate image readability
 
 3. DISCREPANCY DETECTION
    ├── Missing from library (in cache, not library)
@@ -55,34 +69,33 @@ The verification phase is a maintenance operation that ensures Metarr's desired 
    └── Update verification timestamp
 ```
 
-## Verification Process
-
-- Verify expected files present
-- SHA256 hash validation
-- NFO structure parsing
-- Image dimension validation
+---
 
 ## Discrepancy Types & Actions
 
 ```typescript
 enum DiscrepancyType {
-  MISSING_IN_LIBRARY, // File in cache but not library
-  MISSING_IN_CACHE, // File in library but not cache
-  HASH_MISMATCH, // Different content (deep check)
-  UNAUTHORIZED_CHANGE, // Modified outside Metarr
-  ORPHANED_FILE, // Unknown file in library
-  CORRUPTED_FILE, // Cannot read/parse file
-  WRONG_NAMING, // Incorrect Kodi naming
+  MISSING_IN_LIBRARY,      // File in cache but not library
+  MISSING_IN_CACHE,        // File in library but not cache
+  HASH_MISMATCH,           // Different content (deep check)
+  UNAUTHORIZED_CHANGE,     // Modified outside Metarr
+  ORPHANED_FILE,           // Unknown file in library
+  CORRUPTED_FILE,          // Cannot read/parse file
+  WRONG_NAMING,            // Incorrect Kodi naming
 }
 
 interface RepairAction {
   type: DiscrepancyType;
   action: 'restore' | 'update' | 'remove' | 'recycle' | 'ignore';
-  source?: string; // Where to restore from
-  target?: string; // Where to restore to
-  reason: string; // Human-readable explanation
+  source?: string;
+  target?: string;
+  reason: string;
 }
+```
 
+### Repair Decision Logic
+
+```typescript
 async function planRepair(discrepancy: Discrepancy): Promise<RepairAction> {
   switch (discrepancy.type) {
     case DiscrepancyType.MISSING_IN_LIBRARY:
@@ -111,9 +124,18 @@ async function planRepair(discrepancy: Discrepancy): Promise<RepairAction> {
         target: discrepancy.library_path,
         reason: 'File corrupted, restoring from cache',
       };
+
+    case DiscrepancyType.MISSING_IN_CACHE:
+      return {
+        action: 'remove',
+        target: discrepancy.library_path,
+        reason: 'No cache record, removing from library',
+      };
   }
 }
 ```
+
+---
 
 ## File Integrity Verification
 
@@ -139,7 +161,7 @@ async function verifyFileIntegrity(file: LibraryFile): Promise<IntegrityResult> 
     result.issues.push(`Size mismatch: ${stats.size} != ${file.expected_size}`);
   }
 
-  // Check hash
+  // Check hash (optional - expensive)
   if (file.content_hash) {
     const hash = await calculateSHA256(file.path);
     if (hash !== file.content_hash) {
@@ -179,6 +201,8 @@ async function verifyFileIntegrity(file: LibraryFile): Promise<IntegrityResult> 
   return result;
 }
 ```
+
+---
 
 ## Batch Verification
 
@@ -246,29 +270,43 @@ async function verifyLibrary(options: VerifyOptions): Promise<VerifyReport> {
 }
 ```
 
+---
+
 ## Configuration
 
 ```typescript
 interface VerificationConfig {
   // Schedule
-  enabled: boolean; // Enable verification
-  schedule: string; // Cron expression ('0 3 * * *')
+  enabled: boolean;           // Enable verification (default: true)
+  schedule: string;           // Cron expression (default: '0 3 * * *' - 3 AM daily)
 
-  // Repair
-  autoRepair: boolean; // Fix issues automatically
+  // Repair behavior
+  autoRepair: boolean;        // Fix issues automatically (default: true)
+  preserveUserFiles: boolean; // Don't delete unknown files (default: true)
+  hashCheck: boolean;         // Verify SHA256 hashes (default: false - expensive)
 }
 ```
 
+**Configuration via UI**: Settings → General → Verification
+**Configuration via API**: `GET/PATCH /api/v1/settings/verification`
+
+---
+
 ## Performance Optimizations
 
-- **Parallel processing**: Verify multiple files simultaneously
+- **Parallel processing**: Verify multiple files simultaneously (default: 10 concurrent)
 - **Batch database queries**: Reduce round trips
 - **Progress streaming**: Real-time updates via WebSocket
+- **Hash check optional**: SHA256 verification disabled by default (expensive)
+- **Incremental verification**: Skip recently verified items (7-day cache)
+
+---
 
 ## Monitoring
 
+### Real-Time Progress (WebSocket)
+
 ```typescript
-// Real-time progress via WebSocket
 socket.emit('verification:progress', {
   phase: 'checking',
   current: 150,
@@ -277,8 +315,11 @@ socket.emit('verification:progress', {
   issuesFound: 5,
   repairsCompleted: 3,
 });
+```
 
-// Summary notification
+### Summary Notification
+
+```typescript
 socket.emit('verification:complete', {
   duration: '15 minutes',
   itemsChecked: 1000,
@@ -288,6 +329,8 @@ socket.emit('verification:complete', {
   reportId: 'verify_20250124_140523',
 });
 ```
+
+---
 
 ## Database Schema
 
@@ -316,12 +359,52 @@ CREATE TABLE verification_status (
 );
 ```
 
-## Related Documentation
+---
 
-- [Database Schema](../DATABASE.md) - Data integrity constraints
-- [API Architecture](../API.md) - Verification endpoints
-- [Development](../DEVELOPMENT.md#logging) - Logging and reporting
+## Use Cases
+
+### Radarr/Sonarr Upgrade Detection
+
+When a media manager upgrades a file and deletes assets:
+
+1. Verification detects missing library files
+2. Compares with cache records
+3. Restores missing assets from cache
+4. Logs restoration event
+5. Notifies user (optional)
+
+### Corruption Detection
+
+When a file becomes corrupted (disk error, network issue):
+
+1. Verification detects hash mismatch
+2. Identifies corresponding cache file
+3. Replaces corrupted file from cache
+4. Logs corruption event
+5. Alerts user of potential disk issues
+
+### Orphan Cleanup
+
+When unknown files appear in library (user manually added):
+
+1. Verification detects orphaned file
+2. Checks against ignore patterns
+3. Moves to recycle bin (if `preserveUserFiles=false`)
+4. Logs cleanup event
+
+---
 
 ## Independence Note
 
-Verification runs independently from the main automation chain. It can trigger publishing or enrichment jobs if issues are found, but typically operates as a background maintenance task.
+Verification runs **independently** from the main automation chain. It can trigger publishing or enrichment jobs if issues are found, but typically operates as a background maintenance task.
+
+**Chain Position**: Not in chain (independent)
+
+---
+
+## See Also
+
+- [Phase Overview](OVERVIEW.md) - Phase system architecture
+- [Two-Copy System](../architecture/ASSET_MANAGEMENT/TWO_COPY_SYSTEM.md) - Cache vs Library architecture
+- [Database Schema](../architecture/DATABASE.md) - Data integrity constraints
+- [Publishing Phase](PUBLISHING.md) - Asset deployment

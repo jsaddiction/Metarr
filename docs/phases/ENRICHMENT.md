@@ -2,28 +2,50 @@
 
 **Purpose**: Fetch metadata and asset information from providers, analyze assets, calculate scores, and intelligently select the best options for each media item.
 
-**Status**: ✅ Implemented (EnrichmentService.ts)
+**Related Docs**:
+- Parent: [Phase Overview](OVERVIEW.md)
+- Related: [Asset Scoring](../reference/ASSET_SCORING.md), [Field Locking](../architecture/ASSET_MANAGEMENT/FIELD_LOCKING.md), [Provider Overview](../providers/OVERVIEW.md)
+
+## Quick Reference
+
+- **Core phase**: Transforms discovered media into enriched, ready-to-publish entities
+- **Single heavy job**: Fetches, analyzes, scores, and selects all in one execution
+- **Idempotent**: Re-enrichment updates scores and may select better assets without losing user edits
+- **Non-destructive**: Never overwrites locked fields or locked asset types
+- **Rate-limited**: Respects provider API limits with adaptive backoff
+- **Chainable**: Always triggers publishing phase (or passes through if disabled)
+
+---
 
 ## Overview
 
-The enrichment phase enhances discovered media with high-quality metadata and artwork from multiple providers. It operates as a **single heavy job** that fetches provider data, downloads assets temporarily for analysis, calculates quality scores, and selects the best assets—all while respecting user preferences and manual locks.
+Enrichment enhances discovered media with high-quality metadata and artwork from multiple providers (TMDB, TVDB, Fanart.tv). It operates as a single job that fetches provider data, downloads assets temporarily for analysis, calculates quality scores, and selects the best assets—all while respecting user preferences and manual locks.
 
-## Phase Rules
+**Critical Principle**: Original library assets discovered during scanning are tracked for replacement purposes only. They do NOT compete in the selection process. Provider assets are the canonical source of truth.
 
-1. **Idempotent**: Re-enrichment updates scores and may select better assets without losing user edits
-2. **Non-destructive**: Never overwrites locked fields or locked asset types
-3. **Rate-limited**: Respects provider API limits with adaptive backoff
-4. **Selective**: Only enriches monitored items unless forced (manual=true)
-5. **Observable**: Reports progress and emits completion events
-6. **Chainable**: Always triggers publishing phase via job creation
+---
+
+## Prerequisites
+
+- Entity must have `identification_status = 'discovered'` or `'enriched'` (for re-enrichment)
+- Entity must have `tmdb_id` or `imdb_id` (extracted during scan or user-provided)
+- Entity must have `monitored = true` (unless `manual=true` in job payload)
+
+---
 
 ## Triggers
 
-- **Post-scan**: Automatically after scanning phase (if workflow.enrichment enabled)
-- **Manual**: User clicks "Enrich" on specific items (force_refresh=true)
-- **Scheduled**: Weekly metadata refresh (configurable, automated jobs only)
-- **Webhook**: Radarr/Sonarr download triggers immediate enrichment
-- **Bulk**: User selects multiple items for sequential enrichment
+| Trigger Type | Description | Force Refresh | Priority |
+|--------------|-------------|---------------|----------|
+| **Post-scan** | Automatically after scanning phase (if enabled) | No | 5 (NORMAL) |
+| **Manual** | User clicks "Enrich" on specific items | Yes | 10 (HIGH) |
+| **Scheduled** | Weekly metadata refresh (configurable) | No | 5 (NORMAL) |
+| **Webhook** | Radarr/Sonarr download triggers immediate enrichment | No | 8 (URGENT) |
+| **Bulk** | User selects multiple items for enrichment | Yes | 10 (HIGH) |
+
+**Force Refresh**: Bypasses 7-day cache check and re-fetches from providers
+
+---
 
 ## Job Parameters
 
@@ -36,9 +58,11 @@ interface EnrichmentJobPayload {
 }
 ```
 
-## The Seven-Phase Process
+---
 
-Enrichment is a **single job** that executes seven sequential phases:
+## Phase Flow (Step-by-Step)
+
+Enrichment executes seven sequential sub-phases in a single job:
 
 ```
 ENRICHMENT JOB (Cache Preparation for UI)
@@ -47,7 +71,7 @@ ENRICHMENT JOB (Cache Preparation for UI)
 │  └─ Query providers, save URLs and metadata to provider_assets table
 │
 ├─ Phase 2: Match Existing Cache Assets
-│  └─ Link existing cache files to provider assets via perceptual hash
+│  └─ Link existing cache files to provider assets via hash matching
 │
 ├─ Phase 3: Download & Analyze ALL Candidates
 │  └─ Temp download, extract metadata, calculate hashes, discard temp files
@@ -56,7 +80,7 @@ ENRICHMENT JOB (Cache Preparation for UI)
 │  └─ Score all analyzed assets using 0-100 algorithm
 │
 ├─ Phase 5: Intelligent Selection
-│  └─ Select top N per asset type, evict lowest-ranked, respect locks
+│  └─ Select top N per asset type, respect locks
 │
 ├─ Phase 5B: Download Selected to Cache
 │  └─ Permanently store selected assets in cache for UI display
@@ -70,50 +94,37 @@ ENRICHMENT JOB (Cache Preparation for UI)
 
 ---
 
-## Phase 1: Fetch Provider Metadata & Actors
+## Phase 1: Fetch Provider Metadata
 
 **Goal**: Catalog all available assets from providers and create actor records.
 
-### 1A. Fetch Asset Metadata from Providers
+### Provider Query
 
-Uses `FetchOrchestrator` to query multiple providers in parallel:
-
+Uses `FetchOrchestrator` to query providers in parallel:
 - **TMDB**: Movies, metadata, images, trailers
 - **TVDB**: TV series/episodes, images
 - **Fanart.tv**: High-quality artwork
 
-Results are saved to **two separate tables**:
+Results saved to `provider_assets` table:
+- **Purpose**: Master catalog for enrichment workflow
+- **Lifecycle**: Permanent (until movie deleted via garbage collector)
+- **Updated during**: Enrichment (manual refresh updates votes/metadata)
 
-1. **`provider_cache_assets`** (managed by `ProviderCacheService`)
-   - Purpose: Cache-aside pattern for instant UI browsing
-   - Lifecycle: Persists until manually refreshed or weekly update
-   - **Not touched by enrichment job** - read-only for UI display
-
-2. **`provider_assets`** (enrichment working table - **NEW**)
-   - Purpose: Master catalog for enrichment workflow
-   - Lifecycle: Permanent (until movie deleted via garbage collector)
-   - Updated during enrichment for scoring and selection
-
-### Insert Logic for `provider_assets`
+### Insert Logic
 
 ```typescript
 for (const asset of providerResults) {
-  const existing = await db.provider_assets.findByUrl(
-    asset.url,
-    entityId,
-    entityType
-  );
+  const existing = await db.provider_assets.findByUrl(asset.url, entityId, entityType);
 
   if (existing && manual === false) {
-    // Automated job: skip known assets
-    continue;
+    continue; // Automated job: skip known assets
   }
 
   if (existing && manual === true) {
     // Manual job: update with fresh provider metadata
     await db.provider_assets.update(existing.id, {
       provider_metadata: JSON.stringify(asset.metadata), // Fresh votes, likes
-      width: asset.width,   // API-provided (may be inaccurate)
+      width: asset.width,   // API-provided (Phase 3 will verify)
       height: asset.height,
     });
   } else {
@@ -121,54 +132,22 @@ for (const asset of providerResults) {
     await db.provider_assets.create({
       entity_type: entityType,
       entity_id: entityId,
-      asset_type: asset.type, // poster, fanart, clearlogo, etc.
-      provider_name: asset.provider, // tmdb, tvdb, fanart.tv
+      asset_type: asset.type,
+      provider_name: asset.provider,
       provider_url: asset.url,
       provider_metadata: JSON.stringify(asset.metadata),
-      width: asset.width,   // From API (Phase 3 will verify)
+      width: asset.width,
       height: asset.height,
-      analyzed: 0,          // Not yet analyzed
-      is_downloaded: 0,     // Not in cache
-      is_selected: 0,       // Not selected
+      analyzed: 0,
+      is_downloaded: 0,
+      is_selected: 0,
       score: null,
     });
   }
 }
 ```
 
-### 1B. Fetch Actors from TMDB
-
-**Actors are ONLY created during enrichment** to avoid filesystem naming ambiguities.
-
-```typescript
-// Get cast from TMDB
-const cast = await tmdbClient.getMovieCredits(movie.tmdb_id);
-
-for (const tmdbActor of cast) {
-  // Find or create actor by tmdb_id (unique identifier)
-  let actor = await db.actors.findByTmdbId(tmdbActor.id);
-
-  if (!actor) {
-    actor = await db.actors.create({
-      name: tmdbActor.name,
-      name_normalized: normalizeActorName(tmdbActor.name),
-      tmdb_id: tmdbActor.id,
-      image_cache_path: tmdbActor.profile_path, // TMDB URL (download in publishing)
-      identification_status: 'identified',
-    });
-  }
-
-  // Link actor to movie
-  await db.movie_actors.create({
-    movie_id: movie.id,
-    actor_id: actor.id,
-    role: tmdbActor.character,
-    actor_order: tmdbActor.order,
-  });
-}
-```
-
-**Actor images are NOT downloaded during enrichment** - they download during the publishing phase to minimize enrichment job time.
+**Actor Fetch**: TMDB credits queried, actor records created (thumbnails downloaded in Phase 6).
 
 ---
 
@@ -176,14 +155,13 @@ for (const tmdbActor of cast) {
 
 **Goal**: Link existing cache files (discovered during scan) to provider assets via hash matching.
 
-This phase identifies which cached files came from which provider URLs, enabling:
+This enables:
 - Accurate scoring (cached assets get bonus consideration)
 - Skip re-downloading assets already in cache
 
 ### Hash Matching Strategy
 
 ```typescript
-// Get all cache files for this entity
 const cacheFiles = await db.cache_image_files.findByEntity(entityId, entityType);
 
 for (const cacheFile of cacheFiles) {
@@ -192,18 +170,10 @@ for (const cacheFile of cacheFiles) {
 
   if (!providerAsset && cacheFile.perceptual_hash) {
     // Try perceptual hash (Hamming distance < 10)
-    const candidates = await db.provider_assets.findByAssetType(
-      entityId,
-      cacheFile.image_type
-    );
-
+    const candidates = await db.provider_assets.findByAssetType(entityId, cacheFile.image_type);
     for (const candidate of candidates) {
       if (candidate.perceptual_hash) {
-        const distance = hammingDistance(
-          cacheFile.perceptual_hash,
-          candidate.perceptual_hash
-        );
-
+        const distance = hammingDistance(cacheFile.perceptual_hash, candidate.perceptual_hash);
         if (distance < 10) {
           providerAsset = candidate;
           break;
@@ -220,33 +190,23 @@ for (const cacheFile of cacheFiles) {
       analyzed: 1,
       analyzed_at: new Date(),
     });
-
-    await db.cache_image_files.update(cacheFile.id, {
-      provider_name: providerAsset.provider_name,
-      source_url: providerAsset.provider_url,
-    });
   }
 }
 ```
 
+**Critical Note**: Original library assets are matched and linked but **NOT scored**. They exist only for tracking replacement during publishing.
+
 ---
 
-## Phase 3: Download & Analyze Assets + Store Selected in Cache
+## Phase 3: Download & Analyze Assets
 
-**Goal**: Download and analyze assets to get accurate metadata for scoring, then download selected assets to permanent cache storage.
+**Goal**: Download all unanalyzed assets to extract accurate metadata for scoring.
 
-**Critical Change**: This phase now operates in TWO sub-phases:
-- **Phase 3A**: Download ALL assets temporarily for analysis (dimensions, hashes, scoring)
-- **Phase 3B**: After selection, download SELECTED assets to permanent cache storage
-
-This ensures the user can immediately see selected assets in the UI after enrichment completes.
-
-### Parallel Download with Limit
+### Parallel Download (up to 10 concurrent)
 
 ```typescript
 const unanalyzed = await db.provider_assets.findUnanalyzed(entityId);
 
-// Process up to 10 assets concurrently
 await pMap(unanalyzed, async (asset) => {
   const tempPath = `/data/temp/metarr-analyze-${uuidv4()}.tmp`;
 
@@ -255,24 +215,17 @@ await pMap(unanalyzed, async (asset) => {
     await downloadFile(asset.provider_url, tempPath);
 
     // Extract metadata
-    let metadata;
-    if (asset.asset_type === 'trailer' || asset.asset_type === 'sample') {
-      // Video analysis with ffprobe
-      metadata = await analyzeVideo(tempPath);
-    } else {
-      // Image analysis with sharp
-      metadata = await analyzeImage(tempPath);
-    }
+    const metadata = asset.asset_type.includes('video')
+      ? await analyzeVideo(tempPath)
+      : await analyzeImage(tempPath);
 
     // Calculate hashes
     const contentHash = await calculateSHA256(tempPath);
-    const perceptualHash = metadata.isImage
-      ? await calculatePerceptualHash(tempPath)
-      : null;
+    const perceptualHash = metadata.isImage ? await calculatePerceptualHash(tempPath) : null;
 
     // Update provider_assets with ACTUAL metadata
     await db.provider_assets.update(asset.id, {
-      width: metadata.width,           // Actual (not API estimate)
+      width: metadata.width,
       height: metadata.height,
       duration_seconds: metadata.duration,
       content_hash: contentHash,
@@ -282,156 +235,32 @@ await pMap(unanalyzed, async (asset) => {
       analyzed: 1,
       analyzed_at: new Date(),
     });
-
-    // Re-check cache linkage (now that we have hash)
-    const cachedFile = await db.cache_image_files.findByHash(contentHash);
-    if (cachedFile) {
-      await db.provider_assets.update(asset.id, {
-        is_downloaded: 1,
-      });
-    }
-
   } finally {
     // Always delete temp file
     await fs.unlink(tempPath).catch(() => {});
   }
 }, { concurrency: 10 });
-
-// Cleanup any remaining temp files
-await cleanupTempDirectory('/data/temp');
 ```
 
-### Analysis Functions
-
-```typescript
-async function analyzeImage(path: string) {
-  const metadata = await sharp(path).metadata();
-  const stats = await fs.stat(path);
-
-  return {
-    width: metadata.width,
-    height: metadata.height,
-    format: metadata.format,
-    mimeType: `image/${metadata.format}`,
-    size: stats.size,
-    isImage: true,
-  };
-}
-
-async function analyzeVideo(path: string) {
-  const probe = await ffprobe(path);
-  const videoStream = probe.streams.find(s => s.codec_type === 'video');
-  const stats = await fs.stat(path);
-
-  return {
-    width: videoStream.width,
-    height: videoStream.height,
-    duration: Math.floor(probe.format.duration),
-    codec: videoStream.codec_name,
-    mimeType: 'video/mp4',
-    size: stats.size,
-    isImage: false,
-  };
-}
-```
+**Result**: All provider assets have accurate dimensions, hashes, and metadata for scoring.
 
 ---
 
 ## Phase 4: Calculate Scores
 
-**Goal**: Score all analyzed assets using a weighted algorithm considering quality, community preference, and provider reliability.
+**Goal**: Score all analyzed provider assets using weighted algorithm.
 
 ### Scoring Algorithm (0-100 points)
 
-```typescript
-function calculateAssetScore(asset: ProviderAsset): number {
-  let score = 0;
+Full algorithm detailed in [Asset Scoring Reference](../reference/ASSET_SCORING.md). Summary:
 
-  // ========================================
-  // RESOLUTION SCORE (0-30 points)
-  // Scaled by pixel count relative to ideal
-  // ========================================
-  const pixels = asset.width * asset.height;
-  let idealPixels: number;
-
-  if (asset.asset_type === 'poster') {
-    idealPixels = 6000000;  // 2000x3000
-  } else if (asset.asset_type === 'fanart') {
-    idealPixels = 2073600;  // 1920x1080
-  } else {
-    idealPixels = 1000000;  // Generic
-  }
-
-  const scaleFactor = Math.min(pixels / idealPixels, 1.5);
-  score += scaleFactor * 30;
-
-  // ========================================
-  // ASPECT RATIO SCORE (0-20 points)
-  // Closer to ideal ratio = higher score
-  // ========================================
-  const ratio = asset.width / asset.height;
-  let idealRatio: number;
-
-  if (asset.asset_type === 'poster') {
-    idealRatio = 2 / 3;  // 0.667
-  } else if (asset.asset_type === 'fanart') {
-    idealRatio = 16 / 9;  // 1.778
-  } else if (asset.asset_type === 'clearlogo') {
-    idealRatio = 4.0;     // 3:1 to 5:1 range
-  } else {
-    idealRatio = ratio;   // Accept any ratio for unknown types
-  }
-
-  const ratioDiff = Math.abs(ratio - idealRatio);
-  score += Math.max(0, 20 - ratioDiff * 100);
-
-  // ========================================
-  // LANGUAGE SCORE (0-20 points)
-  // User's preferred language prioritized
-  // ========================================
-  const metadata = JSON.parse(asset.provider_metadata || '{}');
-  const language = metadata.language;
-
-  if (language === userPreferredLanguage) {
-    score += 20;
-  } else if (language === 'en') {
-    score += 15;
-  } else if (!language) {
-    score += 18;  // Language-neutral (e.g., logos)
-  } else {
-    score += 5;
-  }
-
-  // ========================================
-  // COMMUNITY VOTES SCORE (0-20 points)
-  // Vote average weighted by vote count
-  // ========================================
-  const voteAverage = metadata.vote_average || 0;  // 0-10 scale
-  const voteCount = metadata.vote_count || 0;
-
-  const normalized = voteAverage / 10;  // 0-1 scale
-  const weight = Math.min(voteCount / 50, 1.0);  // Need 50+ votes for full weight
-  score += normalized * weight * 20;
-
-  // ========================================
-  // PROVIDER PRIORITY (0-10 points)
-  // Provider reliability and quality
-  // ========================================
-  if (asset.provider_name === 'tmdb') {
-    score += 10;  // Highest quantity, good quality
-  } else if (asset.provider_name === 'fanart.tv') {
-    score += 9;   // Highest quality, fewer assets
-  } else if (asset.provider_name === 'tvdb') {
-    score += 8;   // Good for TV content
-  } else {
-    score += 5;   // Unknown providers
-  }
-
-  return Math.round(score);
-}
-```
-
-### Batch Scoring
+| Component | Max Points | Description |
+|-----------|------------|-------------|
+| **Resolution** | 30 | Pixel count relative to ideal (2000x3000 for posters, 1920x1080 for fanart) |
+| **Aspect Ratio** | 20 | Closeness to ideal ratio (2:3 for posters, 16:9 for fanart) |
+| **Language** | 20 | User's preferred language prioritized |
+| **Community Votes** | 20 | Vote average weighted by vote count (TMDB/TVDB) |
+| **Provider Priority** | 10 | TMDB=10, Fanart.tv=9, TVDB=8 |
 
 ```typescript
 const analyzedAssets = await db.provider_assets.findAnalyzed(entityId);
@@ -442,17 +271,19 @@ for (const asset of analyzedAssets) {
 }
 ```
 
+**See**: [Asset Scoring Reference](../reference/ASSET_SCORING.md) for complete formula.
+
 ---
 
-## Phase 5: Simplified Intelligent Selection (Provider Assets Only)
+## Phase 5: Asset Selection Process
 
-**Goal**: Select the top N unique provider assets per type, automatically evicting lower-ranked assets, downloading selected assets to cache, and removing scanned assets.
+**Goal**: Select top N unique provider assets per type, automatically evicting lower-ranked assets.
 
 **Philosophy**: Provider assets are the canonical source of truth. Scanned assets are temporary discovery artifacts that are always replaced during enrichment.
 
-### Selection Configuration
+### Configuration Limits
 
-Default limits (user-configurable):
+Default limits (user-configurable via `AssetConfigService`):
 
 ```typescript
 const maxAllowable = {
@@ -469,56 +300,35 @@ const maxAllowable = {
 };
 ```
 
-### Simplified Selection Algorithm (9 Steps)
+### Selection Algorithm (Provider Assets Only)
 
-Phase 5 operates **only on provider assets**, ignoring scanned cache assets entirely:
+**Step 1**: Gather provider assets (ignore scanned cache assets)
 
-#### Step 1: Gather Provider Assets
 ```typescript
-// Query provider_assets (analyzed in Phase 3)
 const providerAssets = await db.provider_assets.findByType(entityId, entityType, assetType);
 ```
 
-#### Step 2: Score All Provider Assets
-```typescript
-const scoredAssets = [];
+**Step 2**: Score all provider assets
 
-for (const provider of providerAssets) {
-  const score = calculateAssetScore({
-    asset_type: assetType,
-    width: provider.width,
-    height: provider.height,
-    provider_name: provider.provider_name,
-    provider_metadata: provider.provider_metadata, // votes, language
-  });
+**Step 3**: Sort by score descending
 
-  scoredAssets.push({ ...provider, score });
-}
-```
+**Step 4**: Deduplicate by perceptual hash (keep higher-scored)
 
-#### Step 3: Sort by Score Descending
-```typescript
-scoredAssets.sort((a, b) => b.score - a.score);
-```
-
-#### Step 4: Deduplicate by Perceptual Hash (Keep Higher-Scored)
 ```typescript
 const uniqueAssets = [];
 const seenHashes = new Set();
 
 for (const asset of scoredAssets) {
   if (!asset.perceptual_hash) {
-    uniqueAssets.push(asset); // No phash = can't dedupe, include it
+    uniqueAssets.push(asset);
     continue;
   }
 
   let isDuplicate = false;
-
   for (const seenHash of seenHashes) {
-    const similarity = ImageProcessor.hammingSimilarity(asset.perceptual_hash, seenHash);
-
+    const similarity = hammingSimilarity(asset.perceptual_hash, seenHash);
     if (similarity >= 0.90) {
-      isDuplicate = true; // Duplicate of higher-scored asset
+      isDuplicate = true;
       break;
     }
   }
@@ -530,25 +340,21 @@ for (const asset of scoredAssets) {
 }
 ```
 
-#### Step 5: Select Top N
-```typescript
-const topN = uniqueAssets.slice(0, maxAllowable);
-```
+**Step 5**: Select top N (based on limit)
 
-#### Step 6: Detect Changes
+**Step 6**: Detect changes
+
 ```typescript
 const oldSelectedIds = providerAssets.filter(p => p.is_selected === 1).map(p => p.id);
 const newSelectedIds = topN.map(a => a.id);
 
-const noChanges = arraysEqual(oldSelectedIds, newSelectedIds);
-
-if (noChanges) {
-  // Skip cache updates - selection unchanged
-  return;
+if (arraysEqual(oldSelectedIds, newSelectedIds)) {
+  return; // Skip cache updates - selection unchanged
 }
 ```
 
-#### Step 7: Update is_selected Flags
+**Step 7**: Update `is_selected` flags
+
 ```typescript
 // Reset all to deselected
 await db.provider_assets.deselectAll(entityId, entityType, assetType);
@@ -563,7 +369,12 @@ for (const asset of topN) {
 }
 ```
 
-#### Step 8: Update Cache (Download New, Delete Evicted)
+---
+
+## Phase 5B: Download Selected to Cache
+
+**Goal**: Download newly selected assets to permanent cache storage.
+
 ```typescript
 const toDownload = newSelectedIds.filter(id => !oldSelectedIds.includes(id));
 const toDelete = oldSelectedIds.filter(id => !newSelectedIds.includes(id));
@@ -600,273 +411,85 @@ for (const id of toDelete) {
 }
 ```
 
-#### Step 9: Delete All Scanned Assets
-```typescript
-// Remove all source_type = 'local' cache assets
-const scannedAssets = await db.cache_image_files.findBySource(entityId, entityType, assetType, 'local');
+**Result**: Cache contains only selected assets, ready for UI display and publishing.
 
-for (const scanned of scannedAssets) {
-  await fs.unlink(scanned.file_path);
-  await db.cache_image_files.delete(scanned.id);
-}
-```
-
-### Why Simplified Selection?
-
-**Philosophy**: Provider assets are canonical truth. Scanned assets are temporary discovery artifacts.
-
-**Benefits**:
-- **80% code reduction**: ~400 lines → ~70 lines
-- **Clear behavior**: Scanned assets never compete, always replaced
-- **Idempotent**: Re-enrichment with no changes skips cache updates entirely
-- **Efficient**: Only downloads new selections, only deletes evicted
-- **Maintainable**: Single flow, easy to understand
-
-**User Control**: Custom assets require explicit locking to survive enrichment. This forces users to be intentional about preservation.
-
-### Scoring Example
-
-**TMDB Poster #1** (2000x3000, 50 votes, 8.5/10, English):
-- Resolution: 30 pts
-- Aspect Ratio: 20 pts
-- Language: 20 pts (en)
-- Votes: 17 pts (normalized)
-- Provider: 10 pts (tmdb)
-- **Total: 97.0 pts**
-
-**TMDB Poster #2** (1920x2880, 120 votes, 9.2/10, English):
-- Resolution: 28 pts
-- Aspect Ratio: 20 pts
-- Language: 20 pts (en)
-- Votes: 20 pts (normalized)
-- Provider: 10 pts (tmdb)
-- **Total: 98.0 pts** ← Wins (better votes)
-
-### Auto-Eviction Behavior
-
-When new assets arrive that score higher than existing selections:
-1. Phase 5 scores all provider assets including new arrivals
-2. Old low-scorer drops out of top N
-3. `provider_assets.is_selected` flags updated
-4. Evicted asset deleted from cache
-5. New top-scorer downloaded to cache
-6. UI instantly reflects updated selection
-
-### Idempotent Re-Enrichment
-
-**Scenario**: Re-enrichment with no provider changes
-
-```typescript
-// First enrichment: selected IDs = [5, 12, 8]
-// Re-enrichment: same provider URLs, same votes
-// After scoring: top N IDs = [5, 12, 8]  (identical)
-// Result: noChanges = true, skip all cache operations ✅
-```
-
-### Manual Selection Lock
-
-When a user manually selects an asset via UI:
-
-```typescript
-// User clicks "Set as Poster" on a specific asset
-async function manualSelectAsset(assetId: number) {
-  const asset = await db.provider_assets.findById(assetId);
-  const lockField = `${asset.asset_type}_locked`;
-
-  // Mark asset as selected
-  await db.provider_assets.update(assetId, {
-    is_selected: 1,
-    selected_at: new Date(),
-    selected_by: 'user',
-  });
-
-  // Lock asset type to prevent auto-changes
-  await db.movies.update(asset.entity_id, {
-    [lockField]: 1,
-  });
-
-  // Deselect all other assets of this type
-  await db.provider_assets.updateMany({
-    where: {
-      entity_id: asset.entity_id,
-      asset_type: asset.asset_type,
-      id: { not: assetId },
-    },
-    data: { is_selected: 0 },
-  });
-}
-```
 ---
 
 ## Phase 6: Fetch Actor Data and Download Thumbnails
 
 **Goal**: Create actor records and download thumbnails to cache for UI display.
 
-**Critical**: Actors are created during enrichment (not scan) to avoid naming ambiguities. Thumbnails download to cache immediately so user can review cast before publishing.
-
-### Fetch Cast from TMDB
+**Critical**: Actors are created during enrichment (not scan) to avoid naming ambiguities.
 
 ```typescript
-// Get TMDB ID for this movie
 const movie = await db.movies.findById(entityId);
-if (!movie.tmdb_id) {
-  logger.warn('[Enrichment] No TMDB ID, skipping actor fetch', { entityId });
-  return { actorsFetched: 0 };
-}
+if (!movie.tmdb_id) return { actorsFetched: 0 };
 
-// Fetch cast from TMDB
 const credits = await tmdbClient.getMovieCredits(movie.tmdb_id);
 const cast = credits.cast.slice(0, 15); // Top 15 actors
 
-logger.info('[Enrichment] Fetching actors', {
-  movieId: entityId,
-  tmdbId: movie.tmdb_id,
-  actorCount: cast.length,
-});
-
-let actorsFetched = 0;
-
 for (const tmdbActor of cast) {
-  try {
-    // Find or create actor by tmdb_id (unique identifier)
-    let actor = await db.get(
-      `SELECT id, name, tmdb_id FROM actors WHERE tmdb_id = ?`,
-      [tmdbActor.id]
-    );
+  let actor = await db.actors.findByTmdbId(tmdbActor.id);
 
-    if (!actor) {
-      // Create new actor
-      const actorId = await db.execute(
-        `INSERT INTO actors (
-          name, name_normalized, tmdb_id, tmdb_profile_path, created_at
-        ) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-        [
-          tmdbActor.name,
-          normalizeActorName(tmdbActor.name),
-          tmdbActor.id,
-          tmdbActor.profile_path,
-        ]
-      );
-
-      actor = { id: actorId, name: tmdbActor.name, tmdb_id: tmdbActor.id };
-
-      logger.debug('[Enrichment] Created actor', {
-        actorId,
-        name: tmdbActor.name,
-        tmdbId: tmdbActor.id,
-      });
-    }
-
-    // Link actor to movie
-    await db.execute(
-      `INSERT OR IGNORE INTO movie_actors (
-        movie_id, actor_id, character, actor_order, created_at
-      ) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-      [entityId, actor.id, tmdbActor.character, tmdbActor.order]
-    );
-
-    // Download actor thumbnail to cache
-    if (tmdbActor.profile_path) {
-      const imageUrl = `https://image.tmdb.org/t/p/original${tmdbActor.profile_path}`;
-
-      // Download and hash
-      const buffer = await downloadFile(imageUrl);
-      const contentHash = calculateSHA256(buffer);
-
-      // Determine cache path
-      const cachePath = path.join(
-        '/data/cache/actor',
-        contentHash.slice(0, 2),
-        `${contentHash}.jpg`
-      );
-
-      // Check if already cached
-      const existingCache = await db.get(
-        `SELECT id FROM cache_image_files WHERE file_hash = ?`,
-        [contentHash]
-      );
-
-      if (!existingCache) {
-        // Write to cache
-        await fs.mkdir(path.dirname(cachePath), { recursive: true });
-        await fs.writeFile(cachePath, buffer);
-
-        // Get metadata
-        const metadata = await sharp(cachePath).metadata();
-
-        // Insert cache_image_files record
-        await db.execute(
-          `INSERT INTO cache_image_files (
-            entity_type, entity_id, file_path, file_name, file_size,
-            file_hash, image_type, width, height, format,
-            source_type, source_url, provider_name, discovered_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-          [
-            'movie',
-            entityId,
-            cachePath,
-            path.basename(cachePath),
-            buffer.length,
-            contentHash,
-            'actor_thumb',
-            metadata.width,
-            metadata.height,
-            metadata.format,
-            'provider',
-            imageUrl,
-            'tmdb',
-          ]
-        );
-
-        logger.debug('[Enrichment] Actor thumbnail cached', {
-          actorName: tmdbActor.name,
-          cachePath,
-        });
-      }
-
-      // Update actor record with cache path
-      await db.execute(
-        `UPDATE actors SET
-          image_cache_path = ?,
-          image_hash = ?,
-          image_ctime = ?
-        WHERE id = ?`,
-        [cachePath, contentHash, Date.now(), actor.id]
-      );
-    }
-
-    actorsFetched++;
-
-  } catch (error) {
-    logger.error('[Enrichment] Failed to process actor', {
-      actorName: tmdbActor.name,
-      error: getErrorMessage(error),
+  if (!actor) {
+    actor = await db.actors.create({
+      name: tmdbActor.name,
+      name_normalized: normalizeActorName(tmdbActor.name),
+      tmdb_id: tmdbActor.id,
+      tmdb_profile_path: tmdbActor.profile_path,
     });
-    // Continue with other actors
+  }
+
+  // Link actor to movie
+  await db.movie_actors.create({
+    movie_id: entityId,
+    actor_id: actor.id,
+    character: tmdbActor.character,
+    actor_order: tmdbActor.order,
+  });
+
+  // Download thumbnail to cache
+  if (tmdbActor.profile_path) {
+    const imageUrl = `https://image.tmdb.org/t/p/original${tmdbActor.profile_path}`;
+    const buffer = await downloadFile(imageUrl);
+    const contentHash = calculateSHA256(buffer);
+    const cachePath = `/data/cache/actor/${contentHash.slice(0, 2)}/${contentHash}.jpg`;
+
+    await fs.writeFile(cachePath, buffer);
+
+    await db.cache_image_files.create({
+      entity_type: 'movie',
+      entity_id: entityId,
+      file_path: cachePath,
+      file_hash: contentHash,
+      image_type: 'actor_thumb',
+      source_type: 'provider',
+      source_url: imageUrl,
+      provider_name: 'tmdb',
+    });
+
+    await db.actors.update(actor.id, {
+      image_cache_path: cachePath,
+      image_hash: contentHash,
+    });
   }
 }
-
-logger.info('[Enrichment] Phase 6 complete', {
-  actorsFetched,
-});
 ```
 
-**Output**: Actors table populated, thumbnails in cache, visible in UI
+**Output**: Actors table populated, thumbnails in cache, visible in UI.
 
 ---
 
-## Phase 7: Update Entity Status and Complete
+## Phase 7: Update Entity Status
 
 **Goal**: Mark entity as enriched and notify UI.
 
 ```typescript
-// Update movie enrichment timestamp
 await db.movies.update(entityId, {
   enriched_at: new Date(),
   identification_status: 'enriched',
 });
 
-// Emit completion event (WebSocket to UI)
 websocketBroadcaster.broadcast('enrichment.complete', {
   entityType,
   entityId,
@@ -877,103 +500,40 @@ websocketBroadcaster.broadcast('enrichment.complete', {
 logger.info('[Enrichment] Complete', {
   entityType,
   entityId,
-  assetsSelected: selectedCount,
-  actorsFetched,
   durationMs: Date.now() - startTime,
 });
 ```
 
-**Output**: Entity marked as enriched, UI updates immediately
-
 ---
 
-## Provider Integration
+## Provider Prioritization
 
-### Provider Priority Explained
+Providers are queried and prioritized by quality/reliability:
 
 1. **TMDB** (10 points): Largest catalog, good quality, comprehensive metadata
 2. **Fanart.tv** (9 points): **Highest quality** artwork, but fewer assets than TMDB
 3. **TVDB** (8 points): Best for TV content, similar quality to TMDB
 
-### Rate Limiting Strategy
-
-```typescript
-// Adaptive backoff on 429 responses
-if (response.status === 429) {
-  const retryAfter = parseInt(response.headers['retry-after']) || 60;
-  await sleep(retryAfter * 1000 * backoffMultiplier);
-  backoffMultiplier *= 2; // Exponential backoff
-}
-```
-
-### Force Refresh Behavior
-
-```typescript
-// manual=true bypasses 7-day staleness check
-if (manual === true) {
-  // Always fetch fresh from providers
-  // Update existing provider_assets rows with latest votes/metadata
-  force_refresh = true;
-}
-
-// manual=false uses cache strategy
-if (manual === false && cache_age < 7_days) {
-  // Skip provider fetch - use cached provider_assets
-  skip_to_phase_2 = true;
-}
-```
-
 ---
 
-## Database Schema
+## Field Locking Behavior
 
-### `provider_assets` Table (Master Catalog)
+When a user manually edits a field or locks an asset type:
 
-```sql
-CREATE TABLE provider_assets (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  entity_type TEXT NOT NULL,
-  entity_id INTEGER NOT NULL,
-  asset_type TEXT NOT NULL,
-
-  -- Provider information
-  provider_name TEXT NOT NULL,
-  provider_url TEXT NOT NULL,
-  provider_metadata TEXT,  -- JSON: votes, likes, language
-
-  -- Analysis results (from Phase 3)
-  analyzed BOOLEAN DEFAULT 0,
-  width INTEGER,
-  height INTEGER,
-  duration_seconds INTEGER,
-  content_hash TEXT,
-  perceptual_hash TEXT,
-  mime_type TEXT,
-  file_size INTEGER,
-
-  -- Selection state
-  score INTEGER,
-  is_selected BOOLEAN DEFAULT 0,
-  is_rejected BOOLEAN DEFAULT 0,
-  is_downloaded BOOLEAN DEFAULT 0,
-
-  -- Timestamps
-  fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  analyzed_at TIMESTAMP,
-  selected_at TIMESTAMP,
-  selected_by TEXT,  -- 'auto' or 'user'
-
-  UNIQUE(entity_type, entity_id, asset_type, provider_url)
-);
+```typescript
+// Check if asset type is locked
+const movie = await db.movies.findById(entityId);
+if (movie.poster_locked) {
+  logger.debug('Poster selection locked by user', { entityId });
+  return; // Skip automated selection for this type
+}
 ```
+
+**See**: [Field Locking Reference](../architecture/ASSET_MANAGEMENT/FIELD_LOCKING.md) for complete behavior.
 
 ---
 
 ## Configuration
-
-### Phase Behavior Configuration
-
-Managed by `PhaseConfigService` and stored in `app_settings` table:
 
 ```typescript
 interface EnrichmentPhaseConfig {
@@ -988,141 +548,32 @@ interface EnrichmentPhaseConfig {
 }
 ```
 
-**Configuration via UI**: Settings → General → Enrichment tab
+**Configuration via UI**: Settings → General → Enrichment
 **Configuration via API**: `GET/PATCH /api/v1/settings/phase-config`
-
-### Asset Download Limits
-
-Managed by `AssetConfigService` and stored in `app_settings` table with keys like `asset_limit_{assetType}`:
-
-```typescript
-interface AssetTypeConfig {
-  displayName: string;
-  defaultMax: number;      // Recommended default
-  minAllowed: number;      // 0 = can disable type
-  maxAllowed: number;      // Hard limit
-  description: string;
-  mediaTypes: ('movie' | 'tvshow' | 'season' | 'episode' | 'artist' | 'album' | 'song')[];
-}
-
-// Example asset type defaults (from assetTypeDefaults.ts)
-{
-  poster: {
-    displayName: 'Posters',
-    defaultMax: 3,
-    minAllowed: 0,
-    maxAllowed: 10,
-    description: 'Plex/Jellyfin support multiple, Kodi uses first',
-    mediaTypes: ['movie', 'tvshow', 'season']
-  },
-  fanart: {
-    displayName: 'Fanart / Backdrops',
-    defaultMax: 4,
-    minAllowed: 0,
-    maxAllowed: 10,
-    description: 'All players support multiple, Kodi rotates in slideshow',
-    mediaTypes: ['movie', 'tvshow', 'season']
-  },
-  clearlogo: {
-    displayName: 'Clear Logos',
-    defaultMax: 1,
-    minAllowed: 0,
-    maxAllowed: 3,
-    description: 'Transparent logo overlays',
-    mediaTypes: ['movie', 'tvshow', 'artist', 'album']
-  },
-  // ... see assetTypeDefaults.ts for complete list
-}
-```
-
-**Configuration via UI**: Settings → General → Enrichment → Asset Download Limits (grouped by media type)
-**Configuration via API**: `GET/PUT /api/v1/settings/asset-limits/:assetType`
-
-**Note**: Asset limits control how many of each type are downloaded and stored in cache during enrichment. This affects storage usage and UI selection options. Setting a type to 0 disables that asset type entirely.
-
-### Provider Configuration
-
-```typescript
-// Provider configuration (future implementation)
-interface ProviderConfig {
-  tmdb: { enabled: boolean; apiKey?: string };
-  tvdb: { enabled: boolean; apiKey?: string };
-  fanart: { enabled: boolean; apiKey?: string };
-}
-```
-
-**Note**: Currently using embedded API keys for zero-configuration setup. Provider management coming in future release.
 
 ---
 
 ## Error Handling
 
-- **Provider timeout**: Skip provider, continue with others
-- **404 Not Found**: Mark as "no metadata available", log
-- **Rate limited (429)**: Exponential backoff with retry-after header
-- **Download failed**: Retry 3x, then skip asset (log error)
-- **Corrupted file**: Skip asset, try next candidate
-- **Hash mismatch**: Log error, skip asset (provider changed file)
+| Error Type | Behavior |
+|------------|----------|
+| **Provider timeout** | Skip provider, continue with others |
+| **404 Not Found** | Mark as "no metadata available", log |
+| **Rate limited (429)** | Exponential backoff with retry-after header |
+| **Download failed** | Retry 3x, then skip asset (log error) |
+| **Corrupted file** | Skip asset, try next candidate |
+| **Hash mismatch** | Log error, skip asset (provider changed file) |
 
 ---
-
-## Performance Optimizations
-
-- **Parallel provider fetches**: All providers queried concurrently
-- **Parallel analysis**: Up to 10 concurrent temp downloads in Phase 3
-- **Batch database updates**: Group scoring and selection updates
-- **Temp file cleanup**: Immediate deletion after analysis
-- **Cache linkage**: Hash-based lookups avoid full table scans
-
----
-
-## Related Documentation
-
-- [Publishing Phase](PUBLISHING.md) - Asset deployment to library
-- [Provider Overview](../providers/OVERVIEW.md) - Provider system details
-- [TMDB Provider](../providers/TMDB.md) - TMDB API integration
-- [TVDB Provider](../providers/TVDB.md) - TVDB API integration
-- [Fanart.tv Provider](../providers/FANART.md) - Fanart.tv integration
-- [Database Schema](../DATABASE.md) - Complete schema reference
-- [API Architecture](../API.md) - Enrichment endpoints
-
----
-
-## Completion State
-
-Upon completion, enrichment:
-
-1. **Marks entity as enriched**
-   ```typescript
-   await db.movies.update(entityId, {
-     identification_status: 'enriched',
-     enriched_at: new Date(),
-   });
-   ```
-
-2. **Broadcasts completion event**
-   ```typescript
-   websocketBroadcaster.broadcast('enrichment.complete', {
-     entityId,
-     entityType,
-     assetsSelected: selectedCount,
-   });
-   ```
-
-3. **DOES NOT auto-publish** (by default)
-   - Enrichment creates a **user review gate**
-   - User can preview assets, edit metadata, swap selections
-   - User manually triggers publishing when satisfied
-   - **Exception**: If `workflow.auto_publish = true`, creates publish job automatically
 
 ## User Review Gate
 
 After enrichment, the user sees:
-- ✅ All metadata populated (title, plot, ratings, etc.)
-- ✅ Selected assets visible in UI (posters, fanart, logos)
-- ✅ Actor list with headshots
-- ✅ Status badge: "Enriched - Ready to Publish"
-- ✅ **"Publish" button** to deploy to library
+- All metadata populated (title, plot, ratings, etc.)
+- Selected assets visible in UI (posters, fanart, logos)
+- Actor list with headshots
+- Status badge: "Enriched - Ready to Publish"
+- **"Publish" button** to deploy to library
 
 The user can:
 - Swap asset selections (click alternative poster)
@@ -1130,8 +581,23 @@ The user can:
 - Lock asset types to prevent future auto-selection
 - Manually trigger publishing when satisfied
 
+---
+
 ## Next Phase
 
-Publishing is **manually triggered** (or automated if `workflow.auto_publish = true`):
-- See [Publishing Phase](PUBLISHING.md) for deployment workflow
-- Publishing copies cache → library and notifies media players
+Publishing is **manually triggered** (or automated if `workflow.auto_publish = true`). See [Publishing Phase](PUBLISHING.md) for deployment workflow.
+
+**Chain**: Scan → Enrichment → Publishing → Player Sync
+
+---
+
+## See Also
+
+- [Asset Scoring Reference](../reference/ASSET_SCORING.md) - Complete scoring formula
+- [Field Locking](../architecture/ASSET_MANAGEMENT/FIELD_LOCKING.md) - Lock behavior
+- [Provider Overview](../providers/OVERVIEW.md) - Provider system details
+- [TMDB Provider](../providers/TMDB.md) - TMDB API integration
+- [TVDB Provider](../providers/TVDB.md) - TVDB API integration
+- [Fanart.tv Provider](../providers/FANART.md) - Fanart.tv integration
+- [Database Schema](../architecture/DATABASE.md) - Complete schema reference
+- [Publishing Phase](PUBLISHING.md) - Asset deployment to library

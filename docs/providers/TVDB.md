@@ -1,39 +1,123 @@
 # TVDB Provider
 
-**API Version**: v4
-**Documentation**: https://thetvdb.github.io/v4-api/
+**Purpose**: TheTVDB integration for comprehensive TV show, season, and episode metadata and artwork.
 
-## Overview
+**Related Docs**:
+- [Provider Overview](./OVERVIEW.md) - Provider comparison and capabilities
+- [Rate Limiting](./RATE_LIMITING.md) - TVDB-specific rate limits
+- [Getting API Keys](./GETTING_API_KEYS.md) - How to get personal TVDB API key
 
-TheTVDB specializes in television content with comprehensive episode information, air dates, and series metadata. It's particularly strong for anime and international shows.
+## Quick Reference
 
-## Configuration
+**Capabilities**:
+- TV Shows: title, plot, air dates, status, network, ratings, cast, genres
+- Seasons: posters, air dates, episode count
+- Episodes: title, plot, still images, air dates, ratings
+- Assets: poster, fanart, banner, season poster, episode still
 
-```typescript
-interface TVDBConfig {
-  apiKey: string;              // Required (default provided)
-  pin?: string;                // Optional user PIN
-  baseUrl: 'https://api4.thetvdb.com/v4';
-  language: 'eng';             // 3-letter code
-}
+**API Details**:
+- Base URL: `https://api4.thetvdb.com/v4`
+- Image Base: `https://artworks.thetvdb.com`
+- Auth: JWT token (24-hour expiry)
+- Rate Limit: ~100 req/10s (conservative: 30 req/10s)
+- Documentation: https://thetvdb.github.io/v4-api/
+
+**Zero Config**: Embedded API key included, no signup required.
+
+## Supported Features
+
+### Entity Types
+
+| Type | Search | Metadata | Assets | Notes |
+|------|--------|----------|--------|-------|
+| TV Series | ✓ | ✓ | ✓ | Full support |
+| Season | ✓ | ✓ | ✓ | Via series |
+| Episode | ✓ | ✓ | ✓ | Via series |
+| Movie | ✓ | Limited | ✓ | Weak movie support |
+
+### Metadata Fields
+
+**TV Series**:
+- **Core**: title, originalTitle, plot (overview), slug
+- **Air Dates**: firstAired, lastAired, status
+- **Media**: averageRuntime, network, country
+- **Classification**: genres, certification
+- **People**: cast (actors), characters
+- **Ratings**: rating, voteCount
+- **External IDs**: imdbId, tmdbId, zap2itId
+
+**Seasons**:
+- **Core**: seasonNumber, name, overview
+- **Media**: episodeCount, aired episodes
+- **Assets**: season posters
+
+**Episodes**:
+- **Core**: title, overview, episodeNumber, seasonNumber
+- **Air Dates**: aired
+- **Media**: runtime
+- **Ratings**: rating
+- **Assets**: episode stills
+
+### Asset Types
+
+**Available**:
+- **poster**: Series posters (2:3 aspect ratio)
+- **fanart**: Series fanart/backgrounds (16:9)
+- **banner**: Series and season banners (758x140)
+- **clearlogo**: Series logos (transparent)
+- **season_poster**: Season-specific posters
+- **episode_still**: Episode screenshots
+
+**Not Available**:
+- clearart, discart (use FanArt.tv)
+- characterart (use FanArt.tv)
+
+**Image Types (TVDB terminology)**:
+```
+Type ID │ Name            │ Metarr Equivalent
+────────┼─────────────────┼───────────────────
+2       │ Series Poster   │ poster
+3       │ Banner          │ banner
+6       │ Fanart          │ fanart
+7       │ Season Poster   │ season_poster
+8       │ Episode Still   │ episode_still
+14      │ ClearLogo       │ clearlogo
 ```
 
 ## Authentication
 
-TVDB uses JWT tokens that expire after 24 hours:
+TVDB v4 uses JWT authentication with 24-hour token expiry.
+
+### Token Lifecycle
 
 ```typescript
 class TVDBAuth {
-  private token: string;
-  private tokenExpiry: Date;
+  private token: string | null = null;
+  private tokenExpiry: Date | null = null;
 
-  async authenticate(): Promise<void> {
-    const response = await fetch(`${this.baseUrl}/login`, {
+  async getToken(): Promise<string> {
+    // Check if token exists and is valid
+    if (this.token && this.tokenExpiry) {
+      const now = new Date();
+      const bufferHours = 2; // Refresh 2 hours before expiry
+
+      if (now < addHours(this.tokenExpiry, -bufferHours)) {
+        return this.token;
+      }
+    }
+
+    // Authenticate and get new token
+    await this.authenticate();
+    return this.token!;
+  }
+
+  private async authenticate(): Promise<void> {
+    const response = await fetch(`${baseUrl}/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         apikey: this.apiKey,
-        pin: this.pin
+        pin: this.pin // Optional user PIN
       })
     });
 
@@ -43,352 +127,371 @@ class TVDBAuth {
     // Token expires in 24 hours
     this.tokenExpiry = addHours(new Date(), 24);
   }
-
-  async getToken(): Promise<string> {
-    if (!this.token || new Date() > this.tokenExpiry) {
-      await this.authenticate();
-    }
-    return this.token;
-  }
 }
+```
+
+### Request Headers
+
+```typescript
+const headers = {
+  'Authorization': `Bearer ${token}`,
+  'Content-Type': 'application/json'
+};
+```
+
+### Configuration
+
+**Embedded Key**:
+```typescript
+const DEFAULT_TVDB_KEY = process.env.TVDB_API_KEY || 'embedded_key';
+```
+
+**Personal Key**:
+```bash
+# Add to .env for personal key
+TVDB_API_KEY=your_personal_api_key_here
+```
+
+**Benefits of Personal Key**:
+- Usage tracking on your account
+- Support TVDB community
+- Same rate limits (not increased)
+- Subscriber perks if you're a TVDB subscriber
+
+## Key Endpoints Used
+
+### Authentication
+
+```
+POST /login
+Body: { "apikey": "key", "pin": "optional_pin" }
+Returns: { "data": { "token": "jwt_token" } }
+```
+
+### Search
+
+**Series Search**:
+```
+GET /search?query={title}&type=series&year={year}
+```
+
+**Search with Remote ID**:
+```
+GET /search/remoteid/{imdb_id}
+```
+
+### Metadata
+
+**Series Extended**:
+```
+GET /series/{tvdb_id}/extended
+Returns: All metadata + seasons + episodes
+```
+
+**Season Extended**:
+```
+GET /seasons/{season_id}/extended
+Returns: Season details + episodes
+```
+
+**Episode Extended**:
+```
+GET /episodes/{episode_id}/extended
+Returns: Episode details + translations
+```
+
+### Images
+
+**Series Artworks**:
+```
+GET /series/{tvdb_id}/artworks?type={type_id}
+Returns: Artwork URLs by type
+```
+
+**All Artworks** (single call):
+```
+GET /series/{tvdb_id}/artworks
+Returns: All artwork types
 ```
 
 ## Rate Limiting
 
-- **Default**: 30 requests per 10 seconds
-- **Burst**: Up to 100 requests allowed
-- **Daily Limit**: 10,000 requests per day
+**Official Limit**: ~100 requests per 10 seconds (undocumented)
 
+**Conservative Metarr Configuration**:
 ```typescript
-class TVDBRateLimiter {
-  private shortWindow = new RateLimitWindow(30, 10000);  // 30 per 10s
-  private dailyWindow = new RateLimitWindow(10000, 86400000); // 10k per day
-
-  async throttle(): Promise<void> {
-    await this.shortWindow.throttle();
-    await this.dailyWindow.throttle();
-  }
+{
+  requestsPerSecond: 10,
+  burstCapacity: 50,
+  windowSeconds: 10
 }
 ```
 
-## Key Endpoints
+**Why Conservative**:
+- Exact limit not documented
+- Embedded key shared across Metarr users
+- Prevents 429 errors
+- Sufficient for typical usage
 
-### Series
+**Best Practices**:
+1. **Use extended endpoints**: Get all data in one call
+2. **Fetch all artworks**: Single call instead of per-type
+3. **Cache tokens**: 24-hour expiry, no need to re-auth frequently
+4. **Batch seasons**: Extended endpoint includes all seasons
 
+**Example Efficiency**:
 ```typescript
-// Search series
-GET /search?query={query}&type=series
-Headers: {
-  'Authorization': 'Bearer {token}'
-}
-Response: {
-  data: [{
-    objectID: string,
-    name: string,
-    first_air_time: string,
-    overview: string,
-    primary_language: string,
-    tvdb_id: string
-  }]
-}
+// Good: Single extended call
+GET /series/12345/extended
+// Returns: series + seasons + episodes
 
-// Get series extended info
-GET /series/{id}/extended?meta=episodes
-Response: {
-  data: {
-    id: number,
-    name: string,
-    overview: string,
-    firstAired: string,
-    lastAired: string,
-    status: string,
-    episodes: [{
-      id: number,
-      seasonNumber: number,
-      episodeNumber: number,
-      name: string,
-      aired: string,
-      overview: string
-    }],
-    artworks: [{
-      type: number,  // 1=banner, 2=poster, 3=fanart
-      image: string,
-      thumbnail: string,
-      language: string,
-      score: number
-    }]
-  }
-}
+// Bad: Multiple calls
+GET /series/12345
+GET /series/12345/seasons
+GET /seasons/67890/episodes
 ```
 
-### Episodes
+See [RATE_LIMITING.md](./RATE_LIMITING.md) for complete rate limiting documentation.
 
+## Quirks and Workarounds
+
+### Language Codes
+
+**Issue**: TVDB uses 3-letter ISO 639-2 codes (e.g., `eng`), not 2-letter ISO 639-1 (e.g., `en`)
+
+**Solution**: Map language codes
 ```typescript
-// Get episode details
-GET /episodes/{id}/extended
-Response: {
-  data: {
-    id: number,
-    seriesId: number,
-    seasonNumber: number,
-    episodeNumber: number,
-    name: string,
-    aired: string,
-    runtime: number,
-    overview: string,
-    image: string
-  }
-}
+const languageMap = {
+  'en': 'eng',
+  'es': 'spa',
+  'fr': 'fra',
+  'de': 'deu',
+  'ja': 'jpn'
+};
+
+const tvdbLanguage = languageMap[isoLanguage] || 'eng';
 ```
 
-### Artwork
+### Absolute vs Aired Episode Numbers
 
+**Issue**: TVDB tracks both aired order and absolute order (for anime)
+
+**Solution**: Use appropriate order based on content type
 ```typescript
-// Get series artwork
-GET /series/{id}/artworks?type={type}
-Types: 1=banner, 2=poster, 3=fanart, 11=icon, 12=clearlogo
-
-Response: {
-  data: {
-    artworks: [{
-      id: number,
-      image: string,
-      thumbnail: string,
-      language: string,
-      type: number,
-      score: number,
-      width: number,
-      height: number
-    }]
-  }
-}
+const episodeNumber = series.type === 'anime'
+  ? episode.absoluteNumber || episode.airedEpisodeNumber
+  : episode.airedEpisodeNumber;
 ```
 
-## Artwork Types
+### Artwork Type IDs
 
+**Issue**: TVDB uses numeric type IDs, not semantic names
+
+**Solution**: Maintain type mapping
 ```typescript
-enum TVDBArtworkType {
-  BANNER = 1,      // 758x140
-  POSTER = 2,      // 680x1000
-  FANART = 3,      // 1920x1080
-  ICON = 11,       // Square icons
-  CLEARLOGO = 12,  // Transparent logos
-  CLEARART = 22,   // Character art
-  THUMB = 23       // Landscape thumbs
-}
-
-function mapArtworkType(type: TVDBArtworkType): AssetType {
-  switch (type) {
-    case TVDBArtworkType.POSTER: return 'poster';
-    case TVDBArtworkType.FANART: return 'fanart';
-    case TVDBArtworkType.BANNER: return 'banner';
-    case TVDBArtworkType.CLEARLOGO: return 'logo';
-    default: return 'other';
-  }
-}
+const ARTWORK_TYPES = {
+  2: 'poster',
+  3: 'banner',
+  6: 'fanart',
+  7: 'season_poster',
+  8: 'episode_still',
+  14: 'clearlogo'
+};
 ```
 
-## Data Mapping
+### Multiple Networks
 
+**Issue**: Shows can have multiple networks (syndication, co-production)
+
+**Solution**: Use primary network (first in array)
 ```typescript
-function mapTVDBSeries(tvdbData: TVDBSeries): Series {
-  return {
-    title: tvdbData.name,
-    original_title: tvdbData.originalName,
-    plot: tvdbData.overview,
-    first_aired: tvdbData.firstAired,
-    status: mapStatus(tvdbData.status),
-    tvdb_id: tvdbData.id,
-
-    // Map network/studio
-    studios: tvdbData.companies
-      .filter(c => c.companyType === 1) // Network
-      .map(c => c.name),
-
-    // Map genres
-    genres: tvdbData.genres.map(g => g.name),
-
-    // Process episodes
-    seasons: groupEpisodesBySeason(tvdbData.episodes)
-  };
-}
-
-function mapStatus(tvdbStatus: string): string {
-  const statusMap = {
-    'Continuing': 'continuing',
-    'Ended': 'ended',
-    'Upcoming': 'upcoming'
-  };
-  return statusMap[tvdbStatus] || 'unknown';
-}
+const network = series.networks?.[0]?.name || 'Unknown';
 ```
 
-## Asset Scoring
+### Season 0 (Specials)
 
+**Issue**: Season 0 contains specials, pilots, behind-the-scenes
+
+**Handling**: Include by default but allow filtering
 ```typescript
-function scoreTVDBImage(image: TVDBImage): number {
-  let score = 0;
-
-  // Base score from TVDB (0-50 points)
-  // TVDB provides quality scores 0-100
-  score += image.score * 0.5;
-
-  // Resolution bonus (0-25 points)
-  const pixels = image.width * image.height;
-  const idealPixels = getIdealPixels(image.type);
-  score += Math.min(25, (pixels / idealPixels) * 25);
-
-  // Language preference (0-15 points)
-  if (image.language === config.language) score += 15;
-  if (!image.language) score += 10; // No text
-
-  // Type-specific adjustments (0-10 points)
-  if (image.type === TVDBArtworkType.POSTER) {
-    const ratio = image.width / image.height;
-    const idealRatio = 0.68;
-    const diff = Math.abs(ratio - idealRatio);
-    score += Math.max(0, 10 - (diff * 20));
-  }
-
-  return score;
-}
+const regularSeasons = seasons.filter(s => s.number > 0);
+const specials = seasons.find(s => s.number === 0);
 ```
 
-## Updates API
+### Air Date Precision
 
-TVDB provides an updates endpoint for efficient syncing:
+**Issue**: Some episodes have year-only or month-only air dates
 
+**Solution**: Handle partial dates gracefully
 ```typescript
-// Get updates since timestamp
-GET /updates?since={unix_timestamp}&type=series&action=update
-Response: {
-  data: [{
-    entityType: 'series',
-    method: 'update',
-    recordId: number,
-    timeStamp: number
-  }]
-}
-
-// Efficient sync
-async function syncUpdates(since: Date): Promise<void> {
-  const updates = await tvdb.getUpdates(since);
-
-  for (const update of updates.data) {
-    if (update.entityType === 'series') {
-      const localShow = await db.series.findByTvdbId(update.recordId);
-      if (localShow && localShow.monitored) {
-        await jobQueue.add('enrich', {
-          entity_type: 'series',
-          entity_id: localShow.id,
-          provider: 'tvdb'
-        });
-      }
-    }
-  }
-}
+// TVDB returns: "2023-05-00" or "2023-00-00"
+const airDate = episode.aired || null;
+const year = airDate ? parseInt(airDate.split('-')[0]) : null;
 ```
 
 ## Error Handling
 
+### Common Errors
+
+**401 Unauthorized**:
+- Expired JWT token (auto-refresh)
+- Invalid API key (check configuration)
+- PIN required but not provided
+
+**404 Not Found**:
+- Invalid TVDB ID
+- Series deleted/removed from TVDB
+- Try search by name or external ID
+
+**429 Too Many Requests**:
+- Rate limit exceeded
+- Automatic exponential backoff
+- Reduce concurrent requests
+
+**503 Service Unavailable**:
+- TVDB server maintenance
+- Circuit breaker opens after 5 failures
+- Fallback to TMDB
+
+### Retry Strategy
+
 ```typescript
-class TVDBProvider {
-  async fetchSeries(tvdbId: number): Promise<TVDBSeries> {
-    const token = await this.auth.getToken();
+try {
+  let token = await this.getToken();
+  const response = await tvdbClient.getSeries(tvdbId, token);
+  return response;
+} catch (error) {
+  if (error.statusCode === 401) {
+    // Token expired, refresh and retry
+    this.token = null;
+    token = await this.getToken();
+    return await tvdbClient.getSeries(tvdbId, token);
+  } else if (error.statusCode === 429) {
+    // Rate limit, exponential backoff
+    await exponentialBackoff(attempt);
+    // Retry up to 5 times
+  }
+  throw error;
+}
+```
 
-    try {
-      const response = await fetch(
-        `${this.baseUrl}/series/${tvdbId}/extended?meta=episodes`,
-        {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Accept': 'application/json'
-          }
-        }
-      );
+## Configuration
 
-      if (response.status === 401) {
-        // Token expired, refresh and retry
-        await this.auth.authenticate();
-        return this.fetchSeries(tvdbId);
-      }
+### Provider Settings
 
-      if (response.status === 404) {
-        throw new NotFoundError(`TVDB series ${tvdbId} not found`);
-      }
+Configure in Settings → Providers → TVDB:
 
-      if (response.status === 429) {
-        const reset = response.headers.get('X-RateLimit-Reset');
-        await sleep(parseInt(reset) * 1000 - Date.now());
-        return this.fetchSeries(tvdbId);
-      }
+```json
+{
+  "enabled": true,
+  "apiKey": "your_personal_key",
+  "pin": "optional_subscriber_pin",
+  "language": "eng",
+  "includeSpecials": true
+}
+```
 
-      const data = await response.json();
+### Environment Variables
 
-      if (data.status === 'failure') {
-        throw new ProviderError(data.message);
-      }
+```bash
+# Optional personal API key
+TVDB_API_KEY=your_api_key_here
 
-      return data.data;
+# Optional subscriber PIN
+TVDB_PIN=your_pin_here
 
-    } catch (error) {
-      if (error instanceof NotFoundError) throw error;
-      throw new ProviderError(`TVDB fetch failed: ${error.message}`);
-    }
+# Override base URL (for testing)
+TVDB_BASE_URL=https://api4.thetvdb.com/v4
+```
+
+## Data Mapping
+
+### Series Metadata Mapping
+
+```typescript
+{
+  // Core fields
+  title: data.name,
+  originalTitle: data.originalName,
+  plot: data.overview,
+  slug: data.slug,
+
+  // Air dates
+  firstAired: data.firstAired,
+  lastAired: data.lastAired,
+  status: data.status.name, // e.g., "Continuing", "Ended"
+
+  // Media info
+  averageRuntime: data.averageRuntime,
+  network: data.networks?.[0]?.name,
+  country: data.originalCountry,
+
+  // Classification
+  genres: data.genres.map(g => g.name),
+  certification: data.contentRating,
+
+  // People
+  actors: data.characters.slice(0, 20),
+
+  // External IDs
+  externalIds: {
+    imdb: data.remoteIds.find(r => r.sourceName === 'IMDB')?.id,
+    tmdb: data.remoteIds.find(r => r.sourceName === 'TheMovieDB.com')?.id
   }
 }
 ```
 
-## Caching Strategy
+### Episode Metadata Mapping
 
 ```typescript
-// Cache token for 23 hours (refresh before expiry)
-const TOKEN_CACHE_HOURS = 23;
+{
+  title: episode.name,
+  plot: episode.overview,
+  episodeNumber: episode.number,
+  seasonNumber: episode.seasonNumber,
+  aired: episode.aired,
+  runtime: episode.runtime,
+  rating: episode.airsAfterSeason,
 
-// Cache series data for 24 hours
-const SERIES_CACHE_HOURS = 24;
-
-// Cache artwork indefinitely (URLs don't change)
-const ARTWORK_CACHE = null;
-
-// Episode data cache for 6 hours (air dates may update)
-const EPISODE_CACHE_HOURS = 6;
-```
-
-## Language Support
-
-TVDB supports multiple languages with fallback:
-
-```typescript
-async function fetchWithLanguageFallback(
-  seriesId: number,
-  languages: string[] = ['eng', 'spa', 'fra']
-): Promise<TVDBSeries> {
-  for (const lang of languages) {
-    try {
-      const data = await tvdb.fetchSeries(seriesId, lang);
-      if (data.overview) return data; // Has translation
-    } catch (error) {
-      continue; // Try next language
-    }
-  }
-
-  // Default to English
-  return tvdb.fetchSeries(seriesId, 'eng');
+  // TVDB-specific
+  absoluteNumber: episode.absoluteNumber, // For anime
+  productionCode: episode.productionCode
 }
 ```
 
-## Best Practices
+## Provider Priority
 
-1. **Cache authentication tokens** for 23 hours
-2. **Use extended endpoints** to get all data in one call
-3. **Respect language preferences** with fallback
-4. **Store artwork scores** for intelligent selection
-5. **Use the updates API** for efficient syncing
-6. **Handle token expiry** gracefully with retry
+TVDB is typically prioritized as:
+1. **Quality First**: 3rd (after FanArt.tv, TMDB)
+2. **Speed First**: 2nd (after TMDB)
+3. **TMDB Primary**: 3rd (for TV shows)
+4. **TVDB Primary**: 1st (by definition)
 
-## Related Documentation
+See [Provider Overview](./OVERVIEW.md) for complete priority preset details.
 
-- [Enrichment Phase](../phases/ENRICHMENT.md) - How TVDB is used
-- [Provider Overview](OVERVIEW.md) - Provider system architecture
-- [Database Schema](../DATABASE.md) - Provider cache tables
+## Performance Tips
+
+1. **Use extended endpoints**: Reduce API calls by 70%
+2. **Fetch all artworks**: Single call for all types
+3. **Cache tokens**: 24-hour validity, minimal re-authentication
+4. **Store TVDB IDs**: Direct lookup faster than search
+5. **Batch series updates**: Process multiple shows in parallel
+
+## Getting a Personal API Key
+
+See [GETTING_API_KEYS.md](./GETTING_API_KEYS.md) for step-by-step instructions.
+
+**Quick Steps**:
+1. Create account at https://thetvdb.com/
+2. Navigate to Dashboard → API Access
+3. Create new API key
+4. Add key to `.env`: `TVDB_API_KEY=your_key`
+5. Optional: Add subscriber PIN for premium features
+
+## See Also
+
+- [Provider Overview](./OVERVIEW.md) - All provider capabilities
+- [Rate Limiting](./RATE_LIMITING.md) - Rate limiting details
+- [TMDB Provider](./TMDB.md) - Movie/TV alternative
+- [Enrichment Phase](../phases/ENRICHMENT.md) - How TVDB fits in enrichment
+- [Official TVDB API Docs](https://thetvdb.github.io/v4-api/) - Complete API reference

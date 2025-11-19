@@ -1,422 +1,496 @@
-# Fanart.tv Provider
+# FanArt.tv Provider
 
-**API Version**: v3
-**Documentation**: https://fanarttv.docs.apiary.io/
+**Purpose**: High-quality curated artwork provider specializing in clearlogos, disc art, and premium backgrounds.
 
-## Overview
+**Related Docs**:
+- [Provider Overview](./OVERVIEW.md) - Provider comparison and capabilities
+- [Rate Limiting](./RATE_LIMITING.md) - FanArt.tv-specific rate limits
+- [Getting API Keys](./GETTING_API_KEYS.md) - How to get personal FanArt.tv API key
 
-Fanart.tv specializes in high-quality artwork including clearlogos, disc art, and HD backgrounds. It complements TMDB/TVDB with specialized artwork types not available elsewhere.
+## Quick Reference
 
-## Configuration
+**Capabilities**:
+- **Images Only**: No metadata, purely artwork
+- **Unique Assets**: clearlogo, clearart, discart, characterart not available elsewhere
+- **Curated Quality**: Community-driven quality control
+- **HD Options**: Many assets available in HD resolutions
 
-```typescript
-interface FanartConfig {
-  apiKey: string;              // Optional (default provided)
-  clientKey?: string;          // Optional personal key
-  baseUrl: 'http://webservice.fanart.tv/v3';
-}
+**API Details**:
+- Base URL: `https://webservice.fanart.tv/v3`
+- Auth: Project API key (+ optional personal key)
+- Rate Limit: 10 req/s (20 req/s with personal key)
+- Documentation: https://fanarttv.docs.apiary.io/
+
+**Zero Config**: Embedded project API key included, no signup required.
+
+## Supported Features
+
+### Entity Types
+
+| Type | Assets | Notes |
+|------|--------|-------|
+| Movie | ✓ | Full support |
+| TV Series | ✓ | Full support |
+| Season | Limited | Season posters via series |
+| Music Artist | ✓ | Via TheAudioDB integration |
+
+### Asset Types
+
+**Movies**:
+```
+Asset Type     │ Description                      │ HD Available
+───────────────┼──────────────────────────────────┼──────────────
+clearlogo      │ Transparent movie logo           │ ✓ (hdmovielogo)
+clearart       │ Transparent character art        │ ✓ (hdmovieclearart)
+poster         │ Movie poster                     │ ✗
+fanart         │ Background/backdrop              │ ✓ (moviebackground)
+banner         │ Wide banner (758x140)            │ ✗
+landscape      │ Landscape thumb (16:9)           │ ✗
+discart        │ CD/DVD/Blu-ray art               │ ✗
 ```
 
-## Rate Limiting
-
-- **Project Key**: 10 requests per second
-- **Personal Key**: 20 requests per second
-- **No daily limits**
-
-```typescript
-class FanartRateLimiter {
-  private readonly maxPerSecond: number;
-  private tokens: number;
-  private lastRefill: number;
-
-  constructor(hasPersonalKey: boolean) {
-    this.maxPerSecond = hasPersonalKey ? 20 : 10;
-    this.tokens = this.maxPerSecond;
-    this.lastRefill = Date.now();
-  }
-
-  async throttle(): Promise<void> {
-    const now = Date.now();
-    const elapsed = now - this.lastRefill;
-
-    // Refill tokens based on time elapsed
-    const tokensToAdd = Math.floor(elapsed / 1000 * this.maxPerSecond);
-    this.tokens = Math.min(this.maxPerSecond, this.tokens + tokensToAdd);
-    this.lastRefill = now;
-
-    if (this.tokens <= 0) {
-      // Wait for next token
-      await sleep(1000 / this.maxPerSecond);
-      this.tokens = 1;
-    }
-
-    this.tokens--;
-  }
-}
+**TV Shows**:
+```
+Asset Type     │ Description                      │ HD Available
+───────────────┼──────────────────────────────────┼──────────────
+clearlogo      │ Transparent show logo            │ ✓ (hdtvlogo)
+clearart       │ Transparent character art        │ ✓ (hdclearart)
+poster         │ Show poster                      │ ✗
+fanart         │ Background/backdrop              │ ✗
+banner         │ Wide banner (758x140)            │ ✗
+landscape      │ Landscape thumb (16:9)           │ ✗
+characterart   │ Character cutouts                │ ✗
+seasonposter   │ Season-specific posters          │ ✗ (via series)
 ```
 
-## Key Endpoints
+**Not Available**:
+- episode_still (use TMDB or TVDB)
+- season_poster as separate entity (included in series response)
+
+## Key Endpoints Used
 
 ### Movies
 
-```typescript
-// Get movie artwork
-GET /movies/{tmdb_id}?api_key={api_key}
-Response: {
-  tmdbid: string,
-  imdbid: string,
-  name: string,
-  hdmovielogo: [{
-    id: string,
-    url: string,
-    lang: string,
-    likes: string
-  }],
-  hdmovieclearart: [...],
-  movieposter: [...],
-  moviebackground: [...],
-  moviedisc: [...],
-  moviebanner: [...],
-  moviethumb: [...]
-}
+**All Movie Art**:
+```
+GET /movies/{tmdb_id}?api_key={project_key}&client_key={personal_key}
+
+Returns all asset types in single response:
+- hdmovielogo / movielogo
+- hdmovieclearart / movieclearart
+- movieposter
+- moviebackground / movieart
+- moviebanner
+- moviethumb
+- moviedisc
 ```
 
 ### TV Shows
 
+**All TV Art**:
+```
+GET /tv/{tvdb_id}?api_key={project_key}&client_key={personal_key}
+
+Returns all asset types in single response:
+- hdtvlogo / clearlogo
+- hdclearart / clearart
+- tvposter
+- showbackground
+- tvbanner
+- tvthumb
+- characterart
+- seasonposter / seasonthumb
+```
+
+### Music (via TheAudioDB)
+
+**Artist Art**:
+```
+GET /music/{musicbrainz_id}?api_key={project_key}&client_key={personal_key}
+
+Returns:
+- artistthumb
+- artistbackground
+- musiclogo / hdmusiclogo
+- musicbanner
+```
+
+## Authentication
+
+FanArt.tv uses a two-key system:
+
+### Project API Key
+
+**Embedded Key**:
 ```typescript
-// Get TV show artwork
-GET /tv/{tvdb_id}?api_key={api_key}
-Response: {
-  tvdbid: string,
-  name: string,
-  hdtvlogo: [...],
-  hdclearart: [...],
-  tvposter: [...],
-  showbackground: [...],
-  tvbanner: [...],
-  seasonposter: [...],
-  seasonbanner: [...],
-  seasonthumb: [...]
+const PROJECT_KEY = process.env.FANART_PROJECT_KEY || 'embedded_project_key';
+```
+
+**Rate Limit**: 10 requests per second
+
+**Usage**: Required for all requests
+```
+GET /movies/123?api_key={project_key}
+```
+
+### Personal API Key (Optional)
+
+**Configuration**:
+```bash
+# Add to .env for personal key
+FANART_PERSONAL_KEY=your_personal_key_here
+```
+
+**Rate Limit**: 20 requests per second (2x faster)
+
+**Usage**: Added as `client_key` parameter
+```
+GET /movies/123?api_key={project_key}&client_key={personal_key}
+```
+
+**Benefits**:
+- **2x Rate Limit**: 20 req/s vs 10 req/s
+- **Priority Access**: New images available faster
+- **Support Community**: Helps fund FanArt.tv
+
+## Rate Limiting
+
+### Official Limits
+
+**Project Key**: 10 requests per second
+**Personal Key**: 20 requests per second
+
+### Metarr Configuration
+
+```typescript
+{
+  requestsPerSecond: hasPersonalKey ? 2 : 1,
+  burstCapacity: hasPersonalKey ? 10 : 5,
+  windowSeconds: 1
 }
 ```
 
-## Artwork Types
+**Why Slower Than Official**:
+- Conservative to prevent 429 errors
+- Project key shared across Metarr users
+- API calls are cheap (single endpoint returns all assets)
+- Quality over speed philosophy
+
+### Best Practices
+
+1. **Single Call Strategy**: One endpoint call returns all asset types
+2. **Cache Aggressively**: FanArt.tv content rarely changes
+3. **Personal Key Recommended**: If enriching large libraries
+4. **Parallel Providers**: Fetch from FanArt.tv + TMDB + TVDB simultaneously
+
+**Example Efficiency**:
+```typescript
+// Good: Single call for all assets
+const allArt = await fanartClient.getMovieArt(tmdbId);
+// Returns: logos, clearart, posters, fanart, banners, discs
+
+// Bad: Multiple calls (not how FanArt.tv works anyway)
+// FanArt.tv doesn't have per-type endpoints
+```
+
+See [RATE_LIMITING.md](./RATE_LIMITING.md) for complete rate limiting documentation.
+
+## Data Mapping
+
+### Response Format
+
+FanArt.tv returns arrays of assets per type with metadata:
+
+```json
+{
+  "name": "The Matrix",
+  "tmdb_id": "603",
+  "hdmovielogo": [
+    {
+      "id": "12345",
+      "url": "https://assets.fanart.tv/fanart/movies/603/hdmovielogo/the-matrix-5b2c3f4d5e6f7.png",
+      "lang": "en",
+      "likes": "42",
+      "disc": "0",
+      "disc_type": ""
+    }
+  ],
+  "movieposter": [
+    {
+      "id": "67890",
+      "url": "https://assets.fanart.tv/fanart/movies/603/movieposter/the-matrix-5b2c3f4d5e6f8.jpg",
+      "lang": "en",
+      "likes": "28"
+    }
+  ]
+}
+```
+
+### Asset Candidate Mapping
 
 ```typescript
-interface FanartTypes {
-  // Movies
-  hdmovielogo: ClearLogo;       // HD transparent logo
-  hdmovieclearart: ClearArt;    // HD transparent character art
-  movieposter: Poster;           // Standard poster
-  moviebackground: Fanart;       // HD backgrounds
-  moviedisc: DiscArt;           // CD/DVD/Blu-ray art
-  moviebanner: Banner;          // Wide banners
-  moviethumb: Thumb;            // Landscape thumbs
-
-  // TV Shows
-  hdtvlogo: ClearLogo;          // HD show logo
-  hdclearart: ClearArt;         // Character art
-  tvposter: Poster;             // Show poster
-  showbackground: Fanart;       // Show backgrounds
-  tvbanner: Banner;             // Show banner
-  seasonposter: SeasonPoster;   // Season-specific posters
-  seasonbanner: SeasonBanner;   // Season-specific banners
-}
-
-function mapFanartType(type: string): AssetType {
-  const typeMap = {
-    hdmovielogo: 'logo',
-    hdtvlogo: 'logo',
-    hdmovieclearart: 'clearart',
-    hdclearart: 'clearart',
-    movieposter: 'poster',
-    tvposter: 'poster',
-    moviebackground: 'fanart',
-    showbackground: 'fanart',
-    moviedisc: 'disc',
-    moviebanner: 'banner',
-    tvbanner: 'banner'
+function mapToAssetCandidate(asset: FanArtImage, type: string): AssetCandidate {
+  return {
+    provider: 'fanart_tv',
+    type: normalizeAssetType(type), // e.g., 'hdmovielogo' → 'clearlogo'
+    url: asset.url,
+    language: asset.lang,
+    metadata: {
+      likes: parseInt(asset.likes) || 0,
+      isHD: type.startsWith('hd'),
+      discType: asset.disc_type || null
+    }
   };
-  return typeMap[type] || 'other';
 }
 ```
 
-## Data Processing
+### Asset Type Normalization
 
 ```typescript
-function processFanartResponse(data: FanartResponse): AssetCandidate[] {
-  const candidates: AssetCandidate[] = [];
+const TYPE_MAPPING = {
+  // Movies
+  'hdmovielogo': 'clearlogo',
+  'movielogo': 'clearlogo',
+  'hdmovieclearart': 'clearart',
+  'movieclearart': 'clearart',
+  'movieposter': 'poster',
+  'moviebackground': 'fanart',
+  'movieart': 'fanart',
+  'moviebanner': 'banner',
+  'moviethumb': 'landscape',
+  'moviedisc': 'discart',
 
-  // Process each artwork type
-  for (const [type, items] of Object.entries(data)) {
-    if (Array.isArray(items)) {
-      for (const item of items) {
-        candidates.push({
-          asset_type: mapFanartType(type),
-          provider: 'fanart.tv',
-          provider_id: item.id,
-          url: item.url,
-          language: item.lang || null,
-          vote_count: parseInt(item.likes) || 0,
+  // TV
+  'hdtvlogo': 'clearlogo',
+  'clearlogo': 'clearlogo',
+  'hdclearart': 'clearart',
+  'clearart': 'clearart',
+  'tvposter': 'poster',
+  'showbackground': 'fanart',
+  'tvbanner': 'banner',
+  'tvthumb': 'landscape',
+  'characterart': 'characterart',
+  'seasonposter': 'season_poster'
+};
+```
 
-          // Fanart.tv doesn't provide dimensions
-          // Must fetch image to get size
-          width: null,
-          height: null,
+## Quality Indicators
 
-          // Calculate score
-          score: scoreFanartImage(item, type)
-        });
-      }
-    }
+FanArt.tv provides quality metadata to help selection:
+
+### Likes
+
+**Meaning**: Community votes for image quality
+**Range**: 0 to unlimited
+**Usage**: Higher likes = preferred candidate
+
+```typescript
+const score = baseScore + (asset.likes * 10); // Boost by likes
+```
+
+### HD vs SD
+
+**HD Types**: `hdmovielogo`, `hdmovieclearart`, `hdtvlogo`, `hdclearart`, `moviebackground`
+**SD Types**: `movielogo`, `movieclearart`, `clearlogo`, `clearart`, `movieart`
+
+**Selection**: Prefer HD when available
+```typescript
+const isHD = assetType.startsWith('hd');
+const score = isHD ? baseScore * 1.5 : baseScore;
+```
+
+### Language
+
+**Supported**: `en`, `es`, `fr`, `de`, `it`, `pt`, `ja`, `ru`, etc.
+**Special**: `00` = no language (generic/logo)
+
+**Selection**: Prefer user's language, then generic (`00`), then English
+```typescript
+if (asset.lang === userLanguage) score += 100;
+else if (asset.lang === '00') score += 50;
+else if (asset.lang === 'en') score += 25;
+```
+
+## Quirks and Workarounds
+
+### TMDB ID Required (Movies)
+
+**Issue**: FanArt.tv uses TMDB IDs for movies, not IMDb IDs
+
+**Solution**: Lookup TMDB ID first
+```typescript
+// If only IMDb ID available, lookup TMDB ID first
+if (!movie.tmdb_id && movie.imdb_id) {
+  const tmdbResult = await tmdbClient.find(movie.imdb_id, 'imdb_id');
+  movie.tmdb_id = tmdbResult.movie_results[0]?.id;
+}
+
+const fanartAssets = await fanartClient.getMovieArt(movie.tmdb_id);
+```
+
+### TVDB ID Required (TV Shows)
+
+**Issue**: FanArt.tv uses TVDB IDs for TV shows
+
+**Solution**: Lookup TVDB ID first
+```typescript
+if (!series.tvdb_id && series.imdb_id) {
+  const tvdbResult = await tvdbClient.searchByRemoteId(series.imdb_id);
+  series.tvdb_id = tvdbResult.data[0]?.id;
+}
+
+const fanartAssets = await fanartClient.getTVArt(series.tvdb_id);
+```
+
+### Season Posters Embedded
+
+**Issue**: Season posters included in series response, not separate endpoint
+
+**Solution**: Extract season-specific assets
+```typescript
+const seriesArt = await fanartClient.getTVArt(tvdbId);
+
+// Season posters have 'season' property
+const seasonPosters = seriesArt.seasonposter.filter(
+  p => p.season === seasonNumber.toString()
+);
+```
+
+### Missing Assets
+
+**Issue**: Not all movies/shows have FanArt.tv assets
+
+**Solution**: Always have fallback provider
+```typescript
+try {
+  const fanartAssets = await fanartClient.getMovieArt(tmdbId);
+  if (fanartAssets.length === 0) {
+    // Fallback to TMDB
+    return await tmdbClient.getMovieImages(tmdbId);
   }
-
-  return candidates;
+} catch (error) {
+  // 404 from FanArt.tv = no assets, use fallback
+  return await tmdbClient.getMovieImages(tmdbId);
 }
 ```
 
-## Asset Scoring
+### Disc Art Variations
 
+**Issue**: Multiple disc types (DVD, Blu-ray, 3D Blu-ray, 4K)
+
+**Solution**: Prefer highest quality, allow user selection
 ```typescript
-function scoreFanartImage(item: FanartItem, type: string): number {
-  let score = 0;
-
-  // Community likes (0-30 points)
-  const likes = parseInt(item.likes) || 0;
-  score += Math.min(30, likes * 3);
-
-  // Language preference (0-20 points)
-  if (!item.lang || item.lang === '') {
-    score += 20; // No text, universal
-  } else if (item.lang === config.language) {
-    score += 15; // Matches preference
-  }
-
-  // Type-specific bonuses
-  if (type.includes('hd')) {
-    score += 25; // HD quality bonus
-  }
-
-  if (type.includes('logo') || type.includes('clearart')) {
-    score += 20; // Unique artwork types
-  }
-
-  // Disc art for physical media
-  if (type === 'moviedisc') {
-    score += 10; // Specialized content
-  }
-
-  return score;
-}
-```
-
-## Image Dimensions
-
-Since Fanart.tv doesn't provide dimensions, fetch on demand:
-
-```typescript
-async function getFanartImageDimensions(url: string): Promise<Dimensions> {
-  try {
-    // Download image headers only
-    const response = await fetch(url, { method: 'HEAD' });
-
-    // Try to get from headers (not always available)
-    const width = response.headers.get('X-Image-Width');
-    const height = response.headers.get('X-Image-Height');
-
-    if (width && height) {
-      return {
-        width: parseInt(width),
-        height: parseInt(height)
-      };
-    }
-
-    // Fall back to downloading and measuring
-    const buffer = await downloadImage(url);
-    const metadata = await sharp(buffer).metadata();
-
-    return {
-      width: metadata.width,
-      height: metadata.height
-    };
-
-  } catch (error) {
-    logger.warn('Failed to get dimensions for Fanart.tv image', { url });
-    return { width: 0, height: 0 };
-  }
-}
+const discArt = assets.moviedisc.sort((a, b) => {
+  const typeOrder = ['4k', 'bluray3d', 'bluray', 'dvd'];
+  return typeOrder.indexOf(a.disc_type) - typeOrder.indexOf(b.disc_type);
+});
 ```
 
 ## Error Handling
 
+### Common Errors
+
+**404 Not Found**:
+- Movie/show has no FanArt.tv assets (common)
+- Invalid TMDB/TVDB ID
+- Fallback to other providers
+
+**429 Too Many Requests**:
+- Rate limit exceeded
+- Exponential backoff automatic
+- Consider personal API key
+
+**503 Service Unavailable**:
+- FanArt.tv maintenance
+- Circuit breaker opens after 5 failures
+- Fallback to TMDB/TVDB
+
+### Retry Strategy
+
 ```typescript
-class FanartProvider {
-  async fetchMovieArtwork(tmdbId: number): Promise<FanartResponse> {
-    try {
-      const url = `${this.baseUrl}/movies/${tmdbId}`;
-      const params = new URLSearchParams({
-        api_key: this.apiKey
-      });
-
-      if (this.clientKey) {
-        params.append('client_key', this.clientKey);
-      }
-
-      const response = await fetch(`${url}?${params}`);
-
-      if (response.status === 404) {
-        // No artwork available
-        return {};
-      }
-
-      if (response.status === 503) {
-        // Service temporarily unavailable
-        await sleep(5000);
-        return this.fetchMovieArtwork(tmdbId);
-      }
-
-      if (!response.ok) {
-        throw new ProviderError(`Fanart.tv error: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-
-      // Empty response means no artwork
-      if (!data || Object.keys(data).length === 0) {
-        return {};
-      }
-
-      return data;
-
-    } catch (error) {
-      // Fanart.tv is supplemental, don't fail enrichment
-      logger.warn('Fanart.tv fetch failed', { tmdbId, error });
-      return {};
-    }
+try {
+  const assets = await fanartClient.getMovieArt(tmdbId);
+  return assets;
+} catch (error) {
+  if (error.statusCode === 404) {
+    // No assets, not an error - return empty
+    return [];
+  } else if (error.statusCode === 429) {
+    // Rate limit, exponential backoff
+    await exponentialBackoff(attempt);
+    // Retry up to 5 times
   }
+  throw error;
 }
 ```
 
-## Caching Strategy
+## Configuration
 
-```typescript
-interface FanartCache {
-  // Cache responses for 7 days
-  RESPONSE_TTL: 604800;
+### Provider Settings
 
-  // Cache "no artwork" responses too
-  EMPTY_RESPONSE_TTL: 86400;
+Configure in Settings → Providers → FanArt.tv:
 
-  // URLs never change
-  URL_TTL: null;
-}
-
-async function getCachedOrFetch(tmdbId: number): Promise<FanartResponse> {
-  const cached = await db('provider_cache')
-    .where({
-      provider: 'fanart.tv',
-      entity_id: tmdbId
-    })
-    .where('expires_at', '>', new Date())
-    .first();
-
-  if (cached) {
-    return JSON.parse(cached.response);
-  }
-
-  const data = await fanart.fetchMovieArtwork(tmdbId);
-
-  // Cache even empty responses
-  await db('provider_cache').insert({
-    provider: 'fanart.tv',
-    entity_id: tmdbId,
-    response: JSON.stringify(data),
-    cached_at: new Date(),
-    expires_at: Object.keys(data).length > 0
-      ? addDays(new Date(), 7)
-      : addDays(new Date(), 1)
-  });
-
-  return data;
+```json
+{
+  "enabled": true,
+  "projectKey": "embedded_key",
+  "personalKey": "your_personal_key",
+  "preferHD": true,
+  "minimumLikes": 5
 }
 ```
 
-## Unique Assets
+### Environment Variables
 
-Fanart.tv provides unique asset types:
+```bash
+# Optional personal API key (doubles rate limit)
+FANART_PERSONAL_KEY=your_personal_key_here
 
-```typescript
-interface UniqueAssets {
-  clearlogo: {
-    description: 'Transparent show/movie logo',
-    usage: 'Overlay on fanart',
-    preferred_size: '800x310'
-  },
-
-  clearart: {
-    description: 'Transparent character art',
-    usage: 'Decorative overlay',
-    preferred_size: '1000x562'
-  },
-
-  discart: {
-    description: 'CD/DVD/Blu-ray disc art',
-    usage: 'Physical media representation',
-    preferred_size: '1000x1000'
-  },
-
-  moviethumb: {
-    description: 'Landscape thumbnail',
-    usage: 'Wide format displays',
-    preferred_size: '1000x562'
-  }
-}
+# Override base URL (for testing)
+FANART_BASE_URL=https://webservice.fanart.tv/v3
 ```
 
-## Best Practices
+## Provider Priority
 
-1. **Use personal API key** for 2x rate limit
-2. **Cache aggressively** - Artwork rarely changes
-3. **Fetch dimensions lazily** - Only when needed
-4. **Handle missing artwork gracefully** - Not all media has Fanart.tv content
-5. **Prioritize HD variants** when available
-6. **Combine with TMDB/TVDB** for complete coverage
+FanArt.tv is typically prioritized as:
+1. **Quality First**: 1st (highest quality artwork)
+2. **Speed First**: 3rd (slower rate limit)
+3. **TMDB Primary**: 2nd (after TMDB)
+4. **TVDB Primary**: 2nd (after TVDB)
 
-## Integration Example
+**Why Quality First Default**:
+- Curated, community-vetted assets
+- Unique asset types unavailable elsewhere
+- HD options for logos and clearart
+- Worth the slower rate limit for visual quality
 
-```typescript
-async function enrichMovieArtwork(movie: Movie): Promise<void> {
-  // Get base artwork from TMDB
-  const tmdbArtwork = await tmdb.fetchMovieImages(movie.tmdb_id);
+See [Provider Overview](./OVERVIEW.md) for complete priority preset details.
 
-  // Supplement with Fanart.tv
-  const fanartData = await fanart.fetchMovieArtwork(movie.tmdb_id);
+## Performance Tips
 
-  // Combine candidates
-  const candidates = [
-    ...processTMDBImages(tmdbArtwork),
-    ...processFanartImages(fanartData)
-  ];
+1. **Single Call**: Always fetch all asset types in one request
+2. **Cache Indefinitely**: FanArt.tv assets rarely change
+3. **Personal Key**: If enriching 100+ items, get personal key
+4. **Parallel Fetch**: Request FanArt.tv + TMDB + TVDB simultaneously
+5. **Fallback Fast**: 404 is common, have fallback ready
 
-  // Store all candidates
-  await db('asset_candidates').insert(candidates);
+## Getting a Personal API Key
 
-  // Select best of each type
-  const poster = selectBestAsset(candidates, 'poster');
-  const fanart = selectBestAsset(candidates, 'fanart');
-  const logo = selectBestAsset(candidates, 'logo');
+See [GETTING_API_KEYS.md](./GETTING_API_KEYS.md) for step-by-step instructions.
 
-  // Update movie
-  await db('movies').update({
-    poster_id: poster?.id,
-    fanart_id: fanart?.id,
-    logo_id: logo?.id
-  });
-}
-```
+**Quick Steps**:
+1. Visit https://fanart.tv/get-an-api-key/
+2. Fill out request form (name, email, app description)
+3. Wait for approval email (usually 1-2 days)
+4. Add key to `.env`: `FANART_PERSONAL_KEY=your_key`
 
-## Related Documentation
+**Note**: FanArt.tv is community-driven. Consider donating if you use it heavily.
 
-- [Enrichment Phase](../phases/ENRICHMENT.md) - How Fanart.tv is used
-- [Provider Overview](OVERVIEW.md) - Provider system architecture
-- [Database Schema](../DATABASE.md) - Provider cache tables
+## See Also
+
+- [Provider Overview](./OVERVIEW.md) - All provider capabilities
+- [Rate Limiting](./RATE_LIMITING.md) - Rate limiting details
+- [TMDB Provider](./TMDB.md) - Metadata + fallback images
+- [TVDB Provider](./TVDB.md) - TV metadata + fallback images
+- [Enrichment Phase](../phases/ENRICHMENT.md) - How FanArt.tv fits in enrichment
+- [Official FanArt.tv API Docs](https://fanarttv.docs.apiary.io/) - Complete API reference

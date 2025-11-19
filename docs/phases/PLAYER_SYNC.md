@@ -2,32 +2,44 @@
 
 **Purpose**: Communicate asset changes to configured media players, triggering library updates and maintaining synchronization.
 
-**Status**: Design phase, implementation pending
+**Related Docs**:
+- Parent: [Phase Overview](OVERVIEW.md)
+- Related: [Kodi Player](../players/KODI.md), [Jellyfin Player](../players/JELLYFIN.md), [Plex Player](../players/PLEX.md)
+
+## Quick Reference
+
+- **Terminal phase**: Last phase in the automation chain
+- **Targeted updates**: Refreshes only changed items, not full library scans
+- **Idempotent**: Multiple syncs cause no harm
+- **Fault-tolerant**: Failed players don't block others
+- **Configurable**: Per-player enable/disable
+- **Observable**: Reports sync status per player
+
+---
 
 ## Overview
 
 The player sync phase ensures media players are aware of Metarr's changes. Rather than forcing full library scans, it uses targeted update commands to refresh only changed items, minimizing player load and user disruption.
 
-## Phase Rules
+**Status**: ⚠️ Partial implementation. Media player updates are handled via `MediaPlayerConnectionManager` but not yet integrated as a dedicated workflow phase.
 
-1. **Idempotent**: Multiple syncs cause no harm
-2. **Non-invasive**: Targeted updates, not full scans
-3. **Fault-tolerant**: Failed players don't block others
-4. **Configurable**: Per-player enable/disable
-5. **Observable**: Reports sync status per player
-6. **Chainable**: Always triggers next phase, even when disabled
+---
 
 ## Triggers
 
-- **Post-publish**: After successful publishing
-- **Manual**: User clicks "Sync Players"
-- **Bulk**: User-driven bulk selection
+| Trigger Type | Description | Priority |
+|--------------|-------------|----------|
+| **Post-publish** | After successful publishing | 5 (NORMAL) |
+| **Manual** | User clicks "Sync Players" | 10 (HIGH) |
+| **Bulk** | User-driven bulk selection | 10 (HIGH) |
+
+---
 
 ## Process Flow
 
 ```
 1. CHANGE COLLECTION
-   ├── Identify changed items flag in job
+   ├── Identify changed items from job payload
    ├── Group by media type (movie/tv)
    ├── Apply path mappings per player
    └── Build sync commands
@@ -50,9 +62,13 @@ The player sync phase ensures media players are aware of Metarr's changes. Rathe
    └── Report sync results to UI
 ```
 
+---
+
 ## Player Implementations
 
 ### Kodi (JSON-RPC)
+
+**Method**: HTTP POST to `/jsonrpc` endpoint
 
 ```typescript
 class KodiPlayer implements IMediaPlayer {
@@ -100,7 +116,11 @@ class KodiPlayer implements IMediaPlayer {
 }
 ```
 
+**See**: [Kodi Player Reference](../players/KODI.md) for complete JSON-RPC API.
+
 ### Jellyfin (REST API)
+
+**Method**: HTTP POST to `/Library/Media/Updated` endpoint
 
 ```typescript
 class JellyfinPlayer implements IMediaPlayer {
@@ -133,7 +153,11 @@ class JellyfinPlayer implements IMediaPlayer {
 }
 ```
 
+**See**: [Jellyfin Player Reference](../players/JELLYFIN.md) for complete REST API.
+
 ### Plex (REST API)
+
+**Method**: HTTP PUT to `/library/sections/{key}/refresh` endpoint
 
 ```typescript
 class PlexPlayer implements IMediaPlayer {
@@ -167,13 +191,19 @@ class PlexPlayer implements IMediaPlayer {
 }
 ```
 
+**See**: [Plex Player Reference](../players/PLEX.md) for complete API.
+
+---
+
 ## Path Mapping
+
+Players often see media at different paths than Metarr (Docker volumes, network shares, etc.).
 
 ```typescript
 interface PathMapping {
   metarr_path: string; // Path as Metarr sees it
   player_path: string; // Path as player sees it
-  player_id: number; // Which player this applies to
+  player_id: number;   // Which player this applies to
 }
 
 function mapPath(localPath: string, player: MediaPlayer): string {
@@ -188,20 +218,24 @@ function mapPath(localPath: string, player: MediaPlayer): string {
 
   return localPath; // No mapping, use as-is
 }
-
-// Examples:
-// Metarr sees: /data/media/movies/The Matrix (1999)/
-// Kodi sees:   smb://nas/movies/The Matrix (1999)/
-// Plex sees:   /media/movies/The Matrix (1999)/
 ```
 
+**Examples**:
+- **Metarr sees**: `/data/media/movies/The Matrix (1999)/`
+- **Kodi sees**: `smb://nas/movies/The Matrix (1999)/`
+- **Plex sees**: `/media/movies/The Matrix (1999)/`
+
+---
+
 ## Player Groups
+
+Players can be organized into groups for batch synchronization.
 
 ```typescript
 interface PlayerGroup {
   id: number;
   name: string; // "Living Room Kodis"
-  players: MediaPlayer[]; // Array of players in group
+  players: MediaPlayer[];
   sync_mode: 'parallel' | 'sequential';
   continue_on_error: boolean;
 }
@@ -217,12 +251,36 @@ async function syncPlayerGroup(group: PlayerGroup, items: MediaItem[]): Promise<
         await syncPlayer(player, items);
       } catch (error) {
         if (!group.continue_on_error) throw error;
-        console.error(`Player ${player.name} failed:`, error);
+        logger.error(`Player ${player.name} failed:`, error);
       }
     }
   }
 }
 ```
+
+---
+
+## Sync Strategies
+
+### Partial Scan (Recommended)
+
+Only scan directories that changed:
+- **Kodi**: `VideoLibrary.Scan({ directory: "/path/to/movie" })`
+- **Jellyfin**: `POST /Library/Media/Updated` with specific paths
+- **Plex**: `PUT /library/sections/{key}/refresh` with path parameter
+
+**Benefits**: Fast, low CPU usage, minimal disruption to playback
+
+### Full Library Scan (Fallback)
+
+Scan entire library when partial scan fails:
+- **Kodi**: `VideoLibrary.Scan()` (no directory parameter)
+- **Jellyfin**: `POST /Library/Refresh/{libraryId}`
+- **Plex**: `PUT /library/sections/{key}/refresh` (no path parameter)
+
+**Drawbacks**: Slow, high CPU usage, can interrupt playback
+
+---
 
 ## Configuration
 
@@ -243,29 +301,80 @@ interface PlayerSyncConfig {
 }
 ```
 
+**Configuration via UI**: Settings → Players → Sync Configuration
+**Configuration via API**: `GET/PATCH /api/v1/settings/player-sync`
+
+---
+
 ## Error Handling
 
-- **Player offline**: Mark as failed, continue with others
-- **Authentication failed**: Disable player, alert user
-- **Timeout**: Retry with exponential backoff
-- **Partial failure**: Log specifics, report summary
-- **Network error**: Queue for retry in next cycle
+| Error Type | Behavior |
+|------------|----------|
+| **Player offline** | Mark as failed, continue with others |
+| **Authentication failed** | Disable player, alert user |
+| **Timeout** | Retry with exponential backoff |
+| **Partial failure** | Log specifics, report summary |
+| **Network error** | Queue for retry in next cycle |
+
+---
 
 ## Performance Optimizations
 
 - **Parallel groups**: Sync independent players simultaneously
 - **Connection pooling**: Reuse HTTP connections
+- **Debouncing**: Batch multiple updates within 30 seconds
+- **Skip during playback**: Wait for active playback to stop (Kodi only)
 
-## Related Documentation
+---
 
-- [Kodi Player](../players/KODI.md) - Kodi JSON-RPC details
-- [Jellyfin Player](../players/JELLYFIN.md) - Jellyfin REST API
-- [Plex Player](../players/PLEX.md) - Plex Media Server API
-- [Database Schema](../DATABASE.md) - Player configuration tables
-- [API Architecture](../API.md) - Player sync endpoints
+## Job Outputs
+
+Upon successful player sync completion:
+
+1. **Player sync timestamps updated**:
+   - `media_player_groups.last_sync_at` updated with current timestamp
+
+2. **Progress events emitted** (WebSocket):
+   - `player_sync.progress`: Real-time sync progress
+   - `player_sync.complete`: Final counts and duration
+   - `player_sync.error`: Per-player errors (non-fatal)
+
+3. **Optional notification job created**:
+   - If notification phase configured for `player_sync_completed` events
+   - See [Notification Phase](NOTIFICATION.md)
+
+---
+
+## Implementation Status
+
+**Current Status**: ⚠️ Partial
+
+- `MediaPlayerConnectionManager` exists and handles player connections
+- Player API clients implemented (Kodi, Jellyfin, Plex)
+- Path mapping service implemented
+- **Missing**: Integration as a dedicated job-driven workflow phase
+- **Workaround**: Manual player sync from UI works, automated post-publish sync not yet implemented
+
+**Roadmap**: Full integration as a workflow phase planned for future release.
+
+---
 
 ## Next Phase
 
-Player sync is the terminal phase in the automation chain. It may optionally create a [Notification](NOTIFICATION.md) job to report workflow completion, but this runs independently and does not block chain completion.
+Player sync is the **terminal phase** in the automation chain. It does not create additional phase jobs.
 
-The [Verification Phase](VERIFICATION.md) runs independently on schedule and is not part of the standard automation chain.
+However, it may optionally create a [Notification](NOTIFICATION.md) job to report workflow completion. This runs independently and does not block chain completion.
+
+**Chain**: Scan → Enrichment → Publishing → Player Sync (terminal)
+
+---
+
+## See Also
+
+- [Phase Overview](OVERVIEW.md) - Phase system architecture
+- [Publishing Phase](PUBLISHING.md) - Asset deployment
+- [Kodi Player](../players/KODI.md) - Kodi JSON-RPC details
+- [Jellyfin Player](../players/JELLYFIN.md) - Jellyfin REST API
+- [Plex Player](../players/PLEX.md) - Plex Media Server API
+- [Database Schema](../architecture/DATABASE.md) - Player configuration tables
+- [Notification Phase](NOTIFICATION.md) - Workflow completion notifications

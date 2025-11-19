@@ -1,446 +1,424 @@
-# Jellyfin Player
+# Jellyfin Integration
 
-**API Version**: 10.8+
-**Documentation**: https://api.jellyfin.org/
+**Purpose**: Jellyfin media server integration via REST API for library synchronization.
 
-## Overview
+**Status**:   Partial Implementation - Basic library scanning supported
 
-Jellyfin is a free and open-source media server that provides a REST API for library management and playback control. Metarr integrates with Jellyfin to trigger library scans and update metadata.
+**Related Docs**:
+- [Player Overview](./OVERVIEW.md) - All player capabilities
+- [Kodi Integration](./KODI.md) - Reference for full implementation
+- [Publishing Phase](../phases/PUBLISHING.md) - Asset deployment workflow
+- [Jellyfin API Docs](https://api.jellyfin.org/) - Official API reference
 
-## Configuration
+## Quick Reference
 
-```typescript
-interface JellyfinConfig {
-  host: string;                // Hostname or IP
-  port: number;                // Default: 8096
-  apiKey: string;              // Required for authentication
-  userId?: string;             // Optional user ID
-  deviceId: string;            // Unique device identifier
-  deviceName: string;          // "Metarr"
-  https: boolean;              // Use HTTPS
+**Protocol**: REST API (HTTP/HTTPS)
+
+**Port**: `8096` (default HTTP), `8920` (default HTTPS)
+
+**Sync Strategy**: Library-level scan (pull sync)
+
+**Key Features**:
+- Simple REST API
+- API key authentication
+- Library scanning
+- Path mapping support
+
+**Limitations** (Current Implementation):
+- No item-level refresh
+- No real-time events
+- No active player detection
+- Polling only for completion
+- Single instance per group
+
+**Prerequisites**:
+- Jellyfin 10.8+ recommended
+- API key generated
+- Network accessible
+
+## Setup
+
+### Generate API Key (Jellyfin Dashboard)
+
+1. **Login to Jellyfin**:
+   - Navigate to `http://jellyfin-ip:8096`
+   - Login with admin account
+
+2. **Open Dashboard**:
+   - Click hamburger menu (top left)
+   - Select "Dashboard"
+
+3. **Navigate to API Keys**:
+   - Dashboard ’ Advanced ’ API Keys
+
+4. **Create New API Key**:
+   - Click "+ Create API Key"
+   - **App Name**: "Metarr"
+   - **Description**: "Media metadata management"
+   - Click "OK"
+
+5. **Copy API Key**:
+   - Format: 32-character hexadecimal string
+   - Store securely (shown only once)
+
+### Add Jellyfin to Metarr
+
+**Via UI**:
+1. Settings ’ Players ’ Add Player
+2. **Type**: Jellyfin
+3. **Name**: "Jellyfin Server"
+4. **Host**: `192.168.1.20`
+5. **Port**: `8096`
+6. **API Key**: Paste generated key
+7. **Test Connection**
+8. **Save**
+
+**Via API**:
+```bash
+POST /api/players
+{
+  "name": "Jellyfin Server",
+  "type": "jellyfin",
+  "host": "192.168.1.20",
+  "port": 8096,
+  "api_key": "your_32_character_api_key_here",
+  "group_id": 2,
+  "path_mappings": []
 }
 ```
 
-## Authentication
+## REST API
 
-Jellyfin uses API key authentication:
+### Authentication
 
-```typescript
-class JellyfinAuth {
-  getHeaders(): Headers {
-    return {
-      'X-Emby-Token': this.apiKey,
-      'X-Emby-Client': 'Metarr',
-      'X-Emby-Device-Name': this.deviceName,
-      'X-Emby-Device-Id': this.deviceId,
-      'X-Emby-Client-Version': '1.0.0'
-    };
-  }
+All requests require API key in header:
 
-  buildUrl(endpoint: string): string {
-    const protocol = this.https ? 'https' : 'http';
-    return `${protocol}://${this.host}:${this.port}${endpoint}`;
-  }
-}
-```
-
-## Key Endpoints
-
-### Library Management
-
-```typescript
-// Get all libraries
+```http
 GET /Library/VirtualFolders
-Response: [{
-  Name: string,
-  Locations: string[],
-  CollectionType: string,  // 'movies', 'tvshows', 'music'
-  ItemId: string,
-  RefreshStatus: string
-}]
+Host: jellyfin-ip:8096
+X-Emby-Token: your_api_key_here
+```
 
-// Refresh specific library
+**Headers**:
+- `X-Emby-Token`: API key (required)
+- `Content-Type`: `application/json`
+
+### Key Endpoints Used
+
+#### Library Management
+
+**Get Libraries**:
+```http
+GET /Library/VirtualFolders
+X-Emby-Token: {api_key}
+```
+
+**Response**:
+```json
+[
+  {
+    "Name": "Movies",
+    "ItemId": "abc123",
+    "Locations": ["/media/movies"],
+    "CollectionType": "movies"
+  },
+  {
+    "Name": "TV Shows",
+    "ItemId": "def456",
+    "Locations": ["/media/tv"],
+    "CollectionType": "tvshows"
+  }
+]
+```
+
+**Scan Library**:
+```http
 POST /Library/Refresh
-Body: {
-  Recursive: boolean,
-  ItemId?: string        // Optional specific library ID
-}
+X-Emby-Token: {api_key}
+```
 
-// Scan specific path
+**Scan Specific Path**:
+```http
 POST /Library/Media/Updated
-Body: {
-  Updates: [{
-    Path: string,
-    UpdateType: 'Created' | 'Modified' | 'Deleted'
-  }]
+X-Emby-Token: {api_key}
+Content-Type: application/json
+
+{
+  "Updates": [
+    {
+      "Path": "/media/movies/The Matrix (1999)",
+      "UpdateType": "Created"
+    }
+  ]
 }
 ```
 
-### Items API
+#### System Information
 
-```typescript
-// Get item by path
-GET /Items?Path={path}&Recursive=false
-Response: {
-  Items: [{
-    Id: string,
-    Name: string,
-    Path: string,
-    Type: string,
-    MediaType: string
-  }]
-}
+**Get Server Info**:
+```http
+GET /System/Info
+X-Emby-Token: {api_key}
+```
 
-// Update item metadata
-POST /Items/{ItemId}
-Body: {
-  Name: string,
-  Overview: string,
-  PremiereDate: string,
-  CommunityRating: number,
-  Genres: string[],
-  Studios: { Name: string }[],
-  People: [{
-    Name: string,
-    Role: string,
-    Type: 'Actor' | 'Director' | 'Writer'
-  }]
-}
-
-// Refresh metadata for item
-POST /Items/{ItemId}/Refresh
-Query: {
-  Recursive: boolean,
-  ImageRefreshMode: 'Default' | 'FullRefresh',
-  MetadataRefreshMode: 'Default' | 'FullRefresh',
-  ReplaceAllImages: boolean,
-  ReplaceAllMetadata: boolean
+**Response**:
+```json
+{
+  "ServerName": "Jellyfin",
+  "Version": "10.8.13",
+  "Id": "server-id",
+  "OperatingSystem": "Linux"
 }
 ```
 
-### Image Management
-
-```typescript
-// Upload image for item
-POST /Items/{ItemId}/Images/{ImageType}
-Headers: {
-  'Content-Type': 'image/jpeg'
-}
-Body: Binary image data
-
-// Image types
-enum JellyfinImageType {
-  Primary = 'Primary',      // Poster
-  Art = 'Art',
-  Backdrop = 'Backdrop',    // Fanart
-  Banner = 'Banner',
-  Logo = 'Logo',
-  Thumb = 'Thumb',
-  Disc = 'Disc',
-  Chapter = 'Chapter',
-  Screenshot = 'Screenshot'
-}
-
-// Delete image
-DELETE /Items/{ItemId}/Images/{ImageType}/{ImageIndex}
-```
-
-### Sessions & Notifications
-
-```typescript
-// Get active sessions
+**Get Active Sessions** (for future player detection):
+```http
 GET /Sessions
-Response: [{
-  Id: string,
-  UserId: string,
-  UserName: string,
-  Client: string,
-  DeviceId: string,
-  DeviceName: string,
-  PlayState: {
-    IsPaused: boolean,
-    PositionTicks: number
-  }
-}]
-
-// Send notification to session
-POST /Sessions/{SessionId}/Message
-Body: {
-  Header: string,
-  Text: string,
-  TimeoutMs: number
-}
+X-Emby-Token: {api_key}
 ```
 
-## Library Sync Implementation
+## Sync Workflow
 
-```typescript
-class JellyfinPlayer implements IMediaPlayer {
-  async updateLibrary(items: MediaItem[]): Promise<void> {
-    // Group items by library
-    const libraries = this.groupByLibrary(items);
+### Library-Level Scan (Current Implementation)
 
-    for (const [libraryId, libraryItems] of libraries) {
-      // Option 1: Targeted path updates (preferred)
-      await this.updatePaths(libraryItems);
+**Goal**: Trigger Jellyfin to scan entire library
 
-      // Option 2: Full library refresh (fallback)
-      if (this.config.fullRefresh) {
-        await this.refreshLibrary(libraryId);
-      }
-    }
-  }
+**Steps**:
+1. Metarr publishes assets for "The Matrix (1999)"
+2. Metarr sends `POST /Library/Refresh`
+3. Jellyfin queues library scan
+4. Metarr polls for scan completion (timeout after 60 seconds)
+5. Jellyfin scans entire Movies library
+6. Metarr reports success on timeout (assumes complete)
 
-  private async updatePaths(items: MediaItem[]): Promise<void> {
-    const updates = items.map(item => ({
-      Path: this.mapPath(item.library_path),
-      UpdateType: item.deleted ? 'Deleted' : 'Modified'
-    }));
+**Limitations**:
+- Scans entire library, not just changed item
+- No reliable completion detection
+- Timeout-based success (unreliable)
+- Slow for large libraries (minutes)
 
-    await this.api.post('/Library/Media/Updated', {
-      Updates: updates
-    });
-  }
+### Path-Specific Update (Planned)
 
-  private async refreshLibrary(libraryId: string): Promise<void> {
-    await this.api.post('/Library/Refresh', {
-      Recursive: true,
-      ItemId: libraryId
-    });
+**Goal**: Tell Jellyfin specific path changed
 
-    // Monitor refresh progress
-    await this.waitForRefreshComplete(libraryId);
-  }
+**Endpoint**: `POST /Library/Media/Updated`
 
-  private async waitForRefreshComplete(libraryId: string): Promise<void> {
-    let attempts = 0;
-    const maxAttempts = 60; // 5 minutes
+**Implementation Status**: Designed but not implemented
 
-    while (attempts < maxAttempts) {
-      const libraries = await this.api.get('/Library/VirtualFolders');
-      const library = libraries.find(l => l.ItemId === libraryId);
-
-      if (library?.RefreshStatus === 'Idle') {
-        return;
-      }
-
-      await sleep(5000);
-      attempts++;
-    }
-
-    throw new Error('Library refresh timeout');
-  }
-}
-```
-
-## Metadata Sync
-
-```typescript
-async function syncMovieToJellyfin(movie: Movie): Promise<void> {
-  // Find item by path
-  const items = await jellyfin.getItemsByPath(movie.file_path);
-  if (items.length === 0) return;
-
-  const jellyfinItem = items[0];
-
-  // Update metadata
-  await jellyfin.updateItem(jellyfinItem.Id, {
-    Name: movie.title,
-    OriginalTitle: movie.original_title,
-    Overview: movie.plot,
-    PremiereDate: movie.release_date,
-    CommunityRating: movie.rating,
-    RunTimeTicks: movie.runtime * 600000000, // Convert to ticks
-
-    // Genres
-    Genres: movie.genres.map(g => g.name),
-
-    // Studios
-    Studios: movie.studios.map(s => ({ Name: s.name })),
-
-    // People
-    People: [
-      ...movie.cast.map(person => ({
-        Name: person.name,
-        Role: person.character,
-        Type: 'Actor'
-      })),
-      ...movie.directors.map(person => ({
-        Name: person.name,
-        Type: 'Director'
-      }))
-    ],
-
-    // External IDs
-    ProviderIds: {
-      Tmdb: movie.tmdb_id?.toString(),
-      Imdb: movie.imdb_id
-    }
-  });
-
-  // Upload images
-  if (movie.poster_path) {
-    await uploadImage(jellyfinItem.Id, 'Primary', movie.poster_path);
-  }
-  if (movie.fanart_path) {
-    await uploadImage(jellyfinItem.Id, 'Backdrop', movie.fanart_path);
-  }
-}
-```
+**Advantages**:
+- Faster than full scan
+- More targeted
+- Better for large libraries
 
 ## Path Mapping
 
-```typescript
-function mapMetarrToJellyfin(metarrPath: string): string {
-  // Get configured path mapping
-  const mapping = config.pathMappings.find(m =>
-    metarrPath.startsWith(m.metarr_path)
-  );
+Same concept as Kodi - map Metarr paths to Jellyfin paths.
 
-  if (mapping) {
-    return metarrPath.replace(
-      mapping.metarr_path,
-      mapping.jellyfin_path
-    );
-  }
+### Docker Scenario
 
-  return metarrPath;
-}
-
-// Example mappings:
-// Metarr:   /data/media/movies/The Matrix (1999)/
-// Jellyfin: /media/movies/The Matrix (1999)/
+**Metarr** (inside container):
+```
+/media/movies/The Matrix (1999)/
 ```
 
-## Error Handling
+**Jellyfin** (inside different container):
+```
+/data/movies/The Matrix (1999)/
+```
 
-```typescript
-class JellyfinProvider {
-  async request(method: string, endpoint: string, body?: any): Promise<any> {
-    try {
-      const response = await fetch(this.buildUrl(endpoint), {
-        method,
-        headers: {
-          ...this.getHeaders(),
-          'Content-Type': 'application/json'
-        },
-        body: body ? JSON.stringify(body) : undefined
-      });
-
-      if (response.status === 401) {
-        throw new AuthError('Invalid Jellyfin API key');
-      }
-
-      if (response.status === 404) {
-        throw new NotFoundError(`Jellyfin endpoint not found: ${endpoint}`);
-      }
-
-      if (!response.ok) {
-        const error = await response.text();
-        throw new PlayerError(`Jellyfin error: ${error}`);
-      }
-
-      const contentType = response.headers.get('content-type');
-      if (contentType?.includes('application/json')) {
-        return response.json();
-      }
-
-      return response.text();
-
-    } catch (error) {
-      if (error.code === 'ECONNREFUSED') {
-        throw new PlayerError('Jellyfin server unavailable');
-      }
-      throw error;
+**Path Mapping**:
+```json
+{
+  "path_mappings": [
+    {
+      "metarr_path": "/media/movies",
+      "player_path": "/data/movies"
+    },
+    {
+      "metarr_path": "/media/tv",
+      "player_path": "/data/tv"
     }
-  }
+  ]
 }
 ```
 
-## Performance Optimization
+## NFO Files and Jellyfin
 
-```typescript
-interface JellyfinOptimization {
-  // Batch operations
-  batchSize: 50,              // Items per update call
+Jellyfin supports Kodi-compatible NFO files:
 
-  // Connection pooling
-  keepAlive: true,
-  maxSockets: 10,
+**Movie NFO** (`movie.nfo` or `{movie-name}.nfo`):
+- Placed adjacent to movie file
+- Jellyfin reads during library scan
+- Format identical to Kodi NFO
 
-  // Caching
-  cacheLibraries: true,       // Cache library IDs
-  cacheTTL: 3600000,         // 1 hour
+**TV Show NFO** (`tvshow.nfo`):
+- Placed in series root directory
+- Series-level metadata
 
-  // Scan strategy
-  targetedScans: true,        // Use path updates vs full scan
-  parallelUpdates: 3          // Concurrent update calls
-}
+**Episode NFO** (`{episode-file}.nfo`):
+- Placed adjacent to episode file
+- Episode-specific metadata
 
-async function batchUpdateItems(items: MediaItem[]): Promise<void> {
-  const chunks = chunk(items, config.batchSize);
+**Image Assets**:
+- `poster.jpg` or `folder.jpg`: Primary image
+- `backdrop.jpg` or `fanart.jpg`: Background
+- `logo.png`: Clearlogo
+- `banner.jpg`: Wide banner
 
-  await Promise.all(
-    chunks.slice(0, config.parallelUpdates).map(chunk =>
-      jellyfin.updatePaths(chunk)
-    )
-  );
+See [NFO_FORMAT.md](../reference/NFO_FORMAT.md) for complete specification.
+
+## Limitations
+
+### Current Implementation
+
+**No Item-Level Refresh**:
+- Cannot refresh specific movie/show
+- Must scan entire library
+- Slow for large libraries
+
+**No Event System**:
+- No WebSocket support
+- No scan completion events
+- Polling-based with timeout
+
+**No Active Player Detection**:
+- Cannot detect if user watching
+- Scans run regardless of playback state
+- May cause buffering during playback
+
+**Single Instance Only**:
+- One Jellyfin per group
+- Cannot sync multiple Jellyfin servers
+- Enforced by group `max_members: 1`
+
+### Planned Improvements
+
+**Path-Specific Updates**:
+- Use `/Library/Media/Updated` endpoint
+- Faster than full library scan
+- Better for automation
+
+**Scan Progress Polling**:
+- Poll `/ScheduledTasks` for scan status
+- Detect actual completion
+- No timeout guessing
+
+**Session Monitoring**:
+- Use `/Sessions` endpoint
+- Detect active playback
+- Skip sync if user watching
+
+## Configuration
+
+### Player Settings
+
+```json
+{
+  "name": "Jellyfin Server",
+  "type": "jellyfin",
+  "host": "192.168.1.20",
+  "port": 8096,
+  "use_https": false,
+  "api_key": "your_32_character_api_key_here",
+  "timeout_seconds": 60,
+  "path_mappings": []
 }
 ```
 
-## WebSocket Support
+### Group Settings
 
-Jellyfin also supports WebSocket for real-time updates:
-
-```typescript
-class JellyfinWebSocket {
-  private ws: WebSocket;
-
-  connect(): void {
-    const wsUrl = `ws://${this.host}:${this.port}/socket`;
-
-    this.ws = new WebSocket(wsUrl);
-
-    this.ws.on('open', () => {
-      // Authenticate
-      this.send({
-        MessageType: 'Authenticate',
-        Data: this.apiKey
-      });
-    });
-
-    this.ws.on('message', (data) => {
-      const message = JSON.parse(data);
-      this.handleMessage(message);
-    });
-  }
-
-  private handleMessage(message: any): void {
-    switch (message.MessageType) {
-      case 'LibraryChanged':
-        // Library was modified
-        this.emit('library:changed', message.Data);
-        break;
-
-      case 'UserDataChanged':
-        // Playback state changed
-        this.emit('playback:changed', message.Data);
-        break;
-    }
-  }
+```json
+{
+  "name": "Jellyfin",
+  "type": "jellyfin",
+  "max_members": 1,
+  "skip_active": false,
+  "sync_strategy": "library-level"
 }
 ```
 
-## Best Practices
+## Troubleshooting
 
-1. **Use targeted path updates** instead of full library scans
-2. **Cache library IDs** to avoid repeated lookups
-3. **Batch multiple updates** in single API calls
-4. **Monitor refresh status** when triggering scans
-5. **Handle connection failures** gracefully
-6. **Map paths correctly** between Metarr and Jellyfin
+### "Authentication failed"
 
-## Related Documentation
+**Causes**:
+- Invalid API key
+- API key deleted
+- Wrong Jellyfin instance
 
-- [Player Sync Phase](../phases/PLAYER_SYNC.md) - How Jellyfin is integrated
-- [Path Mapping](../technical/PATH_MAPPING.md) - Path translation details
+**Solutions**:
+1. Regenerate API key in Jellyfin dashboard
+2. Verify key matches configuration
+3. Check host/port correct
+
+### "Library scan not completing"
+
+**Symptoms**: Timeout after 60 seconds
+
+**Cause**: Scan still running, timeout too short
+
+**Solutions**:
+1. Increase timeout in settings
+2. Check Jellyfin dashboard for scan status
+3. Wait for scan to complete manually
+
+### "Connection refused"
+
+**Causes**:
+- Jellyfin not running
+- Firewall blocking port
+- Wrong host/port
+
+**Solutions**:
+1. Verify Jellyfin running: `http://jellyfin-ip:8096`
+2. Check firewall rules
+3. Verify host/port configuration
+
+### "Path not found"
+
+**Causes**:
+- Path mapping incorrect
+- Jellyfin can't access path
+- Permission issues
+
+**Solutions**:
+1. Configure path mappings
+2. Check Jellyfin library paths
+3. Verify file permissions
+
+## Jellyfin Version Compatibility
+
+| Jellyfin Version | REST API | Support |
+|------------------|----------|---------|
+| **10.8.x** | Latest |  Tested |
+| **10.9.x** | Latest |  Compatible |
+| **10.7.x** | Compatible |   Untested |
+| **10.6.x and older** | Legacy | L Unsupported |
+
+**Recommendation**: Jellyfin 10.8+ for best experience.
+
+## Future Enhancements
+
+**Priority 1**:
+- [ ] Path-specific library updates
+- [ ] Scan progress polling
+- [ ] Reliable completion detection
+
+**Priority 2**:
+- [ ] Active session monitoring
+- [ ] Skip sync during playback
+- [ ] Item-level metadata updates
+
+**Priority 3**:
+- [ ] WebSocket support (if Jellyfin adds)
+- [ ] Multiple instance support
+- [ ] Real-time event handling
+
+## See Also
+
+- [Player Overview](./OVERVIEW.md) - All player capabilities
+- [Kodi Integration](./KODI.md) - Full-featured reference implementation
+- [Publishing Phase](../phases/PUBLISHING.md) - Asset deployment workflow
+- [NFO Format](../reference/NFO_FORMAT.md) - NFO file specification
+- [Official Jellyfin API Docs](https://api.jellyfin.org/) - Complete API reference
+- [Jellyfin GitHub](https://github.com/jellyfin/jellyfin) - Source code and issues
