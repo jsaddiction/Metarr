@@ -13,6 +13,7 @@ import { StatusBadge } from '../ui/StatusBadge';
 import { CurrencyDisplay } from '../ui/CurrencyDisplay';
 import { PopularityIndicator } from '../ui/PopularityIndicator';
 import { ReadOnlyDataGrid } from '../ui/ReadOnlyDataGrid';
+import { TagInput } from '../ui/TagInput';
 import { getLanguageName } from '@/utils/languages';
 
 interface MetadataTabProps {
@@ -61,6 +62,9 @@ interface MovieMetadata {
   studios?: string[];
   countries?: string[];
   tags?: string[];
+
+  // Related entity locks
+  tags_locked: boolean;
 }
 
 interface SearchResult {
@@ -114,6 +118,7 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
         mpaa_locked: movieData.mpaa_locked ?? false,
         premiered_locked: movieData.premiered_locked ?? false,
         user_rating_locked: movieData.user_rating_locked ?? false,
+        tags_locked: movieData.tags_locked ?? false,
       };
 
       setMetadata(normalizedData);
@@ -758,6 +763,18 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
               )}
             </div>
           </div>
+
+          {/* Tags Section */}
+          <div className="border-t border-neutral-700"></div>
+          <TagInput
+            label="Tags"
+            value={metadata.tags || []}
+            onChange={(tags) => handleFieldChange('tags', tags)}
+            locked={metadata.tags_locked}
+            onToggleLock={() => handleToggleLock('tags')}
+            suggestions={[]} // TODO: Fetch from API
+            placeholder="Add tag..."
+          />
 
           {/* Technical Details Section */}
           {((movieData as any)?.video_streams || (movieData as any)?.audio_streams) && (
