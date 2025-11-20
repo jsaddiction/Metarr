@@ -100,6 +100,9 @@ Before starting ANY task:
 
 **Parallel Agent Limit**: **Maximum 6 concurrent agents** (hardware limit)
 
+**Database Migrations**: **CRITICAL - Edit existing migration, don't create new ones**
+Edit `src/database/migrations/20251015_001_clean_schema.ts` directly when adding tables/columns. Never create new migration files (e.g., `202511XX_002_*.ts`). Full details in [CODING_STANDARDS.md](docs/development/CODING_STANDARDS.md#database).
+
 ### Planning vs Implementation Modes
 
 **AI infers** when planning is needed based on complexity and systems affected.

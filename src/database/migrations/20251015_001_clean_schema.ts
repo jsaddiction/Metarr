@@ -443,6 +443,12 @@ export class CleanSchemaMigration {
         imdb_rating REAL,
         imdb_votes INTEGER,
         user_rating REAL CHECK(user_rating >= 0 AND user_rating <= 10),
+        budget INTEGER,
+        revenue INTEGER,
+        homepage TEXT,
+        original_language TEXT,
+        popularity REAL,
+        status TEXT,
         nfo_cache_id INTEGER,
         title_locked BOOLEAN DEFAULT 0,
         plot_locked BOOLEAN DEFAULT 0,
@@ -477,6 +483,11 @@ export class CleanSchemaMigration {
     await db.execute('CREATE INDEX idx_movies_identification ON movies(identification_status)');
     await db.execute('CREATE INDEX idx_movies_deleted ON movies(deleted_at)');
     await db.execute('CREATE INDEX idx_movies_file_path ON movies(file_path)');
+    await db.execute('CREATE INDEX idx_movies_popularity ON movies(popularity DESC)');
+    await db.execute('CREATE INDEX idx_movies_budget ON movies(budget DESC)');
+    await db.execute('CREATE INDEX idx_movies_revenue ON movies(revenue DESC)');
+    await db.execute('CREATE INDEX idx_movies_status ON movies(status)');
+    await db.execute('CREATE INDEX idx_movies_original_language ON movies(original_language)');
 
     // Movie Collections
     await db.execute(`
@@ -503,6 +514,19 @@ export class CleanSchemaMigration {
 
     await db.execute('CREATE INDEX idx_collection_members_movie ON movie_collection_members(movie_id)');
     await db.execute('CREATE INDEX idx_collection_members_collection ON movie_collection_members(collection_id)');
+
+    // Movie External IDs (social/data source links)
+    await db.execute(`
+      CREATE TABLE movie_external_ids (
+        movie_id INTEGER PRIMARY KEY,
+        facebook_id TEXT,
+        instagram_id TEXT,
+        twitter_id TEXT,
+        wikidata_id TEXT,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (movie_id) REFERENCES movies(id) ON DELETE CASCADE
+      )
+    `);
 
     console.log('✅ Movie tables created');
 
