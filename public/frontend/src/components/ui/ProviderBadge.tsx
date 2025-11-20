@@ -6,6 +6,7 @@ interface ProviderBadgeProps {
   provider: 'tmdb' | 'imdb' | 'tvdb' | 'facebook' | 'instagram' | 'twitter' | 'wikidata' | 'homepage';
   id: string | number | null;
   label?: string;
+  showId?: boolean;
 }
 
 const PROVIDER_CONFIG = {
@@ -54,7 +55,7 @@ const PROVIDER_CONFIG = {
 /**
  * Clickable badge that opens provider page in new tab
  */
-export const ProviderBadge: React.FC<ProviderBadgeProps> = ({ provider, id, label }) => {
+export const ProviderBadge: React.FC<ProviderBadgeProps> = ({ provider, id, label, showId = false }) => {
   // Return null if no ID provided
   if (!id) {
     return null;
@@ -77,8 +78,13 @@ export const ProviderBadge: React.FC<ProviderBadgeProps> = ({ provider, id, labe
       `}
       title={`View on ${config.name}`}
     >
-      <span>{displayLabel}</span>
-      <FontAwesomeIcon icon={faExternalLinkAlt} className="text-[10px]" />
+      <div className="flex flex-col items-start gap-0.5">
+        <div className="flex items-center gap-1.5">
+          <span>{displayLabel}</span>
+          <FontAwesomeIcon icon={faExternalLinkAlt} className="text-[10px]" />
+        </div>
+        {showId && <span className="text-[10px] opacity-60 font-normal">{id}</span>}
+      </div>
     </a>
   );
 };

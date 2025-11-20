@@ -693,27 +693,15 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
           {/* Divider */}
           <div className="border-t border-neutral-700"></div>
 
-          {/* Row 6: TMDB ID + IMDB ID + Trailer URL */}
-          <div className="grid grid-cols-3 gap-2">
-            <ReadOnlyField
-              label="TMDB ID"
-              value={metadata.tmdb_id}
-              link={metadata.tmdb_id ? `https://www.themoviedb.org/movie/${metadata.tmdb_id}` : undefined}
-            />
-            <ReadOnlyField
-              label="IMDB ID"
-              value={metadata.imdb_id}
-              link={metadata.imdb_id ? `https://www.imdb.com/title/${metadata.imdb_id}` : undefined}
-            />
-            <GridField
-              label="Trailer URL"
-              field="trailer_url"
-              value={metadata.trailer_url}
-              locked={metadata.trailer_url_locked}
-              onChange={(val) => handleFieldChange('trailer_url', val)}
-              onToggleLock={handleToggleLock}
-            />
-          </div>
+          {/* Row 6: Trailer URL */}
+          <GridField
+            label="Trailer URL"
+            field="trailer_url"
+            value={metadata.trailer_url}
+            locked={metadata.trailer_url_locked}
+            onChange={(val) => handleFieldChange('trailer_url', val)}
+            onToggleLock={handleToggleLock}
+          />
 
           {/* Divider */}
           <div className="border-t border-neutral-700"></div>
@@ -772,9 +760,9 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
           <div className="space-y-2 rounded-lg border border-neutral-700 bg-neutral-800/30 p-3">
             <h3 className="text-sm font-medium text-neutral-300 mb-2">External Links</h3>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-              {metadata.tmdb_id && <ProviderBadge provider="tmdb" id={metadata.tmdb_id} />}
-              {metadata.imdb_id && <ProviderBadge provider="imdb" id={metadata.imdb_id} />}
-              {(movieData as any)?.tvdb_id && <ProviderBadge provider="tvdb" id={(movieData as any).tvdb_id} />}
+              {metadata.tmdb_id && <ProviderBadge provider="tmdb" id={metadata.tmdb_id} showId />}
+              {metadata.imdb_id && <ProviderBadge provider="imdb" id={metadata.imdb_id} showId />}
+              {(movieData as any)?.tvdb_id && <ProviderBadge provider="tvdb" id={(movieData as any).tvdb_id} showId />}
               {(movieData as any)?.homepage && (
                 <ProviderBadge provider="homepage" id={(movieData as any).homepage} label="Website" />
               )}
