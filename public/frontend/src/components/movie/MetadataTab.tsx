@@ -748,67 +748,69 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
             rows={3}
           />
 
-          {/* Production & Stats Section */}
+          {/* Production & Stats / External Links Row */}
           <div className="border-t border-neutral-700"></div>
-          <div className="space-y-2 rounded-lg border border-neutral-700 bg-neutral-800/30 p-3">
-            <h3 className="text-sm font-medium text-neutral-300 mb-2">Production & Stats</h3>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-              {metadata.status && <StatusBadge status={metadata.status} />}
-              {metadata.original_language && (
-                <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-neutral-600/30 bg-neutral-600/20 text-sm font-semibold text-neutral-300">
-                  <span>{getLanguageName(metadata.original_language)}</span>
-                </div>
-              )}
-              {metadata.budget !== undefined && metadata.budget !== null && metadata.budget > 0 && (
-                <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-neutral-600/30 bg-neutral-600/20 text-sm font-semibold text-neutral-300">
-                  <div className="flex flex-col items-start gap-1">
-                    <span className="text-xs opacity-60 font-normal">Budget</span>
-                    <span>${(metadata.budget / 1000000).toFixed(1)}M</span>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            {/* Production & Stats Section */}
+            <div className="rounded-lg border border-neutral-700 bg-neutral-800/30 p-3">
+              <h3 className="text-sm font-medium text-neutral-300 mb-2">Production & Stats</h3>
+              <div className="grid grid-cols-2 gap-2">
+                {metadata.status && <StatusBadge status={metadata.status} />}
+                {metadata.original_language && (
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-neutral-600/30 bg-neutral-600/20 text-sm font-semibold text-neutral-300">
+                    <span>{getLanguageName(metadata.original_language)}</span>
                   </div>
-                </div>
-              )}
-              {metadata.revenue !== undefined && metadata.revenue !== null && metadata.revenue > 0 && (
-                <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-neutral-600/30 bg-neutral-600/20 text-sm font-semibold text-neutral-300">
-                  <div className="flex flex-col items-start gap-1">
-                    <span className="text-xs opacity-60 font-normal">Revenue</span>
-                    <span>${(metadata.revenue / 1000000).toFixed(1)}M</span>
+                )}
+                {metadata.budget !== undefined && metadata.budget !== null && metadata.budget > 0 && (
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-neutral-600/30 bg-neutral-600/20 text-sm font-semibold text-neutral-300">
+                    <div className="flex flex-col items-start gap-1">
+                      <span className="text-xs opacity-60 font-normal">Budget</span>
+                      <span>${(metadata.budget / 1000000).toFixed(1)}M</span>
+                    </div>
                   </div>
-                </div>
-              )}
-              {metadata.popularity !== undefined && metadata.popularity !== null && (
-                <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-neutral-600/30 bg-neutral-600/20 text-sm font-semibold text-neutral-300">
-                  <div className="flex flex-col items-start gap-1">
-                    <span className="text-xs opacity-60 font-normal">Popularity</span>
-                    <span>{metadata.popularity.toFixed(1)}</span>
+                )}
+                {metadata.revenue !== undefined && metadata.revenue !== null && metadata.revenue > 0 && (
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-neutral-600/30 bg-neutral-600/20 text-sm font-semibold text-neutral-300">
+                    <div className="flex flex-col items-start gap-1">
+                      <span className="text-xs opacity-60 font-normal">Revenue</span>
+                      <span>${(metadata.revenue / 1000000).toFixed(1)}M</span>
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
+                {metadata.popularity !== undefined && metadata.popularity !== null && (
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-neutral-600/30 bg-neutral-600/20 text-sm font-semibold text-neutral-300">
+                    <div className="flex flex-col items-start gap-1">
+                      <span className="text-xs opacity-60 font-normal">Popularity</span>
+                      <span>{metadata.popularity.toFixed(1)}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
 
-          {/* External Links Section */}
-          <div className="border-t border-neutral-700"></div>
-          <div className="space-y-2 rounded-lg border border-neutral-700 bg-neutral-800/30 p-3">
-            <h3 className="text-sm font-medium text-neutral-300 mb-2">External Links</h3>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-              {metadata.tmdb_id && <ProviderBadge provider="tmdb" id={metadata.tmdb_id} showId />}
-              {metadata.imdb_id && <ProviderBadge provider="imdb" id={metadata.imdb_id} showId />}
-              {(movieData as any)?.tvdb_id && <ProviderBadge provider="tvdb" id={(movieData as any).tvdb_id} showId />}
-              {(movieData as any)?.homepage && (
-                <ProviderBadge provider="homepage" id={(movieData as any).homepage} label="Website" />
-              )}
-              {(movieData as any)?.external_ids?.facebook_id && (
-                <ProviderBadge provider="facebook" id={(movieData as any).external_ids.facebook_id} />
-              )}
-              {(movieData as any)?.external_ids?.instagram_id && (
-                <ProviderBadge provider="instagram" id={(movieData as any).external_ids.instagram_id} />
-              )}
-              {(movieData as any)?.external_ids?.twitter_id && (
-                <ProviderBadge provider="twitter" id={(movieData as any).external_ids.twitter_id} />
-              )}
-              {(movieData as any)?.external_ids?.wikidata_id && (
-                <ProviderBadge provider="wikidata" id={(movieData as any).external_ids.wikidata_id} />
-              )}
+            {/* External Links Section */}
+            <div className="rounded-lg border border-neutral-700 bg-neutral-800/30 p-3">
+              <h3 className="text-sm font-medium text-neutral-300 mb-2">External Links</h3>
+              <div className="grid grid-cols-2 gap-2">
+                {metadata.tmdb_id && <ProviderBadge provider="tmdb" id={metadata.tmdb_id} showId />}
+                {metadata.imdb_id && <ProviderBadge provider="imdb" id={metadata.imdb_id} showId />}
+                {(movieData as any)?.tvdb_id && <ProviderBadge provider="tvdb" id={(movieData as any).tvdb_id} showId />}
+                {(movieData as any)?.homepage && (
+                  <ProviderBadge provider="homepage" id={(movieData as any).homepage} label="Website" />
+                )}
+                {(movieData as any)?.external_ids?.facebook_id && (
+                  <ProviderBadge provider="facebook" id={(movieData as any).external_ids.facebook_id} />
+                )}
+                {(movieData as any)?.external_ids?.instagram_id && (
+                  <ProviderBadge provider="instagram" id={(movieData as any).external_ids.instagram_id} />
+                )}
+                {(movieData as any)?.external_ids?.twitter_id && (
+                  <ProviderBadge provider="twitter" id={(movieData as any).external_ids.twitter_id} />
+                )}
+                {(movieData as any)?.external_ids?.wikidata_id && (
+                  <ProviderBadge provider="wikidata" id={(movieData as any).external_ids.wikidata_id} />
+                )}
+              </div>
             </div>
           </div>
 
