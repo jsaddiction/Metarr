@@ -6,11 +6,11 @@ Last updated: 2025-11-19
 - [ ] TBD - awaiting user direction
 
 ## Next Up (Priority Order)
-- [ ] Implement first feature using new planning workflow
-- [ ] Refine workflow based on practical experience
+- [ ] Refine planning workflow based on metadata completeness experience
 - [ ] TBD - awaiting user direction
 
 ## Completed Recently
+- [x] Metadata completeness feature - production info, stats, external links (2025-11-19)
 - [x] Planning workflow documentation complete (2025-11-19)
 - [x] PLANNING_WORKFLOW.md created with named agents (2025-11-19)
 - [x] WORKFLOW.md updated with planning mode integration (2025-11-19)
