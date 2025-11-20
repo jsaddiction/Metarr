@@ -2002,7 +2002,7 @@ export class CleanSchemaMigration {
 
     try {
       // Step 1: Find all movies with provider cache data
-      const moviesWithCache = await db.all<{
+      const moviesWithCache = await db.query<{
         movie_id: number;
         movie_title: string;
         cache_id: number;
@@ -2034,7 +2034,7 @@ export class CleanSchemaMigration {
       // Step 2: Process each movie
       for (const movie of moviesWithCache) {
         // Migrate genres
-        const genres = await db.all<{ id: number; name: string }>(
+        const genres = await db.query<{ id: number; name: string }>(
           `SELECT g.id, g.name
           FROM provider_cache_movie_genres pmg
           INNER JOIN provider_cache_genres g ON pmg.genre_id = g.id
@@ -2074,7 +2074,7 @@ export class CleanSchemaMigration {
         }
 
         // Migrate crew (directors and writers)
-        const crew = await db.all<{
+        const crew = await db.query<{
           person_cache_id: number;
           job: string;
         }>(
@@ -2142,7 +2142,7 @@ export class CleanSchemaMigration {
         }
 
         // Migrate studios (production companies)
-        const companies = await db.all<{ id: number; name: string }>(
+        const companies = await db.query<{ id: number; name: string }>(
           `SELECT c.id, c.name
           FROM provider_cache_movie_companies pmc
           INNER JOIN provider_cache_companies c ON pmc.company_id = c.id
@@ -2181,7 +2181,7 @@ export class CleanSchemaMigration {
         }
 
         // Migrate countries
-        const countries = await db.all<{ id: number; name: string }>(
+        const countries = await db.query<{ id: number; name: string }>(
           `SELECT c.id, c.name
           FROM provider_cache_movie_countries pmc
           INNER JOIN provider_cache_countries c ON pmc.country_id = c.id
