@@ -35,6 +35,14 @@ interface MovieMetadata {
   tmdb_id?: number;
   imdb_id?: string;
 
+  // Production & Business Metadata (read-only from providers)
+  budget?: number;
+  revenue?: number;
+  homepage?: string;
+  original_language?: string;
+  popularity?: number;
+  status?: string;
+
   // Field locking
   title_locked: boolean;
   original_title_locked: boolean;
@@ -716,44 +724,43 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
             <BadgeRow label="Tags" items={metadata.tags} />
           </div>
 
-          {/* Stats Section */}
-          {(metadata.budget || metadata.revenue || metadata.popularity) && (
-            <>
-              <div className="border-t border-neutral-700"></div>
-              <div className="space-y-2 rounded-lg border border-neutral-700 bg-neutral-800/30 p-3">
-                <h3 className="text-sm font-medium text-neutral-300 mb-2">Stats</h3>
-                <div className="grid grid-cols-2 gap-3">
-                  {metadata.budget !== undefined && metadata.budget !== null && (
-                    <CurrencyDisplay label="Budget" value={metadata.budget} />
-                  )}
-                  {metadata.revenue !== undefined && metadata.revenue !== null && (
-                    <CurrencyDisplay label="Revenue" value={metadata.revenue} />
-                  )}
+          {/* Production & Stats Section */}
+          <div className="border-t border-neutral-700"></div>
+          <div className="space-y-2 rounded-lg border border-neutral-700 bg-neutral-800/30 p-3">
+            <h3 className="text-sm font-medium text-neutral-300 mb-2">Production & Stats</h3>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+              {metadata.status && <StatusBadge status={metadata.status} />}
+              {metadata.original_language && (
+                <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-neutral-600/30 bg-neutral-600/20 text-sm font-semibold text-neutral-300">
+                  <span>{getLanguageName(metadata.original_language)}</span>
                 </div>
-                {metadata.popularity !== undefined && metadata.popularity !== null && (
-                  <PopularityIndicator value={metadata.popularity} />
-                )}
-              </div>
-            </>
-          )}
-
-          {/* Production Info Section */}
-          {(metadata.status || metadata.original_language) && (
-            <>
-              <div className="border-t border-neutral-700"></div>
-              <div className="space-y-2 rounded-lg border border-neutral-700 bg-neutral-800/30 p-3">
-                <h3 className="text-sm font-medium text-neutral-300 mb-2">Production Info</h3>
-                <div className="flex items-center gap-3 flex-wrap">
-                  {metadata.status && <StatusBadge status={metadata.status} />}
-                  {metadata.original_language && (
-                    <span className="text-sm text-neutral-300">
-                      Language: {getLanguageName(metadata.original_language)}
-                    </span>
-                  )}
+              )}
+              {metadata.budget !== undefined && metadata.budget !== null && metadata.budget > 0 && (
+                <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-neutral-600/30 bg-neutral-600/20 text-sm font-semibold text-neutral-300">
+                  <div className="flex flex-col items-start gap-1">
+                    <span className="text-xs opacity-60 font-normal">Budget</span>
+                    <span>${(metadata.budget / 1000000).toFixed(1)}M</span>
+                  </div>
                 </div>
-              </div>
-            </>
-          )}
+              )}
+              {metadata.revenue !== undefined && metadata.revenue !== null && metadata.revenue > 0 && (
+                <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-neutral-600/30 bg-neutral-600/20 text-sm font-semibold text-neutral-300">
+                  <div className="flex flex-col items-start gap-1">
+                    <span className="text-xs opacity-60 font-normal">Revenue</span>
+                    <span>${(metadata.revenue / 1000000).toFixed(1)}M</span>
+                  </div>
+                </div>
+              )}
+              {metadata.popularity !== undefined && metadata.popularity !== null && (
+                <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-neutral-600/30 bg-neutral-600/20 text-sm font-semibold text-neutral-300">
+                  <div className="flex flex-col items-start gap-1">
+                    <span className="text-xs opacity-60 font-normal">Popularity</span>
+                    <span>{metadata.popularity.toFixed(1)}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
 
           {/* External Links Section */}
           <div className="border-t border-neutral-700"></div>
