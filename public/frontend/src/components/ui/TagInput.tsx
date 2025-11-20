@@ -11,6 +11,7 @@ interface TagInputProps {
   onToggleLock?: () => void;
   suggestions?: string[];
   placeholder?: string;
+  isLoading?: boolean;
 }
 
 /**
@@ -30,6 +31,7 @@ export const TagInput: React.FC<TagInputProps> = ({
   onToggleLock,
   suggestions = [],
   placeholder = 'Add...',
+  isLoading = false,
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [inputValue, setInputValue] = useState('');
@@ -204,18 +206,39 @@ export const TagInput: React.FC<TagInputProps> = ({
               onKeyDown={handleKeyDown}
               placeholder={placeholder}
               className="w-full px-3 py-1.5 bg-neutral-800 border border-neutral-600 rounded-md text-sm text-neutral-300 placeholder-neutral-500 focus:outline-none focus:border-neutral-500"
+              role="combobox"
+              aria-label={`Add ${label.toLowerCase()}`}
+              aria-expanded={filteredSuggestions.length > 0 || (inputValue && suggestions.length === 0)}
+              aria-autocomplete="list"
+              aria-controls={`${label}-suggestions`}
+              aria-activedescendant={selectedIndex >= 0 ? `${label}-suggestion-${selectedIndex}` : undefined}
             />
 
+            {/* Loading State */}
+            {isLoading && inputValue && (
+              <div className="absolute z-50 w-full mt-1 bg-neutral-800 border border-neutral-600 rounded-md shadow-lg px-3 py-2">
+                <span className="text-xs text-neutral-500">
+                  Loading suggestions...
+                </span>
+              </div>
+            )}
+
             {/* Suggestions Dropdown */}
-            {filteredSuggestions.length > 0 && (
+            {!isLoading && filteredSuggestions.length > 0 && (
               <div
+                id={`${label}-suggestions`}
                 ref={dropdownRef}
+                role="listbox"
+                aria-label={`${label} suggestions`}
                 className="absolute z-50 w-full mt-1 bg-neutral-800 border border-neutral-600 rounded-md shadow-lg max-h-48 overflow-y-auto"
               >
                 {filteredSuggestions.map((suggestion, index) => (
                   <button
                     key={suggestion}
+                    id={`${label}-suggestion-${index}`}
                     type="button"
+                    role="option"
+                    aria-selected={index === selectedIndex}
                     onClick={() => addTag(suggestion)}
                     className={`
                       w-full px-3 py-2 text-left text-sm transition-colors
@@ -228,8 +251,17 @@ export const TagInput: React.FC<TagInputProps> = ({
               </div>
             )}
 
-            {/* Helper Text */}
-            {inputValue && filteredSuggestions.length === 0 && (
+            {/* Empty State - No Suggestions */}
+            {!isLoading && inputValue && filteredSuggestions.length === 0 && suggestions.length > 0 && (
+              <div className="absolute z-50 w-full mt-1 bg-neutral-800 border border-neutral-600 rounded-md shadow-lg px-3 py-2">
+                <span className="text-xs text-neutral-500">
+                  No matches found. Press Enter to create "{inputValue}"
+                </span>
+              </div>
+            )}
+
+            {/* Helper Text - Create New */}
+            {!isLoading && inputValue && suggestions.length === 0 && (
               <div className="absolute z-50 w-full mt-1 bg-neutral-800 border border-neutral-600 rounded-md shadow-lg px-3 py-2">
                 <span className="text-xs text-neutral-500">
                   Press Enter to create "{inputValue}"

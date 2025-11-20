@@ -40,7 +40,8 @@ export class MovieRelationshipService {
         return;
       }
 
-      // Find or create genre records
+      // Batch find or create genre records
+      const genreIds: number[] = [];
       for (const name of genreNames) {
         // Find or create genre
         let genre = await conn.get<{ id: number }>(
@@ -56,10 +57,17 @@ export class MovieRelationshipService {
           genre = { id: result.insertId! };
         }
 
-        // Create association
+        genreIds.push(genre.id);
+      }
+
+      // Bulk insert associations
+      if (genreIds.length > 0) {
+        const placeholders = genreIds.map(() => '(?, ?)').join(', ');
+        const values = genreIds.flatMap(genreId => [movieId, genreId]);
+
         await conn.execute(
-          'INSERT INTO movie_genres (movie_id, genre_id) VALUES (?, ?)',
-          [movieId, genre.id]
+          `INSERT INTO movie_genres (movie_id, genre_id) VALUES ${placeholders}`,
+          values
         );
       }
 
@@ -115,7 +123,8 @@ export class MovieRelationshipService {
         return;
       }
 
-      // Find or create crew records
+      // Batch find or create crew records
+      const crewData: Array<{ id: number; sortOrder: number }> = [];
       for (let i = 0; i < names.length; i++) {
         const name = names[i];
 
@@ -133,10 +142,17 @@ export class MovieRelationshipService {
           crew = { id: result.insertId! };
         }
 
-        // Create association with sort order
+        crewData.push({ id: crew.id, sortOrder: i });
+      }
+
+      // Bulk insert associations with sort order
+      if (crewData.length > 0) {
+        const placeholders = crewData.map(() => '(?, ?, ?, ?)').join(', ');
+        const values = crewData.flatMap(crew => [movieId, crew.id, role, crew.sortOrder]);
+
         await conn.execute(
-          'INSERT INTO movie_crew (movie_id, crew_id, role, sort_order) VALUES (?, ?, ?, ?)',
-          [movieId, crew.id, role, i]
+          `INSERT INTO movie_crew (movie_id, crew_id, role, sort_order) VALUES ${placeholders}`,
+          values
         );
       }
 
@@ -166,7 +182,8 @@ export class MovieRelationshipService {
         return;
       }
 
-      // Find or create studio records
+      // Batch find or create studio records
+      const studioIds: number[] = [];
       for (const name of studioNames) {
         // Find or create studio
         let studio = await conn.get<{ id: number }>(
@@ -182,10 +199,17 @@ export class MovieRelationshipService {
           studio = { id: result.insertId! };
         }
 
-        // Create association
+        studioIds.push(studio.id);
+      }
+
+      // Bulk insert associations
+      if (studioIds.length > 0) {
+        const placeholders = studioIds.map(() => '(?, ?)').join(', ');
+        const values = studioIds.flatMap(studioId => [movieId, studioId]);
+
         await conn.execute(
-          'INSERT INTO movie_studios (movie_id, studio_id) VALUES (?, ?)',
-          [movieId, studio.id]
+          `INSERT INTO movie_studios (movie_id, studio_id) VALUES ${placeholders}`,
+          values
         );
       }
 
@@ -215,7 +239,8 @@ export class MovieRelationshipService {
         return;
       }
 
-      // Find or create country records
+      // Batch find or create country records
+      const countryIds: number[] = [];
       for (const name of countryNames) {
         // Find or create country
         let country = await conn.get<{ id: number }>(
@@ -231,10 +256,17 @@ export class MovieRelationshipService {
           country = { id: result.insertId! };
         }
 
-        // Create association
+        countryIds.push(country.id);
+      }
+
+      // Bulk insert associations
+      if (countryIds.length > 0) {
+        const placeholders = countryIds.map(() => '(?, ?)').join(', ');
+        const values = countryIds.flatMap(countryId => [movieId, countryId]);
+
         await conn.execute(
-          'INSERT INTO movie_countries (movie_id, country_id) VALUES (?, ?)',
-          [movieId, country.id]
+          `INSERT INTO movie_countries (movie_id, country_id) VALUES ${placeholders}`,
+          values
         );
       }
 
@@ -264,7 +296,8 @@ export class MovieRelationshipService {
         return;
       }
 
-      // Find or create tag records
+      // Batch find or create tag records
+      const tagIds: number[] = [];
       for (const name of tagNames) {
         // Find or create tag
         let tag = await conn.get<{ id: number }>(
@@ -280,10 +313,17 @@ export class MovieRelationshipService {
           tag = { id: result.insertId! };
         }
 
-        // Create association
+        tagIds.push(tag.id);
+      }
+
+      // Bulk insert associations
+      if (tagIds.length > 0) {
+        const placeholders = tagIds.map(() => '(?, ?)').join(', ');
+        const values = tagIds.flatMap(tagId => [movieId, tagId]);
+
         await conn.execute(
-          'INSERT INTO movie_tags (movie_id, tag_id) VALUES (?, ?)',
-          [movieId, tag.id]
+          `INSERT INTO movie_tags (movie_id, tag_id) VALUES ${placeholders}`,
+          values
         );
       }
 

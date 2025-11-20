@@ -33,125 +33,168 @@ export class MovieCrudService {
    * @returns Updated movie object
    */
   async updateMetadata(movieId: number, metadata: Record<string, unknown>): Promise<Record<string, unknown> | null> {
-    const conn = this.db.getConnection();
-
     try {
-      // Metadata fields that can be updated (enforced allowlist)
-      // Note: Array fields (genres, directors, etc.) are handled via junction tables
-      const allowedFields = [
-        'title',
-        'original_title',
-        'sort_title',
-        'year',
-        'plot',
-        'outline',
-        'tagline',
-        'mpaa',
-        'premiered',
-        'user_rating',
-        'trailer_url',
-        // Lock fields for scalar fields only
-        // Note: Lock fields for array fields (genres_locked, etc.) removed in normalized schema
-        'title_locked',
-        'original_title_locked',
-        'sort_title_locked',
-        'year_locked',
-        'plot_locked',
-        'outline_locked',
-        'tagline_locked',
-        'mpaa_locked',
-        'premiered_locked',
-        'user_rating_locked',
-        'trailer_url_locked',
-      ] as const;
+      // Wrap entire operation in transaction for data consistency
+      return await this.db.transaction(async (conn) => {
+        // Metadata fields that can be updated (enforced allowlist)
+        // Note: Array fields (genres, directors, etc.) are handled via junction tables
+        const allowedFields = [
+          'title',
+          'original_title',
+          'sort_title',
+          'year',
+          'plot',
+          'outline',
+          'tagline',
+          'mpaa',
+          'premiered',
+          'user_rating',
+          'trailer_url',
+          // Lock fields for scalar fields only
+          // Note: Lock fields for array fields (genres_locked, etc.) removed in normalized schema
+          'title_locked',
+          'original_title_locked',
+          'sort_title_locked',
+          'year_locked',
+          'plot_locked',
+          'outline_locked',
+          'tagline_locked',
+          'mpaa_locked',
+          'premiered_locked',
+          'user_rating_locked',
+          'trailer_url_locked',
+        ] as const;
 
-      // Extract array fields for junction table syncing
-      const { genres, directors, writers, studios, countries, tags, ...scalarFields } = metadata;
+        // Extract array fields for junction table syncing
+        const { genres, directors, writers, studios, countries, tags, ...scalarFields } = metadata;
 
-      // Update scalar fields in movies table
-      if (Object.keys(scalarFields).length > 0) {
-        // Build type-safe UPDATE query using allowlist
-        // Addresses Audit Finding 1.4: SQL injection risk
-        let query: string;
-        let values: unknown[];
+        // Validate and sanitize array fields
+        const validatedGenres = this.validateStringArray(genres, 'genres');
+        const validatedDirectors = this.validateStringArray(directors, 'directors');
+        const validatedWriters = this.validateStringArray(writers, 'writers');
+        const validatedStudios = this.validateStringArray(studios, 'studios');
+        const validatedCountries = this.validateStringArray(countries, 'countries');
+        const validatedTags = this.validateStringArray(tags, 'tags');
 
-        try {
-          const result = buildUpdateQuery(
-            'movies',
-            allowedFields,
-            scalarFields,
-            'id = ?',
-            [movieId]
-          );
-          query = result.query;
-          values = result.values;
+        // Update scalar fields in movies table
+        if (Object.keys(scalarFields).length > 0) {
+          // Build type-safe UPDATE query using allowlist
+          // Addresses Audit Finding 1.4: SQL injection risk
+          let query: string;
+          let values: unknown[];
 
-          await conn.execute(query, values as SqlParam[]);
-        } catch (error) {
-          if (!(error instanceof Error && error.message.includes('No valid columns to update'))) {
-            throw error;
+          try {
+            const result = buildUpdateQuery(
+              'movies',
+              allowedFields,
+              scalarFields,
+              'id = ?',
+              [movieId]
+            );
+            query = result.query;
+            values = result.values;
+
+            await conn.execute(query, values as SqlParam[]);
+          } catch (error) {
+            if (!(error instanceof Error && error.message.includes('No valid columns to update'))) {
+              throw error;
+            }
+            // No scalar fields to update, continue to array fields
           }
-          // No scalar fields to update, continue to array fields
         }
-      }
 
-      // Sync array fields to junction tables
-      const relationshipService = new MovieRelationshipService(this.db);
+        // Sync array fields to junction tables
+        const relationshipService = new MovieRelationshipService(this.db);
 
-      if (genres !== undefined) {
-        if (!Array.isArray(genres)) {
-          throw new Error('genres must be an array');
+        if (validatedGenres) {
+          await relationshipService.syncGenres(movieId, validatedGenres);
         }
-        await relationshipService.syncGenres(movieId, genres as string[]);
-      }
 
-      if (directors !== undefined) {
-        if (!Array.isArray(directors)) {
-          throw new Error('directors must be an array');
+        if (validatedDirectors) {
+          await relationshipService.syncDirectors(movieId, validatedDirectors);
         }
-        await relationshipService.syncDirectors(movieId, directors as string[]);
-      }
 
-      if (writers !== undefined) {
-        if (!Array.isArray(writers)) {
-          throw new Error('writers must be an array');
+        if (validatedWriters) {
+          await relationshipService.syncWriters(movieId, validatedWriters);
         }
-        await relationshipService.syncWriters(movieId, writers as string[]);
-      }
 
-      if (studios !== undefined) {
-        if (!Array.isArray(studios)) {
-          throw new Error('studios must be an array');
+        if (validatedStudios) {
+          await relationshipService.syncStudios(movieId, validatedStudios);
         }
-        await relationshipService.syncStudios(movieId, studios as string[]);
-      }
 
-      if (countries !== undefined) {
-        if (!Array.isArray(countries)) {
-          throw new Error('countries must be an array');
+        if (validatedCountries) {
+          await relationshipService.syncCountries(movieId, validatedCountries);
         }
-        await relationshipService.syncCountries(movieId, countries as string[]);
-      }
 
-      if (tags !== undefined) {
-        if (!Array.isArray(tags)) {
-          throw new Error('tags must be an array');
+        if (validatedTags) {
+          await relationshipService.syncTags(movieId, validatedTags);
         }
-        await relationshipService.syncTags(movieId, tags as string[]);
-      }
 
-      logger.info('Movie metadata updated', { movieId, updatedFields: Object.keys(metadata) });
+        logger.info('Movie metadata updated', { movieId, updatedFields: Object.keys(metadata) });
 
-      websocketBroadcaster.broadcastMoviesUpdated([movieId]);
+        websocketBroadcaster.broadcastMoviesUpdated([movieId]);
 
-      const movies = await conn.query('SELECT * FROM movies WHERE id = ?', [movieId]);
-      return movies.length > 0 ? movies[0] : null;
+        const movies = await conn.query('SELECT * FROM movies WHERE id = ?', [movieId]);
+        return movies.length > 0 ? movies[0] : null;
+      });
     } catch (error) {
       logger.error('Failed to update movie metadata', createErrorLogContext(error, {
         movieId
       }));
       throw error;
     }
+  }
+
+  /**
+   * Validate and sanitize string arrays for related entities
+   * Trims whitespace, removes duplicates (case-insensitive), enforces max length
+   *
+   * @param value - Array to validate (or undefined)
+   * @param fieldName - Field name for error messages
+   * @returns Validated array or null if undefined
+   */
+  private validateStringArray(value: unknown, fieldName: string): string[] | null {
+    if (value === undefined) {
+      return null;
+    }
+
+    if (!Array.isArray(value)) {
+      throw new Error(`${fieldName} must be an array`);
+    }
+
+    const MAX_LENGTH = 100;
+    const seen = new Set<string>();
+    const validated: string[] = [];
+
+    for (const item of value) {
+      if (typeof item !== 'string') {
+        throw new Error(`${fieldName} must contain only strings`);
+      }
+
+      // Trim whitespace
+      const trimmed = item.trim();
+
+      // Skip empty strings
+      if (!trimmed) {
+        continue;
+      }
+
+      // Enforce max length
+      if (trimmed.length > MAX_LENGTH) {
+        throw new Error(`${fieldName} item too long (max ${MAX_LENGTH} characters): "${trimmed.substring(0, 50)}..."`);
+      }
+
+      // Deduplicate case-insensitively
+      const normalized = trimmed.toLowerCase();
+      if (seen.has(normalized)) {
+        continue;
+      }
+
+      seen.add(normalized);
+      validated.push(trimmed);
+    }
+
+    return validated;
   }
 
   /**

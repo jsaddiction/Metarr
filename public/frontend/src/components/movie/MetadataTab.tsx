@@ -285,9 +285,27 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
       if (response.ok) {
         // Update original metadata to match saved state
         setOriginalMetadata(structuredClone(metadata));
+
+        // Invalidate suggestion caches to reflect new entities
+        queryClient.invalidateQueries({ queryKey: ['genre-suggestions'] });
+        queryClient.invalidateQueries({ queryKey: ['director-suggestions'] });
+        queryClient.invalidateQueries({ queryKey: ['writer-suggestions'] });
+        queryClient.invalidateQueries({ queryKey: ['studio-suggestions'] });
+        queryClient.invalidateQueries({ queryKey: ['country-suggestions'] });
+        queryClient.invalidateQueries({ queryKey: ['tag-suggestions'] });
+
+        toast.success('Metadata saved successfully', {
+          description: 'All changes have been saved',
+        });
+      } else {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(errorData.error || `Server returned ${response.status}`);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to save metadata:', error);
+      toast.error('Failed to save metadata', {
+        description: error.message || 'An unknown error occurred',
+      });
     } finally {
       setSaving(false);
     }
