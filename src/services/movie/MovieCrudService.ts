@@ -46,8 +46,8 @@ export class MovieCrudService {
           'plot',
           'outline',
           'tagline',
-          'mpaa',
-          'premiered',
+          'content_rating',
+          'release_date',
           'user_rating',
           'trailer_url',
           // Lock fields for scalar fields only

@@ -42,11 +42,13 @@ export interface AssetMetadata {
 export interface MovieDatabaseRow {
   id: number;
   title: string;
+  sort_title?: string;
   tmdb_id: number | null;
   imdb_id: string | null;
   tvdb_id: number | null;
   monitored: number;
   title_locked?: number;
+  sort_title_locked?: number;
   plot_locked?: number;
   [key: string]: unknown;
 }
@@ -57,6 +59,7 @@ export interface MovieDatabaseRow {
 export interface MovieUpdateFields {
   title?: string;
   original_title?: string;
+  sort_title?: string;
   plot?: string;
   tagline?: string;
   release_date?: string;

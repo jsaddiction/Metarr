@@ -18,6 +18,7 @@ import { logger } from '../../../middleware/logging.js';
 import { getErrorMessage } from '../../../utils/errorHandling.js';
 import { ResourceNotFoundError } from '../../../errors/index.js';
 import { MovieRelationshipService } from '../../movie/MovieRelationshipService.js';
+import { generateSortTitle } from '../../../utils/sortTitle.js';
 
 export class ProviderFetchPhase {
   private readonly providerAssetsRepo: ProviderAssetsRepository;
@@ -192,6 +193,11 @@ export class ProviderFetchPhase {
 
       if (!currentMovie.title_locked && cachedMovie.original_title) {
         updates.original_title = cachedMovie.original_title;
+      }
+
+      // Auto-generate sort_title if not locked and not manually set
+      if (!currentMovie.sort_title_locked && !currentMovie.sort_title && cachedMovie.title) {
+        updates.sort_title = generateSortTitle(cachedMovie.title);
       }
 
       if (!currentMovie.plot_locked && cachedMovie.overview) {
