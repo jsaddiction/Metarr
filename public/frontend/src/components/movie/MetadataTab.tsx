@@ -610,7 +610,7 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
       <div className="card">
         <div className="card-body p-4 space-y-3">
           {/* Header with Directory Path and Action Buttons */}
-          <div className="flex items-center justify-between gap-4 pb-2 border-b border-neutral-700">
+          <div className="flex items-center justify-between gap-4 pb-2">
             {/* Directory Path */}
             <div className="flex-1 min-w-0">
               <div className="text-xs text-neutral-500 font-mono truncate" title={(movieData as any)?.file_path || ''}>
