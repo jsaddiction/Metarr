@@ -145,9 +145,10 @@ export const TagInput: React.FC<TagInputProps> = ({
   };
 
   return (
-    <div ref={containerRef} className="relative">
+    <div ref={containerRef} className="relative h-full">
       <div
         className={`
+          flex flex-col h-full
           rounded-lg border bg-neutral-800/30 p-2
           transition-colors
           ${locked ? 'border-neutral-700 opacity-60' : 'border-neutral-700 hover:border-neutral-600'}
@@ -198,92 +199,94 @@ export const TagInput: React.FC<TagInputProps> = ({
           </div>
         )}
 
-        {/* Input Field or Add Button */}
-        {isEditing && !locked ? (
-          <div className="relative">
-            <input
-              ref={inputRef}
-              type="text"
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder={placeholder}
-              className="w-full px-3 py-1.5 bg-neutral-800 border border-neutral-600 rounded-md text-sm text-neutral-300 placeholder-neutral-500 focus:outline-none focus:border-neutral-500"
-              role="combobox"
-              aria-label={`Add ${label.toLowerCase()}`}
-              aria-expanded={filteredSuggestions.length > 0 || (inputValue && suggestions.length === 0)}
-              aria-autocomplete="list"
-              aria-controls={`${label}-suggestions`}
-              aria-activedescendant={selectedIndex >= 0 ? `${label}-suggestion-${selectedIndex}` : undefined}
-            />
+        {/* Input Field or Add Button - pushed to bottom with mt-auto */}
+        <div className="mt-auto">
+          {isEditing && !locked ? (
+            <div className="relative">
+              <input
+                ref={inputRef}
+                type="text"
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder={placeholder}
+                className="w-full px-3 py-1.5 bg-neutral-800 border border-neutral-600 rounded-md text-sm text-neutral-300 placeholder-neutral-500 focus:outline-none focus:border-neutral-500"
+                role="combobox"
+                aria-label={`Add ${label.toLowerCase()}`}
+                aria-expanded={filteredSuggestions.length > 0 || (inputValue && suggestions.length === 0)}
+                aria-autocomplete="list"
+                aria-controls={`${label}-suggestions`}
+                aria-activedescendant={selectedIndex >= 0 ? `${label}-suggestion-${selectedIndex}` : undefined}
+              />
 
-            {/* Loading State */}
-            {isLoading && inputValue && (
-              <div className="absolute z-50 w-full mt-1 bg-neutral-800 border border-neutral-600 rounded-md shadow-lg px-3 py-2">
-                <span className="text-xs text-neutral-500">
-                  Loading suggestions...
-                </span>
-              </div>
-            )}
+              {/* Loading State */}
+              {isLoading && inputValue && (
+                <div className="absolute z-50 w-full mt-1 bg-neutral-800 border border-neutral-600 rounded-md shadow-lg px-3 py-2">
+                  <span className="text-xs text-neutral-500">
+                    Loading suggestions...
+                  </span>
+                </div>
+              )}
 
-            {/* Suggestions Dropdown */}
-            {!isLoading && filteredSuggestions.length > 0 && (
-              <div
-                id={`${label}-suggestions`}
-                ref={dropdownRef}
-                role="listbox"
-                aria-label={`${label} suggestions`}
-                className="absolute z-50 w-full mt-1 bg-neutral-800 border border-neutral-600 rounded-md shadow-lg max-h-48 overflow-y-auto"
+              {/* Suggestions Dropdown */}
+              {!isLoading && filteredSuggestions.length > 0 && (
+                <div
+                  id={`${label}-suggestions`}
+                  ref={dropdownRef}
+                  role="listbox"
+                  aria-label={`${label} suggestions`}
+                  className="absolute z-50 w-full mt-1 bg-neutral-800 border border-neutral-600 rounded-md shadow-lg max-h-48 overflow-y-auto"
+                >
+                  {filteredSuggestions.map((suggestion, index) => (
+                    <button
+                      key={suggestion}
+                      id={`${label}-suggestion-${index}`}
+                      type="button"
+                      role="option"
+                      aria-selected={index === selectedIndex}
+                      onClick={() => addTag(suggestion)}
+                      className={`
+                        w-full px-3 py-2 text-left text-sm transition-colors
+                        ${index === selectedIndex ? 'bg-neutral-700 text-neutral-200' : 'text-neutral-400 hover:bg-neutral-700/50'}
+                      `}
+                    >
+                      {suggestion}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Empty State - No Suggestions */}
+              {!isLoading && inputValue && filteredSuggestions.length === 0 && suggestions.length > 0 && (
+                <div className="absolute z-50 w-full mt-1 bg-neutral-800 border border-neutral-600 rounded-md shadow-lg px-3 py-2">
+                  <span className="text-xs text-neutral-500">
+                    No matches found. Press Enter to create "{inputValue}"
+                  </span>
+                </div>
+              )}
+
+              {/* Helper Text - Create New */}
+              {!isLoading && inputValue && suggestions.length === 0 && (
+                <div className="absolute z-50 w-full mt-1 bg-neutral-800 border border-neutral-600 rounded-md shadow-lg px-3 py-2">
+                  <span className="text-xs text-neutral-500">
+                    Press Enter to create "{inputValue}"
+                  </span>
+                </div>
+              )}
+            </div>
+          ) : (
+            !locked && (
+              <button
+                type="button"
+                onClick={handleAddClick}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-dashed border-neutral-600/50 bg-neutral-700/20 text-sm text-neutral-400 hover:bg-neutral-700/40 hover:text-neutral-300 transition-colors"
               >
-                {filteredSuggestions.map((suggestion, index) => (
-                  <button
-                    key={suggestion}
-                    id={`${label}-suggestion-${index}`}
-                    type="button"
-                    role="option"
-                    aria-selected={index === selectedIndex}
-                    onClick={() => addTag(suggestion)}
-                    className={`
-                      w-full px-3 py-2 text-left text-sm transition-colors
-                      ${index === selectedIndex ? 'bg-neutral-700 text-neutral-200' : 'text-neutral-400 hover:bg-neutral-700/50'}
-                    `}
-                  >
-                    {suggestion}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {/* Empty State - No Suggestions */}
-            {!isLoading && inputValue && filteredSuggestions.length === 0 && suggestions.length > 0 && (
-              <div className="absolute z-50 w-full mt-1 bg-neutral-800 border border-neutral-600 rounded-md shadow-lg px-3 py-2">
-                <span className="text-xs text-neutral-500">
-                  No matches found. Press Enter to create "{inputValue}"
-                </span>
-              </div>
-            )}
-
-            {/* Helper Text - Create New */}
-            {!isLoading && inputValue && suggestions.length === 0 && (
-              <div className="absolute z-50 w-full mt-1 bg-neutral-800 border border-neutral-600 rounded-md shadow-lg px-3 py-2">
-                <span className="text-xs text-neutral-500">
-                  Press Enter to create "{inputValue}"
-                </span>
-              </div>
-            )}
-          </div>
-        ) : (
-          !locked && (
-            <button
-              type="button"
-              onClick={handleAddClick}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-dashed border-neutral-600/50 bg-neutral-700/20 text-sm text-neutral-400 hover:bg-neutral-700/40 hover:text-neutral-300 transition-colors"
-            >
-              <FontAwesomeIcon icon={faPlus} className="text-xs" />
-              <span>{placeholder}</span>
-            </button>
-          )
-        )}
+                <FontAwesomeIcon icon={faPlus} className="text-xs" />
+                <span>{placeholder}</span>
+              </button>
+            )
+          )}
+        </div>
       </div>
     </div>
   );
