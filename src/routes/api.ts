@@ -7,6 +7,7 @@ import { MovieProviderController } from '../controllers/movie/MovieProviderContr
 import { MovieJobController } from '../controllers/movie/MovieJobController.js';
 import { MovieFieldLockController } from '../controllers/movie/MovieFieldLockController.js';
 import { MovieUnknownFilesController } from '../controllers/movie/MovieUnknownFilesController.js';
+import { MovieSuggestionsController } from '../controllers/movie/MovieSuggestionsController.js';
 import { IgnorePatternController } from '../controllers/ignorePatternController.js';
 import { ImageController } from '../controllers/imageController.js';
 import { JobController } from '../controllers/jobController.js';
@@ -92,6 +93,7 @@ export const createApiRouter = (
   const movieJobController = new MovieJobController(movieService);
   const movieFieldLockController = new MovieFieldLockController(movieService);
   const movieUnknownFilesController = new MovieUnknownFilesController(movieService);
+  const movieSuggestionsController = new MovieSuggestionsController(dbManager);
 
   // Initialize ignore pattern service and controller
   const ignorePatternService = new IgnorePatternService(dbManager);
@@ -292,6 +294,37 @@ export const createApiRouter = (
   router.get('/movies', (req, res, next) => {
     logger.debug('[Route Hit] /movies');
     movieCrudController.getAll(req, res, next);
+  });
+
+  // Movie suggestions for autocomplete (MUST come before /movies/:id)
+  router.get('/movies/suggestions/genres', (req, res, next) => {
+    logger.debug('[Route Hit] /movies/suggestions/genres');
+    movieSuggestionsController.getGenres(req, res, next);
+  });
+
+  router.get('/movies/suggestions/directors', (req, res, next) => {
+    logger.debug('[Route Hit] /movies/suggestions/directors');
+    movieSuggestionsController.getDirectors(req, res, next);
+  });
+
+  router.get('/movies/suggestions/writers', (req, res, next) => {
+    logger.debug('[Route Hit] /movies/suggestions/writers');
+    movieSuggestionsController.getWriters(req, res, next);
+  });
+
+  router.get('/movies/suggestions/studios', (req, res, next) => {
+    logger.debug('[Route Hit] /movies/suggestions/studios');
+    movieSuggestionsController.getStudios(req, res, next);
+  });
+
+  router.get('/movies/suggestions/countries', (req, res, next) => {
+    logger.debug('[Route Hit] /movies/suggestions/countries');
+    movieSuggestionsController.getCountries(req, res, next);
+  });
+
+  router.get('/movies/suggestions/tags', (req, res, next) => {
+    logger.debug('[Route Hit] /movies/suggestions/tags');
+    movieSuggestionsController.getTags(req, res, next);
   });
 
   // Movie detail sub-routes (MUST come before /movies/:id)
