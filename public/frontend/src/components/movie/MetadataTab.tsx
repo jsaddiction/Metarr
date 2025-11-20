@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faExternalLinkAlt, faExclamationTriangle, faChevronDown, faChevronUp } from '@fortawesome/free-solid-svg-icons';
+import { faExternalLinkAlt, faExclamationTriangle, faChevronDown, faChevronUp, faSave, faUndo } from '@fortawesome/free-solid-svg-icons';
 import { useMovie, useToggleLockField } from '../../hooks/useMovies';
-import { SaveBar } from '../ui/SaveBar';
 import { GridField } from './GridField';
 import { TextAreaField } from './TextAreaField';
 import { toast } from 'sonner';
@@ -584,19 +583,45 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
 
   // Show full metadata editor when identified
   return (
-    <>
-      {/* Portal-based save bar - renders outside component tree */}
-      <SaveBar
-        hasChanges={hasChanges}
-        onSave={handleSave}
-        onReset={handleReset}
-        saving={saving}
-      />
-
-      <div className="space-y-3">
+    <div className="space-y-3">
       {/* Grid layout */}
       <div className="card">
         <div className="card-body p-3 space-y-2.5">
+          {/* Action Buttons */}
+          <div className="flex items-center justify-end gap-2 pb-2 border-b border-neutral-700">
+            <button
+              type="button"
+              onClick={handleReset}
+              disabled={!hasChanges}
+              className={`
+                inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium
+                transition-colors
+                ${hasChanges
+                  ? 'bg-neutral-700 text-neutral-200 hover:bg-neutral-600'
+                  : 'bg-neutral-800 text-neutral-500 cursor-not-allowed opacity-50'
+                }
+              `}
+            >
+              <FontAwesomeIcon icon={faUndo} className="text-xs" />
+              <span>Reset</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={!hasChanges || saving}
+              className={`
+                inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium
+                transition-colors
+                ${hasChanges && !saving
+                  ? 'bg-purple-600 text-white hover:bg-purple-700'
+                  : 'bg-neutral-800 text-neutral-500 cursor-not-allowed opacity-50'
+                }
+              `}
+            >
+              <FontAwesomeIcon icon={faSave} className="text-xs" />
+              <span>{saving ? 'Saving...' : 'Save Changes'}</span>
+            </button>
+          </div>
 
           {/* Row 1: Title (span 3) + Year */}
           <div className="grid grid-cols-4 gap-2">
@@ -813,7 +838,6 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
           )}
         </div>
       </div>
-      </div>
-    </>
+    </div>
   );
 };

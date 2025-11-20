@@ -174,7 +174,7 @@ export const TagInput: React.FC<TagInputProps> = ({
           {value.map((tag) => (
             <div
               key={tag}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-neutral-600/30 bg-neutral-600/20 text-sm font-semibold text-neutral-300"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border-2 border-purple-500/40 bg-purple-500/10 text-sm font-semibold text-purple-200 shadow-sm"
             >
               <span>{tag}</span>
               {!locked && (
