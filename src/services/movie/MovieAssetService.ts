@@ -128,8 +128,8 @@ export class MovieAssetService {
           'plot',
           'outline',
           'tagline',
-          'mpaa',
-          'premiered',
+          'content_rating',
+          'release_date',
           'user_rating',
           'trailer_url',
           // Lock fields
@@ -140,8 +140,8 @@ export class MovieAssetService {
           'plot_locked',
           'outline_locked',
           'tagline_locked',
-          'mpaa_locked',
-          'premiered_locked',
+          'content_rating_locked',
+          'release_date_locked',
           'user_rating_locked',
           'trailer_url_locked',
         ];

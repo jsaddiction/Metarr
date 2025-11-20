@@ -28,8 +28,8 @@ interface MovieMetadata {
   plot?: string;
   outline?: string;
   tagline?: string;
-  mpaa?: string;
-  premiered?: string;
+  content_rating?: string;  // MPAA rating (e.g., "PG-13", "R")
+  release_date?: string;    // Release date (e.g., "2017-07-19")
   user_rating?: number;
   tmdb_id?: number;
   imdb_id?: string;
@@ -50,8 +50,8 @@ interface MovieMetadata {
   plot_locked: boolean;
   outline_locked: boolean;
   tagline_locked: boolean;
-  mpaa_locked: boolean;
-  premiered_locked: boolean;
+  content_rating_locked: boolean;
+  release_date_locked: boolean;
   user_rating_locked: boolean;
 
   // Related entities
@@ -119,8 +119,8 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
         plot_locked: movieData.plot_locked ?? false,
         outline_locked: movieData.outline_locked ?? false,
         tagline_locked: movieData.tagline_locked ?? false,
-        mpaa_locked: movieData.mpaa_locked ?? false,
-        premiered_locked: movieData.premiered_locked ?? false,
+        content_rating_locked: movieData.content_rating_locked ?? false,
+        release_date_locked: movieData.release_date_locked ?? false,
         user_rating_locked: movieData.user_rating_locked ?? false,
       };
 
@@ -687,23 +687,24 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
             />
           </div>
 
-          {/* Row 3: MPAA + Premiered + User Rating + Tagline */}
+          {/* Row 3: Content Rating + Release Date + User Rating + Tagline */}
           <div className="grid grid-cols-4 gap-2">
             <GridField
-              label="MPAA"
-              field="mpaa"
-              value={metadata.mpaa}
-              locked={metadata.mpaa_locked}
-              onChange={(val) => handleFieldChange('mpaa', val)}
+              label="Content Rating"
+              field="content_rating"
+              value={metadata.content_rating}
+              locked={metadata.content_rating_locked}
+              onChange={(val) => handleFieldChange('content_rating', val)}
               onToggleLock={handleToggleLock}
+              placeholder="PG-13"
             />
             <GridField
-              label="Premiered"
-              field="premiered"
-              value={metadata.premiered}
-              locked={metadata.premiered_locked}
+              label="Release Date"
+              field="release_date"
+              value={metadata.release_date}
+              locked={metadata.release_date_locked}
               type="date"
-              onChange={(val) => handleFieldChange('premiered', val)}
+              onChange={(val) => handleFieldChange('release_date', val)}
               onToggleLock={handleToggleLock}
             />
             <GridField

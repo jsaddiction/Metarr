@@ -144,8 +144,8 @@ export interface MovieMetadata {
   plot_locked?: boolean;
   outline_locked?: boolean;
   tagline_locked?: boolean;
-  mpaa_locked?: boolean;
-  premiered_locked?: boolean;
+  content_rating_locked?: boolean;
+  release_date_locked?: boolean;
   user_rating_locked?: boolean;
   trailer_url_locked?: boolean;
 }
@@ -626,8 +626,8 @@ export class MovieService {
         'plot_locked',
         'outline_locked',
         'tagline_locked',
-        'mpaa_locked',
-        'premiered_locked',
+        'content_rating_locked',
+        'release_date_locked',
         'user_rating_locked',
         'trailer_url_locked',
       ];
@@ -795,8 +795,8 @@ export class MovieService {
         'plot_locked',
         'outline_locked',
         'tagline_locked',
-        'mpaa_locked',
-        'premiered_locked',
+        'content_rating_locked',
+        'release_date_locked',
         'user_rating_locked',
         'trailer_url_locked'
       ];
