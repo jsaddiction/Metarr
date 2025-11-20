@@ -63,6 +63,11 @@ interface MovieMetadata {
   tags?: string[];
 
   // Related entity locks
+  genres_locked: boolean;
+  directors_locked: boolean;
+  writers_locked: boolean;
+  studios_locked: boolean;
+  countries_locked: boolean;
   tags_locked: boolean;
 }
 
@@ -117,6 +122,11 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
         mpaa_locked: movieData.mpaa_locked ?? false,
         premiered_locked: movieData.premiered_locked ?? false,
         user_rating_locked: movieData.user_rating_locked ?? false,
+        genres_locked: movieData.genres_locked ?? false,
+        directors_locked: movieData.directors_locked ?? false,
+        writers_locked: movieData.writers_locked ?? false,
+        studios_locked: movieData.studios_locked ?? false,
+        countries_locked: movieData.countries_locked ?? false,
         tags_locked: movieData.tags_locked ?? false,
       };
 
@@ -789,17 +799,69 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
             </div>
           </div>
 
-          {/* Tags Section */}
+          {/* Related Entities Section */}
           <div className="border-t border-neutral-700"></div>
-          <TagInput
-            label="Tags"
-            value={metadata.tags || []}
-            onChange={(tags) => handleFieldChange('tags', tags)}
-            locked={metadata.tags_locked}
-            onToggleLock={() => handleToggleLock('tags')}
-            suggestions={[]} // TODO: Fetch from API
-            placeholder="Add tag..."
-          />
+          <div className="space-y-4">
+            <TagInput
+              label="Genres"
+              value={metadata.genres || []}
+              onChange={(genres) => handleFieldChange('genres', genres)}
+              locked={metadata.genres_locked}
+              onToggleLock={() => handleToggleLock('genres')}
+              suggestions={[]} // TODO: Fetch from API
+              placeholder="Add genre..."
+            />
+
+            <TagInput
+              label="Directors"
+              value={metadata.directors || []}
+              onChange={(directors) => handleFieldChange('directors', directors)}
+              locked={metadata.directors_locked}
+              onToggleLock={() => handleToggleLock('directors')}
+              suggestions={[]} // TODO: Fetch from API
+              placeholder="Add director..."
+            />
+
+            <TagInput
+              label="Writers"
+              value={metadata.writers || []}
+              onChange={(writers) => handleFieldChange('writers', writers)}
+              locked={metadata.writers_locked}
+              onToggleLock={() => handleToggleLock('writers')}
+              suggestions={[]} // TODO: Fetch from API
+              placeholder="Add writer..."
+            />
+
+            <TagInput
+              label="Studios"
+              value={metadata.studios || []}
+              onChange={(studios) => handleFieldChange('studios', studios)}
+              locked={metadata.studios_locked}
+              onToggleLock={() => handleToggleLock('studios')}
+              suggestions={[]} // TODO: Fetch from API
+              placeholder="Add studio..."
+            />
+
+            <TagInput
+              label="Countries"
+              value={metadata.countries || []}
+              onChange={(countries) => handleFieldChange('countries', countries)}
+              locked={metadata.countries_locked}
+              onToggleLock={() => handleToggleLock('countries')}
+              suggestions={[]} // TODO: Fetch from API
+              placeholder="Add country..."
+            />
+
+            <TagInput
+              label="Tags"
+              value={metadata.tags || []}
+              onChange={(tags) => handleFieldChange('tags', tags)}
+              locked={metadata.tags_locked}
+              onToggleLock={() => handleToggleLock('tags')}
+              suggestions={[]} // TODO: Fetch from API
+              placeholder="Add tag..."
+            />
+          </div>
 
           {/* Technical Details Section */}
           {((movieData as any)?.video_streams || (movieData as any)?.audio_streams) && (
