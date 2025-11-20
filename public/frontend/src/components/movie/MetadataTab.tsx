@@ -609,40 +609,50 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
       {/* Grid layout */}
       <div className="card">
         <div className="card-body p-4 space-y-3">
-          {/* Action Buttons */}
-          <div className="flex items-center justify-end gap-2 pb-2 border-b border-neutral-700">
-            <button
-              type="button"
-              onClick={handleReset}
-              disabled={!hasChanges}
-              className={`
-                inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium
-                transition-colors
-                ${hasChanges
-                  ? 'bg-neutral-700 text-neutral-200 hover:bg-neutral-600'
-                  : 'bg-neutral-800 text-neutral-500 cursor-not-allowed opacity-50'
-                }
-              `}
-            >
-              <FontAwesomeIcon icon={faUndo} className="text-xs" />
-              <span>Reset</span>
-            </button>
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={!hasChanges || saving}
-              className={`
-                inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium
-                transition-colors
-                ${hasChanges && !saving
-                  ? 'bg-purple-600 text-white hover:bg-purple-700'
-                  : 'bg-neutral-800 text-neutral-500 cursor-not-allowed opacity-50'
-                }
-              `}
-            >
-              <FontAwesomeIcon icon={faSave} className="text-xs" />
-              <span>{saving ? 'Saving...' : 'Save Changes'}</span>
-            </button>
+          {/* Header with Directory Path and Action Buttons */}
+          <div className="flex items-center justify-between gap-4 pb-2 border-b border-neutral-700">
+            {/* Directory Path */}
+            <div className="flex-1 min-w-0">
+              <div className="text-xs text-neutral-500 font-mono truncate" title={(movieData as any)?.file_path || ''}>
+                {(movieData as any)?.file_path || 'No file path'}
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <button
+                type="button"
+                onClick={handleReset}
+                disabled={!hasChanges}
+                className={`
+                  inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium
+                  transition-colors
+                  ${hasChanges
+                    ? 'bg-neutral-700 text-neutral-200 hover:bg-neutral-600'
+                    : 'bg-neutral-800 text-neutral-500 cursor-not-allowed opacity-50'
+                  }
+                `}
+              >
+                <FontAwesomeIcon icon={faUndo} className="text-xs" />
+                <span>Reset</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={!hasChanges || saving}
+                className={`
+                  inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium
+                  transition-colors
+                  ${hasChanges && !saving
+                    ? 'bg-purple-600 text-white hover:bg-purple-700'
+                    : 'bg-neutral-800 text-neutral-500 cursor-not-allowed opacity-50'
+                  }
+                `}
+              >
+                <FontAwesomeIcon icon={faSave} className="text-xs" />
+                <span>{saving ? 'Saving...' : 'Save Changes'}</span>
+              </button>
+            </div>
           </div>
 
           {/* Base Metadata Section */}
