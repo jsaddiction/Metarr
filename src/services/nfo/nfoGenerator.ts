@@ -27,6 +27,7 @@ interface MovieNFOData {
   sortTitle?: string;
   year?: number;
   plot?: string;
+  outline?: string;
   tagline?: string;
   mpaa?: string;
   premiered?: string;
@@ -81,6 +82,7 @@ interface TVShowNFOData {
   sortTitle?: string;
   year?: number;
   plot?: string;
+  outline?: string;
   mpaa?: string;
   status?: string;
   premiered?: string;
@@ -113,6 +115,7 @@ interface EpisodeNFOData {
   displayEpisode?: number;
   title?: string;
   plot?: string;
+  outline?: string;
   aired?: string;
   runtime?: number;
   userRating?: number;
@@ -173,6 +176,7 @@ export async function generateMovieNFO(movieDir: string, data: MovieNFOData): Pr
     if (data.sortTitle) nfoObj.sorttitle = data.sortTitle;
     if (data.year) nfoObj.year = data.year;
     if (data.plot) nfoObj.plot = data.plot;
+    if (data.outline) nfoObj.outline = data.outline;
     if (data.tagline) nfoObj.tagline = data.tagline;
     if (data.mpaa) nfoObj.mpaa = data.mpaa;
     if (data.premiered) nfoObj.premiered = data.premiered;
@@ -344,6 +348,7 @@ export async function generateTVShowNFO(seriesDir: string, data: TVShowNFOData):
     if (data.sortTitle) nfoObj.sorttitle = data.sortTitle;
     if (data.year) nfoObj.year = data.year;
     if (data.plot) nfoObj.plot = data.plot;
+    if (data.outline) nfoObj.outline = data.outline;
     if (data.mpaa) nfoObj.mpaa = data.mpaa;
     if (data.status) nfoObj.status = data.status;
     if (data.premiered) nfoObj.premiered = data.premiered;
@@ -442,6 +447,7 @@ export async function generateEpisodeNFO(
     // Metadata
     if (data.title) nfoObj.title = data.title;
     if (data.plot) nfoObj.plot = data.plot;
+    if (data.outline) nfoObj.outline = data.outline;
     if (data.aired) nfoObj.aired = data.aired;
     if (data.runtime) nfoObj.runtime = data.runtime;
     if (data.userRating) nfoObj.userrating = data.userRating;
@@ -712,6 +718,7 @@ export async function generateMovieNFOFromDatabase(
       sortTitle: movie.sort_title,
       year: movie.year,
       plot: movie.plot,
+      outline: movie.outline,
       tagline: movie.tagline,
       mpaa: movie.content_rating, // Clean schema uses content_rating, not mpaa
       premiered: movie.release_date, // Clean schema uses release_date, not premiered
@@ -828,6 +835,7 @@ export async function generateTVShowNFOFromDatabase(
       sortTitle: series.sort_title,
       year: series.year,
       plot: series.plot,
+      outline: series.outline,
       mpaa: series.mpaa,
       status: series.status,
       premiered: series.premiered,
@@ -927,6 +935,7 @@ export async function generateEpisodeNFOFromDatabase(
       displayEpisode: episode.display_episode,
       title: episode.title,
       plot: episode.plot,
+      outline: episode.outline,
       aired: episode.aired,
       directors: directors.map((d: unknown) => (d as { name: string }).name),
       writers: writers.map((w: unknown) => (w as { name: string }).name),
