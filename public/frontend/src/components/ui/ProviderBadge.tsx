@@ -75,19 +75,19 @@ export const ProviderBadge: React.FC<ProviderBadgeProps> = ({ provider, id, labe
       target="_blank"
       rel="noopener noreferrer"
       className={`
-        inline-flex items-center gap-1.5 px-2.5 py-1
-        rounded-md border text-xs font-semibold
+        inline-flex items-center gap-1.5 px-3 py-1.5
+        rounded-md border text-sm font-semibold
         transition-colors
         ${config.color}
       `}
       title={`View on ${config.name}`}
     >
-      <div className="flex flex-col items-start gap-0.5">
+      <div className="flex flex-col items-start gap-1">
         <div className="flex items-center gap-1.5">
           <span>{displayLabel}</span>
-          <FontAwesomeIcon icon={faExternalLinkAlt} className="text-[10px]" />
+          <FontAwesomeIcon icon={faExternalLinkAlt} className="text-xs" />
         </div>
-        {subtext && <span className="text-[10px] opacity-60 font-normal">{subtext}</span>}
+        {subtext && <span className="text-xs opacity-60 font-normal">{subtext}</span>}
       </div>
     </a>
   );
