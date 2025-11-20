@@ -7,6 +7,7 @@ import { createErrorLogContext } from '../../utils/errorHandling.js';
 import { buildUpdateQuery } from '../../utils/sqlBuilder.js';
 import type { SqlParam } from '../../types/database.js';
 import { ResourceNotFoundError } from '../../errors/index.js';
+import { MovieRelationshipService } from './MovieRelationshipService.js';
 
 /**
  * MovieCrudService
@@ -36,6 +37,7 @@ export class MovieCrudService {
 
     try {
       // Metadata fields that can be updated (enforced allowlist)
+      // Note: Array fields (genres, directors, etc.) are handled via junction tables
       const allowedFields = [
         'title',
         'original_title',
@@ -48,14 +50,8 @@ export class MovieCrudService {
         'premiered',
         'user_rating',
         'trailer_url',
-        // Related entity fields (JSON arrays)
-        'genres',
-        'directors',
-        'writers',
-        'studios',
-        'countries',
-        'tags',
-        // Lock fields
+        // Lock fields for scalar fields only
+        // Note: Lock fields for array fields (genres_locked, etc.) removed in normalized schema
         'title_locked',
         'original_title_locked',
         'sort_title_locked',
@@ -67,48 +63,82 @@ export class MovieCrudService {
         'premiered_locked',
         'user_rating_locked',
         'trailer_url_locked',
-        'genres_locked',
-        'directors_locked',
-        'writers_locked',
-        'studios_locked',
-        'countries_locked',
-        'tags_locked',
       ] as const;
 
-      // JSON array fields that need serialization
-      const jsonArrayFields = ['genres', 'directors', 'writers', 'studios', 'countries', 'tags'];
+      // Extract array fields for junction table syncing
+      const { genres, directors, writers, studios, countries, tags, ...scalarFields } = metadata;
 
-      // Preprocess metadata: serialize array fields to JSON strings
-      const processedMetadata = { ...metadata };
-      for (const field of jsonArrayFields) {
-        if (field in processedMetadata && Array.isArray(processedMetadata[field])) {
-          processedMetadata[field] = JSON.stringify(processedMetadata[field]);
+      // Update scalar fields in movies table
+      if (Object.keys(scalarFields).length > 0) {
+        // Build type-safe UPDATE query using allowlist
+        // Addresses Audit Finding 1.4: SQL injection risk
+        let query: string;
+        let values: unknown[];
+
+        try {
+          const result = buildUpdateQuery(
+            'movies',
+            allowedFields,
+            scalarFields,
+            'id = ?',
+            [movieId]
+          );
+          query = result.query;
+          values = result.values;
+
+          await conn.execute(query, values as SqlParam[]);
+        } catch (error) {
+          if (!(error instanceof Error && error.message.includes('No valid columns to update'))) {
+            throw error;
+          }
+          // No scalar fields to update, continue to array fields
         }
       }
 
-      // Build type-safe UPDATE query using allowlist
-      // Addresses Audit Finding 1.4: SQL injection risk
-      let query: string;
-      let values: unknown[];
+      // Sync array fields to junction tables
+      const relationshipService = new MovieRelationshipService(this.db);
 
-      try {
-        const result = buildUpdateQuery(
-          'movies',
-          allowedFields,
-          processedMetadata,
-          'id = ?',
-          [movieId]
-        );
-        query = result.query;
-        values = result.values;
-      } catch (error) {
-        if (error instanceof Error && error.message.includes('No valid columns to update')) {
-          return { success: true, message: 'No fields to update' } as Record<string, unknown>;
+      if (genres !== undefined) {
+        if (!Array.isArray(genres)) {
+          throw new Error('genres must be an array');
         }
-        throw error;
+        await relationshipService.syncGenres(movieId, genres as string[]);
       }
 
-      await conn.execute(query, values as SqlParam[]);
+      if (directors !== undefined) {
+        if (!Array.isArray(directors)) {
+          throw new Error('directors must be an array');
+        }
+        await relationshipService.syncDirectors(movieId, directors as string[]);
+      }
+
+      if (writers !== undefined) {
+        if (!Array.isArray(writers)) {
+          throw new Error('writers must be an array');
+        }
+        await relationshipService.syncWriters(movieId, writers as string[]);
+      }
+
+      if (studios !== undefined) {
+        if (!Array.isArray(studios)) {
+          throw new Error('studios must be an array');
+        }
+        await relationshipService.syncStudios(movieId, studios as string[]);
+      }
+
+      if (countries !== undefined) {
+        if (!Array.isArray(countries)) {
+          throw new Error('countries must be an array');
+        }
+        await relationshipService.syncCountries(movieId, countries as string[]);
+      }
+
+      if (tags !== undefined) {
+        if (!Array.isArray(tags)) {
+          throw new Error('tags must be an array');
+        }
+        await relationshipService.syncTags(movieId, tags as string[]);
+      }
 
       logger.info('Movie metadata updated', { movieId, updatedFields: Object.keys(metadata) });
 

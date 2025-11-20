@@ -64,14 +64,6 @@ export interface MovieRow {
   popularity: number | null;
   status: string | null;
 
-  // Related Entity Fields (denormalized for performance)
-  genres: string | null; // JSON array of strings
-  directors: string | null; // JSON array of strings
-  writers: string | null; // JSON array of strings
-  studios: string | null; // JSON array of strings
-  countries: string | null; // JSON array of strings
-  tags: string | null; // JSON array of strings
-
   // Asset Lock Fields
   nfo_cache_id: number | null;
   title_locked: number; // SQLite boolean
@@ -86,12 +78,6 @@ export interface MovieRow {
   discart_locked: number; // SQLite boolean
   keyart_locked: number; // SQLite boolean
   landscape_locked: number; // SQLite boolean
-  genres_locked: number; // SQLite boolean
-  directors_locked: number; // SQLite boolean
-  writers_locked: number; // SQLite boolean
-  studios_locked: number; // SQLite boolean
-  countries_locked: number; // SQLite boolean
-  tags_locked: number; // SQLite boolean
 
   // Workflow Status
   monitored: number; // SQLite boolean

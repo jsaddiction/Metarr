@@ -61,14 +61,6 @@ interface MovieMetadata {
   studios?: string[];
   countries?: string[];
   tags?: string[];
-
-  // Related entity locks
-  genres_locked: boolean;
-  directors_locked: boolean;
-  writers_locked: boolean;
-  studios_locked: boolean;
-  countries_locked: boolean;
-  tags_locked: boolean;
 }
 
 interface SearchResult {
@@ -130,12 +122,6 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
         mpaa_locked: movieData.mpaa_locked ?? false,
         premiered_locked: movieData.premiered_locked ?? false,
         user_rating_locked: movieData.user_rating_locked ?? false,
-        genres_locked: movieData.genres_locked ?? false,
-        directors_locked: movieData.directors_locked ?? false,
-        writers_locked: movieData.writers_locked ?? false,
-        studios_locked: movieData.studios_locked ?? false,
-        countries_locked: movieData.countries_locked ?? false,
-        tags_locked: movieData.tags_locked ?? false,
       };
 
       setMetadata(normalizedData);
@@ -814,8 +800,6 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
               label="Genres"
               value={metadata.genres || []}
               onChange={(genres) => handleFieldChange('genres', genres)}
-              locked={metadata.genres_locked}
-              onToggleLock={() => handleToggleLock('genres')}
               suggestions={genreSuggestions}
               placeholder="Add genre..."
             />
@@ -824,8 +808,6 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
               label="Directors"
               value={metadata.directors || []}
               onChange={(directors) => handleFieldChange('directors', directors)}
-              locked={metadata.directors_locked}
-              onToggleLock={() => handleToggleLock('directors')}
               suggestions={directorSuggestions}
               placeholder="Add director..."
             />
@@ -834,8 +816,6 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
               label="Writers"
               value={metadata.writers || []}
               onChange={(writers) => handleFieldChange('writers', writers)}
-              locked={metadata.writers_locked}
-              onToggleLock={() => handleToggleLock('writers')}
               suggestions={writerSuggestions}
               placeholder="Add writer..."
             />
@@ -844,8 +824,6 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
               label="Studios"
               value={metadata.studios || []}
               onChange={(studios) => handleFieldChange('studios', studios)}
-              locked={metadata.studios_locked}
-              onToggleLock={() => handleToggleLock('studios')}
               suggestions={studioSuggestions}
               placeholder="Add studio..."
             />
@@ -854,8 +832,6 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
               label="Countries"
               value={metadata.countries || []}
               onChange={(countries) => handleFieldChange('countries', countries)}
-              locked={metadata.countries_locked}
-              onToggleLock={() => handleToggleLock('countries')}
               suggestions={countrySuggestions}
               placeholder="Add country..."
             />
@@ -864,8 +840,6 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
               label="Tags"
               value={metadata.tags || []}
               onChange={(tags) => handleFieldChange('tags', tags)}
-              locked={metadata.tags_locked}
-              onToggleLock={() => handleToggleLock('tags')}
               suggestions={tagSuggestions}
               placeholder="Add tag..."
             />

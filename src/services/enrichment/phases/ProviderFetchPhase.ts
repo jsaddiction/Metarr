@@ -17,6 +17,7 @@ import { CompleteMovieData } from '../../../types/providerCache.js';
 import { logger } from '../../../middleware/logging.js';
 import { getErrorMessage } from '../../../utils/errorHandling.js';
 import { ResourceNotFoundError } from '../../../errors/index.js';
+import { MovieRelationshipService } from '../../movie/MovieRelationshipService.js';
 
 export class ProviderFetchPhase {
   private readonly providerAssetsRepo: ProviderAssetsRepository;
@@ -24,7 +25,7 @@ export class ProviderFetchPhase {
 
   constructor(
     private readonly db: DatabaseConnection,
-    dbManager: DatabaseManager
+    private readonly dbManager: DatabaseManager
   ) {
     this.providerAssetsRepo = new ProviderAssetsRepository(db);
     this.providerCacheOrchestrator = new ProviderCacheOrchestrator(dbManager);
@@ -271,6 +272,58 @@ export class ProviderFetchPhase {
         });
       } else {
         logger.debug('[ProviderFetchPhase] No metadata updates (all fields locked)', { movieId });
+      }
+
+      // Copy related entities to normalized tables
+      const relationshipService = new MovieRelationshipService(this.dbManager);
+
+      // Sync genres
+      if (cachedMovie.genres && cachedMovie.genres.length > 0) {
+        await relationshipService.syncGenres(
+          movieId,
+          cachedMovie.genres.map((g) => g.name)
+        );
+      }
+
+      // Sync production companies → studios
+      if (cachedMovie.companies && cachedMovie.companies.length > 0) {
+        const studioNames = cachedMovie.companies.map((c) => c.name);
+        if (studioNames.length > 0) {
+          await relationshipService.syncStudios(movieId, studioNames);
+        }
+      }
+
+      // Sync countries
+      if (cachedMovie.countries && cachedMovie.countries.length > 0) {
+        const countryNames = cachedMovie.countries.map((c) => c.name);
+        if (countryNames.length > 0) {
+          await relationshipService.syncCountries(movieId, countryNames);
+        }
+      }
+
+      // Sync keywords → tags
+      if (cachedMovie.keywords && cachedMovie.keywords.length > 0) {
+        const tagNames = cachedMovie.keywords.map((k) => k.name);
+        if (tagNames.length > 0) {
+          await relationshipService.syncTags(movieId, tagNames);
+        }
+      }
+
+      // Sync crew (directors and writers)
+      if (cachedMovie.crew && cachedMovie.crew.length > 0) {
+        const directors = cachedMovie.crew
+          .filter((c) => c.job === 'Director')
+          .map((c) => c.person.name);
+        const writers = cachedMovie.crew
+          .filter((c) => c.job === 'Writer' || c.job === 'Screenplay' || c.job === 'Story')
+          .map((c) => c.person.name);
+
+        if (directors.length > 0) {
+          await relationshipService.syncDirectors(movieId, directors);
+        }
+        if (writers.length > 0) {
+          await relationshipService.syncWriters(movieId, writers);
+        }
       }
     } catch (error) {
       logger.error('[ProviderFetchPhase] Failed to copy metadata', {

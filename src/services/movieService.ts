@@ -395,12 +395,14 @@ export class MovieService {
     const movie = movies[0];
 
     // Get related entities (clean schema)
-    const [actors, genres, directors, writers, studios] = await Promise.all([
+    const [actors, genres, directors, writers, studios, countries, tags] = await Promise.all([
       this.db.query<Record<string, unknown>>('SELECT a.*, ma.role, ma.actor_order FROM actors a JOIN movie_actors ma ON a.id = ma.actor_id WHERE ma.movie_id = ? ORDER BY ma.actor_order', [movieId]),
       this.db.query<Record<string, unknown>>('SELECT g.* FROM genres g JOIN movie_genres mg ON g.id = mg.genre_id WHERE mg.movie_id = ?', [movieId]),
       this.db.query<Record<string, unknown>>('SELECT c.* FROM crew c JOIN movie_crew mc ON c.id = mc.crew_id WHERE mc.movie_id = ? AND mc.role = \'director\'', [movieId]),
       this.db.query<Record<string, unknown>>('SELECT c.* FROM crew c JOIN movie_crew mc ON c.id = mc.crew_id WHERE mc.movie_id = ? AND mc.role = \'writer\'', [movieId]),
       this.db.query<Record<string, unknown>>('SELECT s.* FROM studios s JOIN movie_studios ms ON s.id = ms.studio_id WHERE ms.movie_id = ?', [movieId]),
+      this.db.query<Record<string, unknown>>('SELECT c.* FROM countries c JOIN movie_countries mc ON c.id = mc.country_id WHERE mc.movie_id = ?', [movieId]),
+      this.db.query<Record<string, unknown>>('SELECT t.* FROM tags t JOIN movie_tags mt ON t.id = mt.tag_id WHERE mt.movie_id = ?', [movieId]),
     ]);
 
     // Build external_ids object (all IDs in one place)
@@ -424,6 +426,8 @@ export class MovieService {
       directors: directors.map(d => d.name),
       writers: writers.map(w => w.name),
       studios: studios.map(s => s.name),
+      countries: countries.map(c => c.name),
+      tags: tags.map(t => t.name),
       external_ids,
       provider_urls,
     };

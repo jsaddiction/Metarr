@@ -7,8 +7,8 @@ interface TagInputProps {
   label: string;
   value: string[];
   onChange: (tags: string[]) => void;
-  locked: boolean;
-  onToggleLock: () => void;
+  locked?: boolean;
+  onToggleLock?: () => void;
   suggestions?: string[];
   placeholder?: string;
 }
@@ -148,18 +148,20 @@ export const TagInput: React.FC<TagInputProps> = ({
         <label className="text-sm font-medium text-neutral-400">
           {label}
         </label>
-        <button
-          type="button"
-          onClick={onToggleLock}
-          className={`
-            inline-flex items-center justify-center rounded-md transition-colors
-            h-6 w-6 text-xs
-            ${locked ? 'text-amber-400 hover:bg-amber-400/10' : 'text-neutral-500 hover:bg-neutral-700'}
-          `}
-          title={locked ? 'Unlock field' : 'Lock field'}
-        >
-          <FontAwesomeIcon icon={locked ? faLock : faLockOpen} />
-        </button>
+        {onToggleLock && (
+          <button
+            type="button"
+            onClick={onToggleLock}
+            className={`
+              inline-flex items-center justify-center rounded-md transition-colors
+              h-6 w-6 text-xs
+              ${locked ? 'text-amber-400 hover:bg-amber-400/10' : 'text-neutral-500 hover:bg-neutral-700'}
+            `}
+            title={locked ? 'Unlock field' : 'Lock field'}
+          >
+            <FontAwesomeIcon icon={locked ? faLock : faLockOpen} />
+          </button>
+        )}
       </div>
 
       <div
