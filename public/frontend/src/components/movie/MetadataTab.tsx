@@ -645,111 +645,168 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
             </button>
           </div>
 
-          {/* Row 1: Title (span 3) + Year */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
-            <GridField
-              label="Title"
-              field="title"
-              value={metadata.title}
-              locked={metadata.title_locked}
-              onChange={(val) => handleFieldChange('title', val)}
-              onToggleLock={handleToggleLock}
-              className="sm:col-span-1 lg:col-span-3"
-            />
-            <GridField
-              label="Year"
-              field="year"
-              value={metadata.year}
-              locked={metadata.year_locked}
-              type="number"
-              onChange={(val) => handleFieldChange('year', val)}
-              onToggleLock={handleToggleLock}
-            />
+          {/* Base Metadata Section */}
+          <div className="rounded-lg border border-neutral-700 bg-neutral-800/30 p-3">
+            <h3 className="text-sm font-medium text-neutral-300 mb-3">Base Metadata</h3>
+
+            <div className="space-y-2">
+              {/* Row 1: Title (span 3) + Year */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+                <GridField
+                  label="Title"
+                  field="title"
+                  value={metadata.title}
+                  locked={metadata.title_locked}
+                  onChange={(val) => handleFieldChange('title', val)}
+                  onToggleLock={handleToggleLock}
+                  className="sm:col-span-1 lg:col-span-3"
+                />
+                <GridField
+                  label="Year"
+                  field="year"
+                  value={metadata.year}
+                  locked={metadata.year_locked}
+                  type="number"
+                  onChange={(val) => handleFieldChange('year', val)}
+                  onToggleLock={handleToggleLock}
+                />
+              </div>
+
+              {/* Row 2: Original Title + Sort Title */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <GridField
+                  label="Original Title"
+                  field="original_title"
+                  value={metadata.original_title}
+                  locked={metadata.original_title_locked}
+                  onChange={(val) => handleFieldChange('original_title', val)}
+                  onToggleLock={handleToggleLock}
+                />
+                <GridField
+                  label="Sort Title"
+                  field="sort_title"
+                  value={metadata.sort_title}
+                  locked={metadata.sort_title_locked}
+                  onChange={(val) => handleFieldChange('sort_title', val)}
+                  onToggleLock={handleToggleLock}
+                />
+              </div>
+
+              {/* Row 3: Content Rating + Release Date + User Rating + Tagline */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+                <GridField
+                  label="Content Rating"
+                  field="content_rating"
+                  value={metadata.content_rating}
+                  locked={metadata.content_rating_locked}
+                  onChange={(val) => handleFieldChange('content_rating', val)}
+                  onToggleLock={handleToggleLock}
+                  placeholder="PG-13"
+                />
+                <GridField
+                  label="Release Date"
+                  field="release_date"
+                  value={metadata.release_date}
+                  locked={metadata.release_date_locked}
+                  type="date"
+                  onChange={(val) => handleFieldChange('release_date', val)}
+                  onToggleLock={handleToggleLock}
+                />
+                <GridField
+                  label="User Rating"
+                  field="user_rating"
+                  value={metadata.user_rating}
+                  locked={metadata.user_rating_locked}
+                  type="number"
+                  onChange={(val) => handleFieldChange('user_rating', val)}
+                  onToggleLock={handleToggleLock}
+                />
+                <GridField
+                  label="Tagline"
+                  field="tagline"
+                  value={metadata.tagline}
+                  locked={metadata.tagline_locked}
+                  onChange={(val) => handleFieldChange('tagline', val)}
+                  onToggleLock={handleToggleLock}
+                />
+              </div>
+
+              {/* Row 4: Outline */}
+              <TextAreaField
+                label="Outline"
+                field="outline"
+                value={metadata.outline}
+                locked={metadata.outline_locked}
+                onChange={(val) => handleFieldChange('outline', val)}
+                onToggleLock={handleToggleLock}
+                rows={2}
+              />
+
+              {/* Row 5: Plot */}
+              <TextAreaField
+                label="Plot"
+                field="plot"
+                value={metadata.plot}
+                locked={metadata.plot_locked}
+                onChange={(val) => handleFieldChange('plot', val)}
+                onToggleLock={handleToggleLock}
+                rows={3}
+              />
+            </div>
           </div>
 
-          {/* Row 2: Original Title + Sort Title */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <GridField
-              label="Original Title"
-              field="original_title"
-              value={metadata.original_title}
-              locked={metadata.original_title_locked}
-              onChange={(val) => handleFieldChange('original_title', val)}
-              onToggleLock={handleToggleLock}
-            />
-            <GridField
-              label="Sort Title"
-              field="sort_title"
-              value={metadata.sort_title}
-              locked={metadata.sort_title_locked}
-              onChange={(val) => handleFieldChange('sort_title', val)}
-              onToggleLock={handleToggleLock}
-            />
+          {/* Extended Metadata Section */}
+          <div className="rounded-lg border border-neutral-700 bg-neutral-800/30 p-3">
+            <h3 className="text-sm font-medium text-neutral-300 mb-3">Extended Metadata</h3>
+
+            {/* Multi-column grid layout for efficient space usage */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 items-stretch">
+              <TagInput
+                label="Genres"
+                value={metadata.genres || []}
+                onChange={(genres) => handleFieldChange('genres', genres)}
+                suggestions={genreSuggestions}
+                placeholder="Add genre..."
+              />
+              <TagInput
+                label="Tags"
+                value={metadata.tags || []}
+                onChange={(tags) => handleFieldChange('tags', tags)}
+                suggestions={tagSuggestions}
+                placeholder="Add tag..."
+              />
+              <TagInput
+                label="Directors"
+                value={metadata.directors || []}
+                onChange={(directors) => handleFieldChange('directors', directors)}
+                suggestions={directorSuggestions}
+                placeholder="Add director..."
+              />
+              <TagInput
+                label="Writers"
+                value={metadata.writers || []}
+                onChange={(writers) => handleFieldChange('writers', writers)}
+                suggestions={writerSuggestions}
+                placeholder="Add writer..."
+              />
+              <TagInput
+                label="Studios"
+                value={metadata.studios || []}
+                onChange={(studios) => handleFieldChange('studios', studios)}
+                suggestions={studioSuggestions}
+                placeholder="Add studio..."
+              />
+              <TagInput
+                label="Countries"
+                value={metadata.countries || []}
+                onChange={(countries) => handleFieldChange('countries', countries)}
+                suggestions={countrySuggestions}
+                placeholder="Add country..."
+              />
+            </div>
           </div>
-
-          {/* Row 3: Content Rating + Release Date + User Rating + Tagline */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
-            <GridField
-              label="Content Rating"
-              field="content_rating"
-              value={metadata.content_rating}
-              locked={metadata.content_rating_locked}
-              onChange={(val) => handleFieldChange('content_rating', val)}
-              onToggleLock={handleToggleLock}
-              placeholder="PG-13"
-            />
-            <GridField
-              label="Release Date"
-              field="release_date"
-              value={metadata.release_date}
-              locked={metadata.release_date_locked}
-              type="date"
-              onChange={(val) => handleFieldChange('release_date', val)}
-              onToggleLock={handleToggleLock}
-            />
-            <GridField
-              label="User Rating"
-              field="user_rating"
-              value={metadata.user_rating}
-              locked={metadata.user_rating_locked}
-              type="number"
-              onChange={(val) => handleFieldChange('user_rating', val)}
-              onToggleLock={handleToggleLock}
-            />
-            <GridField
-              label="Tagline"
-              field="tagline"
-              value={metadata.tagline}
-              locked={metadata.tagline_locked}
-              onChange={(val) => handleFieldChange('tagline', val)}
-              onToggleLock={handleToggleLock}
-            />
-          </div>
-
-          {/* Row 4: Outline */}
-          <TextAreaField
-            label="Outline"
-            field="outline"
-            value={metadata.outline}
-            locked={metadata.outline_locked}
-            onChange={(val) => handleFieldChange('outline', val)}
-            onToggleLock={handleToggleLock}
-            rows={2}
-          />
-
-          {/* Row 5: Plot */}
-          <TextAreaField
-            label="Plot"
-            field="plot"
-            value={metadata.plot}
-            locked={metadata.plot_locked}
-            onChange={(val) => handleFieldChange('plot', val)}
-            onToggleLock={handleToggleLock}
-            rows={3}
-          />
 
           {/* Production & Stats / External Links Row */}
-          <div className="border-t border-neutral-700"></div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
             {/* Production & Stats Section */}
             <div className="rounded-lg border border-neutral-700 bg-neutral-800/30 p-3">
@@ -814,62 +871,9 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
             </div>
           </div>
 
-          {/* Related Entities Section */}
-          <div className="border-t border-neutral-700"></div>
-          <div className="rounded-lg border border-neutral-700 bg-neutral-800/30 p-3">
-            <h3 className="text-sm font-medium text-neutral-300 mb-3">Related Entities</h3>
-
-            {/* Multi-column grid layout for efficient space usage */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 items-stretch">
-              <TagInput
-                label="Genres"
-                value={metadata.genres || []}
-                onChange={(genres) => handleFieldChange('genres', genres)}
-                suggestions={genreSuggestions}
-                placeholder="Add genre..."
-              />
-              <TagInput
-                label="Tags"
-                value={metadata.tags || []}
-                onChange={(tags) => handleFieldChange('tags', tags)}
-                suggestions={tagSuggestions}
-                placeholder="Add tag..."
-              />
-              <TagInput
-                label="Directors"
-                value={metadata.directors || []}
-                onChange={(directors) => handleFieldChange('directors', directors)}
-                suggestions={directorSuggestions}
-                placeholder="Add director..."
-              />
-              <TagInput
-                label="Writers"
-                value={metadata.writers || []}
-                onChange={(writers) => handleFieldChange('writers', writers)}
-                suggestions={writerSuggestions}
-                placeholder="Add writer..."
-              />
-              <TagInput
-                label="Studios"
-                value={metadata.studios || []}
-                onChange={(studios) => handleFieldChange('studios', studios)}
-                suggestions={studioSuggestions}
-                placeholder="Add studio..."
-              />
-              <TagInput
-                label="Countries"
-                value={metadata.countries || []}
-                onChange={(countries) => handleFieldChange('countries', countries)}
-                suggestions={countrySuggestions}
-                placeholder="Add country..."
-              />
-            </div>
-          </div>
-
           {/* Technical Details Section */}
           {((movieData as any)?.video_streams || (movieData as any)?.audio_streams) && (
             <>
-              <div className="border-t border-neutral-700"></div>
               <div className="space-y-2 rounded-lg border border-neutral-700 bg-neutral-800/50 p-3">
                 <h3 className="text-sm font-medium text-neutral-400 mb-2">
                   Technical Details
