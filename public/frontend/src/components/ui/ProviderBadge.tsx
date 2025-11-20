@@ -13,32 +13,32 @@ const PROVIDER_CONFIG = {
   tmdb: {
     name: 'TMDB',
     url: (id: string | number) => `https://www.themoviedb.org/movie/${id}`,
-    color: 'bg-blue-600/20 text-blue-400 border-blue-600/30 hover:bg-blue-600/30',
+    color: 'bg-blue-600/20 text-neutral-300 border-blue-600/30 hover:bg-blue-600/30',
   },
   imdb: {
     name: 'IMDb',
     url: (id: string | number) => `https://www.imdb.com/title/${id}`,
-    color: 'bg-yellow-600/20 text-yellow-400 border-yellow-600/30 hover:bg-yellow-600/30',
+    color: 'bg-yellow-600/20 text-neutral-300 border-yellow-600/30 hover:bg-yellow-600/30',
   },
   tvdb: {
     name: 'TVDB',
     url: (id: string | number) => `https://thetvdb.com/dereferrer/movie/${id}`,
-    color: 'bg-green-600/20 text-green-400 border-green-600/30 hover:bg-green-600/30',
+    color: 'bg-green-600/20 text-neutral-300 border-green-600/30 hover:bg-green-600/30',
   },
   facebook: {
     name: 'Facebook',
     url: (id: string | number) => `https://www.facebook.com/${id}`,
-    color: 'bg-blue-500/20 text-blue-300 border-blue-500/30 hover:bg-blue-500/30',
+    color: 'bg-blue-500/20 text-neutral-300 border-blue-500/30 hover:bg-blue-500/30',
   },
   instagram: {
     name: 'Instagram',
     url: (id: string | number) => `https://www.instagram.com/${id}`,
-    color: 'bg-pink-600/20 text-pink-400 border-pink-600/30 hover:bg-pink-600/30',
+    color: 'bg-pink-600/20 text-neutral-300 border-pink-600/30 hover:bg-pink-600/30',
   },
   twitter: {
     name: 'Twitter',
     url: (id: string | number) => `https://twitter.com/${id}`,
-    color: 'bg-sky-600/20 text-sky-400 border-sky-600/30 hover:bg-sky-600/30',
+    color: 'bg-sky-600/20 text-neutral-300 border-sky-600/30 hover:bg-sky-600/30',
   },
   wikidata: {
     name: 'Wikidata',
@@ -48,7 +48,7 @@ const PROVIDER_CONFIG = {
   homepage: {
     name: 'Homepage',
     url: (id: string | number) => id.toString(),
-    color: 'bg-purple-600/20 text-purple-400 border-purple-600/30 hover:bg-purple-600/30',
+    color: 'bg-purple-600/20 text-neutral-300 border-purple-600/30 hover:bg-purple-600/30',
   },
 };
 
@@ -64,6 +64,10 @@ export const ProviderBadge: React.FC<ProviderBadgeProps> = ({ provider, id, labe
   const config = PROVIDER_CONFIG[provider];
   const displayLabel = label || config.name;
   const url = config.url(id);
+
+  // Determine what to show as subtext
+  // For homepage, always show the URL; for others, show ID if showId is true
+  const subtext = provider === 'homepage' ? id : (showId ? id : null);
 
   return (
     <a
@@ -83,7 +87,7 @@ export const ProviderBadge: React.FC<ProviderBadgeProps> = ({ provider, id, labe
           <span>{displayLabel}</span>
           <FontAwesomeIcon icon={faExternalLinkAlt} className="text-[10px]" />
         </div>
-        {showId && <span className="text-[10px] opacity-60 font-normal">{id}</span>}
+        {subtext && <span className="text-[10px] opacity-60 font-normal">{subtext}</span>}
       </div>
     </a>
   );
