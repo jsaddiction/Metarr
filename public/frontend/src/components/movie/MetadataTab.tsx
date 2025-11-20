@@ -822,33 +822,54 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
             <div className="rounded-lg border border-neutral-700 bg-neutral-800/30 p-3">
               <h3 className="text-sm font-medium text-neutral-300 mb-2">Production & Stats</h3>
               <div className="grid grid-cols-2 gap-2">
-                {metadata.status && <StatusBadge status={metadata.status} />}
+                {/* Financial Data Badge */}
+                {((metadata.budget !== undefined && metadata.budget !== null && metadata.budget > 0) ||
+                  (metadata.revenue !== undefined && metadata.revenue !== null && metadata.revenue > 0)) && (
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-neutral-600/30 bg-neutral-600/20 text-sm font-semibold text-neutral-300">
+                    <div className="flex flex-col items-start gap-1 w-full">
+                      <span className="text-xs opacity-60 font-normal">Financial Data</span>
+                      <div className="flex items-center gap-2 w-full">
+                        {metadata.budget !== undefined && metadata.budget !== null && metadata.budget > 0 && (
+                          <span className="text-xs">Budget: ${(metadata.budget / 1000000).toFixed(1)}M</span>
+                        )}
+                        {metadata.budget !== undefined && metadata.budget !== null && metadata.budget > 0 &&
+                         metadata.revenue !== undefined && metadata.revenue !== null && metadata.revenue > 0 && (
+                          <span className="text-xs opacity-40">•</span>
+                        )}
+                        {metadata.revenue !== undefined && metadata.revenue !== null && metadata.revenue > 0 && (
+                          <span className="text-xs">Revenue: ${(metadata.revenue / 1000000).toFixed(1)}M</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Release Status Badge */}
+                {(metadata.status || (metadata.popularity !== undefined && metadata.popularity !== null)) && (
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-neutral-600/30 bg-neutral-600/20 text-sm font-semibold text-neutral-300">
+                    <div className="flex flex-col items-start gap-1 w-full">
+                      <span className="text-xs opacity-60 font-normal">Release Status</span>
+                      <div className="flex items-center gap-2 w-full">
+                        {metadata.status && (
+                          <span className="text-xs">{metadata.status}</span>
+                        )}
+                        {metadata.status && metadata.popularity !== undefined && metadata.popularity !== null && (
+                          <span className="text-xs opacity-40">•</span>
+                        )}
+                        {metadata.popularity !== undefined && metadata.popularity !== null && (
+                          <span className="text-xs">Popularity: {metadata.popularity.toFixed(1)}</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Original Language Badge */}
                 {metadata.original_language && (
                   <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-neutral-600/30 bg-neutral-600/20 text-sm font-semibold text-neutral-300">
-                    <span>{getLanguageName(metadata.original_language)}</span>
-                  </div>
-                )}
-                {metadata.budget !== undefined && metadata.budget !== null && metadata.budget > 0 && (
-                  <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-neutral-600/30 bg-neutral-600/20 text-sm font-semibold text-neutral-300">
                     <div className="flex flex-col items-start gap-1">
-                      <span className="text-xs opacity-60 font-normal">Budget</span>
-                      <span>${(metadata.budget / 1000000).toFixed(1)}M</span>
-                    </div>
-                  </div>
-                )}
-                {metadata.revenue !== undefined && metadata.revenue !== null && metadata.revenue > 0 && (
-                  <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-neutral-600/30 bg-neutral-600/20 text-sm font-semibold text-neutral-300">
-                    <div className="flex flex-col items-start gap-1">
-                      <span className="text-xs opacity-60 font-normal">Revenue</span>
-                      <span>${(metadata.revenue / 1000000).toFixed(1)}M</span>
-                    </div>
-                  </div>
-                )}
-                {metadata.popularity !== undefined && metadata.popularity !== null && (
-                  <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-neutral-600/30 bg-neutral-600/20 text-sm font-semibold text-neutral-300">
-                    <div className="flex flex-col items-start gap-1">
-                      <span className="text-xs opacity-60 font-normal">Popularity</span>
-                      <span>{metadata.popularity.toFixed(1)}</span>
+                      <span className="text-xs opacity-60 font-normal">Original Language</span>
+                      <span className="text-xs">{getLanguageName(metadata.original_language)}</span>
                     </div>
                   </div>
                 )}
