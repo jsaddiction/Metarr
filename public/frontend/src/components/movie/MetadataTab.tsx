@@ -31,7 +31,6 @@ interface MovieMetadata {
   mpaa?: string;
   premiered?: string;
   user_rating?: number;
-  trailer_url?: string;
   tmdb_id?: number;
   imdb_id?: string;
 
@@ -54,7 +53,6 @@ interface MovieMetadata {
   mpaa_locked: boolean;
   premiered_locked: boolean;
   user_rating_locked: boolean;
-  trailer_url_locked: boolean;
 
   // Related entities
   genres?: string[];
@@ -116,7 +114,6 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
         mpaa_locked: movieData.mpaa_locked ?? false,
         premiered_locked: movieData.premiered_locked ?? false,
         user_rating_locked: movieData.user_rating_locked ?? false,
-        trailer_url_locked: movieData.trailer_url_locked ?? false,
       };
 
       setMetadata(normalizedData);
@@ -696,19 +693,6 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
             onChange={(val) => handleFieldChange('plot', val)}
             onToggleLock={handleToggleLock}
             rows={3}
-          />
-
-          {/* Divider */}
-          <div className="border-t border-neutral-700"></div>
-
-          {/* Row 6: Trailer URL */}
-          <GridField
-            label="Trailer URL"
-            field="trailer_url"
-            value={metadata.trailer_url}
-            locked={metadata.trailer_url_locked}
-            onChange={(val) => handleFieldChange('trailer_url', val)}
-            onToggleLock={handleToggleLock}
           />
 
           {/* Divider */}
