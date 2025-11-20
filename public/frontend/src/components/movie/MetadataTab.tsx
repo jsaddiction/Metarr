@@ -814,11 +814,11 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
 
           {/* Related Entities Section */}
           <div className="border-t border-neutral-700"></div>
-          <div className="space-y-2 rounded-lg border border-neutral-700 bg-neutral-800/30 p-3">
-            <h3 className="text-sm font-medium text-neutral-300 mb-2">Related Entities</h3>
+          <div className="rounded-lg border border-neutral-700 bg-neutral-800/30 p-3">
+            <h3 className="text-sm font-medium text-neutral-300 mb-3">Related Entities</h3>
 
-            {/* Core Classification */}
-            <div className="space-y-2">
+            {/* Multi-column grid layout for efficient space usage */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
               <TagInput
                 label="Genres"
                 value={metadata.genres || []}
@@ -833,10 +833,6 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
                 suggestions={tagSuggestions}
                 placeholder="Add tag..."
               />
-            </div>
-
-            {/* Creative Team */}
-            <div className="space-y-2 pt-2 border-t border-neutral-700/30">
               <TagInput
                 label="Directors"
                 value={metadata.directors || []}
@@ -851,10 +847,6 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
                 suggestions={writerSuggestions}
                 placeholder="Add writer..."
               />
-            </div>
-
-            {/* Production */}
-            <div className="space-y-2 pt-2 border-t border-neutral-700/30">
               <TagInput
                 label="Studios"
                 value={metadata.studios || []}
