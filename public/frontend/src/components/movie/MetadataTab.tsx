@@ -53,14 +53,6 @@ interface MovieMetadata {
   mpaa_locked: boolean;
   premiered_locked: boolean;
   user_rating_locked: boolean;
-
-  // Related entities
-  genres?: string[];
-  directors?: string[];
-  writers?: string[];
-  studios?: string[];
-  countries?: string[];
-  tags?: string[];
 }
 
 interface SearchResult {
@@ -694,19 +686,6 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
             onToggleLock={handleToggleLock}
             rows={3}
           />
-
-          {/* Divider */}
-          <div className="border-t border-neutral-700"></div>
-
-          {/* Related Entities - Compact badge rows */}
-          <div className="space-y-0.5 rounded-lg border border-neutral-700 bg-neutral-800/30 p-2.5">
-            <BadgeRow label="Genres" items={metadata.genres} />
-            <BadgeRow label="Directors" items={metadata.directors} />
-            <BadgeRow label="Writers" items={metadata.writers} />
-            <BadgeRow label="Studios" items={metadata.studios} />
-            <BadgeRow label="Countries" items={metadata.countries} />
-            <BadgeRow label="Tags" items={metadata.tags} />
-          </div>
 
           {/* Production & Stats Section */}
           <div className="border-t border-neutral-700"></div>
