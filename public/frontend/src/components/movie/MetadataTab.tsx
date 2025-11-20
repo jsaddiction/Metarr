@@ -53,6 +53,14 @@ interface MovieMetadata {
   mpaa_locked: boolean;
   premiered_locked: boolean;
   user_rating_locked: boolean;
+
+  // Related entities
+  genres?: string[];
+  directors?: string[];
+  writers?: string[];
+  studios?: string[];
+  countries?: string[];
+  tags?: string[];
 }
 
 interface SearchResult {
