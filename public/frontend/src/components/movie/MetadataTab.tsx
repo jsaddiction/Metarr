@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faExternalLinkAlt, faExclamationTriangle, faChevronDown, faChevronUp, faSave, faUndo } from '@fortawesome/free-solid-svg-icons';
-import { useMovie, useToggleLockField } from '../../hooks/useMovies';
+import { useMovie, useToggleLockField, useGenreSuggestions, useDirectorSuggestions, useWriterSuggestions, useStudioSuggestions, useCountrySuggestions, useTagSuggestions } from '../../hooks/useMovies';
 import { GridField } from './GridField';
 import { TextAreaField } from './TextAreaField';
 import { toast } from 'sonner';
@@ -94,6 +94,14 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
 
   // Use lock field mutation hook
   const toggleLockField = useToggleLockField();
+
+  // Fetch autocomplete suggestions
+  const { data: genreSuggestions = [] } = useGenreSuggestions();
+  const { data: directorSuggestions = [] } = useDirectorSuggestions();
+  const { data: writerSuggestions = [] } = useWriterSuggestions();
+  const { data: studioSuggestions = [] } = useStudioSuggestions();
+  const { data: countrySuggestions = [] } = useCountrySuggestions();
+  const { data: tagSuggestions = [] } = useTagSuggestions();
 
   const [metadata, setMetadata] = useState<MovieMetadata | null>(null);
   const [originalMetadata, setOriginalMetadata] = useState<MovieMetadata | null>(null);
@@ -808,7 +816,7 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
               onChange={(genres) => handleFieldChange('genres', genres)}
               locked={metadata.genres_locked}
               onToggleLock={() => handleToggleLock('genres')}
-              suggestions={[]} // TODO: Fetch from API
+              suggestions={genreSuggestions}
               placeholder="Add genre..."
             />
 
@@ -818,7 +826,7 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
               onChange={(directors) => handleFieldChange('directors', directors)}
               locked={metadata.directors_locked}
               onToggleLock={() => handleToggleLock('directors')}
-              suggestions={[]} // TODO: Fetch from API
+              suggestions={directorSuggestions}
               placeholder="Add director..."
             />
 
@@ -828,7 +836,7 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
               onChange={(writers) => handleFieldChange('writers', writers)}
               locked={metadata.writers_locked}
               onToggleLock={() => handleToggleLock('writers')}
-              suggestions={[]} // TODO: Fetch from API
+              suggestions={writerSuggestions}
               placeholder="Add writer..."
             />
 
@@ -838,7 +846,7 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
               onChange={(studios) => handleFieldChange('studios', studios)}
               locked={metadata.studios_locked}
               onToggleLock={() => handleToggleLock('studios')}
-              suggestions={[]} // TODO: Fetch from API
+              suggestions={studioSuggestions}
               placeholder="Add studio..."
             />
 
@@ -848,7 +856,7 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
               onChange={(countries) => handleFieldChange('countries', countries)}
               locked={metadata.countries_locked}
               onToggleLock={() => handleToggleLock('countries')}
-              suggestions={[]} // TODO: Fetch from API
+              suggestions={countrySuggestions}
               placeholder="Add country..."
             />
 
@@ -858,7 +866,7 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
               onChange={(tags) => handleFieldChange('tags', tags)}
               locked={metadata.tags_locked}
               onToggleLock={() => handleToggleLock('tags')}
-              suggestions={[]} // TODO: Fetch from API
+              suggestions={tagSuggestions}
               placeholder="Add tag..."
             />
           </div>

@@ -48,6 +48,13 @@ export class MovieCrudService {
         'premiered',
         'user_rating',
         'trailer_url',
+        // Related entity fields (JSON arrays)
+        'genres',
+        'directors',
+        'writers',
+        'studios',
+        'countries',
+        'tags',
         // Lock fields
         'title_locked',
         'original_title_locked',
@@ -60,7 +67,24 @@ export class MovieCrudService {
         'premiered_locked',
         'user_rating_locked',
         'trailer_url_locked',
+        'genres_locked',
+        'directors_locked',
+        'writers_locked',
+        'studios_locked',
+        'countries_locked',
+        'tags_locked',
       ] as const;
+
+      // JSON array fields that need serialization
+      const jsonArrayFields = ['genres', 'directors', 'writers', 'studios', 'countries', 'tags'];
+
+      // Preprocess metadata: serialize array fields to JSON strings
+      const processedMetadata = { ...metadata };
+      for (const field of jsonArrayFields) {
+        if (field in processedMetadata && Array.isArray(processedMetadata[field])) {
+          processedMetadata[field] = JSON.stringify(processedMetadata[field]);
+        }
+      }
 
       // Build type-safe UPDATE query using allowlist
       // Addresses Audit Finding 1.4: SQL injection risk
@@ -71,7 +95,7 @@ export class MovieCrudService {
         const result = buildUpdateQuery(
           'movies',
           allowedFields,
-          metadata,
+          processedMetadata,
           'id = ?',
           [movieId]
         );

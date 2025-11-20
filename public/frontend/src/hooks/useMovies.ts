@@ -342,3 +342,69 @@ export const useResetMetadata = () => {
     },
   });
 };
+
+/**
+ * Fetch genre suggestions for autocomplete
+ */
+export const useGenreSuggestions = () => {
+  return useQuery<string[], Error>({
+    queryKey: ['movie-suggestions', 'genres'],
+    queryFn: () => movieApi.getGenreSuggestions(),
+    staleTime: 30 * 60 * 1000, // 30 minutes - suggestions don't change often
+  });
+};
+
+/**
+ * Fetch director suggestions for autocomplete
+ */
+export const useDirectorSuggestions = () => {
+  return useQuery<string[], Error>({
+    queryKey: ['movie-suggestions', 'directors'],
+    queryFn: () => movieApi.getDirectorSuggestions(),
+    staleTime: 30 * 60 * 1000,
+  });
+};
+
+/**
+ * Fetch writer suggestions for autocomplete
+ */
+export const useWriterSuggestions = () => {
+  return useQuery<string[], Error>({
+    queryKey: ['movie-suggestions', 'writers'],
+    queryFn: () => movieApi.getWriterSuggestions(),
+    staleTime: 30 * 60 * 1000,
+  });
+};
+
+/**
+ * Fetch studio suggestions for autocomplete
+ */
+export const useStudioSuggestions = () => {
+  return useQuery<string[], Error>({
+    queryKey: ['movie-suggestions', 'studios'],
+    queryFn: () => movieApi.getStudioSuggestions(),
+    staleTime: 30 * 60 * 1000,
+  });
+};
+
+/**
+ * Fetch country suggestions for autocomplete
+ */
+export const useCountrySuggestions = () => {
+  return useQuery<string[], Error>({
+    queryKey: ['movie-suggestions', 'countries'],
+    queryFn: () => movieApi.getCountrySuggestions(),
+    staleTime: 30 * 60 * 1000,
+  });
+};
+
+/**
+ * Fetch tag suggestions for autocomplete
+ */
+export const useTagSuggestions = () => {
+  return useQuery<string[], Error>({
+    queryKey: ['movie-suggestions', 'tags'],
+    queryFn: () => movieApi.getTagSuggestions(),
+    staleTime: 30 * 60 * 1000,
+  });
+};

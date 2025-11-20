@@ -542,6 +542,54 @@ export const movieApi = {
       method: 'POST',
     });
   },
+
+  /**
+   * Get genre suggestions for autocomplete
+   * GET /api/movies/suggestions/genres
+   */
+  async getGenreSuggestions(): Promise<string[]> {
+    return fetchApi<string[]>('/movies/suggestions/genres');
+  },
+
+  /**
+   * Get director suggestions for autocomplete
+   * GET /api/movies/suggestions/directors
+   */
+  async getDirectorSuggestions(): Promise<string[]> {
+    return fetchApi<string[]>('/movies/suggestions/directors');
+  },
+
+  /**
+   * Get writer suggestions for autocomplete
+   * GET /api/movies/suggestions/writers
+   */
+  async getWriterSuggestions(): Promise<string[]> {
+    return fetchApi<string[]>('/movies/suggestions/writers');
+  },
+
+  /**
+   * Get studio suggestions for autocomplete
+   * GET /api/movies/suggestions/studios
+   */
+  async getStudioSuggestions(): Promise<string[]> {
+    return fetchApi<string[]>('/movies/suggestions/studios');
+  },
+
+  /**
+   * Get country suggestions for autocomplete
+   * GET /api/movies/suggestions/countries
+   */
+  async getCountrySuggestions(): Promise<string[]> {
+    return fetchApi<string[]>('/movies/suggestions/countries');
+  },
+
+  /**
+   * Get tag suggestions for autocomplete
+   * GET /api/movies/suggestions/tags
+   */
+  async getTagSuggestions(): Promise<string[]> {
+    return fetchApi<string[]>('/movies/suggestions/tags');
+  },
 };
 
 export const providerApi = {

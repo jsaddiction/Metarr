@@ -462,6 +462,26 @@ export class CleanSchemaMigration {
         discart_locked BOOLEAN DEFAULT 0,
         keyart_locked BOOLEAN DEFAULT 0,
         landscape_locked BOOLEAN DEFAULT 0,
+        original_title_locked BOOLEAN DEFAULT 0,
+        sort_title_locked BOOLEAN DEFAULT 0,
+        year_locked BOOLEAN DEFAULT 0,
+        outline_locked BOOLEAN DEFAULT 0,
+        tagline_locked BOOLEAN DEFAULT 0,
+        mpaa_locked BOOLEAN DEFAULT 0,
+        premiered_locked BOOLEAN DEFAULT 0,
+        user_rating_locked BOOLEAN DEFAULT 0,
+        genres TEXT,
+        genres_locked BOOLEAN DEFAULT 0,
+        directors TEXT,
+        directors_locked BOOLEAN DEFAULT 0,
+        writers TEXT,
+        writers_locked BOOLEAN DEFAULT 0,
+        studios TEXT,
+        studios_locked BOOLEAN DEFAULT 0,
+        countries TEXT,
+        countries_locked BOOLEAN DEFAULT 0,
+        tags TEXT,
+        tags_locked BOOLEAN DEFAULT 0,
         monitored BOOLEAN NOT NULL DEFAULT 1,
         identification_status TEXT DEFAULT 'unidentified' CHECK(identification_status IN ('unidentified', 'identified', 'enriched', 'published')),
         enrichment_priority INTEGER DEFAULT 5,
@@ -1983,6 +2003,245 @@ export class CleanSchemaMigration {
     `);
 
     console.log('✅ CASCADE delete triggers created');
+
+    // ============================================================
+    // DATA MIGRATION: Populate Related Entities from Provider Cache
+    // ============================================================
+    // This section migrates existing provider cache data to normalized tables.
+    // Runs once during initial migration. Safe to run multiple times (idempotent).
+
+    console.log('🔄 Migrating related entities from provider cache...');
+
+    try {
+      // Step 1: Find all movies with provider cache data
+      const moviesWithCache = await db.all<{
+        movie_id: number;
+        movie_title: string;
+        cache_id: number;
+      }>(
+        `SELECT
+          m.id as movie_id,
+          m.title as movie_title,
+          pc.id as cache_id
+        FROM movies m
+        INNER JOIN provider_cache_movies pc ON (
+          (m.tmdb_id IS NOT NULL AND pc.tmdb_id = m.tmdb_id) OR
+          (m.imdb_id IS NOT NULL AND pc.imdb_id = m.imdb_id) OR
+          (m.tvdb_id IS NOT NULL AND pc.tvdb_id = m.tvdb_id)
+        )
+        WHERE m.deleted_at IS NULL`
+      );
+
+      console.log(`📊 Found ${moviesWithCache.length} movies with provider cache data`);
+
+      let genresCreated = 0;
+      let genreLinks = 0;
+      let crewCreated = 0;
+      let crewLinks = 0;
+      let studiosCreated = 0;
+      let studioLinks = 0;
+      let countriesCreated = 0;
+      let countryLinks = 0;
+
+      // Step 2: Process each movie
+      for (const movie of moviesWithCache) {
+        // Migrate genres
+        const genres = await db.all<{ id: number; name: string }>(
+          `SELECT g.id, g.name
+          FROM provider_cache_movie_genres pmg
+          INNER JOIN provider_cache_genres g ON pmg.genre_id = g.id
+          WHERE pmg.movie_cache_id = ?`,
+          [movie.cache_id]
+        );
+
+        for (const genre of genres) {
+          // Find or create genre
+          let genreResult = await db.get<{ id: number }>(
+            `SELECT id FROM genres WHERE name = ? AND media_type = 'movie'`,
+            [genre.name]
+          );
+
+          if (!genreResult) {
+            const insertResult = await db.execute(
+              `INSERT INTO genres (name, media_type) VALUES (?, 'movie')`,
+              [genre.name]
+            );
+            genreResult = { id: insertResult.insertId! };
+            genresCreated++;
+          }
+
+          // Create link if doesn't exist
+          const linkExists = await db.get<{ movie_id: number }>(
+            `SELECT movie_id FROM movie_genres WHERE movie_id = ? AND genre_id = ?`,
+            [movie.movie_id, genreResult.id]
+          );
+
+          if (!linkExists) {
+            await db.execute(
+              `INSERT INTO movie_genres (movie_id, genre_id) VALUES (?, ?)`,
+              [movie.movie_id, genreResult.id]
+            );
+            genreLinks++;
+          }
+        }
+
+        // Migrate crew (directors and writers)
+        const crew = await db.all<{
+          person_cache_id: number;
+          job: string;
+        }>(
+          `SELECT person_cache_id, job
+          FROM provider_cache_movie_crew
+          WHERE movie_cache_id = ?
+          AND job IN ('Director', 'Writer', 'Screenplay', 'Story')`,
+          [movie.cache_id]
+        );
+
+        for (const crewMember of crew) {
+          const person = await db.get<{
+            tmdb_person_id: number | null;
+            imdb_person_id: string | null;
+            name: string;
+          }>(
+            `SELECT tmdb_person_id, imdb_person_id, name
+            FROM provider_cache_people
+            WHERE id = ?`,
+            [crewMember.person_cache_id]
+          );
+
+          if (!person) continue;
+
+          // Normalize job
+          let role: 'director' | 'writer';
+          if (crewMember.job === 'Director') {
+            role = 'director';
+          } else if (['Writer', 'Screenplay', 'Story'].includes(crewMember.job)) {
+            role = 'writer';
+          } else {
+            continue;
+          }
+
+          // Find or create crew member
+          let crewResult = await db.get<{ id: number }>(
+            person.tmdb_person_id
+              ? `SELECT id FROM crew WHERE tmdb_id = ?`
+              : `SELECT id FROM crew WHERE name = ?`,
+            person.tmdb_person_id ? [person.tmdb_person_id] : [person.name]
+          );
+
+          if (!crewResult) {
+            const insertResult = await db.execute(
+              `INSERT INTO crew (name, tmdb_id, imdb_id) VALUES (?, ?, ?)`,
+              [person.name, person.tmdb_person_id, person.imdb_person_id]
+            );
+            crewResult = { id: insertResult.insertId! };
+            crewCreated++;
+          }
+
+          // Create link if doesn't exist
+          const linkExists = await db.get<{ movie_id: number }>(
+            `SELECT movie_id FROM movie_crew WHERE movie_id = ? AND crew_id = ? AND role = ?`,
+            [movie.movie_id, crewResult.id, role]
+          );
+
+          if (!linkExists) {
+            await db.execute(
+              `INSERT INTO movie_crew (movie_id, crew_id, role) VALUES (?, ?, ?)`,
+              [movie.movie_id, crewResult.id, role]
+            );
+            crewLinks++;
+          }
+        }
+
+        // Migrate studios (production companies)
+        const companies = await db.all<{ id: number; name: string }>(
+          `SELECT c.id, c.name
+          FROM provider_cache_movie_companies pmc
+          INNER JOIN provider_cache_companies c ON pmc.company_id = c.id
+          WHERE pmc.movie_cache_id = ?`,
+          [movie.cache_id]
+        );
+
+        for (const company of companies) {
+          // Find or create studio
+          let studioResult = await db.get<{ id: number }>(
+            `SELECT id FROM studios WHERE name = ?`,
+            [company.name]
+          );
+
+          if (!studioResult) {
+            const insertResult = await db.execute(`INSERT INTO studios (name) VALUES (?)`, [
+              company.name,
+            ]);
+            studioResult = { id: insertResult.insertId! };
+            studiosCreated++;
+          }
+
+          // Create link if doesn't exist
+          const linkExists = await db.get<{ movie_id: number }>(
+            `SELECT movie_id FROM movie_studios WHERE movie_id = ? AND studio_id = ?`,
+            [movie.movie_id, studioResult.id]
+          );
+
+          if (!linkExists) {
+            await db.execute(
+              `INSERT INTO movie_studios (movie_id, studio_id) VALUES (?, ?)`,
+              [movie.movie_id, studioResult.id]
+            );
+            studioLinks++;
+          }
+        }
+
+        // Migrate countries
+        const countries = await db.all<{ id: number; name: string }>(
+          `SELECT c.id, c.name
+          FROM provider_cache_movie_countries pmc
+          INNER JOIN provider_cache_countries c ON pmc.country_id = c.id
+          WHERE pmc.movie_cache_id = ?`,
+          [movie.cache_id]
+        );
+
+        for (const country of countries) {
+          // Find or create country
+          let countryResult = await db.get<{ id: number }>(
+            `SELECT id FROM countries WHERE name = ?`,
+            [country.name]
+          );
+
+          if (!countryResult) {
+            const insertResult = await db.execute(`INSERT INTO countries (name) VALUES (?)`, [
+              country.name,
+            ]);
+            countryResult = { id: insertResult.insertId! };
+            countriesCreated++;
+          }
+
+          // Create link if doesn't exist
+          const linkExists = await db.get<{ movie_id: number }>(
+            `SELECT movie_id FROM movie_countries WHERE movie_id = ? AND country_id = ?`,
+            [movie.movie_id, countryResult.id]
+          );
+
+          if (!linkExists) {
+            await db.execute(
+              `INSERT INTO movie_countries (movie_id, country_id) VALUES (?, ?)`,
+              [movie.movie_id, countryResult.id]
+            );
+            countryLinks++;
+          }
+        }
+      }
+
+      console.log('✅ Related entities migrated from provider cache:');
+      console.log(`   - Genres: ${genresCreated} created, ${genreLinks} links`);
+      console.log(`   - Crew: ${crewCreated} created, ${crewLinks} links`);
+      console.log(`   - Studios: ${studiosCreated} created, ${studioLinks} links`);
+      console.log(`   - Countries: ${countriesCreated} created, ${countryLinks} links`);
+    } catch (error) {
+      // Log error but don't fail migration - this is optional data population
+      console.warn('⚠️  Related entities migration failed (non-fatal):', error);
+    }
+
     console.log('✅ Clean schema migration completed successfully!');
   }
 

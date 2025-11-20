@@ -97,6 +97,14 @@ CREATE TABLE movies (
   tmdb_id INTEGER,
   imdb_id TEXT,
 
+  -- Related entity fields (denormalized for performance)
+  genres TEXT,                  -- JSON array of genre names
+  directors TEXT,               -- JSON array of director names
+  writers TEXT,                 -- JSON array of writer names
+  studios TEXT,                 -- JSON array of studio names
+  countries TEXT,               -- JSON array of country names
+  tags TEXT,                    -- JSON array of user-defined tags
+
   -- Selected assets (FK to cache_image_files)
   poster_id INTEGER,
   fanart_id INTEGER,
@@ -121,6 +129,12 @@ CREATE TABLE movies (
   plot_locked BOOLEAN DEFAULT 0,
   poster_locked BOOLEAN DEFAULT 0,
   fanart_locked BOOLEAN DEFAULT 0,
+  genres_locked BOOLEAN DEFAULT 0,
+  directors_locked BOOLEAN DEFAULT 0,
+  writers_locked BOOLEAN DEFAULT 0,
+  studios_locked BOOLEAN DEFAULT 0,
+  countries_locked BOOLEAN DEFAULT 0,
+  tags_locked BOOLEAN DEFAULT 0,
 
   FOREIGN KEY (library_id) REFERENCES libraries(id)
 );
@@ -136,6 +150,8 @@ CREATE INDEX idx_movies_original_language ON movies(original_language);
 ```
 
 **Read-Only Fields Note**: The 6 new production metadata fields (budget, revenue, homepage, original_language, popularity, status) are read-only reference data from TMDB. These fields are populated during the enrichment phase and cannot be edited by users. No lock columns are needed for these fields.
+
+**Denormalized Related Entity Fields**: The `genres`, `directors`, `writers`, `studios`, `countries`, and `tags` columns store JSON arrays of related entity names for better query performance. These fields are denormalized copies of data from the normalized junction tables (`movie_genres`, `movie_crew`, `movie_studios`, `movie_countries`, `movie_tags`). Each field has a corresponding `_locked` column to preserve manual user edits from being overwritten during enrichment.
 
 ### movie_external_ids
 
