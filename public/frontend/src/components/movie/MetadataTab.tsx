@@ -8,6 +8,12 @@ import { TextAreaField } from './TextAreaField';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
 import { cleanMovieTitle, getFolderNameFromPath } from '@/utils/titleCleaning';
+import { ProviderBadge } from '../ui/ProviderBadge';
+import { StatusBadge } from '../ui/StatusBadge';
+import { CurrencyDisplay } from '../ui/CurrencyDisplay';
+import { PopularityIndicator } from '../ui/PopularityIndicator';
+import { ReadOnlyDataGrid } from '../ui/ReadOnlyDataGrid';
+import { getLanguageName } from '@/utils/languages';
 
 interface MetadataTabProps {
   movieId: number;
@@ -721,6 +727,107 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
             <BadgeRow label="Countries" items={metadata.countries} />
             <BadgeRow label="Tags" items={metadata.tags} />
           </div>
+
+          {/* Stats Section */}
+          {(metadata.budget || metadata.revenue || metadata.popularity) && (
+            <>
+              <div className="border-t border-neutral-700"></div>
+              <div className="space-y-2 rounded-lg border border-neutral-700 bg-neutral-800/30 p-3">
+                <h3 className="text-sm font-medium text-neutral-300 mb-2">Stats</h3>
+                <div className="grid grid-cols-2 gap-3">
+                  {metadata.budget !== undefined && metadata.budget !== null && (
+                    <CurrencyDisplay label="Budget" value={metadata.budget} />
+                  )}
+                  {metadata.revenue !== undefined && metadata.revenue !== null && (
+                    <CurrencyDisplay label="Revenue" value={metadata.revenue} />
+                  )}
+                </div>
+                {metadata.popularity !== undefined && metadata.popularity !== null && (
+                  <PopularityIndicator value={metadata.popularity} />
+                )}
+              </div>
+            </>
+          )}
+
+          {/* Production Info Section */}
+          {(metadata.status || metadata.original_language) && (
+            <>
+              <div className="border-t border-neutral-700"></div>
+              <div className="space-y-2 rounded-lg border border-neutral-700 bg-neutral-800/30 p-3">
+                <h3 className="text-sm font-medium text-neutral-300 mb-2">Production Info</h3>
+                <div className="flex items-center gap-3 flex-wrap">
+                  {metadata.status && <StatusBadge status={metadata.status} />}
+                  {metadata.original_language && (
+                    <span className="text-sm text-neutral-300">
+                      Language: {getLanguageName(metadata.original_language)}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* External Links Section */}
+          <div className="border-t border-neutral-700"></div>
+          <div className="space-y-2 rounded-lg border border-neutral-700 bg-neutral-800/30 p-3">
+            <h3 className="text-sm font-medium text-neutral-300 mb-2">External Links</h3>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+              {metadata.tmdb_id && <ProviderBadge provider="tmdb" id={metadata.tmdb_id} />}
+              {metadata.imdb_id && <ProviderBadge provider="imdb" id={metadata.imdb_id} />}
+              {(movieData as any)?.tvdb_id && <ProviderBadge provider="tvdb" id={(movieData as any).tvdb_id} />}
+              {(movieData as any)?.homepage && (
+                <ProviderBadge provider="homepage" id={(movieData as any).homepage} label="Website" />
+              )}
+              {(movieData as any)?.external_ids?.facebook_id && (
+                <ProviderBadge provider="facebook" id={(movieData as any).external_ids.facebook_id} />
+              )}
+              {(movieData as any)?.external_ids?.instagram_id && (
+                <ProviderBadge provider="instagram" id={(movieData as any).external_ids.instagram_id} />
+              )}
+              {(movieData as any)?.external_ids?.twitter_id && (
+                <ProviderBadge provider="twitter" id={(movieData as any).external_ids.twitter_id} />
+              )}
+              {(movieData as any)?.external_ids?.wikidata_id && (
+                <ProviderBadge provider="wikidata" id={(movieData as any).external_ids.wikidata_id} />
+              )}
+            </div>
+          </div>
+
+          {/* Technical Details Section */}
+          {((movieData as any)?.video_streams || (movieData as any)?.audio_streams) && (
+            <>
+              <div className="border-t border-neutral-700"></div>
+              <div className="space-y-2 rounded-lg border border-neutral-700 bg-neutral-800/50 p-3">
+                <h3 className="text-sm font-medium text-neutral-400 mb-2">
+                  Technical Details
+                  <span className="text-xs text-neutral-500 ml-2">Read-Only</span>
+                </h3>
+                <ReadOnlyDataGrid
+                  sections={[
+                    {
+                      label: 'Video Codec',
+                      value: (movieData as any)?.video_streams?.[0]?.codec || null,
+                    },
+                    {
+                      label: 'Resolution',
+                      value:
+                        (movieData as any)?.video_streams?.[0]?.width && (movieData as any)?.video_streams?.[0]?.height
+                          ? `${(movieData as any).video_streams[0].width}x${(movieData as any).video_streams[0].height}`
+                          : null,
+                    },
+                    {
+                      label: 'Audio Codec',
+                      value: (movieData as any)?.audio_streams?.[0]?.codec || null,
+                    },
+                    {
+                      label: 'Channels',
+                      value: (movieData as any)?.audio_streams?.[0]?.channels || null,
+                    },
+                  ]}
+                />
+              </div>
+            </>
+          )}
         </div>
       </div>
       </div>

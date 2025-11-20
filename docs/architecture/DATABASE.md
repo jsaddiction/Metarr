@@ -85,6 +85,14 @@ CREATE TABLE movies (
   mpaa_rating TEXT,
   content_rating TEXT,
 
+  -- Production metadata (read-only from providers)
+  budget INTEGER,               -- Production budget in USD
+  revenue INTEGER,              -- Box office revenue in USD
+  homepage TEXT,                -- Official movie website URL
+  original_language TEXT,       -- ISO 639-1 language code (e.g., "en", "ja")
+  popularity REAL,              -- TMDB popularity metric (0-1000+ range)
+  status TEXT,                  -- Production status (Released, In Production, etc.)
+
   -- External IDs
   tmdb_id INTEGER,
   imdb_id TEXT,
@@ -121,7 +129,39 @@ CREATE INDEX idx_movies_library ON movies(library_id);
 CREATE INDEX idx_movies_tmdb ON movies(tmdb_id);
 CREATE INDEX idx_movies_monitored ON movies(monitored);
 CREATE INDEX idx_movies_status ON movies(identification_status);
+CREATE INDEX idx_movies_popularity ON movies(popularity DESC);
+CREATE INDEX idx_movies_budget ON movies(budget);
+CREATE INDEX idx_movies_revenue ON movies(revenue);
+CREATE INDEX idx_movies_original_language ON movies(original_language);
 ```
+
+**Read-Only Fields Note**: The 6 new production metadata fields (budget, revenue, homepage, original_language, popularity, status) are read-only reference data from TMDB. These fields are populated during the enrichment phase and cannot be edited by users. No lock columns are needed for these fields.
+
+### movie_external_ids
+
+Stores external site and social media IDs for movies. Separate table to avoid bloating movies table.
+
+```sql
+CREATE TABLE movie_external_ids (
+  movie_id INTEGER PRIMARY KEY,
+  facebook_id TEXT,             -- Facebook page ID
+  instagram_id TEXT,            -- Instagram handle
+  twitter_id TEXT,              -- Twitter/X handle
+  wikidata_id TEXT,             -- Wikidata entity ID
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+  FOREIGN KEY (movie_id) REFERENCES movies(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_movie_external_ids_updated ON movie_external_ids(updated_at);
+```
+
+**Design Rationale**:
+- Wide table design (one column per site) for single-row read performance
+- IDs stored as stubs (e.g., "inception"), not full URLs
+- URLs built dynamically in application code at runtime
+- Separate from movies table to avoid NULL column proliferation
+- Updated during enrichment phase from TMDB metadata
 
 ### series
 

@@ -11,6 +11,7 @@ import { MovieWorkflowService, JobTriggerResult } from './movie/MovieWorkflowSer
 import { getErrorMessage } from '../utils/errorHandling.js';
 import { SqlParam } from '../types/database.js';
 import { ResourceNotFoundError } from '../errors/index.js';
+import { buildExternalUrls } from '../utils/externalIds.js';
 
 export type AssetStatus = 'none' | 'partial' | 'complete';
 
@@ -105,6 +106,7 @@ export interface MovieExtras {
 }
 
 export interface MovieMetadata {
+  // Core Metadata
   title?: string;
   original_title?: string;
   sort_title?: string;
@@ -112,10 +114,29 @@ export interface MovieMetadata {
   plot?: string;
   outline?: string;
   tagline?: string;
-  mpaa?: string;
+
+  // Release & Duration
   premiered?: string;
+  runtime?: number;
+
+  // Ratings
+  mpaa?: string;
   user_rating?: number;
+
+  // Media
   trailer_url?: string;
+
+  // Business & Discovery
+  budget?: number;
+  revenue?: number;
+  homepage?: string;
+
+  // Localization & Status
+  original_language?: string;
+  popularity?: number;
+  status?: string;
+
+  // Field Locks (user overrides)
   title_locked?: boolean;
   original_title_locked?: boolean;
   sort_title_locked?: boolean;
@@ -352,8 +373,18 @@ export class MovieService {
    * Returns raw database row (snake_case) - no mapping needed
    */
   async getById(movieId: number, include: string[] = ['files']): Promise<Record<string, unknown> | null> {
-    // Get base movie data with all fields
-    const movieQuery = `SELECT * FROM movies WHERE id = ?`;
+    // Get base movie data with all fields, including external IDs
+    const movieQuery = `
+      SELECT
+        m.*,
+        e.facebook_id,
+        e.instagram_id,
+        e.twitter_id,
+        e.wikidata_id
+      FROM movies m
+      LEFT JOIN movie_external_ids e ON e.movie_id = m.id
+      WHERE m.id = ?
+    `;
     const movies = await this.db.query<Record<string, unknown>>(movieQuery, [movieId]);
 
     if (!movies || movies.length === 0) {
@@ -372,6 +403,20 @@ export class MovieService {
       this.db.query<Record<string, unknown>>('SELECT s.* FROM studios s JOIN movie_studios ms ON s.id = ms.studio_id WHERE ms.movie_id = ?', [movieId]),
     ]);
 
+    // Build external_ids object (all IDs in one place)
+    const external_ids = {
+      tmdb_id: (movie.tmdb_id as number | null) || null,
+      imdb_id: (movie.imdb_id as string | null) || null,
+      tvdb_id: (movie.tvdb_id as number | null) || null,
+      facebook_id: (movie.facebook_id as string | null) || null,
+      instagram_id: (movie.instagram_id as string | null) || null,
+      twitter_id: (movie.twitter_id as string | null) || null,
+      wikidata_id: (movie.wikidata_id as string | null) || null,
+    };
+
+    // Build provider_urls using utility function
+    const provider_urls = buildExternalUrls(external_ids);
+
     const result: Record<string, unknown> = {
       ...movie,
       actors: actors.map(a => ({ name: a.name, role: a.role, order: a.actor_order })),
@@ -379,6 +424,8 @@ export class MovieService {
       directors: directors.map(d => d.name),
       writers: writers.map(w => w.name),
       studios: studios.map(s => s.name),
+      external_ids,
+      provider_urls,
     };
 
     // Conditionally include files based on ?include parameter

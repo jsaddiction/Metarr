@@ -109,6 +109,9 @@ export class ProviderFetchPhase {
       // Step 2: Copy metadata to movies table
       await this.copyMetadataToMovie(entityId, cachedMovie);
 
+      // Step 2A: Copy external IDs to movie_external_ids table
+      await this.copyExternalIds(entityId, cachedMovie);
+
       // Step 2B: Copy cast/crew to actors tables
       await this.copyCastToActors(entityId, cachedMovie);
 
@@ -227,6 +230,31 @@ export class ProviderFetchPhase {
         updates.imdb_votes = cachedMovie.imdb_votes;
       }
 
+      // Read-only metadata fields (no locks)
+      if (cachedMovie.budget !== undefined) {
+        updates.budget = cachedMovie.budget;
+      }
+
+      if (cachedMovie.revenue !== undefined) {
+        updates.revenue = cachedMovie.revenue;
+      }
+
+      if (cachedMovie.homepage) {
+        updates.homepage = cachedMovie.homepage;
+      }
+
+      if (cachedMovie.original_language) {
+        updates.original_language = cachedMovie.original_language;
+      }
+
+      if (cachedMovie.popularity !== undefined) {
+        updates.popularity = cachedMovie.popularity;
+      }
+
+      if (cachedMovie.status) {
+        updates.status = cachedMovie.status;
+      }
+
       // Execute update if we have changes
       if (Object.keys(updates).length > 0) {
         const setClauses = Object.keys(updates).map((key) => `${key} = ?`);
@@ -250,6 +278,50 @@ export class ProviderFetchPhase {
         error: getErrorMessage(error),
       });
       // Don't throw - metadata copy failure shouldn't fail enrichment
+    }
+  }
+
+  /**
+   * Copy external IDs to movie_external_ids table
+   */
+  private async copyExternalIds(movieId: number, cachedMovie: CompleteMovieData): Promise<void> {
+    try {
+      // Check if external_ids are present
+      if (!cachedMovie.external_ids) {
+        return;
+      }
+
+      const { facebook_id, instagram_id, twitter_id, wikidata_id } = cachedMovie.external_ids;
+
+      // Skip if no external IDs to save
+      if (!facebook_id && !instagram_id && !twitter_id && !wikidata_id) {
+        return;
+      }
+
+      // Upsert to movie_external_ids table (INSERT or UPDATE if exists)
+      // Use COALESCE to preserve existing non-null values
+      await this.db.execute(
+        `INSERT INTO movie_external_ids (movie_id, facebook_id, instagram_id, twitter_id, wikidata_id, updated_at)
+         VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+         ON CONFLICT(movie_id) DO UPDATE SET
+           facebook_id = COALESCE(excluded.facebook_id, facebook_id),
+           instagram_id = COALESCE(excluded.instagram_id, instagram_id),
+           twitter_id = COALESCE(excluded.twitter_id, twitter_id),
+           wikidata_id = COALESCE(excluded.wikidata_id, wikidata_id),
+           updated_at = CURRENT_TIMESTAMP`,
+        [movieId, facebook_id || null, instagram_id || null, twitter_id || null, wikidata_id || null]
+      );
+
+      logger.info('[ProviderFetchPhase] External IDs copied to movie', {
+        movieId,
+        externalIds: { facebook_id, instagram_id, twitter_id, wikidata_id },
+      });
+    } catch (error) {
+      logger.error('[ProviderFetchPhase] Failed to copy external IDs', {
+        movieId,
+        error: getErrorMessage(error),
+      });
+      // Don't throw - external ID copy failure shouldn't fail enrichment
     }
   }
 

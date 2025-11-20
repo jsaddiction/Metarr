@@ -74,6 +74,7 @@ export interface MovieDetail {
   // Provider IDs
   tmdb_id?: number;
   imdb_id?: string;
+  tvdb_id?: number;
 
   // Basic Metadata (user-editable)
   title: string;
@@ -93,6 +94,50 @@ export interface MovieDetail {
   imdb_rating?: number;
   imdb_votes?: number;
   user_rating?: number; // 0-10 scale
+
+  // Production & Business Metadata (read-only from providers)
+  budget?: number;
+  revenue?: number;
+  homepage?: string;
+  original_language?: string; // ISO 639-1 code
+  popularity?: number;
+  status?: string; // Production status (Released, Post Production, etc.)
+
+  // External IDs (social media & data sources)
+  external_ids?: {
+    tmdb_id: number | null;
+    imdb_id: string | null;
+    tvdb_id: number | null;
+    facebook_id: string | null;
+    instagram_id: string | null;
+    twitter_id: string | null;
+    wikidata_id: string | null;
+  };
+
+  // Provider URLs (dynamically built from IDs)
+  provider_urls?: {
+    tmdb_url: string | null;
+    imdb_url: string | null;
+    tvdb_url: string | null;
+    facebook_url: string | null;
+    instagram_url: string | null;
+    twitter_url: string | null;
+    wikidata_url: string | null;
+    homepage_url: string | null;
+  };
+
+  // Technical Details (from file scan)
+  video_streams?: Array<{
+    codec?: string;
+    width?: number;
+    height?: number;
+    bitrate?: number;
+  }>;
+  audio_streams?: Array<{
+    codec?: string;
+    channels?: number;
+    language?: string;
+  }>;
 
   // Asset References (foreign keys to cache_assets)
   poster_id?: number;

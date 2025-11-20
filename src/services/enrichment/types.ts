@@ -67,6 +67,12 @@ export interface MovieUpdateFields {
   tmdb_votes?: number;
   imdb_rating?: number;
   imdb_votes?: number;
+  budget?: number;
+  revenue?: number;
+  homepage?: string;
+  original_language?: string;
+  popularity?: number;
+  status?: string;
 }
 
 /**
