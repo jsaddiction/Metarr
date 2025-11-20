@@ -146,54 +146,57 @@ export const TagInput: React.FC<TagInputProps> = ({
 
   return (
     <div ref={containerRef} className="relative">
-      <div className="flex items-center justify-between mb-1.5">
-        <label className="text-sm font-medium text-neutral-400">
-          {label}
-        </label>
-        {onToggleLock && (
-          <button
-            type="button"
-            onClick={onToggleLock}
-            className={`
-              inline-flex items-center justify-center rounded-md transition-colors
-              h-6 w-6 text-xs
-              ${locked ? 'text-amber-400 hover:bg-amber-400/10' : 'text-neutral-500 hover:bg-neutral-700'}
-            `}
-            title={locked ? 'Unlock field' : 'Lock field'}
-          >
-            <FontAwesomeIcon icon={locked ? faLock : faLockOpen} />
-          </button>
-        )}
-      </div>
-
       <div
         className={`
-          rounded-lg border bg-neutral-800/30 p-3
+          rounded-lg border bg-neutral-800/30 p-2
           transition-colors
           ${locked ? 'border-neutral-700 opacity-60' : 'border-neutral-700 hover:border-neutral-600'}
         `}
       >
-        {/* Selected Tags */}
-        <div className="flex flex-wrap gap-2 mb-2">
-          {value.map((tag) => (
-            <div
-              key={tag}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border-2 border-purple-500/40 bg-purple-500/10 text-sm font-semibold text-purple-200 shadow-sm"
+        {/* Header with label and lock button */}
+        <div className="flex items-center justify-between mb-1.5">
+          <label className="text-xs font-medium text-neutral-400">
+            {label}
+          </label>
+          {onToggleLock && (
+            <button
+              type="button"
+              onClick={onToggleLock}
+              className={`
+                inline-flex items-center justify-center rounded-md transition-colors
+                h-5 w-5 text-xs
+                ${locked ? 'text-amber-400 hover:bg-amber-400/10' : 'text-neutral-500 hover:bg-neutral-700'}
+              `}
+              title={locked ? 'Unlock field' : 'Lock field'}
             >
-              <span>{tag}</span>
-              {!locked && (
-                <button
-                  type="button"
-                  onClick={() => removeTag(tag)}
-                  className="hover:text-red-400 transition-colors"
-                  title="Remove tag"
-                >
-                  <FontAwesomeIcon icon={faTimes} className="text-xs" />
-                </button>
-              )}
-            </div>
-          ))}
+              <FontAwesomeIcon icon={locked ? faLock : faLockOpen} />
+            </button>
+          )}
         </div>
+
+        {/* Selected Tags */}
+        {value.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mb-1.5">
+            {value.map((tag) => (
+              <div
+                key={tag}
+                className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md border border-purple-500/40 bg-purple-500/10 text-xs font-medium text-purple-200"
+              >
+                <span>{tag}</span>
+                {!locked && (
+                  <button
+                    type="button"
+                    onClick={() => removeTag(tag)}
+                    className="hover:text-red-400 transition-colors"
+                    title="Remove tag"
+                  >
+                    <FontAwesomeIcon icon={faTimes} className="text-[10px]" />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Input Field or Add Button */}
         {isEditing && !locked ? (

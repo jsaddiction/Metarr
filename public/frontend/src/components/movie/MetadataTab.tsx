@@ -608,7 +608,7 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
     <div className="space-y-3">
       {/* Grid layout */}
       <div className="card">
-        <div className="card-body p-3 space-y-2.5">
+        <div className="card-body p-4 space-y-3">
           {/* Action Buttons */}
           <div className="flex items-center justify-end gap-2 pb-2 border-b border-neutral-700">
             <button
@@ -646,7 +646,7 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
           </div>
 
           {/* Row 1: Title (span 3) + Year */}
-          <div className="grid grid-cols-4 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
             <GridField
               label="Title"
               field="title"
@@ -654,7 +654,7 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
               locked={metadata.title_locked}
               onChange={(val) => handleFieldChange('title', val)}
               onToggleLock={handleToggleLock}
-              className="col-span-3"
+              className="sm:col-span-1 lg:col-span-3"
             />
             <GridField
               label="Year"
@@ -668,7 +668,7 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
           </div>
 
           {/* Row 2: Original Title + Sort Title */}
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <GridField
               label="Original Title"
               field="original_title"
@@ -688,7 +688,7 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
           </div>
 
           {/* Row 3: Content Rating + Release Date + User Rating + Tagline */}
-          <div className="grid grid-cols-4 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
             <GridField
               label="Content Rating"
               field="content_rating"
@@ -814,54 +814,62 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
 
           {/* Related Entities Section */}
           <div className="border-t border-neutral-700"></div>
-          <div className="space-y-4">
-            <TagInput
-              label="Genres"
-              value={metadata.genres || []}
-              onChange={(genres) => handleFieldChange('genres', genres)}
-              suggestions={genreSuggestions}
-              placeholder="Add genre..."
-            />
+          <div className="space-y-2 rounded-lg border border-neutral-700 bg-neutral-800/30 p-3">
+            <h3 className="text-sm font-medium text-neutral-300 mb-2">Related Entities</h3>
 
-            <TagInput
-              label="Directors"
-              value={metadata.directors || []}
-              onChange={(directors) => handleFieldChange('directors', directors)}
-              suggestions={directorSuggestions}
-              placeholder="Add director..."
-            />
+            {/* Core Classification */}
+            <div className="space-y-2">
+              <TagInput
+                label="Genres"
+                value={metadata.genres || []}
+                onChange={(genres) => handleFieldChange('genres', genres)}
+                suggestions={genreSuggestions}
+                placeholder="Add genre..."
+              />
+              <TagInput
+                label="Tags"
+                value={metadata.tags || []}
+                onChange={(tags) => handleFieldChange('tags', tags)}
+                suggestions={tagSuggestions}
+                placeholder="Add tag..."
+              />
+            </div>
 
-            <TagInput
-              label="Writers"
-              value={metadata.writers || []}
-              onChange={(writers) => handleFieldChange('writers', writers)}
-              suggestions={writerSuggestions}
-              placeholder="Add writer..."
-            />
+            {/* Creative Team */}
+            <div className="space-y-2 pt-2 border-t border-neutral-700/30">
+              <TagInput
+                label="Directors"
+                value={metadata.directors || []}
+                onChange={(directors) => handleFieldChange('directors', directors)}
+                suggestions={directorSuggestions}
+                placeholder="Add director..."
+              />
+              <TagInput
+                label="Writers"
+                value={metadata.writers || []}
+                onChange={(writers) => handleFieldChange('writers', writers)}
+                suggestions={writerSuggestions}
+                placeholder="Add writer..."
+              />
+            </div>
 
-            <TagInput
-              label="Studios"
-              value={metadata.studios || []}
-              onChange={(studios) => handleFieldChange('studios', studios)}
-              suggestions={studioSuggestions}
-              placeholder="Add studio..."
-            />
-
-            <TagInput
-              label="Countries"
-              value={metadata.countries || []}
-              onChange={(countries) => handleFieldChange('countries', countries)}
-              suggestions={countrySuggestions}
-              placeholder="Add country..."
-            />
-
-            <TagInput
-              label="Tags"
-              value={metadata.tags || []}
-              onChange={(tags) => handleFieldChange('tags', tags)}
-              suggestions={tagSuggestions}
-              placeholder="Add tag..."
-            />
+            {/* Production */}
+            <div className="space-y-2 pt-2 border-t border-neutral-700/30">
+              <TagInput
+                label="Studios"
+                value={metadata.studios || []}
+                onChange={(studios) => handleFieldChange('studios', studios)}
+                suggestions={studioSuggestions}
+                placeholder="Add studio..."
+              />
+              <TagInput
+                label="Countries"
+                value={metadata.countries || []}
+                onChange={(countries) => handleFieldChange('countries', countries)}
+                suggestions={countrySuggestions}
+                placeholder="Add country..."
+              />
+            </div>
           </div>
 
           {/* Technical Details Section */}
