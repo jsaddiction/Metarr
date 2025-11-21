@@ -130,6 +130,17 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
     }
   }, [movieData]);
 
+  // Deep comparison to detect actual changes (must be defined before useEffect that uses it)
+  const hasChanges = React.useMemo(() => {
+    if (!metadata || !originalMetadata) return false;
+
+    // Sort keys to ensure consistent comparison
+    const sortedMetadata = JSON.stringify(metadata, Object.keys(metadata).sort());
+    const sortedOriginal = JSON.stringify(originalMetadata, Object.keys(originalMetadata).sort());
+
+    return sortedMetadata !== sortedOriginal;
+  }, [metadata, originalMetadata]);
+
   // Prevent navigation when there are unsaved changes
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -240,17 +251,6 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
       performAutoSearch();
     }
   }, [movieData, movieId, hasAutoSearched]);
-
-  // Deep comparison to detect actual changes
-  const hasChanges = React.useMemo(() => {
-    if (!metadata || !originalMetadata) return false;
-
-    // Sort keys to ensure consistent comparison
-    const sortedMetadata = JSON.stringify(metadata, Object.keys(metadata).sort());
-    const sortedOriginal = JSON.stringify(originalMetadata, Object.keys(originalMetadata).sort());
-
-    return sortedMetadata !== sortedOriginal;
-  }, [metadata, originalMetadata]);
 
   const handleFieldChange = useCallback((field: keyof MovieMetadata, value: any) => {
     setMetadata((prev) => {
