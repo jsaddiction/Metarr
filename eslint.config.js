@@ -1,21 +1,12 @@
-const { FlatCompat } = require('@eslint/eslintrc');
-const js = require('@eslint/js');
-const typescriptEslint = require('@typescript-eslint/eslint-plugin');
-const typescriptParser = require('@typescript-eslint/parser');
+import js from '@eslint/js';
+import typescriptEslint from '@typescript-eslint/eslint-plugin';
+import typescriptParser from '@typescript-eslint/parser';
 
-const compat = new FlatCompat({
-  baseDirectory: __dirname,
-  recommendedConfig: js.configs.recommended,
-});
-
-module.exports = [
+export default [
   {
-    ignores: ['dist/**', 'node_modules/**'],
+    ignores: ['dist/**', 'node_modules/**', 'public/**'],
   },
-  ...compat.extends(
-    '@typescript-eslint/recommended',
-    'prettier'
-  ),
+  js.configs.recommended,
   {
     files: ['**/*.ts', '**/*.tsx'],
     languageOptions: {
@@ -23,7 +14,6 @@ module.exports = [
       parserOptions: {
         ecmaVersion: 2020,
         sourceType: 'module',
-        project: './tsconfig.json',
       },
     },
     plugins: {
@@ -33,7 +23,9 @@ module.exports = [
       '@typescript-eslint/no-unused-vars': 'error',
       '@typescript-eslint/explicit-function-return-type': 'warn',
       '@typescript-eslint/no-explicit-any': 'warn',
-      '@typescript-eslint/prefer-const': 'error',
+      'prefer-const': 'error',
+      'no-undef': 'off', // TypeScript handles this
+      'no-unused-vars': 'off', // Use @typescript-eslint version instead
     },
   },
 ];

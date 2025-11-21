@@ -17,6 +17,8 @@ import { CompleteMovieData } from '../../../types/providerCache.js';
 import { logger } from '../../../middleware/logging.js';
 import { getErrorMessage } from '../../../utils/errorHandling.js';
 import { ResourceNotFoundError } from '../../../errors/index.js';
+import { MovieRelationshipService } from '../../movie/MovieRelationshipService.js';
+import { generateSortTitle } from '../../../utils/sortTitle.js';
 
 export class ProviderFetchPhase {
   private readonly providerAssetsRepo: ProviderAssetsRepository;
@@ -24,7 +26,7 @@ export class ProviderFetchPhase {
 
   constructor(
     private readonly db: DatabaseConnection,
-    dbManager: DatabaseManager
+    private readonly dbManager: DatabaseManager
   ) {
     this.providerAssetsRepo = new ProviderAssetsRepository(db);
     this.providerCacheOrchestrator = new ProviderCacheOrchestrator(dbManager);
@@ -109,6 +111,9 @@ export class ProviderFetchPhase {
       // Step 2: Copy metadata to movies table
       await this.copyMetadataToMovie(entityId, cachedMovie);
 
+      // Step 2A: Copy external IDs to movie_external_ids table
+      await this.copyExternalIds(entityId, cachedMovie);
+
       // Step 2B: Copy cast/crew to actors tables
       await this.copyCastToActors(entityId, cachedMovie);
 
@@ -190,6 +195,11 @@ export class ProviderFetchPhase {
         updates.original_title = cachedMovie.original_title;
       }
 
+      // Auto-generate sort_title if not locked and not manually set
+      if (!currentMovie.sort_title_locked && !currentMovie.sort_title && cachedMovie.title) {
+        updates.sort_title = generateSortTitle(cachedMovie.title);
+      }
+
       if (!currentMovie.plot_locked && cachedMovie.overview) {
         updates.plot = cachedMovie.overview;
       }
@@ -227,6 +237,31 @@ export class ProviderFetchPhase {
         updates.imdb_votes = cachedMovie.imdb_votes;
       }
 
+      // Read-only metadata fields (no locks)
+      if (cachedMovie.budget !== undefined) {
+        updates.budget = cachedMovie.budget;
+      }
+
+      if (cachedMovie.revenue !== undefined) {
+        updates.revenue = cachedMovie.revenue;
+      }
+
+      if (cachedMovie.homepage) {
+        updates.homepage = cachedMovie.homepage;
+      }
+
+      if (cachedMovie.original_language) {
+        updates.original_language = cachedMovie.original_language;
+      }
+
+      if (cachedMovie.popularity !== undefined) {
+        updates.popularity = cachedMovie.popularity;
+      }
+
+      if (cachedMovie.status) {
+        updates.status = cachedMovie.status;
+      }
+
       // Execute update if we have changes
       if (Object.keys(updates).length > 0) {
         const setClauses = Object.keys(updates).map((key) => `${key} = ?`);
@@ -244,12 +279,108 @@ export class ProviderFetchPhase {
       } else {
         logger.debug('[ProviderFetchPhase] No metadata updates (all fields locked)', { movieId });
       }
+
+      // Copy related entities to normalized tables
+      const relationshipService = new MovieRelationshipService(this.dbManager);
+
+      // Sync genres
+      if (cachedMovie.genres && cachedMovie.genres.length > 0) {
+        await relationshipService.syncGenres(
+          movieId,
+          cachedMovie.genres.map((g) => g.name)
+        );
+      }
+
+      // Sync production companies → studios
+      if (cachedMovie.companies && cachedMovie.companies.length > 0) {
+        const studioNames = cachedMovie.companies.map((c) => c.name);
+        if (studioNames.length > 0) {
+          await relationshipService.syncStudios(movieId, studioNames);
+        }
+      }
+
+      // Sync countries
+      if (cachedMovie.countries && cachedMovie.countries.length > 0) {
+        const countryNames = cachedMovie.countries.map((c) => c.name);
+        if (countryNames.length > 0) {
+          await relationshipService.syncCountries(movieId, countryNames);
+        }
+      }
+
+      // Sync keywords → tags
+      if (cachedMovie.keywords && cachedMovie.keywords.length > 0) {
+        const tagNames = cachedMovie.keywords.map((k) => k.name);
+        if (tagNames.length > 0) {
+          await relationshipService.syncTags(movieId, tagNames);
+        }
+      }
+
+      // Sync crew (directors and writers)
+      if (cachedMovie.crew && cachedMovie.crew.length > 0) {
+        const directors = cachedMovie.crew
+          .filter((c) => c.job === 'Director')
+          .map((c) => c.person.name);
+        const writers = cachedMovie.crew
+          .filter((c) => c.job === 'Writer' || c.job === 'Screenplay' || c.job === 'Story')
+          .map((c) => c.person.name);
+
+        if (directors.length > 0) {
+          await relationshipService.syncDirectors(movieId, directors);
+        }
+        if (writers.length > 0) {
+          await relationshipService.syncWriters(movieId, writers);
+        }
+      }
     } catch (error) {
       logger.error('[ProviderFetchPhase] Failed to copy metadata', {
         movieId,
         error: getErrorMessage(error),
       });
       // Don't throw - metadata copy failure shouldn't fail enrichment
+    }
+  }
+
+  /**
+   * Copy external IDs to movie_external_ids table
+   */
+  private async copyExternalIds(movieId: number, cachedMovie: CompleteMovieData): Promise<void> {
+    try {
+      // Check if external_ids are present
+      if (!cachedMovie.external_ids) {
+        return;
+      }
+
+      const { facebook_id, instagram_id, twitter_id, wikidata_id } = cachedMovie.external_ids;
+
+      // Skip if no external IDs to save
+      if (!facebook_id && !instagram_id && !twitter_id && !wikidata_id) {
+        return;
+      }
+
+      // Upsert to movie_external_ids table (INSERT or UPDATE if exists)
+      // Use COALESCE to preserve existing non-null values
+      await this.db.execute(
+        `INSERT INTO movie_external_ids (movie_id, facebook_id, instagram_id, twitter_id, wikidata_id, updated_at)
+         VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+         ON CONFLICT(movie_id) DO UPDATE SET
+           facebook_id = COALESCE(excluded.facebook_id, facebook_id),
+           instagram_id = COALESCE(excluded.instagram_id, instagram_id),
+           twitter_id = COALESCE(excluded.twitter_id, twitter_id),
+           wikidata_id = COALESCE(excluded.wikidata_id, wikidata_id),
+           updated_at = CURRENT_TIMESTAMP`,
+        [movieId, facebook_id || null, instagram_id || null, twitter_id || null, wikidata_id || null]
+      );
+
+      logger.info('[ProviderFetchPhase] External IDs copied to movie', {
+        movieId,
+        externalIds: { facebook_id, instagram_id, twitter_id, wikidata_id },
+      });
+    } catch (error) {
+      logger.error('[ProviderFetchPhase] Failed to copy external IDs', {
+        movieId,
+        error: getErrorMessage(error),
+      });
+      // Don't throw - external ID copy failure shouldn't fail enrichment
     }
   }
 

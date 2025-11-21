@@ -10,15 +10,16 @@
 
 **Short Answer**: No, for most users.
 
-Metarr includes embedded API keys for all providers except TheAudioDB. Personal keys are optional and provide these benefits:
+Metarr includes embedded API keys for all providers except TheAudioDB and OMDb. Personal keys are optional and provide these benefits:
 
 | Provider | Embedded Key | Personal Key Benefit |
 |----------|--------------|---------------------|
-| **TMDB** |  | Usage tracking, support community |
-| **TVDB** |  | Usage tracking, support community |
-| **FanArt.tv** |  | 2x rate limit (20 req/s vs 10 req/s) |
+| **TMDB** |  | Usage tracking, support community |
+| **TVDB** |  | Usage tracking, support community |
+| **OMDb** |  | 100x rate limit ($1/month: 100k/day vs 1k/day) |
+| **FanArt.tv** |  | 2x rate limit (20 req/s vs 10 req/s) |
 | **MusicBrainz** | N/A | No API keys (open database) |
-| **TheAudioDB** |  | Required for music artwork |
+| **TheAudioDB** |  | Required for music artwork |
 
 **When to Get Personal Keys**:
 1. **Large Library**: Enriching 1000+ items
@@ -67,7 +68,7 @@ Metarr includes embedded API keys for all providers except TheAudioDB. Personal 
    # Add to .env file
    TMDB_API_KEY=your_32_character_api_key_here
    ```
-   Or via Settings ’ Providers ’ TMDB ’ API Key
+   Or via Settings â†’ Providers â†’ TMDB â†’ API Key
 
 ### Troubleshooting
 
@@ -121,7 +122,7 @@ Metarr includes embedded API keys for all providers except TheAudioDB. Personal 
    TVDB_API_KEY=your_32_character_api_key_here
    TVDB_PIN=1234  # Optional, for subscribers only
    ```
-   Or via Settings ’ Providers ’ TVDB
+   Or via Settings â†’ Providers â†’ TVDB
 
 ### Troubleshooting
 
@@ -134,6 +135,85 @@ Metarr includes embedded API keys for all providers except TheAudioDB. Personal 
 - Only for TVDB subscribers
 - Must be active subscription
 - Check subscription status at https://thetvdb.com/subscribe
+
+## OMDb API Key
+
+### Benefits of Personal Key
+
+- **100x Rate Limit**: 100,000 req/day vs 1,000 req/day (huge!)
+- **Support Creator**: Help fund OMDb development
+- **Affordable**: Just $1/month via Patreon
+
+**Recommendation**: Get personal key if enriching 50+ movies or using heavy automation.
+
+### Signup Steps (Free Tier)
+
+1. **Visit OMDb Website**
+   - Visit: https://www.omdbapi.com/apikey.aspx
+
+2. **Select Free Plan**
+   - Choose "FREE! (1,000 daily limit)"
+   - Enter your email address
+
+3. **Verify Email**
+   - Check your email inbox
+   - Click verification link in email from OMDb
+
+4. **Copy API Key**
+   - API key displays in email
+   - Format: 8-character alphanumeric (e.g., `k1234567`)
+   - Store securely
+
+5. **Configure in Metarr**
+   ```bash
+   # Add to .env file
+   OMDB_API_KEY=your_api_key_here
+   ```
+   Or via Settings â†’ Providers â†’ OMDb â†’ API Key
+
+### Upgrade to Paid Tier ($1/month)
+
+1. **Visit Patreon**
+   - Visit: https://www.patreon.com/omdb
+
+2. **Select $1/month Tier**
+   - Review benefits (100,000 req/day)
+   - Complete Patreon signup with payment method
+
+3. **Receive Upgraded Key**
+   - OMDb notified by Patreon
+   - Log in to https://www.omdbapi.com/apikey.aspx
+   - Your key is automatically upgraded
+   - Rate limit increases to 100,000/day
+
+4. **Update in Metarr**
+   - Your existing API key works immediately
+   - No configuration change needed
+   - Metarr auto-detects higher rate limit
+
+### Troubleshooting
+
+**Email Not Received**:
+- Check spam/junk folder
+- Verify email address spelling
+- Wait 5-10 minutes for delivery
+- Try requesting new key
+
+**Invalid API Key Error**:
+- Ensure format is 8 characters (e.g., `k1234567`)
+- Check for spaces before/after key
+- Copy carefully from original email
+- Test at: https://www.omdbapi.com/?i=tt0111161&apikey=YOUR_KEY
+
+**Still on Free Tier After Patreon Signup**:
+- Wait 24 hours for upgrade to propagate
+- Check Patreon subscription status
+- Contact OMDb support with Patreon confirmation
+
+**Rate Limit Still 1,000/day**:
+- Restart Metarr to reload configuration
+- Verify key in Settings shows upgraded status
+- Wait 1 hour for cache to clear
 
 ## FanArt.tv Personal API Key
 
@@ -170,7 +250,7 @@ Metarr includes embedded API keys for all providers except TheAudioDB. Personal 
    # Add to .env file
    FANART_PERSONAL_KEY=your_32_character_api_key_here
    ```
-   Or via Settings ’ Providers ’ FanArt.tv ’ Personal API Key
+   Or via Settings â†’ Providers â†’ FanArt.tv â†’ Personal API Key
 
 ### Troubleshooting
 
@@ -218,7 +298,7 @@ Metarr includes embedded API keys for all providers except TheAudioDB. Personal 
    # Add to .env file
    THEAUDIODB_API_KEY=your_api_key_here
    ```
-   Or via Settings ’ Providers ’ TheAudioDB ’ API Key
+   Or via Settings â†’ Providers â†’ TheAudioDB â†’ API Key
 
 ### Troubleshooting
 
@@ -259,6 +339,9 @@ TMDB_API_KEY=your_tmdb_key_here
 TVDB_API_KEY=your_tvdb_key_here
 TVDB_PIN=1234  # Optional, subscribers only
 
+# OMDb (optional, but recommended)
+OMDB_API_KEY=your_omdb_key_here
+
 # FanArt.tv (optional)
 FANART_PERSONAL_KEY=your_fanart_key_here
 
@@ -273,8 +356,8 @@ MUSICBRAINZ_USER_AGENT=YourApp/1.0.0 (contact@example.com)
 
 Alternative to environment variables:
 
-1. Navigate to Settings ’ Providers
-2. Click provider name (TMDB, TVDB, etc.)
+1. Navigate to Settings â†’ Providers
+2. Click provider name (TMDB, TVDB, OMDb, etc.)
 3. Enter API Key in text field
 4. Click "Save"
 5. Verify status shows "Connected"
@@ -288,7 +371,7 @@ Check provider status:
 curl http://localhost:3000/api/providers/status
 
 # Via UI
-Settings ’ Providers ’ View Status
+Settings â†’ Providers â†’ View Status
 ```
 
 **Expected Output**:
@@ -299,6 +382,12 @@ Settings ’ Providers ’ View Status
     "authenticated": true,
     "hasPersonalKey": true,
     "rateLimitRemaining": 38
+  },
+  "omdb": {
+    "enabled": true,
+    "authenticated": true,
+    "rateLimitRemaining": 999,
+    "rateLimitResetTime": "2024-11-22T00:00:00Z"
   },
   "fanart_tv": {
     "enabled": true,
@@ -312,20 +401,21 @@ Settings ’ Providers ’ View Status
 ## Security Best Practices
 
 **DO**:
--  Store keys in `.env` file (gitignored)
--  Use environment variables in production
--  Rotate keys if compromised
--  Keep keys private
+-  Store keys in `.env` file (gitignored)
+-  Use environment variables in production
+-  Rotate keys if compromised
+-  Keep keys private
 
 **DON'T**:
--  Commit keys to Git
--  Share keys publicly
--  Hardcode keys in source code
--  Use production keys in development
+-  Commit keys to Git
+-  Share keys publicly
+-  Hardcode keys in source code
+-  Use production keys in development
 
 ## See Also
 
 - [Provider Overview](./OVERVIEW.md) - Provider capabilities
+- [OMDB Provider](./OMDB.md) - OMDb integration details
 - [TMDB Provider](./TMDB.md) - TMDB integration details
 - [TVDB Provider](./TVDB.md) - TVDB integration details
 - [FanArt.tv Provider](./FANART.md) - FanArt.tv integration details

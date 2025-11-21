@@ -196,6 +196,47 @@ export interface Movie {
 
 ---
 
+## Database
+
+### Schema Migrations
+
+**CRITICAL RULE: Edit the existing migration, don't create new ones**
+
+Metarr uses a single "clean schema" migration that represents the current state of the database. When adding new tables or columns:
+
+**DO**:
+- Edit `src/database/migrations/20251015_001_clean_schema.ts` directly
+- Add new columns to existing table definitions
+- Add new tables in the appropriate section
+- Add indexes after table creation
+- Commit with descriptive message explaining schema changes
+
+**DON'T**:
+- Create new migration files (e.g., `20251119_002_add_columns.ts`)
+- Use `ALTER TABLE` statements in migrations
+- Create incremental migration files
+
+**Why**: Metarr is in active development. Maintaining one clean migration file is simpler than managing dozens of incremental migrations. This approach ensures fresh installations get the complete schema in one step.
+
+**Example - Adding new columns**:
+```typescript
+// In 20251015_001_clean_schema.ts
+await db.execute(`
+  CREATE TABLE movies (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    // Add new columns here
+    budget INTEGER,
+    revenue INTEGER,
+    // ... rest of columns
+  )
+`);
+```
+
+**When this changes**: Once Metarr reaches v1.0 or production deployment, we'll switch to incremental migrations to support upgrades without data loss.
+
+---
+
 ## TypeScript Patterns
 
 ### Type Safety

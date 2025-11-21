@@ -2,21 +2,51 @@ export interface Movie {
   id: number;
   title: string;
   year: number;
+
+  // External IDs
   tmdb_id?: number;
   imdb_id?: string;
+  tvdb_id?: number;
+
+  // Core Metadata
   overview?: string;
+  tagline?: string;
+  plot?: string;
+  outline?: string;
+
+  // Media Files
   poster_path?: string;
   backdrop_path?: string;
   file_path: string;
   file_size?: number;
   quality?: string;
+
+  // Release & Duration
   release_date?: Date;
   runtime?: number;
-  genres?: string[];
+
+  // Ratings & Engagement
   rating?: number;
   vote_count?: number;
-  status: 'pending' | 'processing' | 'completed' | 'failed' | 'needs_identification';
+  popularity?: number;
+
+  // Business & Discovery
+  budget?: number;
+  revenue?: number;
+  homepage?: string;
+
+  // Localization & Status
+  original_language?: string;
+  status?: string;
+
+  // Relationships
+  genres?: string[];
   library_id?: number;
+
+  // Workflow Status
+  workflow_status: 'pending' | 'processing' | 'completed' | 'failed' | 'needs_identification';
+
+  // Timestamps
   created_at: Date;
   updated_at: Date;
 }
@@ -290,6 +320,7 @@ export interface FullMovieNFO {
   // IDs
   tmdbId?: number;
   imdbId?: string;
+  tvdbId?: number;
 
   // Scalars
   title?: string;
@@ -304,6 +335,16 @@ export interface FullMovieNFO {
   premiered?: string;
   mpaa?: string;
   trailerUrl?: string;
+
+  // Business & Discovery
+  budget?: number;
+  revenue?: number;
+  homepage?: string;
+
+  // Localization & Status
+  originalLanguage?: string;
+  popularity?: number;
+  status?: string;
 
   // Set info
   set?: SetData;

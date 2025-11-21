@@ -19,7 +19,7 @@ When using Radarr/Sonarr: files get upgraded, metadata gets deleted, manual edit
 - **Field-Level Locking**: Manual edits automatically lock fields
 - **Two-Copy Architecture**: Database + cache (protected) + library (working copies)
 - **Automated Workflow**: Webhooks → Scan → Enrich → Publish → Player Sync
-- **Providers**: TMDB, TVDB, Fanart.tv, MusicBrainz _(planned)_
+- **Providers**: TMDB, TVDB, OMDb, Fanart.tv, MusicBrainz _(planned)_
 - **Players**: Kodi (full support), Jellyfin _(planned)_, Plex _(planned)_
 
 ---
@@ -59,7 +59,7 @@ Complete documentation available in the [`docs/`](docs/) directory:
 - **[Getting Started](docs/getting-started/)** - Installation, configuration, first run
 - **[Architecture](docs/architecture/)** - System design, asset management, database
 - **[Phases](docs/phases/)** - Scanning, enrichment, publishing workflows
-- **[Providers](docs/providers/)** - TMDB, TVDB, Fanart.tv integration
+- **[Providers](docs/providers/)** - TMDB, TVDB, OMDb, Fanart.tv integration
 - **[Players](docs/players/)** - Kodi, Jellyfin, Plex integration
 - **[Frontend](docs/frontend/)** - React component architecture
 - **[Reference](docs/reference/)** - Asset scoring, NFO format, webhooks

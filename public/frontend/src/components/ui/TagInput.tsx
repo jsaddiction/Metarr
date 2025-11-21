@@ -1,0 +1,293 @@
+import React, { useState, useRef, useEffect } from 'react';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faLock, faLockOpen, faTimes, faPlus } from '@fortawesome/free-solid-svg-icons';
+import Fuse from 'fuse.js';
+
+interface TagInputProps {
+  label: string;
+  value: string[];
+  onChange: (tags: string[]) => void;
+  locked?: boolean;
+  onToggleLock?: () => void;
+  suggestions?: string[];
+  placeholder?: string;
+  isLoading?: boolean;
+}
+
+/**
+ * Editable tag input with autocomplete and fuzzy search
+ * Features:
+ * - Badge display of selected tags
+ * - Autocomplete dropdown with fuzzy search
+ * - Keyboard navigation (↑↓ to navigate, Enter to select, Escape to close)
+ * - Click X to remove tags
+ * - Lock/unlock functionality
+ */
+export const TagInput: React.FC<TagInputProps> = ({
+  label,
+  value = [],
+  onChange,
+  locked,
+  onToggleLock,
+  suggestions = [],
+  placeholder = 'Add...',
+  isLoading = false,
+}) => {
+  const [isEditing, setIsEditing] = useState(false);
+  const [inputValue, setInputValue] = useState('');
+  const [selectedIndex, setSelectedIndex] = useState(-1);
+  const [filteredSuggestions, setFilteredSuggestions] = useState<string[]>([]);
+
+  const inputRef = useRef<HTMLInputElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Initialize Fuse for fuzzy search
+  const fuse = useRef(
+    new Fuse(suggestions, {
+      threshold: 0.3,
+      keys: ['item'],
+    })
+  );
+
+  // Update fuse when suggestions change
+  useEffect(() => {
+    fuse.current = new Fuse(
+      suggestions.map((s) => ({ item: s })),
+      { threshold: 0.3, keys: ['item'] }
+    );
+  }, [suggestions]);
+
+  // Filter suggestions based on input
+  useEffect(() => {
+    if (!inputValue.trim()) {
+      setFilteredSuggestions([]);
+      setSelectedIndex(-1);
+      return;
+    }
+
+    // Fuzzy search
+    const results = fuse.current
+      .search(inputValue)
+      .map((result) => result.item.item)
+      .filter((suggestion) => !value.includes(suggestion))
+      .slice(0, 8); // Limit to 8 suggestions
+
+    setFilteredSuggestions(results);
+    setSelectedIndex(results.length > 0 ? 0 : -1);
+  }, [inputValue, value]);
+
+  // Handle click outside to close
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(event.target as Node)
+      ) {
+        setIsEditing(false);
+        setInputValue('');
+      }
+    };
+
+    if (isEditing) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [isEditing]);
+
+  const addTag = (tag: string) => {
+    const trimmedTag = tag.trim();
+    if (trimmedTag && !value.includes(trimmedTag)) {
+      onChange([...value, trimmedTag]);
+      setInputValue('');
+      setIsEditing(false);
+      setSelectedIndex(-1);
+    }
+  };
+
+  const removeTag = (tagToRemove: string) => {
+    onChange(value.filter((tag) => tag !== tagToRemove));
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+
+      if (selectedIndex >= 0 && filteredSuggestions[selectedIndex]) {
+        // Add selected suggestion
+        addTag(filteredSuggestions[selectedIndex]);
+      } else if (inputValue.trim()) {
+        // Create new tag
+        addTag(inputValue);
+      }
+    } else if (e.key === 'Escape') {
+      setIsEditing(false);
+      setInputValue('');
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setSelectedIndex((prev) =>
+        prev < filteredSuggestions.length - 1 ? prev + 1 : prev
+      );
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setSelectedIndex((prev) => (prev > 0 ? prev - 1 : 0));
+    } else if (e.key === 'Backspace' && !inputValue && value.length > 0) {
+      // Remove last tag if input is empty
+      removeTag(value[value.length - 1]);
+    }
+  };
+
+  const handleAddClick = () => {
+    if (!locked) {
+      setIsEditing(true);
+      setTimeout(() => inputRef.current?.focus(), 0);
+    }
+  };
+
+  return (
+    <div ref={containerRef} className="relative h-full">
+      <div
+        className={`
+          flex flex-col h-full
+          rounded-lg border bg-neutral-800/30 p-2
+          transition-colors
+          ${locked ? 'border-neutral-700 opacity-60' : 'border-neutral-700 hover:border-neutral-600'}
+        `}
+      >
+        {/* Header with label and lock button */}
+        <div className="flex items-center justify-between mb-1.5">
+          <label className="text-xs font-medium text-neutral-400">
+            {label}
+          </label>
+          {onToggleLock && (
+            <button
+              type="button"
+              onClick={onToggleLock}
+              className={`
+                inline-flex items-center justify-center rounded-md transition-colors
+                h-5 w-5 text-xs
+                ${locked ? 'text-amber-400 hover:bg-amber-400/10' : 'text-neutral-500 hover:bg-neutral-700'}
+              `}
+              title={locked ? 'Unlock field' : 'Lock field'}
+            >
+              <FontAwesomeIcon icon={locked ? faLock : faLockOpen} />
+            </button>
+          )}
+        </div>
+
+        {/* Selected Tags */}
+        {value.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mb-1.5">
+            {value.map((tag) => (
+              <div
+                key={tag}
+                className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md border border-purple-500/40 bg-purple-500/10 text-xs font-medium text-purple-200"
+              >
+                <span>{tag}</span>
+                {!locked && (
+                  <button
+                    type="button"
+                    onClick={() => removeTag(tag)}
+                    className="hover:text-red-400 transition-colors"
+                    title="Remove tag"
+                  >
+                    <FontAwesomeIcon icon={faTimes} className="text-[10px]" />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Input Field or Add Button - pushed to bottom with mt-auto */}
+        <div className="mt-auto">
+          {isEditing && !locked ? (
+            <div className="relative">
+              <input
+                ref={inputRef}
+                type="text"
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder={placeholder}
+                className="w-full px-3 py-1.5 bg-neutral-800 border border-neutral-600 rounded-md text-sm text-neutral-300 placeholder-neutral-500 focus:outline-none focus:border-neutral-500"
+                role="combobox"
+                aria-label={`Add ${label.toLowerCase()}`}
+                aria-expanded={filteredSuggestions.length > 0 || (inputValue && suggestions.length === 0)}
+                aria-autocomplete="list"
+                aria-controls={`${label}-suggestions`}
+                aria-activedescendant={selectedIndex >= 0 ? `${label}-suggestion-${selectedIndex}` : undefined}
+              />
+
+              {/* Loading State */}
+              {isLoading && inputValue && (
+                <div className="absolute z-50 w-full mt-1 bg-neutral-800 border border-neutral-600 rounded-md shadow-lg px-3 py-2">
+                  <span className="text-xs text-neutral-500">
+                    Loading suggestions...
+                  </span>
+                </div>
+              )}
+
+              {/* Suggestions Dropdown */}
+              {!isLoading && filteredSuggestions.length > 0 && (
+                <div
+                  id={`${label}-suggestions`}
+                  ref={dropdownRef}
+                  role="listbox"
+                  aria-label={`${label} suggestions`}
+                  className="absolute z-50 w-full mt-1 bg-neutral-800 border border-neutral-600 rounded-md shadow-lg max-h-48 overflow-y-auto"
+                >
+                  {filteredSuggestions.map((suggestion, index) => (
+                    <button
+                      key={suggestion}
+                      id={`${label}-suggestion-${index}`}
+                      type="button"
+                      role="option"
+                      aria-selected={index === selectedIndex}
+                      onClick={() => addTag(suggestion)}
+                      className={`
+                        w-full px-3 py-2 text-left text-sm transition-colors
+                        ${index === selectedIndex ? 'bg-neutral-700 text-neutral-200' : 'text-neutral-400 hover:bg-neutral-700/50'}
+                      `}
+                    >
+                      {suggestion}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Empty State - No Suggestions */}
+              {!isLoading && inputValue && filteredSuggestions.length === 0 && suggestions.length > 0 && (
+                <div className="absolute z-50 w-full mt-1 bg-neutral-800 border border-neutral-600 rounded-md shadow-lg px-3 py-2">
+                  <span className="text-xs text-neutral-500">
+                    No matches found. Press Enter to create "{inputValue}"
+                  </span>
+                </div>
+              )}
+
+              {/* Helper Text - Create New */}
+              {!isLoading && inputValue && suggestions.length === 0 && (
+                <div className="absolute z-50 w-full mt-1 bg-neutral-800 border border-neutral-600 rounded-md shadow-lg px-3 py-2">
+                  <span className="text-xs text-neutral-500">
+                    Press Enter to create "{inputValue}"
+                  </span>
+                </div>
+              )}
+            </div>
+          ) : (
+            !locked && (
+              <button
+                type="button"
+                onClick={handleAddClick}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-dashed border-neutral-600/50 bg-neutral-700/20 text-sm text-neutral-400 hover:bg-neutral-700/40 hover:text-neutral-300 transition-colors"
+              >
+                <FontAwesomeIcon icon={faPlus} className="text-xs" />
+                <span>{placeholder}</span>
+              </button>
+            )
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};

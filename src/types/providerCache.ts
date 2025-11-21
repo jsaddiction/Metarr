@@ -31,7 +31,7 @@ export interface CollectionLookupParams {
 export interface CachedMovie {
   id: number;
 
-  // Provider IDs
+  // Core External IDs
   tmdb_id?: number;
   imdb_id?: string;
   tvdb_id?: number;
@@ -49,17 +49,20 @@ export interface CachedMovie {
   status?: string;
   content_rating?: string;
 
-  // Ratings
+  // Ratings & Engagement
   tmdb_rating?: number;
   tmdb_votes?: number;
   imdb_rating?: number;
   imdb_votes?: number;
   popularity?: number;
 
-  // Business
+  // Business Info
   budget?: number;
   revenue?: number;
   homepage?: string;
+
+  // Localization
+  original_language?: string;
 
   // Flags
   adult: boolean;
@@ -177,6 +180,20 @@ export interface CachedKeyword {
 // ============================================
 
 export interface CompleteMovieData extends CachedMovie {
+  // External IDs and Provider URLs (aggregated from all sources)
+  external_ids?: {
+    facebook_id?: string | null;
+    instagram_id?: string | null;
+    twitter_id?: string | null;
+    wikidata_id?: string | null;
+  };
+  provider_urls?: {
+    facebook_url?: string | null;
+    instagram_url?: string | null;
+    twitter_url?: string | null;
+    wikidata_url?: string | null;
+  };
+
   // Relational data
   genres?: CachedGenre[];
   cast?: CachedCast[];

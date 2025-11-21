@@ -69,18 +69,25 @@ export const MovieEdit: React.FC = () => {
   return (
     <div className="content-spacing">
       {/* Header */}
-      <div className="flex items-center mb-4">
+      <div className="flex items-start mb-4">
         <button
           onClick={handleBack}
-          className="btn btn-ghost"
+          className="btn btn-ghost mt-1"
           title="Back to Movies"
         >
           <FontAwesomeIcon icon={faArrowLeft} />
         </button>
-        <h1 className="text-2xl font-bold text-white ml-4">
-          {isUnidentified ? 'Identify Movie: ' : 'Edit Movie: '}
-          {movie.title} {movie.year ? `(${movie.year})` : ''}
-        </h1>
+        <div className="ml-4 flex-1">
+          <h1 className="text-2xl font-bold text-white">
+            {isUnidentified ? 'Identify Movie: ' : 'Edit Movie: '}
+            {movie.title} {movie.year ? `(${movie.year})` : ''}
+          </h1>
+          {movie.file_path && (
+            <div className="text-xs text-neutral-500 font-mono mt-1">
+              {movie.file_path}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Show only identification UI when unidentified */}

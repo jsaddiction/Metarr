@@ -66,9 +66,6 @@ export class ConfigManager {
     if (config.providers.fanart_tv) {
       config.providers.fanart_tv.apiKey = process.env.FANART_TV_API_KEY || getDefaultApiKey('fanart_tv');
     }
-    if (config.providers.imdb) {
-      config.providers.imdb.apiKey = process.env.IMDB_API_KEY;
-    }
 
     // Media players configuration (optional)
     if (config.mediaPlayers.kodi) {

@@ -23,19 +23,71 @@ export interface LibraryRow {
 export interface MovieRow {
   id: number;
   library_id: number;
-  title: string;
-  year: number | null;
-  plot: string | null;
-  tagline: string | null;
-  runtime: number | null;
-  rating: number | null;
-  votes: number | null;
-  mpaa_rating: string | null;
-  imdb_id: string | null;
-  tmdb_id: number | null;
   file_path: string;
-  date_added: string;
-  last_scraped_at: string | null;
+  file_name: string;
+  file_size: number | null;
+  file_hash: string | null;
+
+  // External IDs
+  tmdb_id: number | null;
+  imdb_id: string | null;
+  tvdb_id: number | null;
+
+  // Core Metadata
+  title: string;
+  original_title: string | null;
+  sort_title: string | null;
+  tagline: string | null;
+  plot: string | null;
+  outline: string | null;
+
+  // Release & Duration
+  runtime: number | null;
+  year: number | null;
+  release_date: string | null;
+
+  // Ratings & Engagement
+  content_rating: string | null;
+  tmdb_rating: number | null;
+  tmdb_votes: number | null;
+  imdb_rating: number | null;
+  imdb_votes: number | null;
+  user_rating: number | null;
+
+  // Business & Discovery
+  budget: number | null;
+  revenue: number | null;
+  homepage: string | null;
+
+  // Localization & Status
+  original_language: string | null;
+  popularity: number | null;
+  status: string | null;
+
+  // Asset Lock Fields
+  nfo_cache_id: number | null;
+  title_locked: number; // SQLite boolean
+  plot_locked: number; // SQLite boolean
+  poster_locked: number; // SQLite boolean
+  fanart_locked: number; // SQLite boolean
+  logo_locked: number; // SQLite boolean
+  clearlogo_locked: number; // SQLite boolean
+  clearart_locked: number; // SQLite boolean
+  banner_locked: number; // SQLite boolean
+  thumb_locked: number; // SQLite boolean
+  discart_locked: number; // SQLite boolean
+  keyart_locked: number; // SQLite boolean
+  landscape_locked: number; // SQLite boolean
+
+  // Workflow Status
+  monitored: number; // SQLite boolean
+  identification_status: 'unidentified' | 'identified' | 'enriched' | 'published';
+  enrichment_priority: number;
+
+  // Timestamps
+  enriched_at: string | null;
+  published_at: string | null;
+  deleted_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -297,6 +349,35 @@ export interface CacheInventoryRow {
   width: number | null;
   height: number | null;
   created_at: string;
+}
+
+/**
+ * External IDs from multiple providers
+ * Used in API responses and provider cache
+ */
+export interface ExternalIds {
+  tmdb_id: number | null;
+  imdb_id: string | null;
+  tvdb_id: number | null;
+  facebook_id: string | null;
+  instagram_id: string | null;
+  twitter_id: string | null;
+  wikidata_id: string | null;
+}
+
+/**
+ * Provider URLs for user reference
+ * Generated from external IDs
+ */
+export interface ProviderUrls {
+  tmdb_url: string | null;
+  imdb_url: string | null;
+  tvdb_url: string | null;
+  facebook_url: string | null;
+  instagram_url: string | null;
+  twitter_url: string | null;
+  wikidata_url: string | null;
+  homepage_url: string | null;
 }
 
 /**

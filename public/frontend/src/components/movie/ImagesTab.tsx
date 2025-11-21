@@ -27,6 +27,7 @@ import { AssetSelectionModalV2 } from './AssetSelectionModal_v2';
 import { assetApi } from '../../utils/api';
 import type { AssetType, AssetCandidate } from '../../types/asset';
 import { useConfirm } from '../../hooks/useConfirm';
+import { TabSection } from '../ui/TabSection';
 
 interface ImagesTabProps {
   movieId: number;
@@ -255,7 +256,7 @@ export const ImagesTab: React.FC<ImagesTabProps> = ({ movieId, movieTitle = 'Unk
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3">
       {/* Image type sections */}
       {Object.entries(ASSET_TYPE_INFO).map(([assetType, info]) => {
         const typeImages = images[assetType] || [];
@@ -272,86 +273,57 @@ export const ImagesTab: React.FC<ImagesTabProps> = ({ movieId, movieTitle = 'Unk
         const emptySlotCount = Math.max(0, maxLimit - typeImages.length);
 
         return (
-          <div key={assetType} className="card">
-            <div className="card-body">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
-                  {/* Lock button - left of title */}
-                  <button
-                    onClick={async () => {
-                      // Toggle group lock via API
-                      const newLockedState = !isGroupLocked;
-                      try {
-                        const response = await fetch(`/api/movies/${movieId}/assets/${assetType}/lock`, {
-                          method: 'PATCH',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ locked: newLockedState }),
-                        });
-                        if (!response.ok) throw new Error('Failed to toggle lock');
+          <TabSection
+            key={assetType}
+            title={info.label}
+            count={typeImages.length}
+            maxCount={maxLimit}
+            locked={isGroupLocked}
+            onToggleLock={async () => {
+              // Toggle group lock via API
+              const newLockedState = !isGroupLocked;
+              try {
+                const response = await fetch(`/api/movies/${movieId}/assets/${assetType}/lock`, {
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ locked: newLockedState }),
+                });
+                if (!response.ok) throw new Error('Failed to toggle lock');
 
-                        // Force refetch movie data to update lock state immediately
-                        await queryClient.refetchQueries({ queryKey: ['movie', movieId] });
-                      } catch (error) {
-                        console.error('Failed to toggle group lock:', error);
-                        alert('Failed to toggle lock');
-                      }
-                    }}
-                    className={`btn btn-sm btn-ghost ${isGroupLocked ? 'text-primary-500' : 'text-neutral-400'}`}
-                    title={isGroupLocked ? 'Locked - click to unlock' : 'Unlocked - click to lock'}
-                    aria-label={isGroupLocked ? 'Unlock all images' : 'Lock all images'}
-                  >
-                    <FontAwesomeIcon icon={isGroupLocked ? faLock : faLockOpen} aria-hidden="true" />
-                  </button>
-
-                  {/* Title */}
-                  <h3 className="text-lg font-semibold text-white">
-                    {info.label}
-                    <span className="text-sm text-neutral-400 font-normal ml-2">
-                      ({typeImages.length}/{maxLimit})
-                    </span>
-                  </h3>
-                </div>
-
-                {/* Edit button - opens modal */}
-                <button
-                  onClick={() => handleSearchProviders(assetType)}
-                  className="btn btn-secondary btn-sm"
-                >
-                  <FontAwesomeIcon icon={faSearch} className="mr-2" aria-hidden="true" />
-                  Edit
-                </button>
-              </div>
-
-              {typeImages.length === 0 ? (
-                <div className="text-center py-8 bg-neutral-800/30 rounded border border-dashed border-neutral-700">
-                  <FontAwesomeIcon icon={faImage} className="text-4xl text-neutral-600 mb-3" />
-                  <p className="text-neutral-400">No {info.label.toLowerCase()} selected</p>
-                  <button
-                    onClick={() => handleSearchProviders(assetType)}
-                    className="btn btn-secondary btn-sm mt-3"
-                  >
-                    <FontAwesomeIcon icon={faSearch} className="mr-2" aria-hidden="true" />
-                    Add {info.label}
-                  </button>
-                </div>
-              ) : (
-                <div className={info.gridCols}>
-                  {/* Current assets only - no skeletons */}
-                  {typeImages.map((image) => (
-                    <CurrentAssetCard
-                      key={image.id}
-                      imageFileId={image.id}
-                      imageUrl={image.cache_url}
-                      assetType={assetType}
-                      aspectRatio={info.aspectRatio}
-                      source={image.provider_name || 'Manual'}
-                      onRemove={handleDeleteImage}
-                    />
-                  ))}
-                </div>
-              )}
+                // Force refetch movie data to update lock state immediately
+                await queryClient.refetchQueries({ queryKey: ['movie', movieId] });
+              } catch (error) {
+                console.error('Failed to toggle group lock:', error);
+                alert('Failed to toggle lock');
+              }
+            }}
+            onAction={() => handleSearchProviders(assetType)}
+            actionLabel="Edit"
+            actionIcon={faSearch}
+            isEmpty={typeImages.length === 0}
+            emptyIcon={faImage}
+            emptyMessage={`No ${info.label.toLowerCase()} selected`}
+            emptyAction={{
+              label: `Add ${info.label}`,
+              onClick: () => handleSearchProviders(assetType),
+              icon: faSearch,
+            }}
+          >
+            {/* Gallery grid */}
+            <div className={info.gridCols}>
+              {typeImages.map((image) => (
+                <CurrentAssetCard
+                  key={image.id}
+                  imageFileId={image.id}
+                  imageUrl={image.cache_url}
+                  assetType={assetType}
+                  aspectRatio={info.aspectRatio}
+                  source={image.provider_name || 'Manual'}
+                  onRemove={handleDeleteImage}
+                />
+              ))}
             </div>
-          </div>
+          </TabSection>
         );
       })}
 

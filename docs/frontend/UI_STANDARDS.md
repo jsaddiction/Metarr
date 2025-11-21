@@ -520,6 +520,112 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 
 ---
 
+## Save/Action Bar Patterns
+
+### Sticky Action Bar (Unsaved Changes)
+
+**Use Case**: Forms with multiple fields where changes need to be saved explicitly. Provides persistent, non-intrusive feedback about unsaved changes with easy access to save/reset actions.
+
+**Implementation** (MetadataTab pattern):
+
+```typescript
+// Track changes with deep comparison
+const hasChanges = React.useMemo(() => {
+  if (!metadata || !originalMetadata) return false;
+
+  const sortedMetadata = JSON.stringify(metadata, Object.keys(metadata).sort());
+  const sortedOriginal = JSON.stringify(originalMetadata, Object.keys(originalMetadata).sort());
+
+  return sortedMetadata !== sortedOriginal;
+}, [metadata, originalMetadata]);
+
+// Prevent navigation with unsaved changes
+useEffect(() => {
+  const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+    if (hasChanges) {
+      e.preventDefault();
+      e.returnValue = '';
+    }
+  };
+
+  window.addEventListener('beforeunload', handleBeforeUnload);
+  return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+}, [hasChanges]);
+
+// Sticky bar UI (only visible when hasChanges === true)
+{hasChanges && (
+  <div className="sticky top-0 z-40 py-3 px-4
+                  bg-blue-950/30 border border-blue-800/30
+                  flex items-center justify-between rounded-md
+                  animate-in slide-in-from-top duration-200">
+    <div className="flex items-center gap-2 text-blue-300">
+      <FontAwesomeIcon icon={faExclamationCircle} className="text-lg" />
+      <span className="text-sm font-medium">You have unsaved changes</span>
+    </div>
+    <div className="flex items-center gap-2">
+      <button
+        type="button"
+        onClick={handleReset}
+        disabled={saving}
+        className="inline-flex items-center gap-2 px-4 py-2 rounded-md
+                   text-sm font-medium transition-colors
+                   bg-neutral-700 text-neutral-200 hover:bg-neutral-600
+                   disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        <FontAwesomeIcon icon={faUndo} className="text-xs" />
+        <span>Reset</span>
+      </button>
+      <button
+        type="button"
+        onClick={handleSave}
+        disabled={saving}
+        className="inline-flex items-center gap-2 px-4 py-2 rounded-md
+                   text-sm font-medium transition-colors
+                   bg-purple-600 text-white hover:bg-purple-700
+                   disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        <FontAwesomeIcon icon={faSave} className="text-xs" />
+        <span>{saving ? 'Saving...' : 'Save Changes'}</span>
+      </button>
+    </div>
+  </div>
+)}
+```
+
+**Color Scheme** (Subtle, non-offensive blue):
+```
+Background:  bg-blue-950/30      (Very dark blue, low opacity)
+Border:      border-blue-800/30  (Soft blue border)
+Text:        text-blue-300       (Light blue)
+```
+
+**Key Design Decisions**:
+- **Sticky positioning**: Always visible when scrolling through long forms
+- **Conditional rendering**: Only appears when `hasChanges === true`
+- **Subtle color**: Blue instead of amber/yellow (less aggressive)
+- **Width matches content**: No negative margins, same padding as content below
+- **Animation**: Smooth slide-in from top on appearance
+- **Browser prevention**: Native "Leave site?" dialog via beforeunload
+
+**When to Use**:
+- ✅ Multi-field forms (metadata editing, settings)
+- ✅ Tab interfaces where save applies to entire tab
+- ✅ Complex data entry requiring explicit save action
+- ❌ Single-field quick edits (use inline save instead)
+- ❌ Auto-saving forms (no manual save needed)
+
+**Future Improvements** (not yet implemented):
+- Per-section tracking for TabSection-based saves
+- Keyboard shortcuts (Ctrl+S to save, Esc to reset)
+- Optimistic UI updates with rollback on error
+- Dirty field indicators (show which specific fields changed)
+
+**Related Patterns**:
+- See TabSection component for section-based organization
+- See State Management docs for change tracking strategies
+
+---
+
 ## Transitions and Animations
 
 ### Standard Transitions

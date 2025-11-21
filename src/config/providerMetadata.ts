@@ -111,19 +111,6 @@ export const PROVIDER_METADATA: Record<string, ProviderMetadata> = {
     ]
   },
 
-  imdb: {
-    name: 'imdb',
-    displayName: 'IMDb',
-    requiresApiKey: false,
-    baseUrl: 'https://www.imdb.com',
-    legalWarning: 'Web scraping violates IMDb Terms of Service. Use at your own risk. Your IP may be banned.',
-    rateLimit: {
-      requests: 1, // Very conservative to avoid IP bans
-      windowSeconds: 1
-    },
-    supportedAssetTypes: [] // Metadata only, no assets
-  },
-
   musicbrainz: {
     name: 'musicbrainz',
     displayName: 'MusicBrainz',
@@ -154,6 +141,23 @@ export const PROVIDER_METADATA: Record<string, ProviderMetadata> = {
       { type: 'album_thumb', displayName: 'Album Cover', available: true },
       { type: 'album_cdart', displayName: 'Album CD Art', available: true },
       { type: 'album_spine', displayName: 'Album Spine', available: true }
+    ]
+  },
+
+  omdb: {
+    name: 'omdb',
+    displayName: 'OMDb API',
+    requiresApiKey: true,
+    apiKeyOptional: false,
+    apiKeyBenefit: 'Required for OMDb API access. Get your free API key at https://www.omdbapi.com/apikey.aspx',
+    baseUrl: 'https://www.omdbapi.com',
+    rateLimit: {
+      requests: 11, // 1000 requests per day ≈ 0.011 per second, burst to 11 for practical use
+      windowSeconds: 1
+    },
+    supportedAssetTypes: [
+      { type: 'movie_poster', displayName: 'Movie Posters', available: true },
+      { type: 'tv_poster', displayName: 'TV Posters', available: true }
     ]
   }
 };
@@ -248,19 +252,19 @@ export const PRIORITY_PRESETS: Record<string, PriorityPreset> = {
       album_cdart: ['theaudiodb', 'local']
     },
     metadataFieldPriorities: {
-      // Ratings - IMDb is most trusted
-      rating: ['imdb', 'tmdb', 'tvdb'],
-      vote_count: ['imdb', 'tmdb', 'tvdb'],
+      // Ratings - OMDB is most trusted
+      rating: ['omdb', 'tmdb', 'tvdb'],
+      vote_count: ['omdb', 'tmdb', 'tvdb'],
       // General metadata - TMDB is comprehensive
-      plot: ['tmdb', 'tvdb', 'imdb', 'local'],
+      plot: ['tmdb', 'tvdb', 'omdb', 'local'],
       tagline: ['tmdb', 'tvdb', 'local'],
-      genres: ['tmdb', 'tvdb', 'imdb', 'local'],
+      genres: ['tmdb', 'tvdb', 'omdb', 'local'],
       // People
-      actors: ['tmdb', 'tvdb', 'imdb', 'local'],
-      directors: ['tmdb', 'imdb', 'local'],
-      writers: ['tmdb', 'imdb', 'local'],
+      actors: ['tmdb', 'tvdb', 'omdb', 'local'],
+      directors: ['tmdb', 'omdb', 'local'],
+      writers: ['tmdb', 'omdb', 'local'],
       // Dates
-      release_date: ['tmdb', 'tvdb', 'imdb', 'local'],
+      release_date: ['tmdb', 'tvdb', 'omdb', 'local'],
       aired_date: ['tvdb', 'tmdb', 'local'],
       // Music metadata
       artist_biography: ['musicbrainz', 'local'],
@@ -296,15 +300,15 @@ export const PRIORITY_PRESETS: Record<string, PriorityPreset> = {
       album_cdart: ['theaudiodb', 'local']
     },
     metadataFieldPriorities: {
-      rating: ['tmdb', 'imdb', 'tvdb'],
-      vote_count: ['tmdb', 'imdb', 'tvdb'],
-      plot: ['tmdb', 'tvdb', 'imdb', 'local'],
+      rating: ['tmdb', 'omdb', 'tvdb'],
+      vote_count: ['tmdb', 'omdb', 'tvdb'],
+      plot: ['tmdb', 'tvdb', 'omdb', 'local'],
       tagline: ['tmdb', 'tvdb', 'local'],
-      genres: ['tmdb', 'tvdb', 'imdb', 'local'],
-      actors: ['tmdb', 'tvdb', 'imdb', 'local'],
-      directors: ['tmdb', 'imdb', 'local'],
-      writers: ['tmdb', 'imdb', 'local'],
-      release_date: ['tmdb', 'tvdb', 'imdb', 'local'],
+      genres: ['tmdb', 'tvdb', 'omdb', 'local'],
+      actors: ['tmdb', 'tvdb', 'omdb', 'local'],
+      directors: ['tmdb', 'omdb', 'local'],
+      writers: ['tmdb', 'omdb', 'local'],
+      release_date: ['tmdb', 'tvdb', 'omdb', 'local'],
       aired_date: ['tvdb', 'tmdb', 'local'],
       artist_biography: ['musicbrainz', 'local'],
       album_tracks: ['musicbrainz', 'local']
@@ -339,15 +343,15 @@ export const PRIORITY_PRESETS: Record<string, PriorityPreset> = {
       album_cdart: ['theaudiodb', 'local']
     },
     metadataFieldPriorities: {
-      rating: ['tmdb', 'imdb', 'tvdb'],
-      vote_count: ['tmdb', 'imdb', 'tvdb'],
-      plot: ['tmdb', 'tvdb', 'imdb', 'local'],
+      rating: ['tmdb', 'omdb', 'tvdb'],
+      vote_count: ['tmdb', 'omdb', 'tvdb'],
+      plot: ['tmdb', 'tvdb', 'omdb', 'local'],
       tagline: ['tmdb', 'tvdb', 'local'],
-      genres: ['tmdb', 'tvdb', 'imdb', 'local'],
-      actors: ['tmdb', 'tvdb', 'imdb', 'local'],
-      directors: ['tmdb', 'imdb', 'local'],
-      writers: ['tmdb', 'imdb', 'local'],
-      release_date: ['tmdb', 'tvdb', 'imdb', 'local'],
+      genres: ['tmdb', 'tvdb', 'omdb', 'local'],
+      actors: ['tmdb', 'tvdb', 'omdb', 'local'],
+      directors: ['tmdb', 'omdb', 'local'],
+      writers: ['tmdb', 'omdb', 'local'],
+      release_date: ['tmdb', 'tvdb', 'omdb', 'local'],
       aired_date: ['tmdb', 'tvdb', 'local'],
       artist_biography: ['musicbrainz', 'local'],
       album_tracks: ['musicbrainz', 'local']
@@ -381,15 +385,15 @@ export const PRIORITY_PRESETS: Record<string, PriorityPreset> = {
       album_cdart: ['theaudiodb', 'local']
     },
     metadataFieldPriorities: {
-      rating: ['tvdb', 'imdb', 'tmdb'],
-      vote_count: ['tvdb', 'imdb', 'tmdb'],
-      plot: ['tvdb', 'tmdb', 'imdb', 'local'],
+      rating: ['tvdb', 'omdb', 'tmdb'],
+      vote_count: ['tvdb', 'omdb', 'tmdb'],
+      plot: ['tvdb', 'tmdb', 'omdb', 'local'],
       tagline: ['tvdb', 'tmdb', 'local'],
-      genres: ['tvdb', 'tmdb', 'imdb', 'local'],
-      actors: ['tvdb', 'tmdb', 'imdb', 'local'],
-      directors: ['tvdb', 'tmdb', 'imdb', 'local'],
-      writers: ['tvdb', 'tmdb', 'imdb', 'local'],
-      release_date: ['tvdb', 'tmdb', 'imdb', 'local'],
+      genres: ['tvdb', 'tmdb', 'omdb', 'local'],
+      actors: ['tvdb', 'tmdb', 'omdb', 'local'],
+      directors: ['tvdb', 'tmdb', 'omdb', 'local'],
+      writers: ['tvdb', 'tmdb', 'omdb', 'local'],
+      release_date: ['tvdb', 'tmdb', 'omdb', 'local'],
       aired_date: ['tvdb', 'tmdb', 'local'],
       artist_biography: ['musicbrainz', 'local'],
       album_tracks: ['musicbrainz', 'local']

@@ -11,6 +11,7 @@ import { MovieWorkflowService, JobTriggerResult } from './movie/MovieWorkflowSer
 import { getErrorMessage } from '../utils/errorHandling.js';
 import { SqlParam } from '../types/database.js';
 import { ResourceNotFoundError } from '../errors/index.js';
+import { buildExternalUrls } from '../utils/externalIds.js';
 
 export type AssetStatus = 'none' | 'partial' | 'complete';
 
@@ -105,6 +106,7 @@ export interface MovieExtras {
 }
 
 export interface MovieMetadata {
+  // Core Metadata
   title?: string;
   original_title?: string;
   sort_title?: string;
@@ -112,10 +114,29 @@ export interface MovieMetadata {
   plot?: string;
   outline?: string;
   tagline?: string;
-  mpaa?: string;
+
+  // Release & Duration
   premiered?: string;
+  runtime?: number;
+
+  // Ratings
+  mpaa?: string;
   user_rating?: number;
+
+  // Media
   trailer_url?: string;
+
+  // Business & Discovery
+  budget?: number;
+  revenue?: number;
+  homepage?: string;
+
+  // Localization & Status
+  original_language?: string;
+  popularity?: number;
+  status?: string;
+
+  // Field Locks (user overrides)
   title_locked?: boolean;
   original_title_locked?: boolean;
   sort_title_locked?: boolean;
@@ -123,8 +144,8 @@ export interface MovieMetadata {
   plot_locked?: boolean;
   outline_locked?: boolean;
   tagline_locked?: boolean;
-  mpaa_locked?: boolean;
-  premiered_locked?: boolean;
+  content_rating_locked?: boolean;
+  release_date_locked?: boolean;
   user_rating_locked?: boolean;
   trailer_url_locked?: boolean;
 }
@@ -352,8 +373,18 @@ export class MovieService {
    * Returns raw database row (snake_case) - no mapping needed
    */
   async getById(movieId: number, include: string[] = ['files']): Promise<Record<string, unknown> | null> {
-    // Get base movie data with all fields
-    const movieQuery = `SELECT * FROM movies WHERE id = ?`;
+    // Get base movie data with all fields, including external IDs
+    const movieQuery = `
+      SELECT
+        m.*,
+        e.facebook_id,
+        e.instagram_id,
+        e.twitter_id,
+        e.wikidata_id
+      FROM movies m
+      LEFT JOIN movie_external_ids e ON e.movie_id = m.id
+      WHERE m.id = ?
+    `;
     const movies = await this.db.query<Record<string, unknown>>(movieQuery, [movieId]);
 
     if (!movies || movies.length === 0) {
@@ -364,13 +395,29 @@ export class MovieService {
     const movie = movies[0];
 
     // Get related entities (clean schema)
-    const [actors, genres, directors, writers, studios] = await Promise.all([
+    const [actors, genres, directors, writers, studios, countries, tags] = await Promise.all([
       this.db.query<Record<string, unknown>>('SELECT a.*, ma.role, ma.actor_order FROM actors a JOIN movie_actors ma ON a.id = ma.actor_id WHERE ma.movie_id = ? ORDER BY ma.actor_order', [movieId]),
       this.db.query<Record<string, unknown>>('SELECT g.* FROM genres g JOIN movie_genres mg ON g.id = mg.genre_id WHERE mg.movie_id = ?', [movieId]),
       this.db.query<Record<string, unknown>>('SELECT c.* FROM crew c JOIN movie_crew mc ON c.id = mc.crew_id WHERE mc.movie_id = ? AND mc.role = \'director\'', [movieId]),
       this.db.query<Record<string, unknown>>('SELECT c.* FROM crew c JOIN movie_crew mc ON c.id = mc.crew_id WHERE mc.movie_id = ? AND mc.role = \'writer\'', [movieId]),
       this.db.query<Record<string, unknown>>('SELECT s.* FROM studios s JOIN movie_studios ms ON s.id = ms.studio_id WHERE ms.movie_id = ?', [movieId]),
+      this.db.query<Record<string, unknown>>('SELECT c.* FROM countries c JOIN movie_countries mc ON c.id = mc.country_id WHERE mc.movie_id = ?', [movieId]),
+      this.db.query<Record<string, unknown>>('SELECT t.* FROM tags t JOIN movie_tags mt ON t.id = mt.tag_id WHERE mt.movie_id = ?', [movieId]),
     ]);
+
+    // Build external_ids object (all IDs in one place)
+    const external_ids = {
+      tmdb_id: (movie.tmdb_id as number | null) || null,
+      imdb_id: (movie.imdb_id as string | null) || null,
+      tvdb_id: (movie.tvdb_id as number | null) || null,
+      facebook_id: (movie.facebook_id as string | null) || null,
+      instagram_id: (movie.instagram_id as string | null) || null,
+      twitter_id: (movie.twitter_id as string | null) || null,
+      wikidata_id: (movie.wikidata_id as string | null) || null,
+    };
+
+    // Build provider_urls using utility function
+    const provider_urls = buildExternalUrls(external_ids);
 
     const result: Record<string, unknown> = {
       ...movie,
@@ -379,6 +426,10 @@ export class MovieService {
       directors: directors.map(d => d.name),
       writers: writers.map(w => w.name),
       studios: studios.map(s => s.name),
+      countries: countries.map(c => c.name),
+      tags: tags.map(t => t.name),
+      external_ids,
+      provider_urls,
     };
 
     // Conditionally include files based on ?include parameter
@@ -575,8 +626,8 @@ export class MovieService {
         'plot_locked',
         'outline_locked',
         'tagline_locked',
-        'mpaa_locked',
-        'premiered_locked',
+        'content_rating_locked',
+        'release_date_locked',
         'user_rating_locked',
         'trailer_url_locked',
       ];
@@ -744,8 +795,8 @@ export class MovieService {
         'plot_locked',
         'outline_locked',
         'tagline_locked',
-        'mpaa_locked',
-        'premiered_locked',
+        'content_rating_locked',
+        'release_date_locked',
         'user_rating_locked',
         'trailer_url_locked'
       ];

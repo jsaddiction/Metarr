@@ -1,6 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faUserGroup, faEdit } from '@fortawesome/free-solid-svg-icons';
 import { ActorsList } from './ActorsList';
 import { useMovie } from '../../hooks/useMovies';
+import { TabSection } from '../ui/TabSection';
 
 interface CastTabProps {
   movieId: number;
@@ -8,6 +11,7 @@ interface CastTabProps {
 
 export const CastTab: React.FC<CastTabProps> = ({ movieId }) => {
   const { data: movieData } = useMovie(movieId);
+  const [isEditing, setIsEditing] = useState(false);
 
   const actors = movieData?.actors || [];
 
@@ -18,6 +22,7 @@ export const CastTab: React.FC<CastTabProps> = ({ movieId }) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ actors: updatedActors }),
       });
+      setIsEditing(false);
     } catch (error) {
       console.error('Failed to save actors:', error);
     }
@@ -25,10 +30,27 @@ export const CastTab: React.FC<CastTabProps> = ({ movieId }) => {
 
   return (
     <div className="space-y-3">
-      <ActorsList
-        actors={actors}
-        onUpdate={handleActorsUpdate}
-      />
+      <TabSection
+        title="Actors"
+        count={actors.length}
+        isEmpty={actors.length === 0}
+        emptyIcon={faUserGroup}
+        emptyMessage="No actors found"
+        emptyAction={{
+          label: 'Add Actors',
+          onClick: () => setIsEditing(true),
+          icon: faEdit,
+        }}
+        onAction={!isEditing ? () => setIsEditing(true) : undefined}
+        actionLabel="Edit Actors"
+        actionIcon={faEdit}
+      >
+        <ActorsList
+          actors={actors}
+          onUpdate={handleActorsUpdate}
+          isEditing={isEditing}
+        />
+      </TabSection>
     </div>
   );
 };

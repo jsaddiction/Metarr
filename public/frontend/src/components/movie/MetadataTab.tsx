@@ -1,13 +1,20 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faExternalLinkAlt, faExclamationTriangle, faChevronDown, faChevronUp } from '@fortawesome/free-solid-svg-icons';
-import { useMovie, useToggleLockField } from '../../hooks/useMovies';
-import { SaveBar } from '../ui/SaveBar';
+import { faExternalLinkAlt, faExclamationTriangle, faChevronDown, faChevronUp, faSave, faUndo, faExclamationCircle } from '@fortawesome/free-solid-svg-icons';
+import { useMovie, useToggleLockField, useGenreSuggestions, useDirectorSuggestions, useWriterSuggestions, useStudioSuggestions, useCountrySuggestions, useTagSuggestions } from '../../hooks/useMovies';
 import { GridField } from './GridField';
 import { TextAreaField } from './TextAreaField';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
 import { cleanMovieTitle, getFolderNameFromPath } from '@/utils/titleCleaning';
+import { ProviderBadge } from '../ui/ProviderBadge';
+import { StatusBadge } from '../ui/StatusBadge';
+import { CurrencyDisplay } from '../ui/CurrencyDisplay';
+import { PopularityIndicator } from '../ui/PopularityIndicator';
+import { ReadOnlyDataGrid } from '../ui/ReadOnlyDataGrid';
+import { TagInput } from '../ui/TagInput';
+import { getLanguageName } from '@/utils/languages';
+import { TabSection } from '../ui/TabSection';
 
 interface MetadataTabProps {
   movieId: number;
@@ -22,12 +29,19 @@ interface MovieMetadata {
   plot?: string;
   outline?: string;
   tagline?: string;
-  mpaa?: string;
-  premiered?: string;
+  content_rating?: string;  // MPAA rating (e.g., "PG-13", "R")
+  release_date?: string;    // Release date (e.g., "2017-07-19")
   user_rating?: number;
-  trailer_url?: string;
   tmdb_id?: number;
   imdb_id?: string;
+
+  // Production & Business Metadata (read-only from providers)
+  budget?: number;
+  revenue?: number;
+  homepage?: string;
+  original_language?: string;
+  popularity?: number;
+  status?: string;
 
   // Field locking
   title_locked: boolean;
@@ -37,10 +51,9 @@ interface MovieMetadata {
   plot_locked: boolean;
   outline_locked: boolean;
   tagline_locked: boolean;
-  mpaa_locked: boolean;
-  premiered_locked: boolean;
+  content_rating_locked: boolean;
+  release_date_locked: boolean;
   user_rating_locked: boolean;
-  trailer_url_locked: boolean;
 
   // Related entities
   genres?: string[];
@@ -75,6 +88,14 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
   // Use lock field mutation hook
   const toggleLockField = useToggleLockField();
 
+  // Fetch autocomplete suggestions
+  const { data: genreSuggestions = [] } = useGenreSuggestions();
+  const { data: directorSuggestions = [] } = useDirectorSuggestions();
+  const { data: writerSuggestions = [] } = useWriterSuggestions();
+  const { data: studioSuggestions = [] } = useStudioSuggestions();
+  const { data: countrySuggestions = [] } = useCountrySuggestions();
+  const { data: tagSuggestions = [] } = useTagSuggestions();
+
   const [metadata, setMetadata] = useState<MovieMetadata | null>(null);
   const [originalMetadata, setOriginalMetadata] = useState<MovieMetadata | null>(null);
   const [saving, setSaving] = useState(false);
@@ -99,16 +120,39 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
         plot_locked: movieData.plot_locked ?? false,
         outline_locked: movieData.outline_locked ?? false,
         tagline_locked: movieData.tagline_locked ?? false,
-        mpaa_locked: movieData.mpaa_locked ?? false,
-        premiered_locked: movieData.premiered_locked ?? false,
+        content_rating_locked: movieData.content_rating_locked ?? false,
+        release_date_locked: movieData.release_date_locked ?? false,
         user_rating_locked: movieData.user_rating_locked ?? false,
-        trailer_url_locked: movieData.trailer_url_locked ?? false,
       };
 
       setMetadata(normalizedData);
       setOriginalMetadata(structuredClone(normalizedData));
     }
   }, [movieData]);
+
+  // Deep comparison to detect actual changes (must be defined before useEffect that uses it)
+  const hasChanges = React.useMemo(() => {
+    if (!metadata || !originalMetadata) return false;
+
+    // Sort keys to ensure consistent comparison
+    const sortedMetadata = JSON.stringify(metadata, Object.keys(metadata).sort());
+    const sortedOriginal = JSON.stringify(originalMetadata, Object.keys(originalMetadata).sort());
+
+    return sortedMetadata !== sortedOriginal;
+  }, [metadata, originalMetadata]);
+
+  // Prevent navigation when there are unsaved changes
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasChanges) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [hasChanges]);
 
   // Auto-search on load for unidentified movies
   useEffect(() => {
@@ -208,17 +252,6 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
     }
   }, [movieData, movieId, hasAutoSearched]);
 
-  // Deep comparison to detect actual changes
-  const hasChanges = React.useMemo(() => {
-    if (!metadata || !originalMetadata) return false;
-
-    // Sort keys to ensure consistent comparison
-    const sortedMetadata = JSON.stringify(metadata, Object.keys(metadata).sort());
-    const sortedOriginal = JSON.stringify(originalMetadata, Object.keys(originalMetadata).sort());
-
-    return sortedMetadata !== sortedOriginal;
-  }, [metadata, originalMetadata]);
-
   const handleFieldChange = useCallback((field: keyof MovieMetadata, value: any) => {
     setMetadata((prev) => {
       if (!prev) return prev;
@@ -266,9 +299,27 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
       if (response.ok) {
         // Update original metadata to match saved state
         setOriginalMetadata(structuredClone(metadata));
+
+        // Invalidate suggestion caches to reflect new entities
+        queryClient.invalidateQueries({ queryKey: ['genre-suggestions'] });
+        queryClient.invalidateQueries({ queryKey: ['director-suggestions'] });
+        queryClient.invalidateQueries({ queryKey: ['writer-suggestions'] });
+        queryClient.invalidateQueries({ queryKey: ['studio-suggestions'] });
+        queryClient.invalidateQueries({ queryKey: ['country-suggestions'] });
+        queryClient.invalidateQueries({ queryKey: ['tag-suggestions'] });
+
+        toast.success('Metadata saved successfully', {
+          description: 'All changes have been saved',
+        });
+      } else {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(errorData.error || `Server returned ${response.status}`);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to save metadata:', error);
+      toast.error('Failed to save metadata', {
+        description: error.message || 'An unknown error occurred',
+      });
     } finally {
       setSaving(false);
     }
@@ -568,162 +619,309 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
 
   // Show full metadata editor when identified
   return (
-    <>
-      {/* Portal-based save bar - renders outside component tree */}
-      <SaveBar
-        hasChanges={hasChanges}
-        onSave={handleSave}
-        onReset={handleReset}
-        saving={saving}
-      />
-
-      <div className="space-y-3">
-      {/* Grid layout */}
-      <div className="card">
-        <div className="card-body p-3 space-y-2.5">
-
-          {/* Row 1: Title (span 3) + Year */}
-          <div className="grid grid-cols-4 gap-2">
-            <GridField
-              label="Title"
-              field="title"
-              value={metadata.title}
-              locked={metadata.title_locked}
-              onChange={(val) => handleFieldChange('title', val)}
-              onToggleLock={handleToggleLock}
-              className="col-span-3"
-            />
-            <GridField
-              label="Year"
-              field="year"
-              value={metadata.year}
-              locked={metadata.year_locked}
-              type="number"
-              onChange={(val) => handleFieldChange('year', val)}
-              onToggleLock={handleToggleLock}
-            />
+    <div className="space-y-3">
+      {/* Sticky Action Bar - Only show when changes exist */}
+      {hasChanges && (
+        <div className="sticky top-0 z-40 py-3 px-4 bg-blue-950/30 border border-blue-800/30 flex items-center justify-between rounded-md animate-in slide-in-from-top duration-200">
+          <div className="flex items-center gap-2 text-blue-300">
+            <FontAwesomeIcon icon={faExclamationCircle} className="text-lg" />
+            <span className="text-sm font-medium">You have unsaved changes</span>
           </div>
-
-          {/* Row 2: Original Title + Sort Title */}
-          <div className="grid grid-cols-2 gap-2">
-            <GridField
-              label="Original Title"
-              field="original_title"
-              value={metadata.original_title}
-              locked={metadata.original_title_locked}
-              onChange={(val) => handleFieldChange('original_title', val)}
-              onToggleLock={handleToggleLock}
-            />
-            <GridField
-              label="Sort Title"
-              field="sort_title"
-              value={metadata.sort_title}
-              locked={metadata.sort_title_locked}
-              onChange={(val) => handleFieldChange('sort_title', val)}
-              onToggleLock={handleToggleLock}
-            />
-          </div>
-
-          {/* Row 3: MPAA + Premiered + User Rating + Tagline */}
-          <div className="grid grid-cols-4 gap-2">
-            <GridField
-              label="MPAA"
-              field="mpaa"
-              value={metadata.mpaa}
-              locked={metadata.mpaa_locked}
-              onChange={(val) => handleFieldChange('mpaa', val)}
-              onToggleLock={handleToggleLock}
-            />
-            <GridField
-              label="Premiered"
-              field="premiered"
-              value={metadata.premiered}
-              locked={metadata.premiered_locked}
-              type="date"
-              onChange={(val) => handleFieldChange('premiered', val)}
-              onToggleLock={handleToggleLock}
-            />
-            <GridField
-              label="User Rating"
-              field="user_rating"
-              value={metadata.user_rating}
-              locked={metadata.user_rating_locked}
-              type="number"
-              onChange={(val) => handleFieldChange('user_rating', val)}
-              onToggleLock={handleToggleLock}
-            />
-            <GridField
-              label="Tagline"
-              field="tagline"
-              value={metadata.tagline}
-              locked={metadata.tagline_locked}
-              onChange={(val) => handleFieldChange('tagline', val)}
-              onToggleLock={handleToggleLock}
-            />
-          </div>
-
-          {/* Row 4: Outline */}
-          <TextAreaField
-            label="Outline"
-            field="outline"
-            value={metadata.outline}
-            locked={metadata.outline_locked}
-            onChange={(val) => handleFieldChange('outline', val)}
-            onToggleLock={handleToggleLock}
-            rows={2}
-          />
-
-          {/* Row 5: Plot */}
-          <TextAreaField
-            label="Plot"
-            field="plot"
-            value={metadata.plot}
-            locked={metadata.plot_locked}
-            onChange={(val) => handleFieldChange('plot', val)}
-            onToggleLock={handleToggleLock}
-            rows={3}
-          />
-
-          {/* Divider */}
-          <div className="border-t border-neutral-700"></div>
-
-          {/* Row 6: TMDB ID + IMDB ID + Trailer URL */}
-          <div className="grid grid-cols-3 gap-2">
-            <ReadOnlyField
-              label="TMDB ID"
-              value={metadata.tmdb_id}
-              link={metadata.tmdb_id ? `https://www.themoviedb.org/movie/${metadata.tmdb_id}` : undefined}
-            />
-            <ReadOnlyField
-              label="IMDB ID"
-              value={metadata.imdb_id}
-              link={metadata.imdb_id ? `https://www.imdb.com/title/${metadata.imdb_id}` : undefined}
-            />
-            <GridField
-              label="Trailer URL"
-              field="trailer_url"
-              value={metadata.trailer_url}
-              locked={metadata.trailer_url_locked}
-              onChange={(val) => handleFieldChange('trailer_url', val)}
-              onToggleLock={handleToggleLock}
-            />
-          </div>
-
-          {/* Divider */}
-          <div className="border-t border-neutral-700"></div>
-
-          {/* Related Entities - Compact badge rows */}
-          <div className="space-y-0.5 rounded-lg border border-neutral-700 bg-neutral-800/30 p-2.5">
-            <BadgeRow label="Genres" items={metadata.genres} />
-            <BadgeRow label="Directors" items={metadata.directors} />
-            <BadgeRow label="Writers" items={metadata.writers} />
-            <BadgeRow label="Studios" items={metadata.studios} />
-            <BadgeRow label="Countries" items={metadata.countries} />
-            <BadgeRow label="Tags" items={metadata.tags} />
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleReset}
+              disabled={saving}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors bg-neutral-700 text-neutral-200 hover:bg-neutral-600 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <FontAwesomeIcon icon={faUndo} className="text-xs" />
+              <span>Reset</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={saving}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <FontAwesomeIcon icon={faSave} className="text-xs" />
+              <span>{saving ? 'Saving...' : 'Save Changes'}</span>
+            </button>
           </div>
         </div>
+      )}
+
+      {/* Base Metadata Section */}
+      <TabSection title="Base Metadata">
+        <div className="space-y-2">
+              {/* Row 1: Title (span 3) + Year */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+                <GridField
+                  label="Title"
+                  field="title"
+                  value={metadata.title}
+                  locked={metadata.title_locked}
+                  onChange={(val) => handleFieldChange('title', val)}
+                  onToggleLock={handleToggleLock}
+                  className="sm:col-span-1 lg:col-span-3"
+                />
+                <GridField
+                  label="Year"
+                  field="year"
+                  value={metadata.year}
+                  locked={metadata.year_locked}
+                  type="number"
+                  onChange={(val) => handleFieldChange('year', val)}
+                  onToggleLock={handleToggleLock}
+                />
+              </div>
+
+              {/* Row 2: Original Title + Sort Title */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <GridField
+                  label="Original Title"
+                  field="original_title"
+                  value={metadata.original_title}
+                  locked={metadata.original_title_locked}
+                  onChange={(val) => handleFieldChange('original_title', val)}
+                  onToggleLock={handleToggleLock}
+                />
+                <GridField
+                  label="Sort Title"
+                  field="sort_title"
+                  value={metadata.sort_title}
+                  locked={metadata.sort_title_locked}
+                  onChange={(val) => handleFieldChange('sort_title', val)}
+                  onToggleLock={handleToggleLock}
+                />
+              </div>
+
+              {/* Row 3: Content Rating + Release Date + User Rating + Tagline */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+                <GridField
+                  label="Content Rating"
+                  field="content_rating"
+                  value={metadata.content_rating}
+                  locked={metadata.content_rating_locked}
+                  onChange={(val) => handleFieldChange('content_rating', val)}
+                  onToggleLock={handleToggleLock}
+                  placeholder="PG-13"
+                />
+                <GridField
+                  label="Release Date"
+                  field="release_date"
+                  value={metadata.release_date}
+                  locked={metadata.release_date_locked}
+                  type="date"
+                  onChange={(val) => handleFieldChange('release_date', val)}
+                  onToggleLock={handleToggleLock}
+                />
+                <GridField
+                  label="User Rating"
+                  field="user_rating"
+                  value={metadata.user_rating}
+                  locked={metadata.user_rating_locked}
+                  type="number"
+                  onChange={(val) => handleFieldChange('user_rating', val)}
+                  onToggleLock={handleToggleLock}
+                />
+                <GridField
+                  label="Tagline"
+                  field="tagline"
+                  value={metadata.tagline}
+                  locked={metadata.tagline_locked}
+                  onChange={(val) => handleFieldChange('tagline', val)}
+                  onToggleLock={handleToggleLock}
+                />
+              </div>
+
+              {/* Row 4: Outline */}
+              <TextAreaField
+                label="Outline"
+                field="outline"
+                value={metadata.outline}
+                locked={metadata.outline_locked}
+                onChange={(val) => handleFieldChange('outline', val)}
+                onToggleLock={handleToggleLock}
+                rows={2}
+              />
+
+              {/* Row 5: Plot */}
+              <TextAreaField
+                label="Plot"
+                field="plot"
+                value={metadata.plot}
+                locked={metadata.plot_locked}
+                onChange={(val) => handleFieldChange('plot', val)}
+                onToggleLock={handleToggleLock}
+                rows={3}
+              />
+            </div>
+      </TabSection>
+
+      {/* Extended Metadata Section */}
+      <TabSection title="Extended Metadata">
+        {/* Multi-column grid layout for efficient space usage */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 items-stretch">
+              <TagInput
+                label="Genres"
+                value={metadata.genres || []}
+                onChange={(genres) => handleFieldChange('genres', genres)}
+                suggestions={genreSuggestions}
+                placeholder="Add genre..."
+              />
+              <TagInput
+                label="Tags"
+                value={metadata.tags || []}
+                onChange={(tags) => handleFieldChange('tags', tags)}
+                suggestions={tagSuggestions}
+                placeholder="Add tag..."
+              />
+              <TagInput
+                label="Directors"
+                value={metadata.directors || []}
+                onChange={(directors) => handleFieldChange('directors', directors)}
+                suggestions={directorSuggestions}
+                placeholder="Add director..."
+              />
+              <TagInput
+                label="Writers"
+                value={metadata.writers || []}
+                onChange={(writers) => handleFieldChange('writers', writers)}
+                suggestions={writerSuggestions}
+                placeholder="Add writer..."
+              />
+              <TagInput
+                label="Studios"
+                value={metadata.studios || []}
+                onChange={(studios) => handleFieldChange('studios', studios)}
+                suggestions={studioSuggestions}
+                placeholder="Add studio..."
+              />
+              <TagInput
+                label="Countries"
+                value={metadata.countries || []}
+                onChange={(countries) => handleFieldChange('countries', countries)}
+                suggestions={countrySuggestions}
+                placeholder="Add country..."
+              />
+            </div>
+      </TabSection>
+
+      {/* Production & Stats / External Links Row */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        {/* Production & Stats Section */}
+        <TabSection title="Production & Stats">
+          <div className="grid grid-cols-2 gap-2">
+                {/* Financial Data Badge */}
+                {((metadata.budget !== undefined && metadata.budget !== null && metadata.budget > 0) ||
+                  (metadata.revenue !== undefined && metadata.revenue !== null && metadata.revenue > 0)) && (
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-neutral-600/30 bg-neutral-600/20 text-sm font-semibold text-neutral-300">
+                    <div className="flex flex-col items-start gap-1 w-full">
+                      <span className="text-xs opacity-60 font-normal">Financial Data</span>
+                      <div className="flex items-center gap-2 w-full">
+                        {metadata.budget !== undefined && metadata.budget !== null && metadata.budget > 0 && (
+                          <span className="text-xs">Budget: ${(metadata.budget / 1000000).toFixed(1)}M</span>
+                        )}
+                        {metadata.budget !== undefined && metadata.budget !== null && metadata.budget > 0 &&
+                         metadata.revenue !== undefined && metadata.revenue !== null && metadata.revenue > 0 && (
+                          <span className="text-xs opacity-40">•</span>
+                        )}
+                        {metadata.revenue !== undefined && metadata.revenue !== null && metadata.revenue > 0 && (
+                          <span className="text-xs">Revenue: ${(metadata.revenue / 1000000).toFixed(1)}M</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Release Status Badge */}
+                {(metadata.status || (metadata.popularity !== undefined && metadata.popularity !== null)) && (
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-neutral-600/30 bg-neutral-600/20 text-sm font-semibold text-neutral-300">
+                    <div className="flex flex-col items-start gap-1 w-full">
+                      <span className="text-xs opacity-60 font-normal">Release Status</span>
+                      <div className="flex items-center gap-2 w-full">
+                        {metadata.status && (
+                          <span className="text-xs">{metadata.status}</span>
+                        )}
+                        {metadata.status && metadata.popularity !== undefined && metadata.popularity !== null && (
+                          <span className="text-xs opacity-40">•</span>
+                        )}
+                        {metadata.popularity !== undefined && metadata.popularity !== null && (
+                          <span className="text-xs">Popularity: {metadata.popularity.toFixed(1)}</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Original Language Badge */}
+                {metadata.original_language && (
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-neutral-600/30 bg-neutral-600/20 text-sm font-semibold text-neutral-300">
+                    <div className="flex flex-col items-start gap-1">
+                      <span className="text-xs opacity-60 font-normal">Original Language</span>
+                      <span className="text-xs">{getLanguageName(metadata.original_language)}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+        </TabSection>
+
+        {/* External Links Section */}
+        <TabSection title="External Links">
+          <div className="grid grid-cols-2 gap-2">
+                {metadata.tmdb_id && <ProviderBadge provider="tmdb" id={metadata.tmdb_id} showId />}
+                {metadata.imdb_id && <ProviderBadge provider="imdb" id={metadata.imdb_id} showId />}
+                {(movieData as any)?.tvdb_id && <ProviderBadge provider="tvdb" id={(movieData as any).tvdb_id} showId />}
+                {(movieData as any)?.homepage && (
+                  <ProviderBadge provider="homepage" id={(movieData as any).homepage} label="Website" />
+                )}
+                {(movieData as any)?.external_ids?.facebook_id && (
+                  <ProviderBadge provider="facebook" id={(movieData as any).external_ids.facebook_id} />
+                )}
+                {(movieData as any)?.external_ids?.instagram_id && (
+                  <ProviderBadge provider="instagram" id={(movieData as any).external_ids.instagram_id} />
+                )}
+                {(movieData as any)?.external_ids?.twitter_id && (
+                  <ProviderBadge provider="twitter" id={(movieData as any).external_ids.twitter_id} />
+                )}
+                {(movieData as any)?.external_ids?.wikidata_id && (
+                  <ProviderBadge provider="wikidata" id={(movieData as any).external_ids.wikidata_id} />
+                )}
+              </div>
+        </TabSection>
       </div>
-      </div>
-    </>
+
+      {/* Technical Details Section */}
+      {((movieData as any)?.video_streams || (movieData as any)?.audio_streams) && (
+        <TabSection title="Technical Details">
+          <div className="space-y-2">
+            <div className="text-xs text-neutral-500 mb-2">Read-Only</div>
+            <ReadOnlyDataGrid
+                  sections={[
+                    {
+                      label: 'Video Codec',
+                      value: (movieData as any)?.video_streams?.[0]?.codec || null,
+                    },
+                    {
+                      label: 'Resolution',
+                      value:
+                        (movieData as any)?.video_streams?.[0]?.width && (movieData as any)?.video_streams?.[0]?.height
+                          ? `${(movieData as any).video_streams[0].width}x${(movieData as any).video_streams[0].height}`
+                          : null,
+                    },
+                    {
+                      label: 'Audio Codec',
+                      value: (movieData as any)?.audio_streams?.[0]?.codec || null,
+                    },
+                    {
+                      label: 'Channels',
+                      value: (movieData as any)?.audio_streams?.[0]?.channels || null,
+                    },
+                  ]}
+                />
+              </div>
+            </TabSection>
+          )}
+    </div>
   );
 };
