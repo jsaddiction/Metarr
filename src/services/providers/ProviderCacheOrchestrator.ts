@@ -33,10 +33,13 @@ import {
 } from '../../types/providerCache.js';
 import { TMDBCacheAdapter } from './adapters/TMDBCacheAdapter.js';
 import { FanartCacheAdapter } from './adapters/FanartCacheAdapter.js';
+import { OMDBCacheAdapter } from './adapters/OMDBCacheAdapter.js';
 import { TMDBClient } from './tmdb/TMDBClient.js';
 import { TMDBClientOptions } from '../../types/providers/tmdb.js';
 import { FanArtClient } from './fanart/FanArtClient.js';
 import { FanArtClientOptions } from '../../types/providers/fanart.js';
+import { OMDBClient } from './omdb/OMDBClient.js';
+import { OMDBClientOptions } from '../../types/providers/omdb.js';
 import { ConfigManager } from '../../config/ConfigManager.js';
 
 const DEFAULT_MAX_AGE = 604800; // 7 days in seconds
@@ -51,6 +54,7 @@ interface MovieCacheRow {
   title: string;
   original_title?: string;
   overview?: string;
+  outline?: string;
   tagline?: string;
   release_date?: string;
   year?: number;
@@ -146,6 +150,7 @@ export class ProviderCacheOrchestrator {
   private db: DatabaseConnection;
   private tmdbAdapter: TMDBCacheAdapter;
   private fanartAdapter: FanartCacheAdapter;
+  private omdbAdapter: OMDBCacheAdapter | null = null;
 
   constructor(dbOrManager: DatabaseConnection | DatabaseManager) {
     if ('getConnection' in dbOrManager) {
@@ -187,6 +192,22 @@ export class ProviderCacheOrchestrator {
     this.fanartAdapter = new FanartCacheAdapter(this.db, fanartClient);
 
     logger.info('[ProviderCacheOrchestrator] Fanart.tv adapter initialized');
+
+    // Initialize OMDB adapter (optional - only if API key configured)
+    const omdbConfig = appConfig.providers.omdb;
+    if (omdbConfig?.apiKey) {
+      const omdbClientOptions: OMDBClientOptions = {
+        apiKey: omdbConfig.apiKey,
+        baseUrl: omdbConfig.baseUrl || 'https://www.omdbapi.com',
+      };
+
+      const omdbClient = new OMDBClient(omdbClientOptions);
+      this.omdbAdapter = new OMDBCacheAdapter(this.db, omdbClient);
+
+      logger.info('[ProviderCacheOrchestrator] OMDB adapter initialized');
+    } else {
+      logger.info('[ProviderCacheOrchestrator] OMDB adapter not initialized (no API key)');
+    }
   }
 
   /**
@@ -376,7 +397,7 @@ export class ProviderCacheOrchestrator {
       };
     }
 
-    // Fetch from Fanart.tv with remaining timeout
+    // Fetch from Fanart.tv and OMDB in parallel with remaining timeout
     const fanartPromise = this.fanartAdapter
       .fetchAndCacheMovieImages(movieCacheId, tmdbId)
       .then((result) => ({ provider: 'fanart.tv', result }))
@@ -389,17 +410,37 @@ export class ProviderCacheOrchestrator {
         return { provider: 'fanart.tv', result: { imagesCached: 0, imageTypes: [] } };
       });
 
-    const fanartTimeout = this.createTimeout(remainingTimeout, {
-      provider: 'fanart.tv',
-      result: { imagesCached: 0, imageTypes: [] },
-    });
-    const fanartResult = await Promise.race([
-      fanartPromise,
-      fanartTimeout.promise,
-    ]);
+    // OMDB fetch (if adapter initialized)
+    const omdbPromise = this.omdbAdapter
+      ? this.omdbAdapter
+          .fetchAndUpdate(params)
+          .then((result) => ({ provider: 'omdb', movieCacheId: result }))
+          .catch((error) => {
+            logger.error('[ProviderCacheOrchestrator] OMDB fetch failed', {
+              params,
+              error: error instanceof Error ? error.message : error,
+            });
+            return { provider: 'omdb', movieCacheId: null };
+          })
+      : Promise.resolve({ provider: 'omdb', movieCacheId: null });
 
-    // Clean up timeout to prevent lingering timer
-    fanartTimeout.cleanup();
+    // Wait for both in parallel
+    const [fanartResult, omdbResult] = await Promise.all([
+      Promise.race([
+        fanartPromise,
+        this.createTimeout(remainingTimeout, {
+          provider: 'fanart.tv',
+          result: { imagesCached: 0, imageTypes: [] },
+        }).promise,
+      ]),
+      Promise.race([
+        omdbPromise,
+        this.createTimeout(remainingTimeout, {
+          provider: 'omdb',
+          movieCacheId: null,
+        }).promise,
+      ]),
+    ]);
 
     if (fanartResult.result.imagesCached > 0) {
       providersUsed.push('fanart.tv');
@@ -407,6 +448,13 @@ export class ProviderCacheOrchestrator {
         movieCacheId,
         imagesCached: fanartResult.result.imagesCached,
         imageTypes: fanartResult.result.imageTypes,
+      });
+    }
+
+    if (omdbResult.movieCacheId) {
+      providersUsed.push('omdb');
+      logger.info('[ProviderCacheOrchestrator] OMDB enrichment complete', {
+        movieCacheId: omdbResult.movieCacheId,
       });
     }
 
