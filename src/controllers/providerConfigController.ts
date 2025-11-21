@@ -224,6 +224,11 @@ export class ProviderConfigController {
           message = 'Successfully connected to TheAudioDB API';
           break;
 
+        case 'omdb':
+          await this.testOMDBConnection(data.apiKey);
+          message = 'Successfully connected to OMDb API';
+          break;
+
         case 'local':
           await this.testLocalConnection();
           message = 'Local filesystem access verified';
@@ -563,6 +568,60 @@ export class ProviderConfigController {
         {
           service: 'ProviderConfigController',
           operation: 'testTheAudioDBConnection',
+          metadata: { statusCode: status }
+        },
+        error instanceof Error ? error : undefined
+      );
+    }
+  }
+
+  /**
+   * Test OMDb connection
+   */
+  private async testOMDBConnection(apiKey?: string): Promise<void> {
+    if (!apiKey) {
+      throw new ValidationError(
+        'OMDb API key is required',
+        {
+          service: 'ProviderConfigController',
+          operation: 'testOMDBConnection',
+          metadata: { provider: 'omdb' }
+        }
+      );
+    }
+
+    const { OMDBClient } = await import('../services/providers/omdb/OMDBClient.js');
+
+    const testClient = new OMDBClient({
+      apiKey,
+      baseUrl: 'https://www.omdbapi.com',
+      timeout: 10000
+    });
+
+    // Test API call - get a known movie (The Matrix: tt0133093)
+    try {
+      await testClient.getById('tt0133093');
+    } catch (error) {
+      const status = getStatusCode(error);
+      if (status === 401) {
+        throw new AuthenticationError(
+          'Invalid OMDb API key. Please check your credentials at https://www.omdbapi.com/apikey.aspx',
+          {
+            service: 'ProviderConfigController',
+            operation: 'testOMDBConnection',
+            metadata: { provider: 'omdb', statusCode: status }
+          }
+        );
+      }
+      throw new ProviderError(
+        `OMDb API test failed: ${getErrorMessage(error)}`,
+        'omdb',
+        ErrorCode.PROVIDER_INVALID_RESPONSE,
+        500,
+        true,
+        {
+          service: 'ProviderConfigController',
+          operation: 'testOMDBConnection',
           metadata: { statusCode: status }
         },
         error instanceof Error ? error : undefined
