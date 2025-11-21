@@ -40,6 +40,7 @@ export interface CachedMovie {
   title: string;
   original_title?: string;
   overview?: string;
+  outline?: string;
   tagline?: string;
 
   // Release Info

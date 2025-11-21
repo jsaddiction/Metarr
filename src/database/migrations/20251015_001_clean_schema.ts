@@ -1365,6 +1365,7 @@ export class CleanSchemaMigration {
         title TEXT NOT NULL,
         original_title TEXT,
         overview TEXT,
+        outline TEXT,
         tagline TEXT,
 
         -- Release Info
