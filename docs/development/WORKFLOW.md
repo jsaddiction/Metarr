@@ -536,6 +536,41 @@ See [TESTING.md](./TESTING.md) for detailed testing guidelines.
 
 ## Troubleshooting Development Workflow
 
+### Application Logs Location
+
+**IMPORTANT**: When debugging or investigating issues, always check application logs first.
+
+**Log Files**:
+- **Location**: `logs/` directory in project root
+- **App logs**: `logs/app-YYYY-MM-DD.log` (daily rotation)
+- **Error logs**: `logs/error-YYYY-MM-DD.log` (daily rotation)
+- **Format**: JSON lines (one JSON object per log entry)
+- **Retention**: Compressed (.gz) after rotation
+
+**Viewing Logs**:
+```bash
+# Today's application log
+tail -f logs/app-$(date +%Y-%m-%d).log
+
+# Today's error log
+tail -f logs/error-$(date +%Y-%m-%d).log
+
+# Search for specific errors
+grep -i "omdb\|error" logs/app-$(date +%Y-%m-%d).log | tail -50
+
+# Pretty print JSON logs (if jq installed)
+tail logs/app-$(date +%Y-%m-%d).log | jq .
+```
+
+**When to Check Logs**:
+- Before asking "what happened?" - check logs first
+- After enrichment failures - check provider fetch errors
+- Database errors - check error log for SQL details
+- API key issues - check authentication errors
+- Performance debugging - check timing info in logs
+
+**AI Assistant Rule**: When user says "check logs" or when debugging, ALWAYS check the `logs/` directory files, NOT systemd journal or /var/log.
+
 ### Issue: TypeScript errors after pull
 
 **Solution**:
