@@ -622,8 +622,8 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
     <div className="space-y-3">
       {/* Sticky Action Bar - Only show when changes exist */}
       {hasChanges && (
-        <div className="sticky top-0 z-40 -mx-6 px-6 py-3 bg-amber-900/20 border-b border-amber-700/50 flex items-center justify-between rounded-md animate-in slide-in-from-top duration-200">
-          <div className="flex items-center gap-2 text-amber-300">
+        <div className="sticky top-0 z-40 py-3 px-4 bg-blue-950/30 border border-blue-800/30 flex items-center justify-between rounded-md animate-in slide-in-from-top duration-200">
+          <div className="flex items-center gap-2 text-blue-300">
             <FontAwesomeIcon icon={faExclamationCircle} className="text-lg" />
             <span className="text-sm font-medium">You have unsaved changes</span>
           </div>
