@@ -13,6 +13,7 @@ export type ProviderId =
   | 'tvdb'
   | 'fanart_tv'
   | 'imdb'
+  | 'omdb'
   | 'musicbrainz'
   | 'theaudiodb'
   | 'local';

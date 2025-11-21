@@ -6,6 +6,7 @@
 - [Rate Limiting](./RATE_LIMITING.md) - THE canonical rate limiting documentation
 - [TMDB](./TMDB.md) - The Movie Database integration
 - [TVDB](./TVDB.md) - TheTVDB integration
+- [OMDb](./OMDB.md) - IMDb ratings, Rotten Tomatoes, and Metacritic
 - [FanArt.tv](./FANART.md) - High-quality curated artwork
 - [MusicBrainz](./MUSICBRAINZ.md) - Music metadata
 - [Local Backup](./LOCAL_BACKUP.md) - Local asset backup system
@@ -30,6 +31,7 @@
 |----------|----------|-----------|------------|---------------------|
 | **TMDB** | Both | Bearer (optional) | 40 req/10s | Usage tracking, community support |
 | **TVDB** | Both | JWT (optional) | 30 req/10s | Usage tracking, community support |
+| **OMDb** | Metadata | API Key (required) | 1,000/day (100k w/ key) | 100x rate limit for $1/month |
 | **FanArt.tv** | Images | API Key (optional) | 10 req/s (20 w/ key) | Higher rate limit (2x) |
 | **Local** | Both | None | Unlimited | N/A - filesystem access |
 
@@ -83,12 +85,14 @@ episode_still    │  ✓   │  ✓   │     ✗     │   ✓
 
 **Movies**:
 - **TMDB**: title, plot, tagline, releaseDate, runtime, ratings, genres, studios, cast, crew, certification
+- **OMDb**: IMDb rating/votes, Rotten Tomatoes score, Metacritic score, awards, plot outline, cast, certification
 - **IMDb**: ratings (most trusted), cast, crew, genres
 - **Local**: All fields from NFO files + stream info from FFprobe
 
 **TV Shows**:
 - **TVDB**: title, plot, aired dates, status, ratings, network, cast
 - **TMDB**: title, plot, ratings, genres, cast, crew
+- **OMDb**: title, plot, ratings, genres, cast (TV support limited)
 - **Local**: All fields from NFO files + stream info
 
 **Music**:
@@ -147,7 +151,20 @@ See [Enrichment Phase](../phases/ENRICHMENT.md) for detailed selection workflow.
 - ✓ Good TV show support
 - ✓ High rate limit (40 req/10s)
 - ✓ Reliable, well-maintained API
+- ✓ Best for plot, trailers, high-res posters
 - ✗ No clearlogo/clearart/discart
+
+**OMDb**:
+- ✓ **Only source** for authoritative IMDb ratings
+- ✓ **Only source** for Rotten Tomatoes scores
+- ✓ **Only source** for Metacritic scores
+- ✓ **Only source** for awards information
+- ✓ Unique "outline" field (short plot summary)
+- ✓ Legal API with official IMDb data
+- ✗ Low-resolution posters (300px)
+- ✗ No trailers or video content
+- ✗ Limited TV show support
+- ✓ Requires API key (free or $1/month)
 
 **TVDB**:
 - ✓ Best TV show metadata

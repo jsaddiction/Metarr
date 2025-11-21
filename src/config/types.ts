@@ -40,12 +40,6 @@ export interface ProviderConfig {
     rateLimit: number;
     rateLimitWindow: number;
   };
-  imdb?: {
-    apiKey?: string | undefined;
-    baseUrl: string;
-    rateLimit: number;
-    rateLimitWindow: number;
-  };
   hdtrailers?: {
     baseUrl: string;
     rateLimit: number;

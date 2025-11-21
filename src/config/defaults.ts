@@ -33,11 +33,6 @@ export const defaultConfig: AppConfig = {
       rateLimit: 10,
       rateLimitWindow: 1, // 10 requests per second (20 with personal key)
     },
-    imdb: {
-      baseUrl: 'https://imdb-api.com/en/API',
-      rateLimit: 100,
-      rateLimitWindow: 60, // 100 requests per minute
-    },
     hdtrailers: {
       baseUrl: 'https://www.hdtrailers.net',
       rateLimit: 30,

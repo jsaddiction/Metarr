@@ -5,7 +5,6 @@ import { ProviderConfig, ProviderWithMetadata, TestConnectionRequest, UpdateProv
 import { TMDBClient } from '../services/providers/tmdb/TMDBClient.js';
 import { TVDBClient } from '../services/providers/tvdb/TVDBClient.js';
 import { FanArtClient } from '../services/providers/fanart/FanArtClient.js';
-import { IMDbClient } from '../services/providers/imdb/IMDbClient.js';
 import { MusicBrainzClient } from '../services/providers/musicbrainz/MusicBrainzClient.js';
 import { TheAudioDBClient } from '../services/providers/theaudiodb/TheAudioDBClient.js';
 import { ProviderRegistry } from '../services/providers/ProviderRegistry.js';
@@ -213,11 +212,6 @@ export class ProviderConfigController {
           message = data.apiKey
             ? 'Successfully connected to FanArt.tv with personal API key'
             : 'Successfully connected to FanArt.tv (using project key)';
-          break;
-
-        case 'imdb':
-          await this.testIMDbConnection();
-          message = 'Successfully connected to IMDb (web scraping)';
           break;
 
         case 'musicbrainz':
@@ -459,49 +453,6 @@ export class ProviderConfigController {
         {
           service: 'ProviderConfigController',
           operation: 'testFanArtConnection',
-          metadata: { statusCode: status }
-        },
-        error instanceof Error ? error : undefined
-      );
-    }
-  }
-
-  /**
-   * Test IMDb connection
-   */
-  private async testIMDbConnection(): Promise<void> {
-    // IMDb uses web scraping, no API key needed
-    const testClient = new IMDbClient();
-
-    // Test scraping - get movie details for a known ID (The Matrix)
-    try {
-      await testClient.getMovieDetails('tt0133093'); // IMDb ID for The Matrix
-    } catch (error) {
-      const status = getStatusCode(error);
-      if (status === 403 || status === 429) {
-        throw new ProviderError(
-          'IMDb blocked the request. You may be rate-limited or your IP may be banned.',
-          'imdb',
-          ErrorCode.PROVIDER_RATE_LIMIT,
-          429,
-          true,
-          {
-            service: 'ProviderConfigController',
-            operation: 'testIMDbConnection',
-            metadata: { provider: 'imdb', statusCode: status }
-          },
-          error instanceof Error ? error : undefined
-        );
-      }
-      throw new ProviderError(
-        `IMDb connection test failed: ${getErrorMessage(error)}`,
-        'imdb',
-        ErrorCode.PROVIDER_INVALID_RESPONSE,
-        500,
-        true,
-        {
-          service: 'ProviderConfigController',
-          operation: 'testIMDbConnection',
           metadata: { statusCode: status }
         },
         error instanceof Error ? error : undefined
