@@ -733,6 +733,7 @@ export class ProviderCacheOrchestrator {
     if (row.tvdb_id !== undefined) movie.tvdb_id = row.tvdb_id;
     if (row.original_title !== undefined) movie.original_title = row.original_title;
     if (row.overview !== undefined) movie.overview = row.overview;
+    if (row.outline !== undefined) movie.outline = row.outline;
     if (row.tagline !== undefined) movie.tagline = row.tagline;
     if (row.release_date !== undefined) movie.release_date = row.release_date;
     if (row.year !== undefined) movie.year = row.year;
