@@ -41,6 +41,7 @@ import { FanArtClientOptions } from '../../types/providers/fanart.js';
 import { OMDBClient } from './omdb/OMDBClient.js';
 import { OMDBClientOptions } from '../../types/providers/omdb.js';
 import { ConfigManager } from '../../config/ConfigManager.js';
+import { ProviderConfigService } from '../providerConfigService.js';
 
 const DEFAULT_MAX_AGE = 604800; // 7 days in seconds
 const PROVIDER_FETCH_TIMEOUT = 30000; // 30 seconds total timeout for all providers
@@ -193,20 +194,51 @@ export class ProviderCacheOrchestrator {
 
     logger.info('[ProviderCacheOrchestrator] Fanart.tv adapter initialized');
 
-    // Initialize OMDB adapter (optional - only if API key configured)
-    const omdbConfig = appConfig.providers.omdb;
-    if (omdbConfig?.apiKey) {
-      const omdbClientOptions: OMDBClientOptions = {
-        apiKey: omdbConfig.apiKey,
-        baseUrl: omdbConfig.baseUrl || 'https://www.omdbapi.com',
-      };
+    // Note: OMDB initialization is deferred until first use via lazy loading
+    logger.info('[ProviderCacheOrchestrator] OMDB adapter will be initialized on first use');
+  }
 
-      const omdbClient = new OMDBClient(omdbClientOptions);
-      this.omdbAdapter = new OMDBCacheAdapter(this.db, omdbClient);
+  /**
+   * Get or initialize OMDB adapter (lazy loading from database config)
+   * This ensures adapter is created with latest database configuration
+   */
+  private async getOMDBAdapter(): Promise<OMDBCacheAdapter | null> {
+    // If already initialized, return it
+    if (this.omdbAdapter) {
+      return this.omdbAdapter;
+    }
 
-      logger.info('[ProviderCacheOrchestrator] OMDB adapter initialized');
-    } else {
-      logger.info('[ProviderCacheOrchestrator] OMDB adapter not initialized (no API key)');
+    // Try to initialize from database config
+    try {
+      const configService = new ProviderConfigService(this.db);
+      const omdbDbConfig = await configService.getByName('omdb');
+
+      if (omdbDbConfig?.enabled && omdbDbConfig.apiKey) {
+        const omdbClientOptions: OMDBClientOptions = {
+          apiKey: omdbDbConfig.apiKey,
+          baseUrl: 'https://www.omdbapi.com',
+        };
+
+        const omdbClient = new OMDBClient(omdbClientOptions);
+        this.omdbAdapter = new OMDBCacheAdapter(this.db, omdbClient);
+
+        logger.info('[ProviderCacheOrchestrator] OMDB adapter initialized from database config', {
+          apiKeyPresent: true,
+        });
+
+        return this.omdbAdapter;
+      } else {
+        logger.debug('[ProviderCacheOrchestrator] OMDB adapter not initialized', {
+          enabled: omdbDbConfig?.enabled || false,
+          hasApiKey: !!omdbDbConfig?.apiKey,
+        });
+        return null;
+      }
+    } catch (error) {
+      logger.error('[ProviderCacheOrchestrator] Failed to initialize OMDB adapter', {
+        error: error instanceof Error ? error.message : error,
+      });
+      return null;
     }
   }
 
@@ -410,19 +442,22 @@ export class ProviderCacheOrchestrator {
         return { provider: 'fanart.tv', result: { imagesCached: 0, imageTypes: [] } };
       });
 
-    // OMDB fetch (if adapter initialized)
-    const omdbPromise = this.omdbAdapter
-      ? this.omdbAdapter
-          .fetchAndUpdate(params)
-          .then((result) => ({ provider: 'omdb', movieCacheId: result }))
-          .catch((error) => {
-            logger.error('[ProviderCacheOrchestrator] OMDB fetch failed', {
-              params,
-              error: error instanceof Error ? error.message : error,
-            });
-            return { provider: 'omdb', movieCacheId: null };
-          })
-      : Promise.resolve({ provider: 'omdb', movieCacheId: null });
+    // OMDB fetch (lazy load adapter from database)
+    const omdbPromise = this.getOMDBAdapter().then((adapter) => {
+      if (!adapter) {
+        return { provider: 'omdb', movieCacheId: null };
+      }
+      return adapter
+        .fetchAndUpdate(params)
+        .then((result) => ({ provider: 'omdb', movieCacheId: result }))
+        .catch((error) => {
+          logger.error('[ProviderCacheOrchestrator] OMDB fetch failed', {
+            params,
+            error: error instanceof Error ? error.message : error,
+          });
+          return { provider: 'omdb', movieCacheId: null };
+        });
+    });
 
     // Wait for both in parallel
     const [fanartResult, omdbResult] = await Promise.all([
