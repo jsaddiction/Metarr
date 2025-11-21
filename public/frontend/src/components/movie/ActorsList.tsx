@@ -14,8 +14,19 @@ interface ActorsListProps {
   readOnly?: boolean;
 }
 
-export const ActorsList: React.FC<ActorsListProps> = ({ actors, onUpdate, readOnly = false }) => {
-  const [isEditing, setIsEditing] = useState(false);
+// Export isEditing state control for parent component
+interface ActorsListExtendedProps extends ActorsListProps {
+  isEditing?: boolean;
+  onStartEdit?: () => void;
+}
+
+export const ActorsList: React.FC<ActorsListExtendedProps> = ({
+  actors,
+  onUpdate,
+  readOnly = false,
+  isEditing = false,
+  onStartEdit
+}) => {
   const [editedActors, setEditedActors] = useState<Actor[]>(actors);
 
   const handleAddActor = () => {
@@ -38,12 +49,10 @@ export const ActorsList: React.FC<ActorsListProps> = ({ actors, onUpdate, readOn
     if (onUpdate) {
       onUpdate(editedActors);
     }
-    setIsEditing(false);
   };
 
   const handleCancel = () => {
     setEditedActors(actors);
-    setIsEditing(false);
   };
 
   const sortedActors = [...(isEditing ? editedActors : actors)].sort((a, b) => {
@@ -52,38 +61,13 @@ export const ActorsList: React.FC<ActorsListProps> = ({ actors, onUpdate, readOn
     return orderA - orderB;
   });
 
-  return (
-    <div className="bg-neutral-800 rounded-lg p-6">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center space-x-3">
-          <FontAwesomeIcon icon={faUserGroup} className="text-purple-400 text-xl" />
-          <h3 className="text-xl font-semibold text-white">Actors</h3>
-          <span className="text-neutral-400 text-sm">({sortedActors.length})</span>
-        </div>
-        {!readOnly && !isEditing && (
-          <button
-            onClick={() => setIsEditing(true)}
-            className="flex items-center space-x-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded transition-colors"
-          >
-            <FontAwesomeIcon icon={faEdit} />
-            <span>Edit Actors</span>
-          </button>
-        )}
-      </div>
+  if (sortedActors.length === 0 && !isEditing) {
+    return null; // Let TabSection handle empty state
+  }
 
-      {sortedActors.length === 0 ? (
-        <div className="text-neutral-400 text-center py-8">
-          No actors found
-          {!readOnly && (
-            <button
-              onClick={() => setIsEditing(true)}
-              className="ml-2 text-purple-400 hover:text-purple-300"
-            >
-              Add actors
-            </button>
-          )}
-        </div>
-      ) : (
+  return (
+    <div>
+      {sortedActors.length > 0 ? (
         <div className="space-y-2">
           {/* Header Row */}
           <div className="grid grid-cols-[60px_1fr_1fr_80px] gap-4 px-4 py-2 text-sm font-semibold text-neutral-400 border-b border-neutral-700">
@@ -141,35 +125,7 @@ export const ActorsList: React.FC<ActorsListProps> = ({ actors, onUpdate, readOn
             </div>
           ))}
         </div>
-      )}
-
-      {/* Edit Mode Actions */}
-      {isEditing && (
-        <div className="mt-6 flex items-center justify-between pt-4 border-t border-neutral-700">
-          <button
-            onClick={handleAddActor}
-            className="flex items-center space-x-2 px-4 py-2 bg-neutral-700 hover:bg-neutral-600 text-white rounded transition-colors"
-          >
-            <FontAwesomeIcon icon={faPlus} />
-            <span>Add Actor</span>
-          </button>
-
-          <div className="flex space-x-3">
-            <button
-              onClick={handleCancel}
-              className="px-4 py-2 bg-neutral-700 hover:bg-neutral-600 text-white rounded transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleSave}
-              className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded transition-colors"
-            >
-              Save Changes
-            </button>
-          </div>
-        </div>
-      )}
+      ) : null}
     </div>
   );
 };

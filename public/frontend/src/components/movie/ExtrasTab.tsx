@@ -17,6 +17,7 @@ import {
   useDeleteThemeSong,
 } from '../../hooks/useMovieAssets';
 import { useConfirm } from '../../hooks/useConfirm';
+import { TabSection } from '../ui/TabSection';
 
 interface ExtrasTabProps {
   movieId: number;
@@ -147,170 +148,122 @@ export const ExtrasTab: React.FC<ExtrasTabProps> = ({ movieId }) => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3">
       {/* Trailer Section */}
-      <div className="card">
-        <div className="card-body">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-white flex items-center">
-              <FontAwesomeIcon icon={faVideo} className="mr-2 text-primary" />
-              Trailer
-            </h3>
-            {!trailer && (
-              <button className="btn btn-primary btn-sm">
-                <FontAwesomeIcon icon={faPlus} className="mr-2" />
-                Add Trailer
-              </button>
-            )}
-          </div>
-
-          {trailer ? (
-            <div className="border border-neutral-700 rounded-lg p-4 bg-neutral-800/50">
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <div className="flex items-center space-x-2 mb-2">
-                    <FontAwesomeIcon icon={faFile} className="text-neutral-400" />
-                    <span className="text-neutral-200 font-mono text-sm">
-                      {trailer.file_path?.split('/').pop() || 'No path available'}
-                    </span>
-                  </div>
-                  <div className="flex items-center space-x-4 text-sm text-neutral-400">
-                    <span>{formatFileSize(trailer.file_size)}</span>
-                    {trailer.duration && <span>{formatDuration(trailer.duration)}</span>}
-                    {trailer.resolution && <span>{trailer.resolution}</span>}
-                  </div>
+      <TabSection
+        title="Trailer"
+        isEmpty={!trailer}
+        emptyIcon={faVideo}
+        emptyMessage="No trailer detected"
+        onAction={!trailer ? () => {} : undefined}
+        actionLabel="Add Trailer"
+        actionIcon={faPlus}
+      >
+        {trailer && (
+          <div className="border border-neutral-700 rounded-lg p-4 bg-neutral-800/50">
+            <div className="flex items-start justify-between">
+              <div className="flex-1">
+                <div className="flex items-center space-x-2 mb-2">
+                  <FontAwesomeIcon icon={faFile} className="text-neutral-400" />
+                  <span className="text-neutral-200 font-mono text-sm">
+                    {trailer.file_path?.split('/').pop() || 'No path available'}
+                  </span>
                 </div>
-                <button
-                  onClick={handleDeleteTrailer}
-                  className="btn btn-ghost btn-sm text-error hover:bg-error/20"
-                >
-                  <FontAwesomeIcon icon={faTrash} />
-                </button>
+                <div className="flex items-center space-x-4 text-sm text-neutral-400">
+                  <span>{formatFileSize(trailer.file_size)}</span>
+                  {trailer.duration && <span>{formatDuration(trailer.duration)}</span>}
+                  {trailer.resolution && <span>{trailer.resolution}</span>}
+                </div>
               </div>
+              <button
+                onClick={handleDeleteTrailer}
+                className="btn btn-ghost btn-sm text-error hover:bg-error/20"
+              >
+                <FontAwesomeIcon icon={faTrash} />
+              </button>
             </div>
-          ) : (
-            <div className="text-center py-8 bg-neutral-800/30 rounded border border-dashed border-neutral-700">
-              <FontAwesomeIcon icon={faVideo} className="text-4xl text-neutral-600 mb-3" />
-              <p className="text-neutral-400 mb-3">No trailer detected</p>
-              <p className="text-sm text-neutral-500">
-                Place a video file with "-trailer" suffix in the movie directory
-              </p>
-            </div>
-          )}
-        </div>
-      </div>
+          </div>
+        )}
+      </TabSection>
 
       {/* Subtitles Section */}
-      <div className="card">
-        <div className="card-body">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-white flex items-center">
-              <FontAwesomeIcon icon={faClosedCaptioning} className="mr-2 text-primary" />
-              Subtitles
-              {subtitles.length > 0 && (
-                <span className="ml-2 text-sm text-neutral-400 font-normal">
-                  ({subtitles.length})
-                </span>
-              )}
-            </h3>
-          </div>
-
-          {subtitles.length > 0 ? (
-            <div className="space-y-2">
-              {subtitles.map((subtitle) => (
-                <div
-                  key={subtitle.id}
-                  className="border border-neutral-700 rounded-lg p-4 bg-neutral-800/50"
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center space-x-2 mb-2">
-                        <FontAwesomeIcon icon={faFile} className="text-neutral-400" />
-                        <span className="text-neutral-200 font-mono text-sm">
-                          {subtitle.file_path ? subtitle.file_path.split('/').pop() : 'Unknown filename'}
-                        </span>
-                        {subtitle.forced && (
-                          <span className="badge badge-warning badge-sm">Forced</span>
-                        )}
-                      </div>
-                      <div className="flex items-center space-x-4 text-sm text-neutral-400">
-                        <span className="uppercase font-semibold">{subtitle.language}</span>
-                        <span>{formatFileSize(subtitle.file_size)}</span>
-                        {subtitle.format && <span className="uppercase">{subtitle.format}</span>}
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => handleDeleteSubtitle(subtitle.id)}
-                      className="btn btn-ghost btn-sm text-error hover:bg-error/20"
-                    >
-                      <FontAwesomeIcon icon={faTrash} />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-8 bg-neutral-800/30 rounded border border-dashed border-neutral-700">
-              <FontAwesomeIcon icon={faClosedCaptioning} className="text-4xl text-neutral-600 mb-3" />
-              <p className="text-neutral-400 mb-3">No subtitles detected</p>
-              <p className="text-sm text-neutral-500">
-                Place .srt, .ass, or .sub files in the movie directory
-              </p>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Theme Song Section */}
-      <div className="card">
-        <div className="card-body">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-white flex items-center">
-              <FontAwesomeIcon icon={faMusic} className="mr-2 text-primary" />
-              Theme Song
-            </h3>
-            {!themeSong && (
-              <button className="btn btn-primary btn-sm">
-                <FontAwesomeIcon icon={faPlus} className="mr-2" />
-                Add Theme
-              </button>
-            )}
-          </div>
-
-          {themeSong ? (
-            <div className="border border-neutral-700 rounded-lg p-4 bg-neutral-800/50">
+      <TabSection
+        title="Subtitles"
+        count={subtitles.length}
+        isEmpty={subtitles.length === 0}
+        emptyIcon={faClosedCaptioning}
+        emptyMessage="No subtitles detected"
+      >
+        <div className="space-y-2">
+          {subtitles.map((subtitle) => (
+            <div
+              key={subtitle.id}
+              className="border border-neutral-700 rounded-lg p-4 bg-neutral-800/50"
+            >
               <div className="flex items-start justify-between">
                 <div className="flex-1">
                   <div className="flex items-center space-x-2 mb-2">
                     <FontAwesomeIcon icon={faFile} className="text-neutral-400" />
                     <span className="text-neutral-200 font-mono text-sm">
-                      {themeSong.file_path ? themeSong.file_path.split('/').pop() : 'Unknown filename'}
+                      {subtitle.file_path ? subtitle.file_path.split('/').pop() : 'Unknown filename'}
                     </span>
+                    {subtitle.forced && (
+                      <span className="badge badge-warning badge-sm">Forced</span>
+                    )}
                   </div>
                   <div className="flex items-center space-x-4 text-sm text-neutral-400">
-                    <span>{formatFileSize(themeSong.file_size)}</span>
-                    {themeSong.duration && <span>{formatDuration(themeSong.duration)}</span>}
+                    <span className="uppercase font-semibold">{subtitle.language}</span>
+                    <span>{formatFileSize(subtitle.file_size)}</span>
+                    {subtitle.format && <span className="uppercase">{subtitle.format}</span>}
                   </div>
                 </div>
                 <button
-                  onClick={handleDeleteThemeSong}
+                  onClick={() => handleDeleteSubtitle(subtitle.id)}
                   className="btn btn-ghost btn-sm text-error hover:bg-error/20"
                 >
                   <FontAwesomeIcon icon={faTrash} />
                 </button>
               </div>
             </div>
-          ) : (
-            <div className="text-center py-8 bg-neutral-800/30 rounded border border-dashed border-neutral-700">
-              <FontAwesomeIcon icon={faMusic} className="text-4xl text-neutral-600 mb-3" />
-              <p className="text-neutral-400 mb-3">No theme song detected</p>
-              <p className="text-sm text-neutral-500">
-                Place an audio file named "theme.mp3" in the movie directory
-              </p>
-            </div>
-          )}
+          ))}
         </div>
-      </div>
+      </TabSection>
+
+      {/* Theme Song Section */}
+      <TabSection
+        title="Theme Song"
+        isEmpty={!themeSong}
+        emptyIcon={faMusic}
+        emptyMessage="No theme song detected"
+        onAction={!themeSong ? () => {} : undefined}
+        actionLabel="Add Theme"
+        actionIcon={faPlus}
+      >
+        {themeSong && (
+          <div className="border border-neutral-700 rounded-lg p-4 bg-neutral-800/50">
+            <div className="flex items-start justify-between">
+              <div className="flex-1">
+                <div className="flex items-center space-x-2 mb-2">
+                  <FontAwesomeIcon icon={faFile} className="text-neutral-400" />
+                  <span className="text-neutral-200 font-mono text-sm">
+                    {themeSong.file_path ? themeSong.file_path.split('/').pop() : 'Unknown filename'}
+                  </span>
+                </div>
+                <div className="flex items-center space-x-4 text-sm text-neutral-400">
+                  <span>{formatFileSize(themeSong.file_size)}</span>
+                  {themeSong.duration && <span>{formatDuration(themeSong.duration)}</span>}
+                </div>
+              </div>
+              <button
+                onClick={handleDeleteThemeSong}
+                className="btn btn-ghost btn-sm text-error hover:bg-error/20"
+              >
+                <FontAwesomeIcon icon={faTrash} />
+              </button>
+            </div>
+          </div>
+        )}
+      </TabSection>
 
       {/* Info card */}
       <div className="card bg-info/10 border-info/30">

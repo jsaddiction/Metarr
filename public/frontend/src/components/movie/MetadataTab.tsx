@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faExternalLinkAlt, faExclamationTriangle, faChevronDown, faChevronUp, faSave, faUndo } from '@fortawesome/free-solid-svg-icons';
+import { faExternalLinkAlt, faExclamationTriangle, faChevronDown, faChevronUp, faSave, faUndo, faExclamationCircle } from '@fortawesome/free-solid-svg-icons';
 import { useMovie, useToggleLockField, useGenreSuggestions, useDirectorSuggestions, useWriterSuggestions, useStudioSuggestions, useCountrySuggestions, useTagSuggestions } from '../../hooks/useMovies';
 import { GridField } from './GridField';
 import { TextAreaField } from './TextAreaField';
@@ -14,6 +14,7 @@ import { PopularityIndicator } from '../ui/PopularityIndicator';
 import { ReadOnlyDataGrid } from '../ui/ReadOnlyDataGrid';
 import { TagInput } from '../ui/TagInput';
 import { getLanguageName } from '@/utils/languages';
+import { TabSection } from '../ui/TabSection';
 
 interface MetadataTabProps {
   movieId: number;
@@ -128,6 +129,19 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
       setOriginalMetadata(structuredClone(normalizedData));
     }
   }, [movieData]);
+
+  // Prevent navigation when there are unsaved changes
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasChanges) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [hasChanges]);
 
   // Auto-search on load for unidentified movies
   useEffect(() => {
@@ -606,60 +620,39 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
   // Show full metadata editor when identified
   return (
     <div className="space-y-3">
-      {/* Grid layout */}
-      <div className="card">
-        <div className="card-body p-4 space-y-3">
-          {/* Header with Directory Path and Action Buttons */}
-          <div className="flex items-center justify-between gap-4 pb-2">
-            {/* Directory Path */}
-            <div className="flex-1 min-w-0">
-              <div className="text-xs text-neutral-500 font-mono truncate" title={(movieData as any)?.file_path || ''}>
-                {(movieData as any)?.file_path || 'No file path'}
-              </div>
-            </div>
-
-            {/* Action Buttons */}
-            <div className="flex items-center gap-2 flex-shrink-0">
-              <button
-                type="button"
-                onClick={handleReset}
-                disabled={!hasChanges}
-                className={`
-                  inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium
-                  transition-colors
-                  ${hasChanges
-                    ? 'bg-neutral-700 text-neutral-200 hover:bg-neutral-600'
-                    : 'bg-neutral-800 text-neutral-500 cursor-not-allowed opacity-50'
-                  }
-                `}
-              >
-                <FontAwesomeIcon icon={faUndo} className="text-xs" />
-                <span>Reset</span>
-              </button>
-              <button
-                type="button"
-                onClick={handleSave}
-                disabled={!hasChanges || saving}
-                className={`
-                  inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium
-                  transition-colors
-                  ${hasChanges && !saving
-                    ? 'bg-purple-600 text-white hover:bg-purple-700'
-                    : 'bg-neutral-800 text-neutral-500 cursor-not-allowed opacity-50'
-                  }
-                `}
-              >
-                <FontAwesomeIcon icon={faSave} className="text-xs" />
-                <span>{saving ? 'Saving...' : 'Save Changes'}</span>
-              </button>
-            </div>
+      {/* Sticky Action Bar - Only show when changes exist */}
+      {hasChanges && (
+        <div className="sticky top-0 z-40 -mx-6 px-6 py-3 bg-amber-900/20 border-b border-amber-700/50 flex items-center justify-between rounded-md animate-in slide-in-from-top duration-200">
+          <div className="flex items-center gap-2 text-amber-300">
+            <FontAwesomeIcon icon={faExclamationCircle} className="text-lg" />
+            <span className="text-sm font-medium">You have unsaved changes</span>
           </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleReset}
+              disabled={saving}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors bg-neutral-700 text-neutral-200 hover:bg-neutral-600 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <FontAwesomeIcon icon={faUndo} className="text-xs" />
+              <span>Reset</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={saving}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <FontAwesomeIcon icon={faSave} className="text-xs" />
+              <span>{saving ? 'Saving...' : 'Save Changes'}</span>
+            </button>
+          </div>
+        </div>
+      )}
 
-          {/* Base Metadata Section */}
-          <div className="rounded-lg border border-neutral-700 bg-neutral-800/30 p-3">
-            <h3 className="text-sm font-medium text-neutral-300 mb-3">Base Metadata</h3>
-
-            <div className="space-y-2">
+      {/* Base Metadata Section */}
+      <TabSection title="Base Metadata">
+        <div className="space-y-2">
               {/* Row 1: Title (span 3) + Year */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
                 <GridField
@@ -763,14 +756,12 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
                 rows={3}
               />
             </div>
-          </div>
+      </TabSection>
 
-          {/* Extended Metadata Section */}
-          <div className="rounded-lg border border-neutral-700 bg-neutral-800/30 p-3">
-            <h3 className="text-sm font-medium text-neutral-300 mb-3">Extended Metadata</h3>
-
-            {/* Multi-column grid layout for efficient space usage */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 items-stretch">
+      {/* Extended Metadata Section */}
+      <TabSection title="Extended Metadata">
+        {/* Multi-column grid layout for efficient space usage */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 items-stretch">
               <TagInput
                 label="Genres"
                 value={metadata.genres || []}
@@ -814,14 +805,13 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
                 placeholder="Add country..."
               />
             </div>
-          </div>
+      </TabSection>
 
-          {/* Production & Stats / External Links Row */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-            {/* Production & Stats Section */}
-            <div className="rounded-lg border border-neutral-700 bg-neutral-800/30 p-3">
-              <h3 className="text-sm font-medium text-neutral-300 mb-2">Production & Stats</h3>
-              <div className="grid grid-cols-2 gap-2">
+      {/* Production & Stats / External Links Row */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        {/* Production & Stats Section */}
+        <TabSection title="Production & Stats">
+          <div className="grid grid-cols-2 gap-2">
                 {/* Financial Data Badge */}
                 {((metadata.budget !== undefined && metadata.budget !== null && metadata.budget > 0) ||
                   (metadata.revenue !== undefined && metadata.revenue !== null && metadata.revenue > 0)) && (
@@ -874,12 +864,11 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
                   </div>
                 )}
               </div>
-            </div>
+        </TabSection>
 
-            {/* External Links Section */}
-            <div className="rounded-lg border border-neutral-700 bg-neutral-800/30 p-3">
-              <h3 className="text-sm font-medium text-neutral-300 mb-2">External Links</h3>
-              <div className="grid grid-cols-2 gap-2">
+        {/* External Links Section */}
+        <TabSection title="External Links">
+          <div className="grid grid-cols-2 gap-2">
                 {metadata.tmdb_id && <ProviderBadge provider="tmdb" id={metadata.tmdb_id} showId />}
                 {metadata.imdb_id && <ProviderBadge provider="imdb" id={metadata.imdb_id} showId />}
                 {(movieData as any)?.tvdb_id && <ProviderBadge provider="tvdb" id={(movieData as any).tvdb_id} showId />}
@@ -899,18 +888,15 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
                   <ProviderBadge provider="wikidata" id={(movieData as any).external_ids.wikidata_id} />
                 )}
               </div>
-            </div>
-          </div>
+        </TabSection>
+      </div>
 
-          {/* Technical Details Section */}
-          {((movieData as any)?.video_streams || (movieData as any)?.audio_streams) && (
-            <>
-              <div className="space-y-2 rounded-lg border border-neutral-700 bg-neutral-800/50 p-3">
-                <h3 className="text-sm font-medium text-neutral-400 mb-2">
-                  Technical Details
-                  <span className="text-xs text-neutral-500 ml-2">Read-Only</span>
-                </h3>
-                <ReadOnlyDataGrid
+      {/* Technical Details Section */}
+      {((movieData as any)?.video_streams || (movieData as any)?.audio_streams) && (
+        <TabSection title="Technical Details">
+          <div className="space-y-2">
+            <div className="text-xs text-neutral-500 mb-2">Read-Only</div>
+            <ReadOnlyDataGrid
                   sections={[
                     {
                       label: 'Video Codec',
@@ -934,10 +920,8 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
                   ]}
                 />
               </div>
-            </>
+            </TabSection>
           )}
-        </div>
-      </div>
     </div>
   );
 };
