@@ -420,6 +420,214 @@ export const AssetSelectionDialog: React.FC<Props> = ({ movieId, assetType, onCl
 
 ---
 
+## TabSection Component Pattern
+
+### Purpose
+
+Unified section component for tab-based interfaces (movie/TV metadata, settings, etc.). Provides consistent headers, optional locks, action buttons, and empty states across all media types.
+
+### Location
+
+`components/ui/TabSection.tsx`
+
+### When to Use
+
+- ✅ Tab content organization (Metadata, Images, Cast, Extras tabs)
+- ✅ Settings pages with multiple sections
+- ✅ Any sectioned content requiring consistent headers
+- ❌ Top-level page layouts (use page header patterns instead)
+- ❌ Simple card wrapping without header/actions
+
+### Basic Usage
+
+```typescript
+import { TabSection } from '@/components/ui/TabSection';
+
+// Simple section with title and content
+<TabSection title="Base Metadata">
+  <div className="space-y-2">
+    {/* Form fields, content, etc. */}
+  </div>
+</TabSection>
+```
+
+### With Count Badge
+
+```typescript
+// Display item count in header
+<TabSection
+  title="Subtitles"
+  count={subtitles.length}
+>
+  {subtitles.map(subtitle => <SubtitleCard key={subtitle.id} {...subtitle} />)}
+</TabSection>
+```
+
+### With Lock Toggle
+
+```typescript
+// Section-wide locking (e.g., image type groups)
+<TabSection
+  title="Posters"
+  count={posters.length}
+  maxCount={5}  // Shows count in amber if exceeded
+  locked={isLocked}
+  onToggleLock={handleToggleLock}
+>
+  {/* Content */}
+</TabSection>
+```
+
+### With Action Button
+
+```typescript
+// Header action (Edit, Add, etc.)
+<TabSection
+  title="Actors"
+  count={actors.length}
+  onAction={() => setEditing(true)}
+  actionLabel="Edit Actors"
+  actionIcon={faEdit}
+>
+  {/* Actor list */}
+</TabSection>
+```
+
+### With Empty State
+
+```typescript
+// Automatic empty state handling
+<TabSection
+  title="Trailer"
+  isEmpty={!trailer}
+  emptyIcon={faVideo}
+  emptyMessage="No trailer detected"
+  emptyAction={{
+    label: 'Add Trailer',
+    onClick: handleAddTrailer,
+    icon: faPlus
+  }}
+>
+  {trailer && <TrailerPlayer trailer={trailer} />}
+</TabSection>
+```
+
+### With Loading State
+
+```typescript
+<TabSection
+  title="Cast"
+  isLoading={loadingActors}
+>
+  {actors.map(actor => <ActorCard key={actor.id} {...actor} />)}
+</TabSection>
+```
+
+### Full Props Interface
+
+```typescript
+interface TabSectionProps {
+  // Visual Identity
+  title: string;
+  icon?: IconDefinition;  // NOTE: Generally not used per UI standards
+
+  // Counts & Status
+  count?: number;
+  maxCount?: number;  // Shows amber warning if count > maxCount
+
+  // Locking System
+  locked?: boolean;
+  onToggleLock?: () => void;
+
+  // Actions
+  onAction?: () => void;
+  actionLabel?: string;
+  actionIcon?: IconDefinition;
+
+  // Empty State
+  isEmpty?: boolean;
+  emptyIcon?: IconDefinition;
+  emptyMessage?: string;
+  emptyAction?: {
+    label: string;
+    onClick: () => void;
+    icon?: IconDefinition;
+  };
+
+  // Layout
+  children?: React.ReactNode;
+  className?: string;
+  contentClassName?: string;
+
+  // Loading
+  isLoading?: boolean;
+}
+```
+
+### Design Standards
+
+**Spacing**:
+- Use `space-y-3` between TabSection components (compact, organized)
+- Internal padding: `card-body` handles padding automatically
+
+**Icons**:
+- Lock icons: Always show in header when locking is available
+- Section icons: Generally NOT used per UI standards (removed for cleaner look)
+- Action icons: Use with action buttons for clarity
+
+**Empty States**:
+- Always provide `emptyIcon` and `emptyMessage` for better UX
+- Optional `emptyAction` for primary CTA when empty
+
+**Count Badges**:
+- Normal: `text-neutral-400`
+- Over limit: `text-amber-400` (when count > maxCount)
+
+### Real-World Example (MetadataTab)
+
+```typescript
+export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
+  const { data: metadata } = useMovie(movieId);
+
+  return (
+    <div className="space-y-3">
+      {/* Base Metadata Section */}
+      <TabSection title="Base Metadata">
+        <div className="space-y-2">
+          <GridField label="Title" value={metadata.title} {...} />
+          <GridField label="Year" value={metadata.year} {...} />
+          {/* More fields */}
+        </div>
+      </TabSection>
+
+      {/* Extended Metadata Section */}
+      <TabSection title="Extended Metadata">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          <TagInput label="Genres" value={metadata.genres} {...} />
+          <TagInput label="Directors" value={metadata.directors} {...} />
+          {/* More tag inputs */}
+        </div>
+      </TabSection>
+
+      {/* Production Stats Section */}
+      <TabSection title="Production & Stats">
+        <div className="grid grid-cols-2 gap-2">
+          {/* Badges for budget, revenue, etc. */}
+        </div>
+      </TabSection>
+    </div>
+  );
+};
+```
+
+### Related Patterns
+
+- **Sticky Action Bar**: See UI_STANDARDS.md for save/reset pattern
+- **Empty States**: Standard empty state styling in UI_STANDARDS.md
+- **Spacing**: Use `space-y-3` for compact, organized layouts
+
+---
+
 ## See Also
 
 - [ARCHITECTURE.md](./ARCHITECTURE.md) - Overall frontend architecture
