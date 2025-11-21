@@ -123,10 +123,20 @@ export class MovieRelationshipService {
         return;
       }
 
+      // Deduplicate names (keep first occurrence with its original order)
+      const uniqueNames: string[] = [];
+      const seenNames = new Set<string>();
+      for (const name of names) {
+        if (!seenNames.has(name)) {
+          uniqueNames.push(name);
+          seenNames.add(name);
+        }
+      }
+
       // Batch find or create crew records
       const crewData: Array<{ id: number; sortOrder: number }> = [];
-      for (let i = 0; i < names.length; i++) {
-        const name = names[i];
+      for (let i = 0; i < uniqueNames.length; i++) {
+        const name = uniqueNames[i];
 
         // Find or create crew member
         let crew = await conn.get<{ id: number }>(
@@ -156,7 +166,7 @@ export class MovieRelationshipService {
         );
       }
 
-      logger.debug(`Synced ${role}s for movie`, { movieId, count: names.length });
+      logger.debug(`Synced ${role}s for movie`, { movieId, count: uniqueNames.length, duplicatesRemoved: names.length - uniqueNames.length });
     } catch (error) {
       logger.error(`Failed to sync ${role}s`, createErrorLogContext(error, { movieId }));
       throw error;
