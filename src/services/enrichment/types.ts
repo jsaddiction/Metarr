@@ -61,6 +61,7 @@ export interface MovieUpdateFields {
   original_title?: string;
   sort_title?: string;
   plot?: string;
+  outline?: string;
   tagline?: string;
   release_date?: string;
   year?: number;

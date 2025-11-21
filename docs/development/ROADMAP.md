@@ -1,15 +1,23 @@
 # Development Roadmap
 
-Last updated: 2025-11-19
+Last updated: 2025-11-21
 
 ## In Progress
 - [ ] TBD - awaiting user direction
 
 ## Next Up (Priority Order)
+- [ ] Provider aggregation enhancements (priority/merging behavior)
+- [ ] Smart API call strategy (optimize when/how providers are called)
 - [ ] Refine planning workflow based on metadata completeness experience
-- [ ] TBD - awaiting user direction
 
 ## Completed Recently
+- [x] OMDB provider integration and outline field support (2025-11-21)
+  - OMDB API key configuration via Settings UI
+  - OMDB test connection handler
+  - OMDBCacheAdapter for provider orchestration
+  - Outline field (short plot) throughout entire pipeline
+  - Lazy loading of OMDB config from database
+  - Crew deduplication fix for unique constraint errors
 - [x] Metadata completeness feature - production info, stats, external links (2025-11-19)
 - [x] Planning workflow documentation complete (2025-11-19)
 - [x] PLANNING_WORKFLOW.md created with named agents (2025-11-19)

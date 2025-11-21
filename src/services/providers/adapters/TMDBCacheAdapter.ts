@@ -116,18 +116,19 @@ export class TMDBCacheAdapter {
     const result = await this.db.execute(
       `INSERT INTO provider_cache_movies (
         tmdb_id, imdb_id, tvdb_id,
-        title, original_title, overview, tagline,
+        title, original_title, overview, outline, tagline,
         release_date, year, runtime, status, content_rating,
         tmdb_rating, tmdb_votes, popularity,
         budget, revenue, homepage, adult,
         fetched_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
       ON CONFLICT(tmdb_id) DO UPDATE SET
         imdb_id = excluded.imdb_id,
         tvdb_id = excluded.tvdb_id,
         title = excluded.title,
         original_title = excluded.original_title,
         overview = excluded.overview,
+        outline = excluded.outline,
         tagline = excluded.tagline,
         release_date = excluded.release_date,
         year = excluded.year,
@@ -149,6 +150,7 @@ export class TMDBCacheAdapter {
         tmdbData.title,
         tmdbData.original_title,
         tmdbData.overview,
+        null, // outline - TMDB doesn't provide short plot
         tmdbData.tagline,
         tmdbData.release_date,
         year,

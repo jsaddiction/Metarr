@@ -1365,6 +1365,7 @@ export class CleanSchemaMigration {
         title TEXT NOT NULL,
         original_title TEXT,
         overview TEXT,
+        outline TEXT,
         tagline TEXT,
 
         -- Release Info
@@ -1690,6 +1691,14 @@ export class CleanSchemaMigration {
         provider_name TEXT UNIQUE NOT NULL,
         enabled BOOLEAN DEFAULT 1,
         api_key TEXT,
+        personal_api_key TEXT,
+        enabled_asset_types TEXT DEFAULT '[]',
+        language TEXT,
+        region TEXT,
+        options TEXT,
+        last_test_at TIMESTAMP,
+        last_test_status TEXT,
+        last_test_error TEXT,
         rate_limit_per_second REAL,
         priority INTEGER,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

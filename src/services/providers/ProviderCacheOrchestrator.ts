@@ -33,11 +33,15 @@ import {
 } from '../../types/providerCache.js';
 import { TMDBCacheAdapter } from './adapters/TMDBCacheAdapter.js';
 import { FanartCacheAdapter } from './adapters/FanartCacheAdapter.js';
+import { OMDBCacheAdapter } from './adapters/OMDBCacheAdapter.js';
 import { TMDBClient } from './tmdb/TMDBClient.js';
 import { TMDBClientOptions } from '../../types/providers/tmdb.js';
 import { FanArtClient } from './fanart/FanArtClient.js';
 import { FanArtClientOptions } from '../../types/providers/fanart.js';
+import { OMDBClient } from './omdb/OMDBClient.js';
+import { OMDBClientOptions } from '../../types/providers/omdb.js';
 import { ConfigManager } from '../../config/ConfigManager.js';
+import { ProviderConfigService } from '../providerConfigService.js';
 
 const DEFAULT_MAX_AGE = 604800; // 7 days in seconds
 const PROVIDER_FETCH_TIMEOUT = 30000; // 30 seconds total timeout for all providers
@@ -51,6 +55,7 @@ interface MovieCacheRow {
   title: string;
   original_title?: string;
   overview?: string;
+  outline?: string;
   tagline?: string;
   release_date?: string;
   year?: number;
@@ -146,6 +151,7 @@ export class ProviderCacheOrchestrator {
   private db: DatabaseConnection;
   private tmdbAdapter: TMDBCacheAdapter;
   private fanartAdapter: FanartCacheAdapter;
+  private omdbAdapter: OMDBCacheAdapter | null = null;
 
   constructor(dbOrManager: DatabaseConnection | DatabaseManager) {
     if ('getConnection' in dbOrManager) {
@@ -187,6 +193,53 @@ export class ProviderCacheOrchestrator {
     this.fanartAdapter = new FanartCacheAdapter(this.db, fanartClient);
 
     logger.info('[ProviderCacheOrchestrator] Fanart.tv adapter initialized');
+
+    // Note: OMDB initialization is deferred until first use via lazy loading
+    logger.info('[ProviderCacheOrchestrator] OMDB adapter will be initialized on first use');
+  }
+
+  /**
+   * Get or initialize OMDB adapter (lazy loading from database config)
+   * This ensures adapter is created with latest database configuration
+   */
+  private async getOMDBAdapter(): Promise<OMDBCacheAdapter | null> {
+    // If already initialized, return it
+    if (this.omdbAdapter) {
+      return this.omdbAdapter;
+    }
+
+    // Try to initialize from database config
+    try {
+      const configService = new ProviderConfigService(this.db);
+      const omdbDbConfig = await configService.getByName('omdb');
+
+      if (omdbDbConfig?.enabled && omdbDbConfig.apiKey) {
+        const omdbClientOptions: OMDBClientOptions = {
+          apiKey: omdbDbConfig.apiKey,
+          baseUrl: 'https://www.omdbapi.com',
+        };
+
+        const omdbClient = new OMDBClient(omdbClientOptions);
+        this.omdbAdapter = new OMDBCacheAdapter(this.db, omdbClient);
+
+        logger.info('[ProviderCacheOrchestrator] OMDB adapter initialized from database config', {
+          apiKeyPresent: true,
+        });
+
+        return this.omdbAdapter;
+      } else {
+        logger.debug('[ProviderCacheOrchestrator] OMDB adapter not initialized', {
+          enabled: omdbDbConfig?.enabled || false,
+          hasApiKey: !!omdbDbConfig?.apiKey,
+        });
+        return null;
+      }
+    } catch (error) {
+      logger.error('[ProviderCacheOrchestrator] Failed to initialize OMDB adapter', {
+        error: error instanceof Error ? error.message : error,
+      });
+      return null;
+    }
   }
 
   /**
@@ -376,7 +429,7 @@ export class ProviderCacheOrchestrator {
       };
     }
 
-    // Fetch from Fanart.tv with remaining timeout
+    // Fetch from Fanart.tv and OMDB in parallel with remaining timeout
     const fanartPromise = this.fanartAdapter
       .fetchAndCacheMovieImages(movieCacheId, tmdbId)
       .then((result) => ({ provider: 'fanart.tv', result }))
@@ -389,17 +442,40 @@ export class ProviderCacheOrchestrator {
         return { provider: 'fanart.tv', result: { imagesCached: 0, imageTypes: [] } };
       });
 
-    const fanartTimeout = this.createTimeout(remainingTimeout, {
-      provider: 'fanart.tv',
-      result: { imagesCached: 0, imageTypes: [] },
+    // OMDB fetch (lazy load adapter from database)
+    const omdbPromise = this.getOMDBAdapter().then((adapter) => {
+      if (!adapter) {
+        return { provider: 'omdb', movieCacheId: null };
+      }
+      return adapter
+        .fetchAndUpdate(params)
+        .then((result) => ({ provider: 'omdb', movieCacheId: result }))
+        .catch((error) => {
+          logger.error('[ProviderCacheOrchestrator] OMDB fetch failed', {
+            params,
+            error: error instanceof Error ? error.message : error,
+          });
+          return { provider: 'omdb', movieCacheId: null };
+        });
     });
-    const fanartResult = await Promise.race([
-      fanartPromise,
-      fanartTimeout.promise,
-    ]);
 
-    // Clean up timeout to prevent lingering timer
-    fanartTimeout.cleanup();
+    // Wait for both in parallel
+    const [fanartResult, omdbResult] = await Promise.all([
+      Promise.race([
+        fanartPromise,
+        this.createTimeout(remainingTimeout, {
+          provider: 'fanart.tv',
+          result: { imagesCached: 0, imageTypes: [] },
+        }).promise,
+      ]),
+      Promise.race([
+        omdbPromise,
+        this.createTimeout(remainingTimeout, {
+          provider: 'omdb',
+          movieCacheId: null,
+        }).promise,
+      ]),
+    ]);
 
     if (fanartResult.result.imagesCached > 0) {
       providersUsed.push('fanart.tv');
@@ -407,6 +483,13 @@ export class ProviderCacheOrchestrator {
         movieCacheId,
         imagesCached: fanartResult.result.imagesCached,
         imageTypes: fanartResult.result.imageTypes,
+      });
+    }
+
+    if (omdbResult.movieCacheId) {
+      providersUsed.push('omdb');
+      logger.info('[ProviderCacheOrchestrator] OMDB enrichment complete', {
+        movieCacheId: omdbResult.movieCacheId,
       });
     }
 
@@ -650,6 +733,7 @@ export class ProviderCacheOrchestrator {
     if (row.tvdb_id !== undefined) movie.tvdb_id = row.tvdb_id;
     if (row.original_title !== undefined) movie.original_title = row.original_title;
     if (row.overview !== undefined) movie.overview = row.overview;
+    if (row.outline !== undefined) movie.outline = row.outline;
     if (row.tagline !== undefined) movie.tagline = row.tagline;
     if (row.release_date !== undefined) movie.release_date = row.release_date;
     if (row.year !== undefined) movie.year = row.year;

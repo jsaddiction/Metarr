@@ -204,6 +204,10 @@ export class ProviderFetchPhase {
         updates.plot = cachedMovie.overview;
       }
 
+      if (!currentMovie.outline_locked && cachedMovie.outline) {
+        updates.outline = cachedMovie.outline;
+      }
+
       if (cachedMovie.tagline) {
         updates.tagline = cachedMovie.tagline;
       }
