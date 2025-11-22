@@ -442,6 +442,8 @@ export class CleanSchemaMigration {
         tmdb_votes INTEGER,
         imdb_rating REAL,
         imdb_votes INTEGER,
+        rotten_tomatoes_score INTEGER,
+        metacritic_score INTEGER,
         user_rating REAL CHECK(user_rating >= 0 AND user_rating <= 10),
         budget INTEGER,
         revenue INTEGER,
@@ -449,6 +451,12 @@ export class CleanSchemaMigration {
         original_language TEXT,
         popularity REAL,
         status TEXT,
+        awards TEXT,
+        director TEXT,
+        writer TEXT,
+        actors TEXT,
+        completeness_pct INTEGER DEFAULT 0,
+        last_enrichment_date TIMESTAMP,
         nfo_cache_id INTEGER,
         title_locked BOOLEAN DEFAULT 0,
         plot_locked BOOLEAN DEFAULT 0,
@@ -496,6 +504,7 @@ export class CleanSchemaMigration {
     await db.execute('CREATE INDEX idx_movies_revenue ON movies(revenue DESC)');
     await db.execute('CREATE INDEX idx_movies_status ON movies(status)');
     await db.execute('CREATE INDEX idx_movies_original_language ON movies(original_language)');
+    await db.execute('CREATE INDEX idx_movies_monitored_id ON movies(monitored, id)');
 
     // Movie Collections
     await db.execute(`
@@ -564,7 +573,13 @@ export class CleanSchemaMigration {
         tvdb_votes INTEGER,
         tmdb_rating REAL,
         tmdb_votes INTEGER,
+        imdb_rating REAL,
+        rotten_tomatoes_score INTEGER,
+        metacritic_score INTEGER,
         user_rating REAL CHECK(user_rating >= 0 AND user_rating <= 10),
+        awards TEXT,
+        completeness_pct INTEGER DEFAULT 0,
+        last_enrichment_date TIMESTAMP,
         poster_id INTEGER,
         fanart_id INTEGER,
         banner_id INTEGER,
