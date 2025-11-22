@@ -12,6 +12,7 @@ export interface EnrichmentConfig {
   entityType: 'movie' | 'episode' | 'series';
   manual: boolean; // User-triggered (true) vs automated (false)
   forceRefresh: boolean; // Bypass 7-day cache check
+  requireComplete?: boolean; // NEW: If true, stop on ANY rate limit (bulk mode). Defaults to false.
   phaseConfig?: EnrichmentPhaseConfig; // Optional phase configuration (uses defaults if not provided)
 }
 
@@ -20,8 +21,16 @@ export interface EnrichmentConfig {
  */
 export interface EnrichmentResult {
   success: boolean;
-  assetsSelected: number;
-  errors: string[];
+  partial?: boolean; // NEW: true if some providers rate limited but still updated
+  rateLimitedProviders?: string[]; // NEW: which providers hit limit
+  metadataChanged?: string[]; // NEW: which metadata fields changed
+  assetsChanged?: string[]; // NEW: which asset types changed
+  completeness?: number; // NEW: metadata completeness %
+  assetsFetched?: number; // Changed to optional for metadata-only enrichments
+  assetsSelected?: number; // Changed to optional since this was already optional in some contexts
+  thumbnailsDownloaded?: number; // Already optional
+  errors?: string[]; // Changed to optional to match usage pattern
+  message?: string; // NEW: optional message (e.g., for rate limit info)
 }
 
 /**

@@ -3,6 +3,7 @@ import { DatabaseManager } from '../../database/DatabaseManager.js';
 import { Job } from '../jobQueue/types.js';
 import { JobQueueService } from '../jobQueue/JobQueueService.js';
 import { EnrichmentOrchestrator } from '../enrichment/EnrichmentOrchestrator.js';
+import { MetadataEnrichmentService } from '../enrichment/MetadataEnrichmentService.js';
 import { PublishingService } from '../publishingService.js';
 import { PhaseConfigService } from '../PhaseConfigService.js';
 import { websocketBroadcaster } from '../websocketBroadcaster.js';
@@ -27,7 +28,8 @@ export class AssetJobHandlers {
     jobQueue: JobQueueService,
     phaseConfig: PhaseConfigService,
     cacheDir: string,
-    dbManager?: DatabaseManager
+    dbManager?: DatabaseManager,
+    metadataEnrichmentService?: MetadataEnrichmentService // NEW: optional for now
   ) {
     this.db = db;
     this.jobQueue = jobQueue;
@@ -38,7 +40,7 @@ export class AssetJobHandlers {
         { service: 'AssetJobHandlers', operation: 'constructor', metadata: { field: 'dbManager' } }
       );
     }
-    this.enrichment = new EnrichmentOrchestrator(db, dbManager);
+    this.enrichment = new EnrichmentOrchestrator(db, dbManager, metadataEnrichmentService);
     this.publishing = new PublishingService(db, cacheDir);
   }
 
@@ -68,7 +70,7 @@ export class AssetJobHandlers {
    * }
    */
   private async handleEnrichMetadata(job: Job<'enrich-metadata'>): Promise<void> {
-    const { entityType, entityId } = job.payload;
+    const { entityType, entityId, requireComplete = false } = job.payload;
 
     logger.info('[AssetJobHandlers] Starting enrichment', {
       service: 'AssetJobHandlers',
@@ -76,6 +78,7 @@ export class AssetJobHandlers {
       jobId: job.id,
       entityType,
       entityId,
+      requireComplete,
     });
 
     // Get phase configuration
@@ -88,14 +91,16 @@ export class AssetJobHandlers {
       jobId: job.id,
       fetchProviderAssets: phaseConfig.fetchProviderAssets,
       autoSelectAssets: phaseConfig.autoSelectAssets,
+      requireComplete,
     });
 
     // Run enrichment with phase config
-    await this.enrichment.enrich({
+    const result = await this.enrichment.enrich({
       entityType,
       entityId,
       manual: false, // Job-initiated enrichment is not manual
       forceRefresh: false,
+      requireComplete,
       phaseConfig,
     });
 
@@ -105,7 +110,25 @@ export class AssetJobHandlers {
       jobId: job.id,
       entityType,
       entityId,
+      success: result.success,
+      partial: result.partial,
+      metadataChanged: result.metadataChanged?.length || 0,
+      rateLimitedProviders: result.rateLimitedProviders,
     });
+
+    // If requireComplete=true and rate limited → Don't chain (bulk mode)
+    if (
+      requireComplete &&
+      result.rateLimitedProviders &&
+      result.rateLimitedProviders.length > 0 &&
+      !result.success
+    ) {
+      logger.info('[AssetJobHandlers] Bulk mode - stopped due to rate limit, not creating publish job', {
+        entityId,
+        providers: result.rateLimitedProviders,
+      });
+      return; // Don't create publish job
+    }
 
     // Broadcast WebSocket update to refresh UI
     if (entityType === 'movie') {
@@ -115,6 +138,11 @@ export class AssetJobHandlers {
       });
       websocketBroadcaster.broadcastMoviesUpdated([entityId]);
     }
+
+    // Check if we should publish (metadata OR assets changed)
+    const hasMetadataChanges = (result.metadataChanged?.length ?? 0) > 0;
+    const hasAssetChanges =
+      (result.assetsChanged?.length ?? 0) > 0 || (result.assetsSelected ?? 0) > 0;
 
     // Get library settings to check auto-publish
     const entity = await this.getEntityWithLibrary(entityType, entityId);
@@ -132,7 +160,8 @@ export class AssetJobHandlers {
     // Check library-level auto-publish setting
     const autoPublish = library.auto_publish;
 
-    if (autoPublish) {
+    // Only chain to publish if enabled AND changes detected
+    if (autoPublish && (hasMetadataChanges || hasAssetChanges)) {
       // Automated workflow: chain to publish
       const publishJobId = await this.jobQueue.addJob({
         type: 'publish',
@@ -145,15 +174,17 @@ export class AssetJobHandlers {
         max_retries: 3,
       });
 
-      logger.info('[AssetJobHandlers] Library has auto-publish enabled, chained to publish job', {
+      logger.info('[AssetJobHandlers] Created publish job', {
         service: 'AssetJobHandlers',
         handler: 'handleEnrichMetadata',
-        jobId: job.id,
+        enrichmentJobId: job.id,
         publishJobId,
+        metadataChanged: hasMetadataChanges,
+        assetsChanged: hasAssetChanges,
         libraryId: library.id,
         libraryName: library.name,
       });
-    } else {
+    } else if (!autoPublish) {
       // Manual workflow: stop for user review
       logger.info('[AssetJobHandlers] Library has auto-publish disabled, waiting for manual trigger', {
         service: 'AssetJobHandlers',
@@ -161,6 +192,15 @@ export class AssetJobHandlers {
         jobId: job.id,
         libraryId: library.id,
         libraryName: library.name,
+      });
+    } else {
+      // No changes detected
+      logger.info('[AssetJobHandlers] No changes detected, skipping publish', {
+        service: 'AssetJobHandlers',
+        handler: 'handleEnrichMetadata',
+        jobId: job.id,
+        hasMetadataChanges,
+        hasAssetChanges,
       });
     }
   }

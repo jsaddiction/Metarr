@@ -16,7 +16,7 @@
  */
 
 import { DatabaseConnection } from '../../types/database.js';
-import { MetadataEnrichmentService } from './MetadataEnrichmentService.js';
+import { JobQueueService } from '../jobQueue/JobQueueService.js';
 import { logger } from '../../middleware/logging.js';
 import { getErrorMessage } from '../../utils/errorHandling.js';
 
@@ -59,7 +59,7 @@ export class EnrichAllScheduler {
 
   constructor(
     private readonly db: DatabaseConnection,
-    private readonly enrichmentService: MetadataEnrichmentService
+    private readonly jobQueue: JobQueueService
   ) {}
 
   /**
@@ -99,53 +99,50 @@ export class EnrichAllScheduler {
         return stats;
       }
 
-      // Process each movie until rate limit hit
+      // Process each movie by creating enrichment jobs
       for (const movie of movies) {
         try {
-          // Enrich with requireComplete = true (bulk mode)
-          const result = await this.enrichmentService.enrichMovie(movie.id, true);
+          // CREATE JOB with requireComplete=true (bulk mode)
+          await this.jobQueue.addJob({
+            type: 'enrich-metadata',
+            priority: 7, // NORMAL priority (background job)
+            payload: {
+              entityType: 'movie',
+              entityId: movie.id,
+              requireComplete: true, // BULK MODE - stop on rate limit
+            },
+            retry_count: 0,
+            max_retries: 0, // Don't retry bulk jobs
+          });
 
           stats.processed++;
 
-          // Check if we hit rate limit
-          if (result.rateLimitedProviders.length > 0 && !result.updated) {
-            // Rate limited and didn't update = STOP
-            stats.stopped = true;
-            stats.stopReason = `Provider rate limited: ${result.rateLimitedProviders[0]}`;
-
-            logger.warn('[EnrichAll] Stopping bulk enrichment', {
-              provider: result.rateLimitedProviders[0],
-              processed: stats.processed,
-              totalMovies: movies.length,
-              percentComplete: Math.round((stats.processed / movies.length) * 100),
-            });
-            break;
-          }
-
-          if (result.updated) {
-            stats.updated++;
-          } else {
-            stats.skipped++;
-          }
+          // Wait a bit to avoid overwhelming the queue
+          await new Promise((resolve) => setTimeout(resolve, 10));
 
           // Log progress every 100 movies
           if (stats.processed % 100 === 0) {
             logger.info('[EnrichAll] Progress update', {
               processed: stats.processed,
-              updated: stats.updated,
               total: movies.length,
               percentComplete: Math.round((stats.processed / movies.length) * 100),
             });
           }
         } catch (error) {
-          logger.error('[EnrichAll] Movie enrichment failed', {
+          logger.error('[EnrichAll] Failed to create enrichment job', {
             movieId: movie.id,
             title: movie.title,
             error: getErrorMessage(error),
           });
-          // Continue to next movie (transient errors don't stop job)
+          // Continue to next movie (transient errors don't stop job creation)
         }
       }
+
+      // NOTE: This simplified implementation just creates all jobs.
+      // The jobs will respect requireComplete and stop processing when rate limited.
+      // Stats tracking of updated/skipped is now handled by individual job handlers.
+      stats.updated = 0; // Job-based approach - can't track updates here
+      stats.skipped = 0; // Job-based approach - can't track skips here
 
       stats.endTime = new Date();
       this.lastRunStats = stats;

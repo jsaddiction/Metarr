@@ -42,6 +42,7 @@ export type JobType =
   | 'scheduled-cleanup'           // Garbage collector (orphaned cache files)
   | 'scheduled-provider-update'   // Refresh metadata from providers
   | 'scheduled-verification'      // Verify cache ↔ library hash matches
+  | 'bulk-enrich'                 // Bulk enrichment of all monitored movies
 
   // Webhook routing
   | 'webhook-received';   // Webhook router (creates other jobs)
@@ -61,6 +62,7 @@ export type JobPayloadMap = {
   'enrich-metadata': {
     entityType: 'movie' | 'series' | 'episode';
     entityId: number;
+    requireComplete?: boolean; // NEW: If true, stop on ANY rate limit (bulk mode)
   };
 
   'publish': {
@@ -141,6 +143,11 @@ export type JobPayloadMap = {
 
   'scheduled-verification': {
     taskId: 'cache-verification';
+    manual: boolean;
+  };
+
+  'bulk-enrich': {
+    taskId: 'bulk-enrich';
     manual: boolean;
   };
 

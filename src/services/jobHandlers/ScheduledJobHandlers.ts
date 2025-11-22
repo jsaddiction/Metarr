@@ -1,6 +1,7 @@
 import { DatabaseConnection } from '../../types/database.js';
 import { DatabaseManager } from '../../database/DatabaseManager.js';
 import { Job, JobQueueService } from '../jobQueueService.js';
+import { EnrichAllScheduler } from '../enrichment/EnrichAllScheduler.js';
 import { logger } from '../../middleware/logging.js';
 import { websocketBroadcaster } from '../websocketBroadcaster.js';
 import { getErrorMessage } from '../../utils/errorHandling.js';
@@ -20,6 +21,7 @@ import { getErrorMessage } from '../../utils/errorHandling.js';
 export class ScheduledJobHandlers {
   private db: DatabaseConnection;
   private jobQueue: JobQueueService;
+  private enrichAllScheduler: EnrichAllScheduler;
 
   constructor(
     db: DatabaseConnection,
@@ -28,6 +30,7 @@ export class ScheduledJobHandlers {
   ) {
     this.db = db;
     this.jobQueue = jobQueue;
+    this.enrichAllScheduler = new EnrichAllScheduler(db, jobQueue);
   }
 
   /**
@@ -38,6 +41,7 @@ export class ScheduledJobHandlers {
     jobQueue.registerHandler('scheduled-file-scan', this.handleScheduledFileScan.bind(this));
     jobQueue.registerHandler('scheduled-provider-update', this.handleScheduledProviderUpdate.bind(this));
     jobQueue.registerHandler('scheduled-cleanup', this.handleScheduledCleanup.bind(this));
+    jobQueue.registerHandler('bulk-enrich', this.handleBulkEnrich.bind(this));
   }
 
   /**
@@ -264,6 +268,48 @@ export class ScheduledJobHandlers {
         handler: 'handleScheduledCleanup',
         jobId: job.id,
         error: getErrorMessage(error),
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Handle bulk enrichment job
+   * Runs EnrichAllScheduler to process all monitored movies
+   */
+  private async handleBulkEnrich(job: Job): Promise<void> {
+    logger.info('[ScheduledJobHandlers] Starting bulk enrichment', {
+      service: 'ScheduledJobHandlers',
+      handler: 'handleBulkEnrich',
+      jobId: job.id,
+    });
+
+    try {
+      const stats = await this.enrichAllScheduler.enrichAll();
+
+      logger.info('[ScheduledJobHandlers] Bulk enrichment complete', {
+        service: 'ScheduledJobHandlers',
+        handler: 'handleBulkEnrich',
+        jobId: job.id,
+        ...stats,
+      });
+
+      // Broadcast results via WebSocket for UI
+      websocketBroadcaster.broadcast('bulk-enrich-complete', {
+        processed: stats.processed,
+        updated: stats.updated,
+        skipped: stats.skipped,
+        stopped: stats.stopped,
+        stopReason: stats.stopReason,
+        startTime: stats.startTime.toISOString(),
+        endTime: stats.endTime?.toISOString(),
+      });
+    } catch (error) {
+      logger.error('[ScheduledJobHandlers] Bulk enrichment failed', {
+        service: 'ScheduledJobHandlers',
+        handler: 'handleBulkEnrich',
+        jobId: job.id,
+        error: error instanceof Error ? error.message : String(error),
       });
       throw error;
     }

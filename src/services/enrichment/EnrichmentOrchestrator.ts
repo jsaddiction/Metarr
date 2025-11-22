@@ -1,7 +1,8 @@
 /**
  * Enrichment Orchestrator
  *
- * Coordinates the 5-phase enrichment workflow:
+ * Coordinates the unified enrichment workflow:
+ * - Phase 0: Metadata Enrichment (NEW - OMDB + TMDB metadata fetch)
  * - Phase 1: Provider Fetch (metadata + asset URLs)
  * - Phase 2: Cache Matching (link existing cache to providers)
  * - Phase 3: Asset Analysis (download + analyze unanalyzed assets)
@@ -12,6 +13,7 @@
 
 import { DatabaseConnection } from '../../types/database.js';
 import { DatabaseManager } from '../../database/DatabaseManager.js';
+import { MetadataEnrichmentService } from './MetadataEnrichmentService.js';
 import { ProviderFetchPhase } from './phases/ProviderFetchPhase.js';
 import { CacheMatchingPhase } from './phases/CacheMatchingPhase.js';
 import { AssetAnalysisPhase } from './phases/AssetAnalysisPhase.js';
@@ -23,6 +25,7 @@ import { getErrorMessage } from '../../utils/errorHandling.js';
 import path from 'path';
 
 export class EnrichmentOrchestrator {
+  private readonly metadataEnrichmentService: MetadataEnrichmentService | null = null;
   private readonly providerFetchPhase: ProviderFetchPhase;
   private readonly cacheMatchingPhase: CacheMatchingPhase;
   private readonly assetAnalysisPhase: AssetAnalysisPhase;
@@ -32,9 +35,11 @@ export class EnrichmentOrchestrator {
 
   constructor(
     db: DatabaseConnection,
-    dbManager: DatabaseManager
+    dbManager: DatabaseManager,
+    metadataEnrichmentService?: MetadataEnrichmentService // OPTIONAL for now (OMDB not configured yet)
   ) {
     this.db = db;
+    this.metadataEnrichmentService = metadataEnrichmentService || null;
     const cacheDir = path.join(process.cwd(), 'data', 'cache');
     const tempDir = path.join(process.cwd(), 'data', 'temp');
 
@@ -52,16 +57,67 @@ export class EnrichmentOrchestrator {
    * @returns Enrichment result
    */
   async enrich(config: EnrichmentConfig): Promise<EnrichmentResult> {
-    const { entityId, entityType } = config;
+    const { entityId, entityType, requireComplete = false } = config;
     const errors: string[] = [];
+    let metadataResult: any = null;
 
     try {
-      logger.info('[EnrichmentOrchestrator] Starting enrichment workflow', {
+      logger.info('[EnrichmentOrchestrator] Starting unified enrichment', {
         entityType,
         entityId,
+        requireComplete,
         manual: config.manual,
         forceRefresh: config.forceRefresh,
       });
+
+      // PHASE 0: Metadata Enrichment (NEW)
+      if (this.metadataEnrichmentService && entityType === 'movie') {
+        logger.info('[EnrichmentOrchestrator] Phase 0: Metadata Enrichment');
+
+        try {
+          metadataResult = await this.metadataEnrichmentService.enrichMovie(
+            entityId,
+            requireComplete
+          );
+
+          logger.info('[EnrichmentOrchestrator] Metadata enrichment complete', {
+            updated: metadataResult.updated,
+            partial: metadataResult.partial,
+            rateLimitedProviders: metadataResult.rateLimitedProviders,
+            changedFields: metadataResult.changedFields,
+            completeness: metadataResult.completeness,
+          });
+
+          // If requireComplete=true and rate limited without update → STOP
+          if (
+            requireComplete &&
+            metadataResult.rateLimitedProviders.length > 0 &&
+            !metadataResult.updated
+          ) {
+            logger.warn('[EnrichmentOrchestrator] Bulk mode - stopping due to metadata rate limit', {
+              entityId,
+              rateLimitedProviders: metadataResult.rateLimitedProviders,
+            });
+
+            return {
+              success: false,
+              partial: false,
+              rateLimitedProviders: metadataResult.rateLimitedProviders,
+              metadataChanged: [],
+              assetsChanged: [],
+              assetsFetched: 0,
+              assetsSelected: 0,
+              message: `Rate limited: ${metadataResult.rateLimitedProviders.join(', ')}`,
+            };
+          }
+        } catch (error) {
+          logger.error('[EnrichmentOrchestrator] Metadata enrichment failed', {
+            error: getErrorMessage(error),
+          });
+          errors.push(`Metadata enrichment failed: ${getErrorMessage(error)}`);
+          // Continue to asset enrichment even if metadata fails
+        }
+      }
 
       // Phase 1: Fetch provider metadata and asset URLs
       logger.info('[EnrichmentOrchestrator] Phase 1: Provider Fetch');
@@ -104,6 +160,7 @@ export class EnrichmentOrchestrator {
       logger.info('[EnrichmentOrchestrator] Enrichment workflow complete', {
         entityType,
         entityId,
+        metadataChanged: metadataResult?.changedFields?.length || 0,
         assetsFetched: phase1Result.assetsFetched,
         assetsMatched: phase2Result.assetsMatched,
         assetsAnalyzed: phase3Result.assetsAnalyzed,
@@ -113,8 +170,15 @@ export class EnrichmentOrchestrator {
 
       return {
         success: true,
+        partial: metadataResult?.partial || false,
+        rateLimitedProviders: metadataResult?.rateLimitedProviders || [],
+        metadataChanged: metadataResult?.changedFields || [],
+        assetsChanged: [], // TODO: Track asset changes in future
+        completeness: metadataResult?.completeness,
+        assetsFetched: phase1Result.assetsFetched,
         assetsSelected: phase5Result.assetsSelected,
-        errors,
+        thumbnailsDownloaded: phase5CResult.thumbnailsDownloaded,
+        ...(errors.length > 0 && { errors }),
       };
     } catch (error) {
       const errorMessage = getErrorMessage(error);
@@ -127,6 +191,9 @@ export class EnrichmentOrchestrator {
 
       return {
         success: false,
+        partial: false,
+        rateLimitedProviders: [],
+        assetsFetched: 0,
         assetsSelected: 0,
         errors,
       };
