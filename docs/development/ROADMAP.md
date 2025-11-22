@@ -3,7 +3,7 @@
 Last updated: 2025-11-22
 
 ## In Progress
-- [ ] TBD - awaiting user direction
+- [ ] TBD - awaiting user direction (provider page redesign completed)
 
 ## Next Up (Priority Order)
 
@@ -62,15 +62,17 @@ Last updated: 2025-11-22
 
 ## Completed Recently
 - [x] Provider page redesign (2025-11-22)
-  - Compact card layout (no tabs, no modals, no accordions)
-  - All providers visible on one page (enabled + disabled)
+  - Ultra-compact single-row card layout (Name + ? | API Key | Stats | Test | Switch)
+  - Grey background (bg-neutral-800/50) matching metadata tab styling
+  - All providers in unified list (no enabled/disabled split)
+  - Compact vertical sizing (p-3, h-7 inputs, text-xs fonts, space-y-3)
+  - Fixed "impossible to enable" bug - API key fields always visible
+  - All provider details hidden behind ? tooltip (capabilities, rate limits, assets)
   - Inline configuration with auto-save (500ms debounce)
-  - Auto-disable logic for missing required API keys
-  - Password fields with show/hide toggle
-  - API key indicators (embedded/personal/missing)
-  - Real-time statistics (24-hour calls, last fetch)
-  - 10-second auto-refresh via TanStack Query
+  - API key indicators: "Shared" (embedded) or "Personal" (user key)
+  - Real-time statistics (24-hour calls, last fetch) with 10-second auto-refresh
   - Test connection button on each card
+  - Password fields with show/hide toggle
   - Removed 14 files (4,313 lines) of orphaned priority code
 - [x] Provider aggregation enhancements (2025-11-22)
   - Field-level priority system (OMDB > TMDB)
