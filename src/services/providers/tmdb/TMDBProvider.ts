@@ -322,7 +322,8 @@ export class TMDBProvider extends BaseProvider {
           providerId: 'tmdb',
           providerResultId,
           assetType: 'clearlogo',
-          url: this.tmdbClient.getImageUrl(logo.file_path, 'original'),
+          // Use w500 instead of original to avoid extremely large files (some TMDB logos are 32000x18839!)
+          url: this.tmdbClient.getImageUrl(logo.file_path, 'w500'),
           thumbnailUrl: this.tmdbClient.getImageUrl(logo.file_path, 'w185'),
           width: logo.width,
           height: logo.height,

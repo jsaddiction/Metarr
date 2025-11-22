@@ -194,7 +194,35 @@ export class AssetAnalysisPhase {
       // Delete temp file on error
       await fs.unlink(tempPath).catch(() => {});
 
-      // Re-throw for caller to handle
+      // Check if error is due to pixel limit exceeded (Sharp's safety limit)
+      const errorMsg = getErrorMessage(error);
+      if (
+        errorMsg.includes('pixel limit') ||
+        errorMsg.includes('Input image exceeds') ||
+        errorMsg.includes('exceeds pixel limit')
+      ) {
+        logger.warn('[AssetAnalysisPhase] Image exceeds pixel limit, marking as oversized', {
+          assetId: asset.id,
+          assetType: asset.asset_type,
+          url: asset.provider_url,
+          reportedDimensions: asset.width && asset.height ? `${asset.width}×${asset.height}` : 'unknown',
+          error: errorMsg,
+        });
+
+        // Mark as analyzed so we don't retry indefinitely, but don't set hashes
+        // This allows the asset to be tracked but not used for deduplication
+        await this.providerAssetsRepo.update(asset.id, {
+          analyzed: 1,
+          analyzed_at: new Date(),
+          // Note: perceptual_hash, difference_hash, and content_hash remain NULL
+          // indicating this asset couldn't be fully analyzed
+        });
+
+        // Return successfully - don't count this as a failure
+        return;
+      }
+
+      // Re-throw other errors for caller to handle
       throw error;
     }
   }
