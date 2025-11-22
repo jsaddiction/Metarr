@@ -8,10 +8,6 @@ Last updated: 2025-11-22
 ## Next Up (Priority Order)
 
 ### Core UI/UX Improvements
-- [ ] Provider page redesign
-  - Present providers statically (similar to Media→Movies→Metadata tab)
-  - List all providers with configuration options
-  - Reconsider asset selection and metadata selection workflow
 - [ ] Dashboard rework with meaningful data
   - Library statistics (total items, completeness %, recent additions)
   - Provider statistics (API usage, rate limits, success rates)
@@ -65,6 +61,17 @@ Last updated: 2025-11-22
   - Handle player-specific edge cases
 
 ## Completed Recently
+- [x] Provider page redesign (2025-11-22)
+  - Compact card layout (no tabs, no modals, no accordions)
+  - All providers visible on one page (enabled + disabled)
+  - Inline configuration with auto-save (500ms debounce)
+  - Auto-disable logic for missing required API keys
+  - Password fields with show/hide toggle
+  - API key indicators (embedded/personal/missing)
+  - Real-time statistics (24-hour calls, last fetch)
+  - 10-second auto-refresh via TanStack Query
+  - Test connection button on each card
+  - Removed 14 files (4,313 lines) of orphaned priority code
 - [x] Provider aggregation enhancements (2025-11-22)
   - Field-level priority system (OMDB > TMDB)
   - "Fill gaps, don't erase" metadata merge logic
