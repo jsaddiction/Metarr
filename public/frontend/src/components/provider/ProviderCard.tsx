@@ -2,13 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faEye, faEyeSlash, faCircleQuestion } from '@fortawesome/free-solid-svg-icons';
 import { ProviderWithMetadata, ProviderConfig as ProviderConfigType } from '../../types/provider';
-import { useUpdateProvider, useTestProvider } from '../../hooks/useProviders';
+import { useUpdateProvider } from '../../hooks/useProviders';
 import { Switch } from '@/components/ui/switch';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { TestButton } from '@/components/ui/TestButton';
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
 import { toast } from 'sonner';
-import { cn } from '@/lib/utils';
 
 interface ProviderCardProps {
   provider: ProviderWithMetadata;
@@ -21,11 +19,9 @@ interface ProviderCardProps {
 export const ProviderCard: React.FC<ProviderCardProps> = ({ provider, stats }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [localConfig, setLocalConfig] = useState<ProviderConfigType>(provider.config);
-  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [updateTimeout, setUpdateTimeout] = useState<NodeJS.Timeout | null>(null);
 
   const updateProvider = useUpdateProvider();
-  const testProviderMutation = useTestProvider();
 
   // Sync local state when provider changes
   useEffect(() => {
@@ -80,23 +76,18 @@ export const ProviderCard: React.FC<ProviderCardProps> = ({ provider, stats }) =
     debouncedSave(field, value);
   };
 
-  const handleTest = async () => {
+  const handleTest = async (): Promise<{ success: boolean; message: string }> => {
     try {
-      setTestResult(null);
-      const result = await testProviderMutation.mutateAsync({
-        name: provider.metadata.name,
-        apiKey: localConfig.personalApiKey || localConfig.apiKey
+      const response = await fetch(`/api/providers/${provider.metadata.name}/test`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiKey: localConfig.personalApiKey || localConfig.apiKey })
       });
-      setTestResult(result);
-      if (result.success) {
-        toast.success(`${provider.metadata.displayName} connection successful`);
-      } else {
-        toast.error(`${provider.metadata.displayName} connection failed: ${result.message}`);
-      }
+
+      const result = await response.json();
+      return result;
     } catch (error: any) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      setTestResult({ success: false, message });
-      toast.error(`Test failed: ${message}`);
+      return { success: false, message: error.message || 'Test failed' };
     }
   };
 
@@ -128,21 +119,25 @@ export const ProviderCard: React.FC<ProviderCardProps> = ({ provider, stats }) =
   const usingEmbeddedKey = hasApiKey && !localConfig.personalApiKey && provider.metadata.apiKeyOptional;
 
   return (
-    <div className="card bg-neutral-800/50 border-neutral-700">
-      <div className="card-body p-3">
-        {/* Single compact row */}
-        <div className="grid grid-cols-[auto_minmax(200px,1fr)_auto_auto_auto] gap-3 items-center">
-          {/* Provider name + info icon */}
-          <div className="flex items-center gap-2">
-            <h3 className="text-sm font-medium text-white whitespace-nowrap">
+    <div className="card">
+      <div className="card-body">
+        {/* Header: Enable switch + Title on left, Info + Test button on right */}
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <Switch
+              checked={localConfig.enabled}
+              onCheckedChange={handleToggle}
+              disabled={updateProvider.isPending}
+            />
+            <h3 className="text-lg font-semibold text-white">
               {provider.metadata.displayName}
             </h3>
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="ghost" size="sm" className="h-5 w-5 p-0">
-                    <FontAwesomeIcon icon={faCircleQuestion} className="text-xs text-neutral-400" />
-                  </Button>
+                  <button className="text-neutral-400 hover:text-neutral-200 transition-colors">
+                    <FontAwesomeIcon icon={faCircleQuestion} className="text-sm" />
+                  </button>
                 </TooltipTrigger>
                 <TooltipContent className="max-w-sm p-3">
                   <div className="space-y-2">
@@ -174,75 +169,51 @@ export const ProviderCard: React.FC<ProviderCardProps> = ({ provider, stats }) =
             </TooltipProvider>
           </div>
 
-          {/* API Key field */}
-          {needsApiKey ? (
-            <div className="flex items-center gap-2">
-              <div className="relative flex-1">
-                <Input
-                  type={showPassword ? 'text' : 'password'}
-                  value={localConfig.personalApiKey || localConfig.apiKey || ''}
-                  onChange={(e) => handleFieldChange(
-                    localConfig.personalApiKey || !provider.metadata.apiKeyOptional ? 'personalApiKey' : 'apiKey',
-                    e.target.value
-                  )}
-                  placeholder={provider.metadata.requiresApiKey ? 'API key required' : 'Optional personal key'}
-                  className="h-7 text-xs pr-7 bg-neutral-900/50"
-                />
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="absolute right-0.5 top-0.5 h-6 w-6 p-0"
-                  onClick={() => setShowPassword(!showPassword)}
-                >
-                  <FontAwesomeIcon icon={showPassword ? faEyeSlash : faEye} className="text-xs text-neutral-400" />
-                </Button>
-              </div>
-              {usingEmbeddedKey && (
-                <span className="text-xs text-amber-400/70 whitespace-nowrap">Shared</span>
-              )}
-              {localConfig.personalApiKey && (
-                <span className="text-xs text-green-500/70 whitespace-nowrap">Personal</span>
-              )}
-            </div>
-          ) : (
-            <div></div>
-          )}
-
-          {/* Stats */}
-          {stats && localConfig.enabled ? (
-            <div className="text-xs text-neutral-400 whitespace-nowrap">
-              {stats.totalCalls24h} • {formatTimeAgo(stats.lastSuccessfulFetch)}
-            </div>
-          ) : (
-            <div></div>
-          )}
-
-          {/* Test button */}
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={handleTest}
-            disabled={testProviderMutation.isPending || !localConfig.enabled || (provider.metadata.requiresApiKey && !hasApiKey)}
-            className="h-7 text-xs px-2"
-          >
-            {testProviderMutation.isPending ? 'Testing...' : 'Test'}
-          </Button>
-
-          {/* Toggle switch */}
-          <Switch
-            checked={localConfig.enabled}
-            onCheckedChange={handleToggle}
-            disabled={updateProvider.isPending}
+          <TestButton
+            onTest={handleTest}
+            disabled={!localConfig.enabled || (provider.metadata.requiresApiKey && !hasApiKey)}
           />
         </div>
 
-        {/* Test result (compact, only if shown) */}
-        {testResult && (
-          <div className={cn(
-            'text-xs mt-2 pl-2',
-            testResult.success ? 'text-green-400' : 'text-red-400'
-          )}>
-            {testResult.success ? '✓' : '✗'} {testResult.message}
+        {/* API Key Field (if needed) */}
+        {needsApiKey && (
+          <div className="mb-3">
+            <label className="text-xs font-medium text-neutral-400 mb-1 block">
+              API Key
+            </label>
+            <div className="flex items-stretch relative rounded transition-all group hover:ring-1 hover:ring-primary-500 focus-within:ring-1 focus-within:ring-primary-500 max-w-md">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                value={localConfig.personalApiKey || localConfig.apiKey || ''}
+                onChange={(e) => handleFieldChange(
+                  localConfig.personalApiKey || !provider.metadata.apiKeyOptional ? 'personalApiKey' : 'apiKey',
+                  e.target.value
+                )}
+                placeholder={provider.metadata.requiresApiKey ? 'API key required' : 'Optional personal key'}
+                className="flex-1 h-8 px-2.5 py-1 text-sm bg-neutral-800 border border-neutral-600 rounded-l text-neutral-200 transition-colors placeholder:text-neutral-500 focus-visible:outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="px-2 border-t border-b border-r border-neutral-600 rounded-r flex items-center justify-center bg-neutral-700 text-neutral-400 hover:bg-neutral-600 transition-colors"
+                title={showPassword ? 'Hide password' : 'Show password'}
+              >
+                <FontAwesomeIcon icon={showPassword ? faEyeSlash : faEye} className="text-xs" />
+              </button>
+            </div>
+            {usingEmbeddedKey && (
+              <p className="text-xs text-amber-400/70 mt-1">Using shared embedded key</p>
+            )}
+            {localConfig.personalApiKey && (
+              <p className="text-xs text-green-500/70 mt-1">Using personal API key</p>
+            )}
+          </div>
+        )}
+
+        {/* Metrics Row (bottom) */}
+        {stats && localConfig.enabled && (
+          <div className="text-xs text-neutral-400 pt-2 border-t border-neutral-700/50">
+            <span className="font-medium">Last 24 hours:</span> {stats.totalCalls24h} calls • Last fetch: {formatTimeAgo(stats.lastSuccessfulFetch)}
           </div>
         )}
       </div>
