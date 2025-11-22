@@ -288,6 +288,20 @@ export class ProviderConfigController {
   };
 
   /**
+   * GET /api/providers/statistics
+   * Get provider usage statistics (API calls in last 24 hours)
+   */
+  getProviderStatistics = async (_req: Request, res: Response): Promise<void> => {
+    try {
+      const stats = await this.providerConfigService.getStatistics();
+      res.json({ providers: stats });
+    } catch (error) {
+      logger.error('Error getting provider statistics:', error);
+      res.status(500).json({ error: 'Failed to retrieve provider statistics' });
+    }
+  };
+
+  /**
    * Test TMDB connection
    */
   private async testTMDBConnection(apiKey?: string): Promise<void> {

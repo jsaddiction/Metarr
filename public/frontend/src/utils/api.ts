@@ -646,6 +646,22 @@ export const providerApi = {
       method: 'DELETE',
     });
   },
+
+  /**
+   * Get provider statistics (API calls in last 24 hours)
+   */
+  async getStatistics(): Promise<Record<string, {
+    totalCalls24h: number;
+    lastSuccessfulFetch?: string;
+    successRate?: number;
+  }>> {
+    const response = await fetchApi<{ providers: Record<string, {
+      totalCalls24h: number;
+      lastSuccessfulFetch?: string;
+      successRate?: number;
+    }> }>('/providers/statistics');
+    return response.providers;
+  },
 };
 
 /**
@@ -754,69 +770,6 @@ export const autoSelectionApi = {
       method: 'POST',
       body: JSON.stringify(data),
     });
-  },
-};
-
-/**
- * Data Selection API
- * Manages provider priorities for metadata and images
- */
-export const dataSelectionApi = {
-  /**
-   * Get current data selection configuration
-   */
-  async getConfig(): Promise<DataSelectionConfig> {
-    return fetchApi<DataSelectionConfig>('/data-selection');
-  },
-
-  /**
-   * Update data selection mode (balanced/custom)
-   */
-  async updateMode(mode: 'balanced' | 'custom'): Promise<DataSelectionConfig> {
-    const data: UpdateDataSelectionModeRequest = { mode };
-    const response = await fetchApi<UpdateDataSelectionModeResponse>('/data-selection/mode', {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    });
-    return response.config;
-  },
-
-  /**
-   * Update field priority for a specific field/asset type
-   */
-  async updateFieldPriority(
-    mediaType: 'movies' | 'tvshows' | 'music',
-    category: 'metadata' | 'images',
-    fieldName: string,
-    providerOrder: string[],
-    disabled?: string[]
-  ): Promise<DataSelectionConfig> {
-    const data: UpdateFieldPriorityRequest = {
-      mediaType,
-      category,
-      fieldName,
-      providerOrder,
-      disabled,
-    };
-    const response = await fetchApi<UpdateFieldPriorityResponse>('/data-selection/priority', {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    });
-    return response.config;
-  },
-
-  /**
-   * Get provider order for a specific field
-   */
-  async getProviderOrder(
-    category: 'metadata' | 'images',
-    mediaType: 'movies' | 'tvshows' | 'music',
-    fieldName: string
-  ): Promise<string[]> {
-    const response = await fetchApi<GetProviderOrderResponse>(
-      `/data-selection/provider-order/${category}/${mediaType}/${fieldName}`
-    );
-    return response.providerOrder;
   },
 };
 

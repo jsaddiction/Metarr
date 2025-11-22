@@ -22,10 +22,8 @@ import { ImageService } from '../services/imageService.js';
 import { JobQueueService } from '../services/jobQueue/JobQueueService.js';
 import { ActorController } from '../controllers/actorController.js';
 import { ProviderConfigService } from '../services/providerConfigService.js';
-import { ProviderConfigController } from '../controllers/providerConfigController.js';
+import { ProviderConfigController } from '../controllers/ProviderConfigController.js';
 import { ProviderCacheManager } from '../services/providers/ProviderCacheManager.js';
-import { PriorityConfigService } from '../services/priorityConfigService.js';
-import { PriorityConfigController } from '../controllers/priorityConfigController.js';
 import { AssetConfigService } from '../services/assetConfigService.js';
 import { AssetConfigController } from '../controllers/assetConfigController.js';
 import { WebhookConfigController } from '../controllers/webhookConfigController.js';
@@ -106,10 +104,6 @@ export const createApiRouter = (
   const imageController = new ImageController(imageService);
   // Initialize image service
   imageService.initialize().catch(err => logger.error('Failed to initialize image service:', err));
-
-  // Initialize priority config service and controller
-  const priorityConfigService = new PriorityConfigService(db);
-  const priorityConfigController = new PriorityConfigController(priorityConfigService);
 
   // Initialize asset config service and controller
   const assetConfigService = new AssetConfigService(dbManager);
@@ -612,6 +606,11 @@ export const createApiRouter = (
   // Provider health monitoring routes (must come before :name routes)
   router.get('/providers/health', getProviderHealth);
 
+  // Provider statistics route (must come before :name routes)
+  router.get('/providers/statistics', (req, res) =>
+    providerConfigController.getProviderStatistics(req, res)
+  );
+
   // Provider config routes
   router.get('/providers', (req, res) =>
     providerConfigController.getAllProviders(req, res)
@@ -628,35 +627,6 @@ export const createApiRouter = (
   );
   router.delete('/providers/:name', (req, res) =>
     providerConfigController.deleteProvider(req, res)
-  );
-
-  // Priority config routes
-  router.get('/priorities/presets', (req, res) =>
-    priorityConfigController.getAvailablePresets(req, res)
-  );
-  router.get('/priorities/active', (req, res) =>
-    priorityConfigController.getActivePreset(req, res)
-  );
-  router.post('/priorities/apply', (req, res) =>
-    priorityConfigController.applyPreset(req, res)
-  );
-  router.get('/priorities/asset-types', (req, res) =>
-    priorityConfigController.getAllAssetTypePriorities(req, res)
-  );
-  router.get('/priorities/asset-types/:type', (req, res) =>
-    priorityConfigController.getAssetTypePriority(req, res)
-  );
-  router.post('/priorities/asset-types/:type', (req, res) =>
-    priorityConfigController.updateAssetTypePriority(req, res)
-  );
-  router.get('/priorities/metadata-fields', (req, res) =>
-    priorityConfigController.getAllMetadataFieldPriorities(req, res)
-  );
-  router.get('/priorities/metadata-fields/:field', (req, res) =>
-    priorityConfigController.getMetadataFieldPriority(req, res)
-  );
-  router.post('/priorities/metadata-fields/:field', (req, res) =>
-    priorityConfigController.updateMetadataFieldPriority(req, res)
   );
 
   // Asset limit configuration routes

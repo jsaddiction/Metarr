@@ -77,3 +77,20 @@ export const useDisableProvider = () => {
     },
   });
 };
+
+/**
+ * Fetch provider statistics (API calls in last 24 hours)
+ * Auto-refreshes every 10 seconds
+ */
+export const useProviderStats = () => {
+  return useQuery<Record<string, {
+    totalCalls24h: number;
+    lastSuccessfulFetch?: string;
+    successRate?: number;
+  }>, Error>({
+    queryKey: ['provider-stats'],
+    queryFn: () => providerApi.getStatistics(),
+    refetchInterval: 10000, // 10 seconds
+    staleTime: 8000, // Consider stale after 8 seconds
+  });
+};

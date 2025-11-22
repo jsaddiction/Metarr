@@ -224,6 +224,61 @@ export class ProviderConfigService {
   }
 
   /**
+   * Get provider statistics (API call counts in last 24 hours)
+   * Returns statistics for all providers that have fetched assets
+   */
+  async getStatistics(): Promise<Record<string, {
+    totalCalls24h: number;
+    lastSuccessfulFetch?: string;
+    successRate?: number;
+  }>> {
+    try {
+      // Query provider_assets table for calls in last 24 hours
+      const rows = await this.db.query<{
+        provider_name: string;
+        total_calls: number;
+        last_fetch: string | null;
+      }>(
+        `SELECT
+          provider_name,
+          COUNT(*) as total_calls,
+          MAX(fetched_at) as last_fetch
+        FROM provider_assets
+        WHERE fetched_at >= datetime('now', '-24 hours')
+        GROUP BY provider_name`
+      );
+
+      const stats: Record<string, {
+        totalCalls24h: number;
+        lastSuccessfulFetch?: string;
+        successRate?: number;
+      }> = {};
+
+      for (const row of rows) {
+        stats[row.provider_name] = {
+          totalCalls24h: row.total_calls,
+          ...(row.last_fetch && { lastSuccessfulFetch: row.last_fetch })
+        };
+      }
+
+      logger.debug('Provider statistics retrieved', { providerCount: Object.keys(stats).length });
+      return stats;
+    } catch (error) {
+      logger.error('Error retrieving provider statistics:', error);
+      throw new DatabaseError(
+        'Failed to retrieve provider statistics',
+        undefined, // errorCode
+        true, // isRetryable
+        {
+          service: 'ProviderConfigService',
+          operation: 'getStatistics',
+          metadata: { error }
+        }
+      );
+    }
+  }
+
+  /**
    * Map database row to ProviderConfig
    */
   private mapRowToConfig(row: {
