@@ -71,4 +71,6 @@ Thumbs.db
 tmp/
 temp/
 nul
+test-results.txt
+verify-schema.*
 .claude/settings.local.json
