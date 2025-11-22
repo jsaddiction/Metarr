@@ -240,6 +240,116 @@ POST /api/v1/jobs/:id/retry
 Response: { data: { job_id: number } }
 ```
 
+### Enrichment
+
+**Get Library Statistics**:
+```
+GET /api/v1/movies/enrichment/stats
+
+Response: {
+  data: {
+    total: number,
+    enriched: number,              // ≥90% completeness
+    partiallyEnriched: number,     // 60-89% completeness
+    unenriched: number,            // <60% completeness
+    averageCompleteness: number,   // 0-100
+    topIncomplete: Array<{
+      id: number,
+      title: string,
+      completeness: number,
+      missingFieldCount: number
+    }>
+  }
+}
+```
+
+**Get Movie Enrichment Status**:
+```
+GET /api/v1/movies/:id/enrichment-status
+
+Response: {
+  data: {
+    movieId: number,
+    completeness: number,          // 0-100
+    lastEnriched: string | null,   // ISO datetime
+    enrichmentDuration: number | null,
+    partial: boolean,              // Was rate-limited?
+    rateLimitedProviders: string[],
+    missingFields: Array<{
+      field: string,
+      displayName: string
+    }>,
+    fieldSources: Record<string, string>  // field -> provider
+  }
+}
+```
+
+**Trigger Manual Movie Enrichment**:
+```
+POST /api/v1/movies/:id/enrich
+Body: { force?: boolean }
+
+Response (202 Accepted): {
+  data: {
+    jobId: number,
+    message: string
+  }
+}
+
+Error (409 Conflict): Enrichment already in progress
+```
+
+**Get Bulk Enrichment Status**:
+```
+GET /api/v1/enrichment/bulk-status
+
+Response: {
+  data: {
+    lastRun: {
+      jobId: number,
+      startedAt: string,
+      completedAt: string,
+      status: string,
+      stats: {
+        processed: number,
+        updated: number,
+        skipped: number,
+        stopped: boolean,
+        stopReason: string | null
+      }
+    } | null,
+    nextRun: {
+      scheduledAt: string | null,
+      timeUntil: number | null  // seconds
+    },
+    currentRun: {
+      jobId: number,
+      startedAt: string,
+      progress: {
+        processed: number,
+        total: number,
+        percentComplete: number,
+        currentMovie: string
+      }
+    } | null
+  }
+}
+```
+
+**Trigger Manual Bulk Enrichment**:
+```
+POST /api/v1/enrichment/bulk-run
+
+Response (202 Accepted): {
+  data: {
+    jobId: number,
+    estimatedDuration: number  // seconds
+  }
+}
+
+Error (409 Conflict): Bulk enrichment already running
+```
+
 ### Libraries
 
 **List Libraries**:
@@ -435,6 +545,33 @@ socket.on('player:status', (data) => {
   // data: {
   //   player_id: number,
   //   status: 'connected' | 'disconnected' | 'error'
+  // }
+});
+```
+
+**Enrichment Progress**:
+```typescript
+socket.on('enrichment:progress', (data) => {
+  // data: {
+  //   entityType: 'movie',
+  //   entityId: number,
+  //   progress: number,         // 0-100
+  //   currentProvider: string,
+  //   message: string
+  // }
+});
+```
+
+**Bulk Enrichment Progress**:
+```typescript
+socket.on('bulk:progress', (data) => {
+  // data: {
+  //   processed: number,
+  //   total: number,
+  //   percentComplete: number,
+  //   currentMovie: string,
+  //   skipped: number,
+  //   updated: number
   // }
 });
 ```

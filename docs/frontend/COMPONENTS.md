@@ -628,6 +628,288 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
 
 ---
 
+## Enrichment Components
+
+**New in Phase 5**: Components for metadata completeness tracking and bulk enrichment control.
+
+### EnrichmentHealthBadge (Atom)
+
+**Location**: `components/ui/EnrichmentHealthBadge.tsx`
+
+**Purpose**: Reusable badge component displaying metadata completeness percentage with visual health indicators.
+
+**Level**: Atom (UI primitive)
+
+**Usage**:
+```typescript
+import { EnrichmentHealthBadge } from '@/components/ui/EnrichmentHealthBadge';
+
+// Basic usage
+<EnrichmentHealthBadge completeness={85} />
+
+// With partial indicator (rate-limited enrichment)
+<EnrichmentHealthBadge completeness={75} partial={true} />
+
+// Size variants
+<EnrichmentHealthBadge completeness={92} size="sm" />
+<EnrichmentHealthBadge completeness={92} size="md" />
+<EnrichmentHealthBadge completeness={92} size="lg" />
+```
+
+**Props**:
+```typescript
+interface EnrichmentHealthBadgeProps {
+  /** Completeness percentage (0-100) */
+  completeness: number;
+
+  /** Whether enrichment was partial (rate-limited) */
+  partial?: boolean;
+
+  /** Badge size variant */
+  size?: 'sm' | 'md' | 'lg';
+}
+```
+
+**Variants**:
+- **Enriched** (≥90%): Green badge with ✓ icon
+- **Partial** (60-89%): Default badge with ● icon
+- **Unenriched** (<60%): Destructive badge with ! icon
+- **Rate-limited** (partial=true): Warning badge with ⚠ icon
+
+### CompletenessStatCard (Molecule)
+
+**Location**: `components/dashboard/CompletenessStatCard.tsx`
+
+**Purpose**: Dashboard widget showing library-wide metadata completeness statistics.
+
+**Level**: Molecule (Domain component)
+
+**Usage**:
+```typescript
+import { CompletenessStatCard } from '@/components/dashboard/CompletenessStatCard';
+
+// In Dashboard page
+<CompletenessStatCard />
+```
+
+**Features**:
+- Library-wide average completeness with progress bar
+- Category breakdown (enriched/partial/unenriched counts)
+- Top 5 incomplete movies list with direct links
+- Auto-refresh every 5 minutes
+- Loading skeleton and error states
+
+**API Integration**:
+```typescript
+// Uses TanStack Query hook
+const { data, isLoading, error } = useLibraryStats();
+
+// API: GET /api/v1/movies/enrichment/stats
+```
+
+**Data Structure**:
+```typescript
+{
+  total: 1542,
+  enriched: 1245,           // ≥90%
+  partiallyEnriched: 198,   // 60-89%
+  unenriched: 99,           // <60%
+  averageCompleteness: 86,  // 0-100
+  topIncomplete: [
+    { id: 123, title: "Movie Title", completeness: 45, missingFieldCount: 8 }
+  ]
+}
+```
+
+### EnrichmentStatusSection (Organism)
+
+**Location**: `components/movie/EnrichmentStatusSection.tsx`
+
+**Purpose**: Movie detail page section showing enrichment status, missing fields, and manual refresh control.
+
+**Level**: Organism (Complex section with data fetching)
+
+**Usage**:
+```typescript
+import { EnrichmentStatusSection } from '@/components/movie/EnrichmentStatusSection';
+
+// In Movie Edit page
+<EnrichmentStatusSection movieId={movieId} />
+```
+
+**Features**:
+- Completeness progress bar with health badge
+- Partial enrichment warning (if rate-limited providers)
+- List of missing fields with display names
+- Manual "Refresh Metadata" button
+- Real-time WebSocket progress updates
+- Prevents duplicate enrichment requests (409 handling)
+
+**API Integration**:
+```typescript
+// Movie enrichment status
+const { data: status } = useMovieEnrichmentStatus(movieId);
+// API: GET /api/v1/movies/:id/enrichment-status
+
+// Manual trigger
+const triggerEnrich = useTriggerMovieEnrich(movieId);
+// API: POST /api/v1/movies/:id/enrich
+```
+
+**WebSocket Integration**:
+```typescript
+// Real-time enrichment progress
+useWebSocket('enrichment:progress', (event) => {
+  if (event.entityId === movieId) {
+    setProgress(event.progress);
+  }
+});
+```
+
+**Data Structure**:
+```typescript
+{
+  movieId: 123,
+  completeness: 78,
+  lastEnriched: "2025-01-24T10:30:00Z",
+  enrichmentDuration: 4200,  // milliseconds
+  partial: true,
+  rateLimitedProviders: ["tmdb", "omdb"],
+  missingFields: [
+    { field: "plot", displayName: "Plot" },
+    { field: "directors", displayName: "Directors" }
+  ],
+  fieldSources: {
+    "title": "tmdb",
+    "year": "tmdb",
+    "plot": "omdb"
+  }
+}
+```
+
+### BulkEnrichmentCard (Organism)
+
+**Location**: `components/settings/BulkEnrichmentCard.tsx`
+
+**Purpose**: Settings page control for manual bulk enrichment of entire library.
+
+**Level**: Organism (Complex section with data fetching)
+
+**Usage**:
+```typescript
+import { BulkEnrichmentCard } from '@/components/settings/BulkEnrichmentCard';
+
+// In Settings page
+<BulkEnrichmentCard />
+```
+
+**Features**:
+- Last run statistics (processed, updated, skipped)
+- Next scheduled run countdown (future feature)
+- Live progress bar during bulk job
+- Current movie being processed
+- Manual "Run Now" button
+- Concurrent job protection (409 handling)
+- Duration estimation (~2s per movie)
+
+**API Integration**:
+```typescript
+// Bulk status
+const { data } = useBulkStatus();
+// API: GET /api/v1/enrichment/bulk-status
+// Auto-refresh every 30 seconds
+
+// Manual trigger
+const triggerBulk = useTriggerBulkEnrich();
+// API: POST /api/v1/enrichment/bulk-run
+```
+
+**WebSocket Integration**:
+```typescript
+// Real-time bulk progress
+useWebSocket('bulk:progress', (event) => {
+  setBulkProgress(event);
+});
+
+// Event structure
+{
+  processed: 234,
+  total: 1542,
+  percentComplete: 15,
+  currentMovie: "The Matrix (1999)",
+  skipped: 89,
+  updated: 145
+}
+```
+
+**Data Structure**:
+```typescript
+{
+  lastRun: {
+    jobId: 5431,
+    startedAt: "2025-01-23T02:00:00Z",
+    completedAt: "2025-01-23T03:12:00Z",
+    status: "completed",
+    stats: {
+      processed: 1542,
+      updated: 234,
+      skipped: 1308,
+      stopped: false,
+      stopReason: null
+    }
+  },
+  nextRun: {
+    scheduledAt: "2025-01-24T02:00:00Z",  // null if not scheduled
+    timeUntil: 43200  // seconds
+  },
+  currentRun: null | {
+    jobId: 5432,
+    startedAt: "2025-01-24T10:30:00Z",
+    progress: {
+      processed: 234,
+      total: 1542,
+      percentComplete: 15,
+      currentMovie: "The Matrix (1999)"
+    }
+  }
+}
+```
+
+**Error Handling**:
+```typescript
+// Duplicate job prevention
+onError: (error) => {
+  if (error.status === 409) {
+    toast({
+      variant: 'destructive',
+      title: 'Bulk enrichment already running',
+      description: 'Please wait for the current job to complete'
+    });
+  }
+}
+```
+
+### Component Interactions
+
+**Dashboard → Movie Detail**:
+```typescript
+// CompletenessStatCard shows top incomplete movies
+// User clicks movie → navigates to movie edit page
+// EnrichmentStatusSection shows specific missing fields
+```
+
+**Settings → Library Update**:
+```typescript
+// BulkEnrichmentCard triggers bulk job
+// Dashboard CompletenessStatCard reflects updated stats
+// Individual movie EnrichmentStatusSection updates
+```
+
+**Real-time Updates**:
+All enrichment components subscribe to WebSocket events for live progress updates without manual refresh.
+
+---
+
 ## See Also
 
 - [ARCHITECTURE.md](./ARCHITECTURE.md) - Overall frontend architecture

@@ -553,6 +553,174 @@ interface EnrichmentPhaseConfig {
 
 ---
 
+## Metadata Completeness Tracking
+
+**New in Phase 5**: Enrichment now tracks metadata completeness and provides library-wide statistics.
+
+### Expected Fields
+
+The system expects the following fields for complete metadata:
+
+```typescript
+const EXPECTED_FIELDS = [
+  // Direct fields (movie table columns)
+  'title', 'plot', 'outline', 'tagline',
+  'imdb_rating', 'imdb_votes',
+  'rotten_tomatoes_score', 'metacritic_score',
+  'release_date', 'runtime', 'content_rating',
+
+  // Junction table fields (must have at least one entry)
+  'genres',     // movie_genres table
+  'directors',  // movie_directors table
+  'writers',    // movie_writers table
+  'studios',    // movie_studios table
+];
+```
+
+### Completeness Categories
+
+Movies are categorized based on what percentage of expected fields are populated:
+
+| Category | Completeness | Description |
+|----------|--------------|-------------|
+| **Enriched** | ≥90% | Comprehensive metadata, ready for use |
+| **Partial** | 60-89% | Some fields missing or rate-limited providers |
+| **Unenriched** | <60% | Missing critical metadata |
+
+**See API Documentation**: `/api/v1/movies/enrichment/stats` for library statistics, `/api/v1/movies/:id/enrichment-status` for movie-specific completeness.
+
+### Missing Field Tracking
+
+The system tracks which specific fields are missing for each movie:
+
+```json
+{
+  "missingFields": [
+    { "field": "plot", "displayName": "Plot" },
+    { "field": "tagline", "displayName": "Tagline" },
+    { "field": "directors", "displayName": "Directors" }
+  ]
+}
+```
+
+This allows the UI to show users exactly what metadata is incomplete.
+
+---
+
+## Two-Mode Operation (requireComplete)
+
+Enrichment supports two operational modes controlled by the `requireComplete` parameter:
+
+### Mode 1: Best Effort (requireComplete=false)
+
+**Used for**: Webhook triggers, manual user enrichment
+
+**Behavior**:
+- Continues enrichment even if some providers are rate-limited
+- Marks entity with `partial=true` flag if incomplete
+- Provides partial metadata rather than nothing
+- Does NOT fail the job on rate limit
+
+```typescript
+{
+  type: 'enrich-metadata',
+  payload: {
+    entityId: 123,
+    entityType: 'movie',
+    requireComplete: false  // Best effort
+  },
+  priority: 3  // HIGH (user-initiated)
+}
+```
+
+**Example**: User clicks "Refresh Metadata" - we provide whatever we can get, even if TMDB is rate-limited.
+
+### Mode 2: Complete or Skip (requireComplete=true)
+
+**Used for**: Bulk scheduled enrichment
+
+**Behavior**:
+- Stops enrichment immediately if ANY provider returns rate limit
+- Does NOT mark entity as enriched if incomplete
+- Preserves daily API quota for higher-priority requests
+- Job stops processing remaining movies
+
+```typescript
+{
+  type: 'bulk-enrich',
+  payload: {
+    requireComplete: true  // All or nothing
+  },
+  priority: 7  // NORMAL (background job)
+}
+```
+
+**Example**: Nightly bulk enrichment hits TMDB rate limit after 800 movies - stops immediately, preserving 200 requests for tomorrow's webhooks.
+
+**See**: `EnrichmentOrchestrator` src/services/enrichment/EnrichmentOrchestrator.ts for implementation details.
+
+---
+
+## Bulk Enrichment
+
+**Purpose**: Process all monitored movies with complete metadata refresh.
+
+**Trigger**: Manual via UI (Settings → Bulk Enrichment → Run Now) or scheduled (future feature)
+
+**API Endpoint**: `POST /api/v1/enrichment/bulk-run`
+
+### Bulk Job Statistics
+
+The system tracks detailed statistics for bulk enrichment runs:
+
+```typescript
+interface BulkJobStats {
+  processed: number;     // Movies processed
+  updated: number;       // Movies with new/updated data
+  skipped: number;       // Movies skipped (up-to-date)
+  stopped: boolean;      // Job stopped early?
+  stopReason: string | null;  // "Rate limit detected"
+}
+```
+
+**Progress Tracking**: Real-time WebSocket events (`bulk:progress`) show current progress:
+
+```typescript
+{
+  processed: 234,
+  total: 1542,
+  percentComplete: 15,
+  currentMovie: "The Matrix (1999)",
+  skipped: 89,
+  updated: 145
+}
+```
+
+**API Endpoints**:
+- `GET /api/v1/enrichment/bulk-status` - Current/last run status
+- `POST /api/v1/enrichment/bulk-run` - Trigger manual bulk enrichment
+
+### Bulk Job Behavior
+
+1. **Concurrent Protection**: Only one bulk job can run at a time (409 Conflict if already running)
+2. **Rate Limit Handling**: Uses `requireComplete=true` - stops on first rate limit
+3. **Duration Estimation**: ~2 seconds per movie (includes provider queries and asset downloads)
+4. **Cache Efficiency**: 7-day cache means most movies are cache hits after first run
+5. **Priority**: Normal priority (7) - background processing
+
+**Example Response**:
+
+```json
+{
+  "data": {
+    "jobId": 5432,
+    "estimatedDuration": 3084  // seconds (~51 minutes for 1542 movies)
+  }
+}
+```
+
+---
+
 ## Error Handling
 
 | Error Type | Behavior |
