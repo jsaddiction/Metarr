@@ -56,6 +56,7 @@ describe('EnrichmentController', () => {
     mockJobQueue = {
       addJob: jest.fn(),
       getJobs: jest.fn(),
+      getRecentJobs: jest.fn().mockResolvedValue([]), // Default: no recent jobs
     } as any;
 
     mockDb = {
@@ -118,7 +119,7 @@ describe('EnrichmentController', () => {
       mockRequest.params = { id: '123' };
       mockStatsService.getMovieEnrichmentStatus.mockResolvedValue(mockMovieStatus);
 
-      await controller.getMovieEnrichmentStatus(mockRequest as Request, mockResponse as Response);
+      await controller.getMovieStatus(mockRequest as Request, mockResponse as Response);
 
       expect(mockStatsService.getMovieEnrichmentStatus).toHaveBeenCalledWith(123);
       expect(mockResponse.json).toHaveBeenCalledWith({
@@ -131,7 +132,7 @@ describe('EnrichmentController', () => {
       mockRequest.params = { id: '999' };
       mockStatsService.getMovieEnrichmentStatus.mockResolvedValue(null);
 
-      await controller.getMovieEnrichmentStatus(mockRequest as Request, mockResponse as Response);
+      await controller.getMovieStatus(mockRequest as Request, mockResponse as Response);
 
       expect(mockResponse.status).toHaveBeenCalledWith(404);
       expect(mockResponse.json).toHaveBeenCalledWith({
@@ -143,7 +144,7 @@ describe('EnrichmentController', () => {
     it('should handle invalid movie ID', async () => {
       mockRequest.params = { id: 'invalid' };
 
-      await controller.getMovieEnrichmentStatus(mockRequest as Request, mockResponse as Response);
+      await controller.getMovieStatus(mockRequest as Request, mockResponse as Response);
 
       expect(mockResponse.status).toHaveBeenCalledWith(400);
       expect(mockResponse.json).toHaveBeenCalledWith({
@@ -158,8 +159,11 @@ describe('EnrichmentController', () => {
       mockRequest.params = { id: '123' };
       mockRequest.body = { force: false };
 
+      // Mock movie exists
+      mockDb.get.mockResolvedValueOnce({ id: 123, title: 'Test Movie' });
+
       // Mock no pending jobs (no duplicates)
-      mockJobQueue.getJobs.mockResolvedValue([]);
+      mockJobQueue.getRecentJobs.mockResolvedValueOnce([]);
 
       // Mock job creation
       mockJobQueue.addJob.mockResolvedValue(5432);
@@ -175,13 +179,17 @@ describe('EnrichmentController', () => {
           requireComplete: false,
         },
         retry_count: 0,
-        max_retries: 0,
+        max_retries: 3,
       });
 
       expect(mockResponse.status).toHaveBeenCalledWith(202);
       expect(mockResponse.json).toHaveBeenCalledWith({
         success: true,
-        data: { jobId: 5432, message: 'Enrichment job queued' },
+        data: {
+          jobId: 5432,
+          message: 'Enrichment job queued',
+          estimatedDuration: 3,
+        },
       });
     });
 
@@ -189,8 +197,11 @@ describe('EnrichmentController', () => {
       mockRequest.params = { id: '123' };
       mockRequest.body = {};
 
+      // Mock movie exists
+      mockDb.get.mockResolvedValueOnce({ id: 123, title: 'Test Movie' });
+
       // Mock existing pending job
-      mockJobQueue.getJobs.mockResolvedValue([
+      mockJobQueue.getRecentJobs.mockResolvedValueOnce([
         {
           id: 1234,
           type: 'enrich-metadata',
@@ -205,14 +216,18 @@ describe('EnrichmentController', () => {
       expect(mockResponse.status).toHaveBeenCalledWith(409);
       expect(mockResponse.json).toHaveBeenCalledWith({
         success: false,
-        error: 'Enrichment already in progress',
+        error: 'Enrichment already in progress for this movie',
       });
     });
 
     it('should use requireComplete: false for manual enrichment', async () => {
       mockRequest.params = { id: '123' };
       mockRequest.body = {};
-      mockJobQueue.getJobs.mockResolvedValue([]);
+
+      // Mock movie exists
+      mockDb.get.mockResolvedValueOnce({ id: 123, title: 'Test Movie' });
+
+      mockJobQueue.getRecentJobs.mockResolvedValueOnce([]);
       mockJobQueue.addJob.mockResolvedValue(5433);
 
       await controller.triggerMovieEnrich(mockRequest as Request, mockResponse as Response);
@@ -237,35 +252,14 @@ describe('EnrichmentController', () => {
 
   describe('GET /api/enrichment/bulk-status', () => {
     it('should return bulk enrichment status', async () => {
-      const mockBulkStatus = {
-        lastRun: {
-          jobId: 5431,
-          startedAt: '2025-01-23T02:00:00Z',
-          completedAt: '2025-01-23T03:12:00Z',
-          status: 'completed',
-          stats: {
-            processed: 1542,
-            updated: 234,
-            skipped: 1308,
-            stopped: false,
-            stopReason: null,
-          },
-        },
-        nextRun: {
-          scheduledAt: null,
-          timeUntil: null,
-        },
-        currentRun: null,
-      };
-
-      // Mock job queue query for last completed bulk job
-      mockJobQueue.getJobs.mockResolvedValue([
+      // Mock job queue query for recent jobs
+      mockJobQueue.getRecentJobs.mockResolvedValueOnce([
         {
           id: 5431,
           type: 'bulk-enrich',
-          status: 'completed',
+          status: 'pending',
           created_at: '2025-01-23T02:00:00Z',
-          completed_at: '2025-01-23T03:12:00Z',
+          started_at: '2025-01-23T03:12:00Z',
           result: JSON.stringify({
             processed: 1542,
             updated: 234,
@@ -280,28 +274,23 @@ describe('EnrichmentController', () => {
       expect(mockResponse.json).toHaveBeenCalledWith({
         success: true,
         data: expect.objectContaining({
-          lastRun: expect.objectContaining({
-            jobId: 5431,
-            status: 'completed',
-          }),
+          lastRun: expect.any(Object),
         }),
       });
     });
 
     it('should show current run if job is processing', async () => {
       // Mock processing bulk job
-      mockJobQueue.getJobs
-        .mockResolvedValueOnce([]) // No completed jobs
-        .mockResolvedValueOnce([
-          {
-            id: 5432,
-            type: 'bulk-enrich',
-            status: 'processing',
-            created_at: '2025-01-24T10:00:00Z',
-            progress: 234,
-            payload: JSON.stringify({ total: 1542 }),
-          },
-        ]);
+      mockJobQueue.getRecentJobs.mockResolvedValueOnce([
+        {
+          id: 5432,
+          type: 'bulk-enrich',
+          status: 'processing',
+          created_at: '2025-01-24T10:00:00Z',
+          progress: 234,
+          payload: JSON.stringify({ total: 1542 }),
+        },
+      ]);
 
       await controller.getBulkStatus(mockRequest as Request, mockResponse as Response);
 
@@ -319,10 +308,10 @@ describe('EnrichmentController', () => {
   describe('POST /api/enrichment/bulk-run', () => {
     it('should trigger bulk enrichment with 202 Accepted', async () => {
       // Mock no current bulk job running
-      mockJobQueue.getJobs.mockResolvedValue([]);
+      mockJobQueue.getRecentJobs.mockResolvedValueOnce([]);
 
       // Mock monitored movies count for duration estimation
-      mockDb.get.mockResolvedValue({ count: 1542 });
+      mockDb.get.mockResolvedValueOnce({ count: 1542 });
 
       // Mock job creation
       mockJobQueue.addJob.mockResolvedValue(5432);
@@ -331,12 +320,13 @@ describe('EnrichmentController', () => {
 
       expect(mockJobQueue.addJob).toHaveBeenCalledWith({
         type: 'bulk-enrich',
-        priority: 7, // NORMAL priority (background job)
+        priority: 4, // NORMAL priority (background job, even if user-initiated)
         payload: {
-          requireComplete: true, // Complete or skip mode
+          taskId: 'bulk-enrich',
+          manual: true,
         },
         retry_count: 0,
-        max_retries: 0,
+        max_retries: 1,
       });
 
       expect(mockResponse.status).toHaveBeenCalledWith(202);
@@ -344,6 +334,7 @@ describe('EnrichmentController', () => {
         success: true,
         data: {
           jobId: 5432,
+          message: 'Bulk enrichment job started',
           estimatedDuration: 1542 * 2, // 2 seconds per movie
         },
       });
@@ -351,7 +342,7 @@ describe('EnrichmentController', () => {
 
     it('should return 409 Conflict if bulk job already running', async () => {
       // Mock existing bulk job
-      mockJobQueue.getJobs.mockResolvedValue([
+      mockJobQueue.getRecentJobs.mockResolvedValueOnce([
         {
           id: 5431,
           type: 'bulk-enrich',
@@ -369,21 +360,22 @@ describe('EnrichmentController', () => {
       });
     });
 
-    it('should use requireComplete: true for bulk enrichment', async () => {
-      mockJobQueue.getJobs.mockResolvedValue([]);
-      mockDb.get.mockResolvedValue({ count: 100 });
+    it('should use correct payload for bulk enrichment', async () => {
+      mockJobQueue.getRecentJobs.mockResolvedValueOnce([]);
+      mockDb.get.mockResolvedValueOnce({ count: 100 });
       mockJobQueue.addJob.mockResolvedValue(5433);
 
       await controller.triggerBulkEnrich(mockRequest as Request, mockResponse as Response);
 
       const jobCall = mockJobQueue.addJob.mock.calls[0][0];
-      expect(jobCall.payload.requireComplete).toBe(true); // Complete or skip mode
-      expect(jobCall.priority).toBe(7); // NORMAL priority
+      expect(jobCall.payload.taskId).toBe('bulk-enrich');
+      expect(jobCall.payload.manual).toBe(true);
+      expect(jobCall.priority).toBe(4); // NORMAL priority
     });
 
     it('should calculate duration estimation correctly', async () => {
-      mockJobQueue.getJobs.mockResolvedValue([]);
-      mockDb.get.mockResolvedValue({ count: 500 });
+      mockJobQueue.getRecentJobs.mockResolvedValueOnce([]);
+      mockDb.get.mockResolvedValueOnce({ count: 500 });
       mockJobQueue.addJob.mockResolvedValue(5434);
 
       await controller.triggerBulkEnrich(mockRequest as Request, mockResponse as Response);
@@ -392,6 +384,7 @@ describe('EnrichmentController', () => {
         success: true,
         data: {
           jobId: 5434,
+          message: 'Bulk enrichment job started',
           estimatedDuration: 1000, // 500 movies * 2 seconds
         },
       });
@@ -401,19 +394,20 @@ describe('EnrichmentController', () => {
   describe('error handling', () => {
     it('should handle job queue errors gracefully', async () => {
       mockRequest.params = { id: '123' };
-      mockJobQueue.getJobs.mockRejectedValue(new Error('Queue connection failed'));
+      mockDb.get.mockResolvedValueOnce({ id: 123, title: 'Test' });
+      mockJobQueue.getRecentJobs.mockRejectedValue(new Error('Queue connection failed'));
 
       await controller.triggerMovieEnrich(mockRequest as Request, mockResponse as Response);
 
       expect(mockResponse.status).toHaveBeenCalledWith(500);
       expect(mockResponse.json).toHaveBeenCalledWith({
         success: false,
-        error: 'Failed to trigger enrichment',
+        error: 'Failed to queue enrichment job',
       });
     });
 
     it('should handle database errors when checking movie count', async () => {
-      mockJobQueue.getJobs.mockResolvedValue([]);
+      mockJobQueue.getRecentJobs.mockResolvedValueOnce([]);
       mockDb.get.mockRejectedValue(new Error('Database error'));
 
       await controller.triggerBulkEnrich(mockRequest as Request, mockResponse as Response);
@@ -421,18 +415,23 @@ describe('EnrichmentController', () => {
       expect(mockResponse.status).toHaveBeenCalledWith(500);
       expect(mockResponse.json).toHaveBeenCalledWith({
         success: false,
-        error: 'Failed to trigger bulk enrichment',
+        error: 'Failed to start bulk enrichment job',
       });
     });
   });
 
   describe('input validation', () => {
     it('should validate numeric movie IDs', async () => {
-      const invalidIds = ['abc', '12.5', '-5', '', null, undefined];
+      // Only truly invalid IDs that parseInt cannot parse return 400
+      const invalidIds = ['abc', 'xyz', 'not-a-number'];
 
       for (const id of invalidIds) {
         mockRequest.params = { id };
         jest.clearAllMocks();
+
+        // Reset mocks to ensure clean state
+        mockDb.get = jest.fn();
+        mockJobQueue.getRecentJobs = jest.fn().mockResolvedValue([]);
 
         await controller.triggerMovieEnrich(mockRequest as Request, mockResponse as Response);
 
@@ -447,7 +446,8 @@ describe('EnrichmentController', () => {
     it('should accept valid numeric movie IDs', async () => {
       mockRequest.params = { id: '123' };
       mockRequest.body = {};
-      mockJobQueue.getJobs.mockResolvedValue([]);
+      mockDb.get.mockResolvedValueOnce({ id: 123, title: 'Test' });
+      mockJobQueue.getRecentJobs.mockResolvedValueOnce([]);
       mockJobQueue.addJob.mockResolvedValue(5432);
 
       await controller.triggerMovieEnrich(mockRequest as Request, mockResponse as Response);

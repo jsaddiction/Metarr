@@ -30,6 +30,7 @@ describe('EnrichmentStatsService', () => {
       release_date: '2020-01-01',
       runtime: 120,
       content_rating: 'PG-13',
+      awards: 'Won 3 Oscars',
       monitored: 1,
     },
     {
@@ -228,21 +229,23 @@ describe('EnrichmentStatsService', () => {
     it('should report 100% completeness for fully enriched movie', async () => {
       const completeMovie = mockMovies[0];
 
-      mockDb.get.mockResolvedValueOnce(completeMovie);
-
-      // Mock junction queries - all present
-      mockDb.query
-        .mockResolvedValueOnce([{ movie_id: 1 }])
-        .mockResolvedValueOnce([{ movie_id: 1 }])
-        .mockResolvedValueOnce([{ movie_id: 1 }])
-        .mockResolvedValueOnce([{ movie_id: 1 }]);
+      mockDb.get
+        .mockResolvedValueOnce(completeMovie) // getMovieEnrichmentStatus query
+        .mockResolvedValueOnce({ count: 1 }) // genres count
+        .mockResolvedValueOnce({ count: 1 }) // directors count
+        .mockResolvedValueOnce({ count: 1 }) // writers count
+        .mockResolvedValueOnce({ count: 1 }) // studios count
+        .mockResolvedValueOnce({ count: 1 }) // genres count (for getMissingFields)
+        .mockResolvedValueOnce({ count: 1 }) // directors count
+        .mockResolvedValueOnce({ count: 1 }) // writers count
+        .mockResolvedValueOnce({ count: 1 }); // studios count
 
       const status = await service.getMovieEnrichmentStatus(1);
 
       expect(status).toBeDefined();
       // With all fields present and all junction tables populated, should have high completeness
       expect(status!.completeness).toBeGreaterThanOrEqual(90);
-      expect(status!.missingFields.length).toBeLessThanOrEqual(2); // Might be missing optional fields
+      expect(status!.missingFields.length).toBeLessThanOrEqual(1); // Might be missing optional fields
     });
   });
 
