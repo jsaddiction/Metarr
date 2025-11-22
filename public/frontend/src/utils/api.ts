@@ -60,6 +60,15 @@ import {
   ResetAssetLimitResponse,
   ResetAllLimitsResponse,
 } from '../types/assetConfig';
+import {
+  LibraryCompletenessStatsResponse,
+  MovieEnrichmentStatusResponse,
+  TriggerEnrichRequest,
+  TriggerEnrichResponse,
+  BulkEnrichmentStatusResponse,
+  TriggerBulkEnrichRequest,
+  TriggerBulkEnrichResponse,
+} from '../types/enrichment';
 
 const API_BASE_URL = '/api';
 
@@ -1059,6 +1068,60 @@ export const assetLimitsApi = {
   async resetAll(): Promise<ResetAllLimitsResponse> {
     return fetchApi<ResetAllLimitsResponse>('/settings/asset-limits/reset-all', {
       method: 'POST',
+    });
+  },
+};
+
+/**
+ * Enrichment API
+ * Multi-provider metadata aggregation and completeness tracking
+ */
+export const enrichmentApi = {
+  /**
+   * Get library-wide completeness statistics
+   * GET /api/movies/enrichment/stats
+   */
+  async getLibraryStats(): Promise<LibraryCompletenessStatsResponse> {
+    return fetchApi<LibraryCompletenessStatsResponse>('/movies/enrichment/stats');
+  },
+
+  /**
+   * Get enrichment status for a specific movie
+   * GET /api/movies/:id/enrichment-status
+   */
+  async getMovieStatus(movieId: number): Promise<MovieEnrichmentStatusResponse> {
+    return fetchApi<MovieEnrichmentStatusResponse>(`/movies/${movieId}/enrichment-status`);
+  },
+
+  /**
+   * Trigger manual enrichment for a movie
+   * POST /api/movies/:id/enrich
+   */
+  async triggerMovieEnrich(movieId: number, force = false): Promise<TriggerEnrichResponse> {
+    const data: TriggerEnrichRequest = { force };
+    return fetchApi<TriggerEnrichResponse>(`/movies/${movieId}/enrich`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * Get bulk enrichment status
+   * GET /api/enrichment/bulk-status
+   */
+  async getBulkStatus(): Promise<BulkEnrichmentStatusResponse> {
+    return fetchApi<BulkEnrichmentStatusResponse>('/enrichment/bulk-status');
+  },
+
+  /**
+   * Trigger manual bulk enrichment
+   * POST /api/enrichment/bulk-run
+   */
+  async triggerBulkEnrich(force = false): Promise<TriggerBulkEnrichResponse> {
+    const data: TriggerBulkEnrichRequest = { force };
+    return fetchApi<TriggerBulkEnrichResponse>('/enrichment/bulk-run', {
+      method: 'POST',
+      body: JSON.stringify(data),
     });
   },
 };

@@ -46,6 +46,8 @@ import { updateSchedulerConfigSchema } from '../validation/schedulerSchemas.js';
 import { logger } from '../middleware/logging.js';
 // Import provider index to trigger provider registrations
 import '../services/providers/index.js';
+// Import enrichment routes
+import { createEnrichmentRoutes } from './enrichment.js';
 
 // Initialize router factory function
 export const createApiRouter = (
@@ -734,6 +736,11 @@ export const createApiRouter = (
       (req, res, next) => schedulerController.triggerProviderUpdate(req, res, next)
     );
   }
+
+  // Enrichment Routes
+  logger.debug('[API Router] Registering enrichment routes');
+  const enrichmentRouter = createEnrichmentRoutes(db, jobQueueService);
+  router.use('/', enrichmentRouter);
 
   return router;
 };
