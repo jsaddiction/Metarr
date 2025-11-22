@@ -459,23 +459,25 @@ export class ProviderCacheOrchestrator {
         });
     });
 
+    // Create timeout objects for cleanup
+    const fanartTimeout = this.createTimeout(remainingTimeout, {
+      provider: 'fanart.tv',
+      result: { imagesCached: 0, imageTypes: [] },
+    });
+    const omdbTimeout = this.createTimeout(remainingTimeout, {
+      provider: 'omdb',
+      movieCacheId: null,
+    });
+
     // Wait for both in parallel
     const [fanartResult, omdbResult] = await Promise.all([
-      Promise.race([
-        fanartPromise,
-        this.createTimeout(remainingTimeout, {
-          provider: 'fanart.tv',
-          result: { imagesCached: 0, imageTypes: [] },
-        }).promise,
-      ]),
-      Promise.race([
-        omdbPromise,
-        this.createTimeout(remainingTimeout, {
-          provider: 'omdb',
-          movieCacheId: null,
-        }).promise,
-      ]),
+      Promise.race([fanartPromise, fanartTimeout.promise]),
+      Promise.race([omdbPromise, omdbTimeout.promise]),
     ]);
+
+    // Clean up timeouts to prevent lingering timers
+    fanartTimeout.cleanup();
+    omdbTimeout.cleanup();
 
     if (fanartResult.result.imagesCached > 0) {
       providersUsed.push('fanart.tv');
