@@ -197,8 +197,8 @@ export function getDefaultMaxCount(assetType: string): number {
  */
 export function getMultiAssetTypes(): string[] {
   return Object.entries(ASSET_TYPE_DEFAULTS)
-    .filter(([_, config]) => config.defaultMax > 1)
-    .map(([type, _]) => type);
+    .filter(([_type, config]) => config.defaultMax > 1)
+    .map(([type]) => type);
 }
 
 /**
@@ -206,8 +206,8 @@ export function getMultiAssetTypes(): string[] {
  */
 export function getSingleAssetTypes(): string[] {
   return Object.entries(ASSET_TYPE_DEFAULTS)
-    .filter(([_, config]) => config.defaultMax === 1)
-    .map(([type, _]) => type);
+    .filter(([_type, config]) => config.defaultMax === 1)
+    .map(([type]) => type);
 }
 
 /**
@@ -217,8 +217,8 @@ export function getAssetTypesForMediaType(
   mediaType: 'movie' | 'tvshow' | 'season' | 'episode' | 'artist' | 'album' | 'song'
 ): string[] {
   return Object.entries(ASSET_TYPE_DEFAULTS)
-    .filter(([_, config]) => config.mediaTypes.includes(mediaType))
-    .map(([type, _]) => type);
+    .filter(([_type, config]) => config.mediaTypes.includes(mediaType))
+    .map(([type]) => type);
 }
 
 /**

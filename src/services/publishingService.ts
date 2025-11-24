@@ -279,7 +279,7 @@ export class PublishingService {
       // Clean up temp file on failure
       try {
         await fs.unlink(tempPath);
-      } catch (cleanupError) {
+      } catch (_cleanupError) {
         // Ignore cleanup errors
       }
 
@@ -801,7 +801,7 @@ export class PublishingService {
       // Step 1: Delete entire .actors/ directory
       await fs.rm(actorsDir, { recursive: true, force: true });
       logger.debug('[PublishingService] Deleted .actors/ directory', { actorsDir });
-    } catch (error) {
+    } catch (_error) {
       // Ignore if directory doesn't exist
       logger.debug('[PublishingService] .actors/ directory did not exist', { actorsDir });
     }

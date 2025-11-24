@@ -186,7 +186,7 @@ export class GarbageCollectionService {
    * Future implementation for TV shows
    */
   // @ts-ignore - db parameter will be used when series support is added
-  private async deleteExpiredSeries(db: DatabaseConnection): Promise<number> {
+  private async deleteExpiredSeries(_db: DatabaseConnection): Promise<number> {
     // TODO: Implement when series support is added
     return 0;
   }

@@ -153,7 +153,7 @@ export async function gatherFilenameFacts(filename: string): Promise<FilenameFac
   };
 
   // Year pattern: (2024), [2024], .2024.
-  const yearMatch = filename.match(/[(\[.](\d{4})[)\].]/);
+  const yearMatch = filename.match(/[([\].](\d{4})[)\].]/);
   if (yearMatch) {
     facts.hasYearPattern = true;
     facts.extractedYear = parseInt(yearMatch[1], 10);
@@ -649,7 +649,7 @@ export async function gatherTextFacts(filePath: string): Promise<TextFileFacts |
     // Fallback: Regex extraction for malformed/non-XML NFOs
     if (!textFacts.containsTmdbId) {
       // Try various formats: tmdb:603, tmdb/603, tmdb=603
-      const tmdbRegexMatch = contentSample.match(/tmdb[\/:\s=]+(\d+)/i);
+      const tmdbRegexMatch = contentSample.match(/tmdb[/:s=]+(\d+)/i);
       if (tmdbRegexMatch) {
         textFacts.containsTmdbId = true;
         textFacts.tmdbId = parseInt(tmdbRegexMatch[1], 10);

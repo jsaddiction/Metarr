@@ -140,7 +140,7 @@ export class DatabaseManager {
       if (this.connection) {
         try {
           await this.connection.close();
-        } catch (error) {
+        } catch (_error) {
           // Ignore close errors
         }
         this.connection = null;

@@ -217,7 +217,8 @@ export class MySqlConnection implements DatabaseConnection {
     // Check MySQL error codes
     if (mysqlError.errno) {
       switch (mysqlError.errno) {
-        case 1062: // ER_DUP_ENTRY
+        case 1062: {
+          // ER_DUP_ENTRY
           // Extract table and key from error message if possible
           const dupMatch = error.message.match(/Duplicate entry '.*' for key '(.+)'/);
           return new DuplicateKeyError(
@@ -226,6 +227,7 @@ export class MySqlConnection implements DatabaseConnection {
             error.message,
             context
           );
+        }
 
         case 1451: // ER_ROW_IS_REFERENCED
         case 1452: // ER_NO_REFERENCED_ROW

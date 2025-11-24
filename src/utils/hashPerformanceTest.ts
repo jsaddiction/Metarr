@@ -495,7 +495,7 @@ export async function runHashPerformanceTest(
         if (results.smallFileFullHash.length > 0) {
           const recentCount =
             results.smallFileFullHash.length -
-            (i > 0 ? testDirs.slice(0, i).reduce((count, _) => count, 0) : 0);
+            (i > 0 ? testDirs.slice(0, i).reduce((count) => count, 0) : 0);
           console.log(`  ✓ Small Files (Full):   ${recentCount} files hashed`);
         }
       } catch (error) {

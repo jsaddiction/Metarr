@@ -318,83 +318,79 @@ export class MovieQueryService {
     text: Array<Record<string, unknown>>;
     unknown: Array<Record<string, unknown>>;
   }> {
-    try {
-      const conn = this.db.getConnection();
+    const conn = this.db.getConnection();
 
-      // Get video files (cache only - source of truth)
-      const videoFiles = await conn.query(
-        `SELECT
-          id, file_path, file_name, file_size, video_type,
-          codec, width, height, duration_seconds, bitrate, framerate, hdr_type,
-          audio_codec, audio_channels, audio_language,
-          source_type, source_url, provider_name, classification_score,
-          discovered_at
-        FROM cache_video_files
-        WHERE entity_type = 'movie' AND entity_id = ?
-        ORDER BY video_type, discovered_at DESC`,
-        [movieId]
-      );
+    // Get video files (cache only - source of truth)
+    const videoFiles = await conn.query(
+      `SELECT
+        id, file_path, file_name, file_size, video_type,
+        codec, width, height, duration_seconds, bitrate, framerate, hdr_type,
+        audio_codec, audio_channels, audio_language,
+        source_type, source_url, provider_name, classification_score,
+        discovered_at
+      FROM cache_video_files
+      WHERE entity_type = 'movie' AND entity_id = ?
+      ORDER BY video_type, discovered_at DESC`,
+      [movieId]
+    );
 
-      // Get image files (cache only - source of truth)
-      const imageFiles = await conn.query(
-        `SELECT
-          id, file_path, file_name, file_size, image_type,
-          width, height, format, perceptual_hash,
-          source_type, source_url, provider_name, classification_score,
-          is_locked, discovered_at
-        FROM cache_image_files
-        WHERE entity_type = 'movie' AND entity_id = ?
-        ORDER BY image_type, classification_score DESC, discovered_at DESC`,
-        [movieId]
-      );
+    // Get image files (cache only - source of truth)
+    const imageFiles = await conn.query(
+      `SELECT
+        id, file_path, file_name, file_size, image_type,
+        width, height, format, perceptual_hash,
+        source_type, source_url, provider_name, classification_score,
+        is_locked, discovered_at
+      FROM cache_image_files
+      WHERE entity_type = 'movie' AND entity_id = ?
+      ORDER BY image_type, classification_score DESC, discovered_at DESC`,
+      [movieId]
+    );
 
-      // Get audio files (cache only - source of truth)
-      const audioFiles = await conn.query(
-        `SELECT
-          id, file_path, file_name, file_size, audio_type,
-          codec, duration_seconds, bitrate, sample_rate, channels, language,
-          source_type, source_url, provider_name, classification_score,
-          discovered_at
-        FROM cache_audio_files
-        WHERE entity_type = 'movie' AND entity_id = ?
-        ORDER BY audio_type, discovered_at DESC`,
-        [movieId]
-      );
+    // Get audio files (cache only - source of truth)
+    const audioFiles = await conn.query(
+      `SELECT
+        id, file_path, file_name, file_size, audio_type,
+        codec, duration_seconds, bitrate, sample_rate, channels, language,
+        source_type, source_url, provider_name, classification_score,
+        discovered_at
+      FROM cache_audio_files
+      WHERE entity_type = 'movie' AND entity_id = ?
+      ORDER BY audio_type, discovered_at DESC`,
+      [movieId]
+    );
 
-      // Get text files (cache only - source of truth)
-      const textFiles = await conn.query(
-        `SELECT
-          id, file_path, file_name, file_size, text_type,
-          subtitle_language, subtitle_format, nfo_is_valid, nfo_has_tmdb_id, nfo_needs_regen,
-          source_type, source_url, provider_name, classification_score,
-          discovered_at
-        FROM cache_text_files
-        WHERE entity_type = 'movie' AND entity_id = ?
-        ORDER BY text_type, discovered_at DESC`,
-        [movieId]
-      );
+    // Get text files (cache only - source of truth)
+    const textFiles = await conn.query(
+      `SELECT
+        id, file_path, file_name, file_size, text_type,
+        subtitle_language, subtitle_format, nfo_is_valid, nfo_has_tmdb_id, nfo_needs_regen,
+        source_type, source_url, provider_name, classification_score,
+        discovered_at
+      FROM cache_text_files
+      WHERE entity_type = 'movie' AND entity_id = ?
+      ORDER BY text_type, discovered_at DESC`,
+      [movieId]
+    );
 
-      // Get unknown files
-      const unknownFiles = await conn.query(
-        `SELECT
-          id, file_path, file_name, file_size, extension,
-          category, discovered_at
-        FROM unknown_files
-        WHERE entity_type = 'movie' AND entity_id = ?
-        ORDER BY discovered_at DESC`,
-        [movieId]
-      );
+    // Get unknown files
+    const unknownFiles = await conn.query(
+      `SELECT
+        id, file_path, file_name, file_size, extension,
+        category, discovered_at
+      FROM unknown_files
+      WHERE entity_type = 'movie' AND entity_id = ?
+      ORDER BY discovered_at DESC`,
+      [movieId]
+    );
 
-      return {
-        video: videoFiles,
-        images: imageFiles,
-        audio: audioFiles,
-        text: textFiles,
-        unknown: unknownFiles
-      };
-    } catch (error) {
-      throw error;
-    }
+    return {
+      video: videoFiles,
+      images: imageFiles,
+      audio: audioFiles,
+      text: textFiles,
+      unknown: unknownFiles
+    };
   }
 
   private mapToMovie(row: MovieDatabaseRow): Movie {

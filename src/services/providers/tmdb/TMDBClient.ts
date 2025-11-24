@@ -393,7 +393,7 @@ export class TMDBClient {
             { ...context, metadata: { ...context.metadata, status } }
           );
 
-        case 429:
+        case 429: {
           // Rate limit - retryable with delay
           const retryAfter = axiosError.response.headers?.['retry-after'];
           return new RateLimitError(
@@ -402,6 +402,7 @@ export class TMDBClient {
             `Rate limit exceeded: ${message}`,
             { ...context, metadata: { ...context.metadata, status, retryAfter } }
           );
+        }
 
         case 500:
         case 502:

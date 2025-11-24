@@ -820,7 +820,7 @@ export class KodiSyncService {
               error: 'Movie still exists in Kodi after removal',
             });
 
-          } catch (error) {
+          } catch (_error) {
             // Expected - movie should not exist
             logger.info('[KodiSync] Movie removal verified', {
               playerId: player.id,

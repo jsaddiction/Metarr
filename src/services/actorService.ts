@@ -178,7 +178,7 @@ export class ActorService {
       const allowedFields = ['name', 'tmdb_id', 'imdb_id', 'identification_status', 'enrichment_priority'];
 
       for (const field of allowedFields) {
-        if (data.hasOwnProperty(field)) {
+        if (Object.prototype.hasOwnProperty.call(data, field)) {
           updateFields.push(`${field} = ?`);
           updateValues.push((data as any)[field]);
         }

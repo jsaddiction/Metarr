@@ -172,7 +172,7 @@ export async function discoverActors(
     logger.debug('Scanned .actors directory', {
       totalActors: actorsMap.size,
     });
-  } catch (error) {
+  } catch (_error) {
     // .actors directory doesn't exist - not an error
     logger.debug('.actors directory not found', {
       path: actorsDir,

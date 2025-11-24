@@ -269,7 +269,7 @@ export class MovieUnknownFilesService {
             to: properLibraryPath,
           });
         }
-      } catch (error) {
+      } catch (_error) {
         // Properly named file doesn't exist - rename to Kodi convention
         await fs.rename(originalFilePath, properLibraryPath);
         finalLibraryPath = properLibraryPath;
@@ -340,7 +340,7 @@ export class MovieUnknownFilesService {
           finalFilePath = newFilePath;
           await fs.unlink(originalFilePath);
         }
-      } catch (error) {
+      } catch (_error) {
         await fs.rename(originalFilePath, newFilePath);
         finalFilePath = newFilePath;
       }
@@ -428,7 +428,7 @@ export class MovieUnknownFilesService {
           finalFilePath = newFilePath;
           await fs.unlink(originalFilePath);
         }
-      } catch (error) {
+      } catch (_error) {
         await fs.rename(originalFilePath, newFilePath);
         finalFilePath = newFilePath;
       }
@@ -557,7 +557,7 @@ export class MovieUnknownFilesService {
       const hash1Result = await hashSmallFile(file1);
       const hash2Result = await hashSmallFile(file2);
       return hash1Result.hash === hash2Result.hash;
-    } catch (error) {
+    } catch (_error) {
       return false;
     }
   }

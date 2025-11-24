@@ -144,7 +144,7 @@ export async function filesHaveSameContent(
       calculateQuickHash(filePath2),
     ]);
     return hash1 === hash2;
-  } catch (error) {
+  } catch (_error) {
     return false;
   }
 }

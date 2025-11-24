@@ -384,7 +384,6 @@ export async function findOrCreateMovie(
 ): Promise<MovieLookupResult> {
   let movie: Movie | null = null;
   let pathChanged = false;
-  let restoredFromDeletion = false;
 
   // Priority 1: Search by TMDB ID
   if (context.tmdbId) {
@@ -413,7 +412,7 @@ export async function findOrCreateMovie(
         movie,
         created: false,
         pathChanged,
-        restoredFromDeletion,
+        restoredFromDeletion: false,
       };
     }
   }
@@ -448,7 +447,7 @@ export async function findOrCreateMovie(
         movie,
         created: false,
         pathChanged: false,
-        restoredFromDeletion,
+        restoredFromDeletion: false,
       };
     }
   }

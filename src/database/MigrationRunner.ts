@@ -57,7 +57,7 @@ export class MigrationRunner {
         'SELECT version FROM migrations ORDER BY version'
       );
       return results.map(row => row.version);
-    } catch (error) {
+    } catch (_error) {
       // Table might not exist yet
       return [];
     }

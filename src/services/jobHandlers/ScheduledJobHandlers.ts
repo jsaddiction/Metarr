@@ -115,7 +115,7 @@ export class ScheduledJobHandlers {
             const titleWithoutExt = path.basename(mainVideoFile, path.extname(mainVideoFile));
 
             // Try to extract year from filename
-            const yearMatch = titleWithoutExt.match(/[\(\[]?(\d{4})[\)\]]?/);
+            const yearMatch = titleWithoutExt.match(/[([]?(\d{4})[)\]]?/);
             const year = yearMatch ? parseInt(yearMatch[1]) : null;
 
             // Insert movie into database with filename as title

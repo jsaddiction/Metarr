@@ -147,7 +147,7 @@ export class MovieAssetService {
         ];
 
         for (const field of allowedFields) {
-          if ((metadata as Record<string, unknown>).hasOwnProperty(field)) {
+          if (Object.prototype.hasOwnProperty.call(metadata, field)) {
             updateFields.push(`${field} = ?`);
             updateValues.push((metadata as Record<string, SqlParam>)[field]);
           }
@@ -191,7 +191,7 @@ export class MovieAssetService {
             const analysis = await imageProcessor.analyzeImage(tempFilePath);
             width = analysis.width;
             height = analysis.height;
-          } catch (error) {
+          } catch (_error) {
             logger.warn('Could not get image dimensions', { assetType, url: asset.url });
           }
 
@@ -319,7 +319,7 @@ export class MovieAssetService {
           // Clean up temp file
           try {
             await fs.unlink(tempFilePath);
-          } catch (error) {
+          } catch (_error) {
             // Ignore cleanup errors
           }
 
@@ -655,7 +655,7 @@ export class MovieAssetService {
         width = analysis.width;
         height = analysis.height;
         format = analysis.format;
-      } catch (error) {
+      } catch (_error) {
         logger.warn('Could not get image dimensions', { assetType, url: assetData.url });
       }
 
@@ -682,7 +682,7 @@ export class MovieAssetService {
       // Clean up temp file
       try {
         await fs.unlink(tempFilePath);
-      } catch (error) {
+      } catch (_error) {
         // Ignore cleanup errors
       }
 

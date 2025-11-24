@@ -633,7 +633,7 @@ export class MovieService {
       ];
 
       for (const field of allowedFields) {
-        if (metadata.hasOwnProperty(field)) {
+        if (Object.prototype.hasOwnProperty.call(metadata, field)) {
           updateFields.push(`${field} = ?`);
           updateValues.push(metadata[field as keyof MovieMetadata]);
         }

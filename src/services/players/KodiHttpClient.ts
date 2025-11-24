@@ -105,7 +105,7 @@ export class KodiHttpClient {
     try {
       const result = await this.sendRequest<string>('JSONRPC.Ping');
       return result === 'pong';
-    } catch (error) {
+    } catch (_error) {
       // Connection failures logged by connection manager
       return false;
     }

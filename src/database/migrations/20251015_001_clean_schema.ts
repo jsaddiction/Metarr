@@ -2257,7 +2257,7 @@ export class CleanSchemaMigration {
     console.log('✅ Clean schema migration completed successfully!');
   }
 
-  static async down(_db: DatabaseConnection): Promise<void> {
+  static async down(): Promise<void> {
     console.log('⚠️  Clean schema rollback not implemented - this is the base schema');
   }
 }

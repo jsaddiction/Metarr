@@ -44,7 +44,7 @@ async function cleanupEmptyDirectories(filePath: string, cacheRoot: string): Pro
     // Ensure cache root still exists (safety check)
     try {
       await fs.access(absoluteCacheRoot);
-    } catch (error) {
+    } catch (_error) {
       // Cache root was deleted - recreate it
       await fs.mkdir(absoluteCacheRoot, { recursive: true });
       logger.warn('Recreated cache root directory', { cacheRoot: absoluteCacheRoot });
