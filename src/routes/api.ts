@@ -22,7 +22,7 @@ import { ImageService } from '../services/imageService.js';
 import { JobQueueService } from '../services/jobQueue/JobQueueService.js';
 import { ActorController } from '../controllers/actorController.js';
 import { ProviderConfigService } from '../services/providerConfigService.js';
-import { ProviderConfigController } from '../controllers/ProviderConfigController.js';
+import { ProviderConfigController } from '../controllers/providerConfigController.js';
 import { ProviderCacheManager } from '../services/providers/ProviderCacheManager.js';
 import { AssetConfigService } from '../services/assetConfigService.js';
 import { AssetConfigController } from '../controllers/assetConfigController.js';

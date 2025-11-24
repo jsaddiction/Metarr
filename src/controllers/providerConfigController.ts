@@ -144,7 +144,7 @@ export class ProviderConfigController {
       }
 
       // Validate API key if required
-      if (metadata.requiresApiKey && data.enabled && !data.apiKey) {
+      if (metadata.requiresApiKey && data.enabled && !data.apiKey && !data.personalApiKey) {
         res.status(400).json({
           error: `API key is required for provider '${metadata.displayName}'`
         });

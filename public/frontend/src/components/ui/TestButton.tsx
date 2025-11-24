@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { Button } from '@/components/ui/button';
 
 interface TestButtonProps {
   onTest: () => Promise<{ success: boolean; message: string }>;
   disabled?: boolean;
   className?: string;
+  label?: string;
+  loadingLabel?: string;
   minDisplayTime?: number;
   resultDisplayTime?: number;
 }
@@ -22,6 +23,8 @@ interface TestButtonProps {
  * @param onTest - Async function that performs the test and returns {success, message}
  * @param disabled - Whether the button should be disabled
  * @param className - Additional CSS classes to apply to the button
+ * @param label - Button label text (default: "Test")
+ * @param loadingLabel - Loading state text (default: "Testing...")
  * @param minDisplayTime - Minimum time to show "Testing..." in milliseconds (default: 800)
  * @param resultDisplayTime - Time to show result (✓/✗) in milliseconds (default: 3000)
  */
@@ -29,6 +32,8 @@ export const TestButton: React.FC<TestButtonProps> = ({
   onTest,
   disabled = false,
   className = '',
+  label = 'Test',
+  loadingLabel = 'Testing...',
   minDisplayTime = 800,
   resultDisplayTime = 3000,
 }) => {
@@ -88,29 +93,29 @@ export const TestButton: React.FC<TestButtonProps> = ({
   };
 
   return (
-    <Button
+    <button
       onClick={handleTest}
       disabled={disabled || isTesting || testingFadingOut}
-      className={`w-24 relative ${className}`}
+      className={`w-24 h-8 px-3 text-xs relative bg-primary-600 hover:bg-primary-700 text-white rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${className}`}
       title={testResult?.message}
     >
-      {/* Test text - fades out when testing or result shown */}
+      {/* Label text - fades out when testing or result shown */}
       <span
         className={`transition-opacity duration-500 ${
           isTesting || testingFadingOut || testResult !== null ? 'opacity-0' : 'opacity-100'
         }`}
       >
-        Test
+        {label}
       </span>
 
-      {/* Testing text - show during test, fade out when testingFadingOut */}
+      {/* Loading text - show during test, fade out when testingFadingOut */}
       {(isTesting || testingFadingOut) && (
         <span
           className={`absolute inset-0 flex items-center justify-center transition-opacity duration-500 ${
             testingFadingOut ? 'opacity-0' : 'opacity-100'
           }`}
         >
-          Testing...
+          {loadingLabel}
         </span>
       )}
 
@@ -127,6 +132,6 @@ export const TestButton: React.FC<TestButtonProps> = ({
           ✗
         </span>
       )}
-    </Button>
+    </button>
   );
 };
