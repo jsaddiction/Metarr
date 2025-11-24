@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faEye, faEyeSlash, faCircleQuestion } from '@fortawesome/free-solid-svg-icons';
+import { faEye, faEyeSlash, faCircleQuestion, faSave, faUndo } from '@fortawesome/free-solid-svg-icons';
 import { ProviderWithMetadata, ProviderConfig as ProviderConfigType } from '../../types/provider';
 import { useUpdateProvider } from '../../hooks/useProviders';
 import { Switch } from '@/components/ui/switch';
@@ -19,87 +19,73 @@ interface ProviderCardProps {
 export const ProviderCard: React.FC<ProviderCardProps> = ({ provider, stats }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [localConfig, setLocalConfig] = useState<ProviderConfigType>(provider.config);
-  const [pendingSave, setPendingSave] = useState(false);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   const updateProvider = useUpdateProvider();
 
-  // Sync local state when provider changes
+  // Sync local state when provider changes from server
   useEffect(() => {
     setLocalConfig(provider.config);
+    setHasUnsavedChanges(false);
   }, [provider.config]);
 
-  // Save on blur
-  const handleBlur = (field: string, value: any) => {
-    // Only save if value actually changed
-    if (provider.config[field as keyof ProviderConfigType] === value) {
-      return;
-    }
+  // Check if there are unsaved changes
+  useEffect(() => {
+    const apiKeyField = localConfig.personalApiKey ? 'personalApiKey' : 'apiKey';
+    const serverApiKey = provider.config[apiKeyField as keyof ProviderConfigType] || '';
+    const localApiKey = localConfig[apiKeyField as keyof ProviderConfigType] || '';
 
-    setPendingSave(true);
+    setHasUnsavedChanges(serverApiKey !== localApiKey);
+  }, [localConfig, provider.config]);
+
+  const handleSave = () => {
+    const apiKeyField = localConfig.personalApiKey || !provider.metadata.apiKeyOptional ? 'personalApiKey' : 'apiKey';
+
     updateProvider.mutate(
       {
         name: provider.metadata.name,
-        data: { ...localConfig, [field]: value }
+        data: { ...provider.config, [apiKeyField]: localConfig[apiKeyField as keyof ProviderConfigType] }
       },
       {
         onSuccess: () => {
-          setPendingSave(false);
+          toast.success(`${provider.metadata.displayName} configuration saved`);
+          setHasUnsavedChanges(false);
         },
         onError: (error: any) => {
-          toast.error(`Failed to update ${provider.metadata.displayName}: ${error.message}`);
-          setPendingSave(false);
-          // Revert local state on error
-          setLocalConfig(provider.config);
+          toast.error(`Failed to save: ${error.message}`);
         }
       }
     );
   };
 
-  const handleToggle = async (enabled: boolean) => {
-    // Check LOCAL config state (includes unsaved changes)
-    const hasApiKey = !!(localConfig.personalApiKey || localConfig.apiKey);
+  const handleReset = () => {
+    setLocalConfig(provider.config);
+    setHasUnsavedChanges(false);
+  };
+
+  const handleToggle = (enabled: boolean) => {
+    // Check if API key is required
+    const hasApiKey = !!(provider.config.personalApiKey || provider.config.apiKey);
 
     if (enabled && provider.metadata.requiresApiKey && !hasApiKey) {
-      // This shouldn't happen since switch is disabled, but just in case
-      toast.error(`${provider.metadata.displayName} requires an API key`);
+      toast.error(`${provider.metadata.displayName} requires an API key. Please save your API key first.`);
       return;
     }
 
-    // If enabling and there's an unsaved API key, save it first
-    if (enabled && hasApiKey && pendingSave) {
-      toast.info('Saving API key before enabling...');
-      // Wait a moment for any pending blur event to trigger
-      await new Promise(resolve => setTimeout(resolve, 100));
+    // Check if there are unsaved changes
+    if (hasUnsavedChanges) {
+      toast.error('Please save your changes before enabling the provider');
+      return;
     }
 
-    // Force save API key if it's different from server state
-    const apiKeyField = localConfig.personalApiKey ? 'personalApiKey' : 'apiKey';
-    const serverApiKey = provider.config[apiKeyField as keyof ProviderConfigType];
-    const localApiKey = localConfig[apiKeyField as keyof ProviderConfigType];
-
-    if (enabled && localApiKey && localApiKey !== serverApiKey) {
-      // Save API key first before enabling
-      try {
-        await updateProvider.mutateAsync({
-          name: provider.metadata.name,
-          data: { ...localConfig, [apiKeyField]: localApiKey }
-        });
-      } catch (error: any) {
-        toast.error(`Failed to save API key: ${error.message}`);
-        return;
-      }
-    }
-
-    setLocalConfig(prev => ({ ...prev, enabled }));
     updateProvider.mutate(
-      { name: provider.metadata.name, data: { ...localConfig, enabled } },
+      { name: provider.metadata.name, data: { ...provider.config, enabled } },
       {
         onSuccess: () => {
           toast.success(`${provider.metadata.displayName} ${enabled ? 'enabled' : 'disabled'}`);
         },
         onError: (error: any) => {
           toast.error(`Failed to ${enabled ? 'enable' : 'disable'} provider: ${error.message}`);
-          setLocalConfig(prev => ({ ...prev, enabled: !enabled }));
         }
       }
     );
@@ -148,11 +134,11 @@ export const ProviderCard: React.FC<ProviderCardProps> = ({ provider, stats }) =
   };
 
   const needsApiKey = provider.metadata.requiresApiKey || provider.metadata.apiKeyOptional;
-  const hasApiKey = !!(localConfig.personalApiKey || localConfig.apiKey);
-  const usingEmbeddedKey = hasApiKey && !localConfig.personalApiKey && provider.metadata.apiKeyOptional;
+  const hasApiKey = !!(provider.config.personalApiKey || provider.config.apiKey);
+  const usingEmbeddedKey = hasApiKey && !provider.config.personalApiKey && provider.metadata.apiKeyOptional;
 
-  // Disable switch if API key is required but not set
-  const switchDisabled = updateProvider.isPending || pendingSave || (provider.metadata.requiresApiKey && !hasApiKey);
+  // Disable switch if there are unsaved changes or API key requirements not met
+  const switchDisabled = updateProvider.isPending || hasUnsavedChanges || (provider.metadata.requiresApiKey && !hasApiKey);
 
   return (
     <div className="card">
@@ -223,10 +209,6 @@ export const ProviderCard: React.FC<ProviderCardProps> = ({ provider, stats }) =
                   const field = localConfig.personalApiKey || !provider.metadata.apiKeyOptional ? 'personalApiKey' : 'apiKey';
                   handleFieldChange(field, e.target.value);
                 }}
-                onBlur={(e) => {
-                  const field = localConfig.personalApiKey || !provider.metadata.apiKeyOptional ? 'personalApiKey' : 'apiKey';
-                  handleBlur(field, e.target.value);
-                }}
                 placeholder={provider.metadata.requiresApiKey ? 'API key required' : 'Optional personal key'}
                 className="flex-1 h-8 px-2.5 py-1 text-sm bg-neutral-800 border border-neutral-600 rounded-l text-neutral-200 transition-colors placeholder:text-neutral-500 focus-visible:outline-none"
               />
@@ -239,10 +221,34 @@ export const ProviderCard: React.FC<ProviderCardProps> = ({ provider, stats }) =
                 <FontAwesomeIcon icon={showPassword ? faEyeSlash : faEye} className="text-xs" />
               </button>
             </div>
-            {usingEmbeddedKey && (
+
+            {/* Save/Reset buttons (shown when there are unsaved changes) */}
+            {hasUnsavedChanges && (
+              <div className="flex items-center gap-2 mt-2">
+                <button
+                  onClick={handleSave}
+                  disabled={updateProvider.isPending}
+                  className="text-xs px-3 py-1.5 bg-primary-600 hover:bg-primary-700 text-white rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+                >
+                  <FontAwesomeIcon icon={faSave} className="text-xs" />
+                  {updateProvider.isPending ? 'Saving...' : 'Save'}
+                </button>
+                <button
+                  onClick={handleReset}
+                  disabled={updateProvider.isPending}
+                  className="text-xs px-3 py-1.5 bg-neutral-700 hover:bg-neutral-600 text-neutral-300 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+                >
+                  <FontAwesomeIcon icon={faUndo} className="text-xs" />
+                  Reset
+                </button>
+                <span className="text-xs text-amber-400">Unsaved changes</span>
+              </div>
+            )}
+
+            {!hasUnsavedChanges && usingEmbeddedKey && (
               <p className="text-xs text-amber-400/70 mt-1">Using shared embedded key</p>
             )}
-            {localConfig.personalApiKey && (
+            {!hasUnsavedChanges && localConfig.personalApiKey && (
               <p className="text-xs text-green-500/70 mt-1">Using personal API key</p>
             )}
           </div>
@@ -257,7 +263,8 @@ export const ProviderCard: React.FC<ProviderCardProps> = ({ provider, stats }) =
               </>
             ) : (
               <span className="text-neutral-500">
-                {provider.metadata.requiresApiKey && !hasApiKey ? 'API key required to enable' : 'Disabled'}
+                {hasUnsavedChanges ? 'Save changes before enabling' :
+                 provider.metadata.requiresApiKey && !hasApiKey ? 'API key required to enable' : 'Disabled'}
               </span>
             )}
           </div>
