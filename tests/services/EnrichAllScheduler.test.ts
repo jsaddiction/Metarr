@@ -1,20 +1,20 @@
 /**
  * EnrichAllScheduler Integration Tests
  *
- * Tests bulk enrichment processing with dynamic batching, rate limit handling,
+ * Tests bulk enrichment processing with job creation, concurrent protection,
  * error recovery, and progress tracking.
  */
 
 // @ts-nocheck - Test file with mock types
 import { jest } from '@jest/globals';
 import { EnrichAllScheduler } from '../../src/services/enrichment/EnrichAllScheduler.js';
-import { MetadataEnrichmentService } from '../../src/services/enrichment/MetadataEnrichmentService.js';
+import { JobQueueService } from '../../src/services/jobQueue/JobQueueService.js';
 import { DatabaseConnection } from '../../src/types/database.js';
 
 describe('EnrichAllScheduler', () => {
   let scheduler: EnrichAllScheduler;
   let mockDb: DatabaseConnection;
-  let mockEnrichmentService: MetadataEnrichmentService;
+  let mockJobQueue: JobQueueService;
 
   beforeEach(() => {
     // Mock database
@@ -28,13 +28,13 @@ describe('EnrichAllScheduler', () => {
       rollback: jest.fn(),
     } as any;
 
-    // Mock enrichment service
-    mockEnrichmentService = {
-      enrichMovie: jest.fn(),
+    // Mock job queue service
+    mockJobQueue = {
+      addJob: jest.fn().mockResolvedValue(undefined),
     } as any;
 
     // Create scheduler instance
-    scheduler = new EnrichAllScheduler(mockDb, mockEnrichmentService);
+    scheduler = new EnrichAllScheduler(mockDb, mockJobQueue);
   });
 
   afterEach(() => {
@@ -42,7 +42,7 @@ describe('EnrichAllScheduler', () => {
   });
 
   describe('Complete Processing', () => {
-    it('should process all monitored movies until completion', async () => {
+    it('should create jobs for all monitored movies', async () => {
       // Setup: 5 monitored movies
       const movies = [
         { id: 1, title: 'Movie 1' },
@@ -54,55 +54,31 @@ describe('EnrichAllScheduler', () => {
 
       (mockDb.query as jest.Mock).mockResolvedValueOnce(movies);
 
-      // All enrichments succeed
-      (mockEnrichmentService.enrichMovie as jest.Mock)
-        .mockResolvedValueOnce({
-          updated: true,
-          partial: false,
-          rateLimitedProviders: [],
-          changedFields: ['plot', 'tagline'],
-          completeness: 85,
-        })
-        .mockResolvedValueOnce({
-          updated: false,
-          partial: false,
-          rateLimitedProviders: [],
-        })
-        .mockResolvedValueOnce({
-          updated: true,
-          partial: false,
-          rateLimitedProviders: [],
-          changedFields: ['runtime'],
-          completeness: 90,
-        })
-        .mockResolvedValueOnce({
-          updated: false,
-          partial: false,
-          rateLimitedProviders: [],
-        })
-        .mockResolvedValueOnce({
-          updated: true,
-          partial: false,
-          rateLimitedProviders: [],
-          changedFields: ['imdb_rating'],
-          completeness: 95,
-        });
-
       // Execute
       const stats = await scheduler.enrichAll();
 
-      // Verify all movies processed
+      // Verify all movies processed (jobs created)
       expect(stats.processed).toBe(5);
-      expect(stats.updated).toBe(3); // Movies 1, 3, 5 updated
-      expect(stats.skipped).toBe(2); // Movies 2, 4 skipped
+      expect(stats.updated).toBe(0); // Job-based approach doesn't track updates
+      expect(stats.skipped).toBe(0); // Job-based approach doesn't track skips
       expect(stats.stopped).toBe(false);
       expect(stats.stopReason).toBeNull();
       expect(stats.endTime).toBeDefined();
 
-      // Verify all movies were enriched with requireComplete=true
-      expect(mockEnrichmentService.enrichMovie).toHaveBeenCalledTimes(5);
+      // Verify jobs were created for all movies with requireComplete=true
+      expect(mockJobQueue.addJob).toHaveBeenCalledTimes(5);
       for (let i = 1; i <= 5; i++) {
-        expect(mockEnrichmentService.enrichMovie).toHaveBeenCalledWith(i, true);
+        expect(mockJobQueue.addJob).toHaveBeenCalledWith({
+          type: 'enrich-metadata',
+          priority: 7,
+          payload: {
+            entityType: 'movie',
+            entityId: i,
+            requireComplete: true,
+          },
+          retry_count: 0,
+          max_retries: 0,
+        });
       }
     });
 
@@ -120,142 +96,17 @@ describe('EnrichAllScheduler', () => {
       expect(stats.stopped).toBe(false);
       expect(stats.endTime).toBeDefined();
 
-      // Verify enrichMovie was never called
-      expect(mockEnrichmentService.enrichMovie).not.toHaveBeenCalled();
+      // Verify no jobs were created
+      expect(mockJobQueue.addJob).not.toHaveBeenCalled();
     });
   });
 
-  describe('Rate Limit Handling', () => {
-    it('should stop when provider is rate limited', async () => {
-      // Setup: 10 monitored movies
-      const movies = Array.from({ length: 10 }, (_, i) => ({
-        id: i + 1,
-        title: `Movie ${i + 1}`,
-      }));
-
-      (mockDb.query as jest.Mock).mockResolvedValueOnce(movies);
-
-      // First 3 succeed, 4th is rate limited
-      (mockEnrichmentService.enrichMovie as jest.Mock)
-        .mockResolvedValueOnce({
-          updated: true,
-          partial: false,
-          rateLimitedProviders: [],
-        })
-        .mockResolvedValueOnce({
-          updated: true,
-          partial: false,
-          rateLimitedProviders: [],
-        })
-        .mockResolvedValueOnce({
-          updated: false,
-          partial: false,
-          rateLimitedProviders: [],
-        })
-        .mockResolvedValueOnce({
-          updated: false,
-          partial: false,
-          rateLimitedProviders: ['omdb'], // Rate limited!
-        });
-
-      // Execute
-      const stats = await scheduler.enrichAll();
-
-      // Verify stopped after 4 movies
-      expect(stats.processed).toBe(4);
-      expect(stats.updated).toBe(2);
-      expect(stats.skipped).toBe(1);
-      expect(stats.stopped).toBe(true);
-      expect(stats.stopReason).toBe('Provider rate limited: omdb');
-
-      // Verify only 4 movies were processed (not all 10)
-      expect(mockEnrichmentService.enrichMovie).toHaveBeenCalledTimes(4);
-    });
-
-    it('should continue if rate limited but movie was still updated', async () => {
-      // Setup: 5 movies
-      const movies = Array.from({ length: 5 }, (_, i) => ({
-        id: i + 1,
-        title: `Movie ${i + 1}`,
-      }));
-
-      (mockDb.query as jest.Mock).mockResolvedValueOnce(movies);
-
-      // Movie 3 is partially rate limited but still updated (from cache)
-      (mockEnrichmentService.enrichMovie as jest.Mock)
-        .mockResolvedValueOnce({
-          updated: true,
-          partial: false,
-          rateLimitedProviders: [],
-        })
-        .mockResolvedValueOnce({
-          updated: true,
-          partial: false,
-          rateLimitedProviders: [],
-        })
-        .mockResolvedValueOnce({
-          updated: true, // STILL UPDATED (cache hit)
-          partial: true,
-          rateLimitedProviders: ['tmdb'], // Rate limited but updated from cache
-        })
-        .mockResolvedValueOnce({
-          updated: true,
-          partial: false,
-          rateLimitedProviders: [],
-        })
-        .mockResolvedValueOnce({
-          updated: false,
-          partial: false,
-          rateLimitedProviders: [],
-        });
-
-      // Execute
-      const stats = await scheduler.enrichAll();
-
-      // Verify all movies processed (didn't stop)
-      expect(stats.processed).toBe(5);
-      expect(stats.updated).toBe(4);
-      expect(stats.skipped).toBe(1);
-      expect(stats.stopped).toBe(false);
-      expect(stats.stopReason).toBeNull();
-
-      // All movies processed
-      expect(mockEnrichmentService.enrichMovie).toHaveBeenCalledTimes(5);
-    });
-
-    it('should stop immediately on rate limit without update', async () => {
-      // Setup: 100 movies
-      const movies = Array.from({ length: 100 }, (_, i) => ({
-        id: i + 1,
-        title: `Movie ${i + 1}`,
-      }));
-
-      (mockDb.query as jest.Mock).mockResolvedValueOnce(movies);
-
-      // First movie is rate limited
-      (mockEnrichmentService.enrichMovie as jest.Mock).mockResolvedValueOnce({
-        updated: false,
-        partial: false,
-        rateLimitedProviders: ['omdb'],
-      });
-
-      // Execute
-      const stats = await scheduler.enrichAll();
-
-      // Verify stopped after 1 movie
-      expect(stats.processed).toBe(1);
-      expect(stats.updated).toBe(0);
-      expect(stats.skipped).toBe(0);
-      expect(stats.stopped).toBe(true);
-      expect(stats.stopReason).toBe('Provider rate limited: omdb');
-
-      // Only 1 movie processed
-      expect(mockEnrichmentService.enrichMovie).toHaveBeenCalledTimes(1);
-    });
-  });
+  // NOTE: Rate limit handling tests removed - the job-based approach
+  // creates all jobs upfront. Individual jobs will handle rate limits
+  // when they execute via the requireComplete flag.
 
   describe('Error Handling', () => {
-    it('should continue processing after enrichment error', async () => {
+    it('should continue processing after job creation error', async () => {
       // Setup: 5 movies
       const movies = Array.from({ length: 5 }, (_, i) => ({
         id: i + 1,
@@ -264,41 +115,25 @@ describe('EnrichAllScheduler', () => {
 
       (mockDb.query as jest.Mock).mockResolvedValueOnce(movies);
 
-      // Movie 2 throws error, others succeed
-      (mockEnrichmentService.enrichMovie as jest.Mock)
-        .mockResolvedValueOnce({
-          updated: true,
-          partial: false,
-          rateLimitedProviders: [],
-        })
-        .mockRejectedValueOnce(new Error('Transient error')) // Error on movie 2
-        .mockResolvedValueOnce({
-          updated: true,
-          partial: false,
-          rateLimitedProviders: [],
-        })
-        .mockResolvedValueOnce({
-          updated: false,
-          partial: false,
-          rateLimitedProviders: [],
-        })
-        .mockResolvedValueOnce({
-          updated: true,
-          partial: false,
-          rateLimitedProviders: [],
-        });
+      // Movie 2 throws error during job creation, others succeed
+      (mockJobQueue.addJob as jest.Mock)
+        .mockResolvedValueOnce(undefined)
+        .mockRejectedValueOnce(new Error('Job queue full')) // Error on movie 2
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce(undefined);
 
       // Execute
       const stats = await scheduler.enrichAll();
 
-      // Verify all movies attempted (error didn't stop job)
-      expect(stats.processed).toBe(4); // Movie 2 failed, doesn't count
-      expect(stats.updated).toBe(3);
-      expect(stats.skipped).toBe(1);
+      // Verify all movies attempted (error didn't stop job creation)
+      expect(stats.processed).toBe(4); // Movie 2 failed, doesn't count in processed
+      expect(stats.updated).toBe(0); // Job-based approach doesn't track updates
+      expect(stats.skipped).toBe(0); // Job-based approach doesn't track skips
       expect(stats.stopped).toBe(false);
 
       // All 5 movies attempted
-      expect(mockEnrichmentService.enrichMovie).toHaveBeenCalledTimes(5);
+      expect(mockJobQueue.addJob).toHaveBeenCalledTimes(5);
     });
 
     it('should handle multiple sequential errors gracefully', async () => {
@@ -310,31 +145,31 @@ describe('EnrichAllScheduler', () => {
 
       (mockDb.query as jest.Mock).mockResolvedValueOnce(movies);
 
-      // Movies 2, 3, 4 all fail
-      (mockEnrichmentService.enrichMovie as jest.Mock)
-        .mockResolvedValueOnce({ updated: true, partial: false, rateLimitedProviders: [] })
+      // Movies 2, 3, 4 all fail job creation
+      (mockJobQueue.addJob as jest.Mock)
+        .mockResolvedValueOnce(undefined)
         .mockRejectedValueOnce(new Error('Error 1'))
         .mockRejectedValueOnce(new Error('Error 2'))
         .mockRejectedValueOnce(new Error('Error 3'))
-        .mockResolvedValueOnce({ updated: true, partial: false, rateLimitedProviders: [] });
+        .mockResolvedValueOnce(undefined);
 
       // Execute
       const stats = await scheduler.enrichAll();
 
       // Verify processing continued
       expect(stats.processed).toBe(2); // Movies 1 and 5 succeeded
-      expect(stats.updated).toBe(2);
-      expect(stats.skipped).toBe(0);
+      expect(stats.updated).toBe(0); // Job-based approach doesn't track updates
+      expect(stats.skipped).toBe(0); // Job-based approach doesn't track skips
       expect(stats.stopped).toBe(false);
 
       // All 5 attempted
-      expect(mockEnrichmentService.enrichMovie).toHaveBeenCalledTimes(5);
+      expect(mockJobQueue.addJob).toHaveBeenCalledTimes(5);
     });
   });
 
   describe('Concurrent Protection', () => {
     it('should prevent concurrent runs', async () => {
-      // Setup: 10 movies with slow processing
+      // Setup: 10 movies with slow job creation
       const movies = Array.from({ length: 10 }, (_, i) => ({
         id: i + 1,
         title: `Movie ${i + 1}`,
@@ -342,20 +177,9 @@ describe('EnrichAllScheduler', () => {
 
       (mockDb.query as jest.Mock).mockResolvedValue(movies);
 
-      // Slow enrichment (100ms per movie)
-      (mockEnrichmentService.enrichMovie as jest.Mock).mockImplementation(
-        () =>
-          new Promise((resolve) =>
-            setTimeout(
-              () =>
-                resolve({
-                  updated: true,
-                  partial: false,
-                  rateLimitedProviders: [],
-                }),
-              100
-            )
-          )
+      // Slow job creation (50ms per job) - faster than old enrichment
+      (mockJobQueue.addJob as jest.Mock).mockImplementation(
+        () => new Promise((resolve) => setTimeout(() => resolve(undefined), 50))
       );
 
       // Start first run
@@ -374,22 +198,12 @@ describe('EnrichAllScheduler', () => {
     it('should allow new run after previous completes', async () => {
       // First run
       (mockDb.query as jest.Mock).mockResolvedValueOnce([{ id: 1, title: 'Movie 1' }]);
-      (mockEnrichmentService.enrichMovie as jest.Mock).mockResolvedValueOnce({
-        updated: true,
-        partial: false,
-        rateLimitedProviders: [],
-      });
 
       const stats1 = await scheduler.enrichAll();
       expect(stats1.processed).toBe(1);
 
       // Second run (should work)
       (mockDb.query as jest.Mock).mockResolvedValueOnce([{ id: 2, title: 'Movie 2' }]);
-      (mockEnrichmentService.enrichMovie as jest.Mock).mockResolvedValueOnce({
-        updated: true,
-        partial: false,
-        rateLimitedProviders: [],
-      });
 
       const stats2 = await scheduler.enrichAll();
       expect(stats2.processed).toBe(1);
@@ -403,11 +217,6 @@ describe('EnrichAllScheduler', () => {
 
       // Second run should work
       (mockDb.query as jest.Mock).mockResolvedValueOnce([{ id: 1, title: 'Movie 1' }]);
-      (mockEnrichmentService.enrichMovie as jest.Mock).mockResolvedValueOnce({
-        updated: true,
-        partial: false,
-        rateLimitedProviders: [],
-      });
 
       const stats = await scheduler.enrichAll();
       expect(stats.processed).toBe(1);
@@ -416,7 +225,7 @@ describe('EnrichAllScheduler', () => {
 
   describe('Statistics Tracking', () => {
     it('should track statistics correctly for mixed results', async () => {
-      // Setup: 10 movies with mixed results
+      // Setup: 10 movies with mixed results (some fail job creation)
       const movies = Array.from({ length: 10 }, (_, i) => ({
         id: i + 1,
         title: `Movie ${i + 1}`,
@@ -424,24 +233,24 @@ describe('EnrichAllScheduler', () => {
 
       (mockDb.query as jest.Mock).mockResolvedValueOnce(movies);
 
-      // Mix of updated, skipped, and errors
-      const enrichMock = mockEnrichmentService.enrichMovie as jest.Mock;
-      enrichMock.mockResolvedValueOnce({ updated: true, partial: false, rateLimitedProviders: [] }); // 1: updated
-      enrichMock.mockResolvedValueOnce({ updated: false, partial: false, rateLimitedProviders: [] }); // 2: skipped
-      enrichMock.mockResolvedValueOnce({ updated: true, partial: false, rateLimitedProviders: [] }); // 3: updated
-      enrichMock.mockRejectedValueOnce(new Error('Error')); // 4: error (doesn't count)
-      enrichMock.mockResolvedValueOnce({ updated: false, partial: false, rateLimitedProviders: [] }); // 5: skipped
-      enrichMock.mockResolvedValueOnce({ updated: true, partial: false, rateLimitedProviders: [] }); // 6: updated
-      enrichMock.mockResolvedValueOnce({ updated: true, partial: false, rateLimitedProviders: [] }); // 7: updated
-      enrichMock.mockResolvedValueOnce({ updated: false, partial: false, rateLimitedProviders: [] }); // 8: skipped
-      enrichMock.mockResolvedValueOnce({ updated: true, partial: false, rateLimitedProviders: [] }); // 9: updated
-      enrichMock.mockResolvedValueOnce({ updated: false, partial: false, rateLimitedProviders: [] }); // 10: skipped
+      // Mix of successful job creation and errors
+      const addJobMock = mockJobQueue.addJob as jest.Mock;
+      addJobMock.mockResolvedValueOnce(undefined); // 1: success
+      addJobMock.mockResolvedValueOnce(undefined); // 2: success
+      addJobMock.mockResolvedValueOnce(undefined); // 3: success
+      addJobMock.mockRejectedValueOnce(new Error('Error')); // 4: error (doesn't count)
+      addJobMock.mockResolvedValueOnce(undefined); // 5: success
+      addJobMock.mockResolvedValueOnce(undefined); // 6: success
+      addJobMock.mockResolvedValueOnce(undefined); // 7: success
+      addJobMock.mockResolvedValueOnce(undefined); // 8: success
+      addJobMock.mockResolvedValueOnce(undefined); // 9: success
+      addJobMock.mockResolvedValueOnce(undefined); // 10: success
 
       const stats = await scheduler.enrichAll();
 
       expect(stats.processed).toBe(9); // 10 - 1 error
-      expect(stats.updated).toBe(5); // Movies 1, 3, 6, 7, 9
-      expect(stats.skipped).toBe(4); // Movies 2, 5, 8, 10
+      expect(stats.updated).toBe(0); // Job-based approach doesn't track updates
+      expect(stats.skipped).toBe(0); // Job-based approach doesn't track skips
       expect(stats.stopped).toBe(false);
       expect(stats.stopReason).toBeNull();
     });
@@ -452,27 +261,19 @@ describe('EnrichAllScheduler', () => {
         { id: 1, title: 'Movie 1' },
         { id: 2, title: 'Movie 2' },
       ]);
-      (mockEnrichmentService.enrichMovie as jest.Mock)
-        .mockResolvedValueOnce({ updated: true, partial: false, rateLimitedProviders: [] })
-        .mockResolvedValueOnce({ updated: false, partial: false, rateLimitedProviders: [] });
 
       await scheduler.enrichAll();
 
       const stats = scheduler.getLastRunStats();
       expect(stats).not.toBeNull();
       expect(stats?.processed).toBe(2);
-      expect(stats?.updated).toBe(1);
-      expect(stats?.skipped).toBe(1);
+      expect(stats?.updated).toBe(0); // Job-based approach
+      expect(stats?.skipped).toBe(0); // Job-based approach
     });
 
     it('should update last run stats on each run', async () => {
       // First run
       (mockDb.query as jest.Mock).mockResolvedValueOnce([{ id: 1, title: 'Movie 1' }]);
-      (mockEnrichmentService.enrichMovie as jest.Mock).mockResolvedValueOnce({
-        updated: true,
-        partial: false,
-        rateLimitedProviders: [],
-      });
 
       await scheduler.enrichAll();
       const stats1 = scheduler.getLastRunStats();
@@ -484,10 +285,6 @@ describe('EnrichAllScheduler', () => {
         { id: 2, title: 'Movie 2' },
         { id: 3, title: 'Movie 3' },
       ]);
-      (mockEnrichmentService.enrichMovie as jest.Mock)
-        .mockResolvedValueOnce({ updated: true, partial: false, rateLimitedProviders: [] })
-        .mockResolvedValueOnce({ updated: true, partial: false, rateLimitedProviders: [] })
-        .mockResolvedValueOnce({ updated: false, partial: false, rateLimitedProviders: [] });
 
       await scheduler.enrichAll();
       const stats2 = scheduler.getLastRunStats();
@@ -502,21 +299,10 @@ describe('EnrichAllScheduler', () => {
     it('should track running state correctly', async () => {
       expect(scheduler.isJobRunning()).toBe(false);
 
-      // Setup slow processing
+      // Setup slow job creation
       (mockDb.query as jest.Mock).mockResolvedValue([{ id: 1, title: 'Movie 1' }]);
-      (mockEnrichmentService.enrichMovie as jest.Mock).mockImplementation(
-        () =>
-          new Promise((resolve) =>
-            setTimeout(
-              () =>
-                resolve({
-                  updated: true,
-                  partial: false,
-                  rateLimitedProviders: [],
-                }),
-              100
-            )
-          )
+      (mockJobQueue.addJob as jest.Mock).mockImplementation(
+        () => new Promise((resolve) => setTimeout(() => resolve(undefined), 100))
       );
 
       // Start run
@@ -534,7 +320,7 @@ describe('EnrichAllScheduler', () => {
   });
 
   describe('Progress Logging', () => {
-    it('should log progress every 100 movies', async () => {
+    it('should create jobs for all movies and log progress every 100 movies', async () => {
       // Setup: 250 movies
       const movies = Array.from({ length: 250 }, (_, i) => ({
         id: i + 1,
@@ -543,27 +329,21 @@ describe('EnrichAllScheduler', () => {
 
       (mockDb.query as jest.Mock).mockResolvedValueOnce(movies);
 
-      // All succeed
-      (mockEnrichmentService.enrichMovie as jest.Mock).mockResolvedValue({
-        updated: true,
-        partial: false,
-        rateLimitedProviders: [],
-      });
-
       // Execute
       const stats = await scheduler.enrichAll();
 
-      // Verify all processed
+      // Verify all processed (jobs created)
       expect(stats.processed).toBe(250);
-      expect(stats.updated).toBe(250);
+      expect(stats.updated).toBe(0); // Job-based approach
+      expect(stats.skipped).toBe(0); // Job-based approach
 
       // Progress should be logged at 100 and 200 (not 250, that's the final log)
-      expect(mockEnrichmentService.enrichMovie).toHaveBeenCalledTimes(250);
+      expect(mockJobQueue.addJob).toHaveBeenCalledTimes(250);
     });
   });
 
   describe('Non-Monitored Movies', () => {
-    it('should skip non-monitored movies', async () => {
+    it('should only process monitored movies', async () => {
       // Query should only return monitored movies
       const monitoredMovies = [
         { id: 1, title: 'Monitored 1' },
@@ -571,11 +351,6 @@ describe('EnrichAllScheduler', () => {
       ];
 
       (mockDb.query as jest.Mock).mockResolvedValueOnce(monitoredMovies);
-      (mockEnrichmentService.enrichMovie as jest.Mock).mockResolvedValue({
-        updated: true,
-        partial: false,
-        rateLimitedProviders: [],
-      });
 
       const stats = await scheduler.enrichAll();
 
