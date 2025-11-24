@@ -19,7 +19,7 @@ interface ProviderCardProps {
 export const ProviderCard: React.FC<ProviderCardProps> = ({ provider, stats }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [localConfig, setLocalConfig] = useState<ProviderConfigType>(provider.config);
-  const [updateTimeout, setUpdateTimeout] = useState<NodeJS.Timeout | null>(null);
+  const [pendingSave, setPendingSave] = useState(false);
 
   const updateProvider = useUpdateProvider();
 
@@ -28,32 +28,66 @@ export const ProviderCard: React.FC<ProviderCardProps> = ({ provider, stats }) =
     setLocalConfig(provider.config);
   }, [provider.config]);
 
-  // Debounced save
-  const debouncedSave = (field: string, value: any) => {
-    if (updateTimeout) clearTimeout(updateTimeout);
+  // Save on blur
+  const handleBlur = (field: string, value: any) => {
+    // Only save if value actually changed
+    if (provider.config[field as keyof ProviderConfigType] === value) {
+      return;
+    }
 
-    const timeout = setTimeout(() => {
-      updateProvider.mutate(
-        {
-          name: provider.metadata.name,
-          data: { ...localConfig, [field]: value }
+    setPendingSave(true);
+    updateProvider.mutate(
+      {
+        name: provider.metadata.name,
+        data: { ...localConfig, [field]: value }
+      },
+      {
+        onSuccess: () => {
+          setPendingSave(false);
         },
-        {
-          onError: (error: any) => {
-            toast.error(`Failed to update ${provider.metadata.displayName}: ${error.message}`);
-          }
+        onError: (error: any) => {
+          toast.error(`Failed to update ${provider.metadata.displayName}: ${error.message}`);
+          setPendingSave(false);
+          // Revert local state on error
+          setLocalConfig(provider.config);
         }
-      );
-    }, 500);
-
-    setUpdateTimeout(timeout);
+      }
+    );
   };
 
-  const handleToggle = (enabled: boolean) => {
-    // Check if API key required but missing
-    if (enabled && provider.metadata.requiresApiKey && !localConfig.apiKey && !localConfig.personalApiKey) {
+  const handleToggle = async (enabled: boolean) => {
+    // Check LOCAL config state (includes unsaved changes)
+    const hasApiKey = !!(localConfig.personalApiKey || localConfig.apiKey);
+
+    if (enabled && provider.metadata.requiresApiKey && !hasApiKey) {
+      // This shouldn't happen since switch is disabled, but just in case
       toast.error(`${provider.metadata.displayName} requires an API key`);
       return;
+    }
+
+    // If enabling and there's an unsaved API key, save it first
+    if (enabled && hasApiKey && pendingSave) {
+      toast.info('Saving API key before enabling...');
+      // Wait a moment for any pending blur event to trigger
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    // Force save API key if it's different from server state
+    const apiKeyField = localConfig.personalApiKey ? 'personalApiKey' : 'apiKey';
+    const serverApiKey = provider.config[apiKeyField as keyof ProviderConfigType];
+    const localApiKey = localConfig[apiKeyField as keyof ProviderConfigType];
+
+    if (enabled && localApiKey && localApiKey !== serverApiKey) {
+      // Save API key first before enabling
+      try {
+        await updateProvider.mutateAsync({
+          name: provider.metadata.name,
+          data: { ...localConfig, [apiKeyField]: localApiKey }
+        });
+      } catch (error: any) {
+        toast.error(`Failed to save API key: ${error.message}`);
+        return;
+      }
     }
 
     setLocalConfig(prev => ({ ...prev, enabled }));
@@ -73,7 +107,6 @@ export const ProviderCard: React.FC<ProviderCardProps> = ({ provider, stats }) =
 
   const handleFieldChange = (field: string, value: string) => {
     setLocalConfig(prev => ({ ...prev, [field]: value }));
-    debouncedSave(field, value);
   };
 
   const handleTest = async (): Promise<{ success: boolean; message: string }> => {
@@ -118,17 +151,15 @@ export const ProviderCard: React.FC<ProviderCardProps> = ({ provider, stats }) =
   const hasApiKey = !!(localConfig.personalApiKey || localConfig.apiKey);
   const usingEmbeddedKey = hasApiKey && !localConfig.personalApiKey && provider.metadata.apiKeyOptional;
 
+  // Disable switch if API key is required but not set
+  const switchDisabled = updateProvider.isPending || pendingSave || (provider.metadata.requiresApiKey && !hasApiKey);
+
   return (
     <div className="card">
       <div className="card-body">
-        {/* Header: Enable switch + Title on left, Info + Test button on right */}
+        {/* Header: Title + Info on left, Test button on right */}
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
-            <Switch
-              checked={localConfig.enabled}
-              onCheckedChange={handleToggle}
-              disabled={updateProvider.isPending}
-            />
             <h3 className="text-lg font-semibold text-white">
               {provider.metadata.displayName}
             </h3>
@@ -180,15 +211,22 @@ export const ProviderCard: React.FC<ProviderCardProps> = ({ provider, stats }) =
           <div className="mb-3">
             <label className="text-xs font-medium text-neutral-400 mb-1 block">
               API Key
+              {provider.metadata.requiresApiKey && !hasApiKey && (
+                <span className="text-amber-400 ml-1">(required)</span>
+              )}
             </label>
             <div className="flex items-stretch relative rounded transition-all group hover:ring-1 hover:ring-primary-500 focus-within:ring-1 focus-within:ring-primary-500 max-w-md">
               <input
                 type={showPassword ? 'text' : 'password'}
                 value={localConfig.personalApiKey || localConfig.apiKey || ''}
-                onChange={(e) => handleFieldChange(
-                  localConfig.personalApiKey || !provider.metadata.apiKeyOptional ? 'personalApiKey' : 'apiKey',
-                  e.target.value
-                )}
+                onChange={(e) => {
+                  const field = localConfig.personalApiKey || !provider.metadata.apiKeyOptional ? 'personalApiKey' : 'apiKey';
+                  handleFieldChange(field, e.target.value);
+                }}
+                onBlur={(e) => {
+                  const field = localConfig.personalApiKey || !provider.metadata.apiKeyOptional ? 'personalApiKey' : 'apiKey';
+                  handleBlur(field, e.target.value);
+                }}
                 placeholder={provider.metadata.requiresApiKey ? 'API key required' : 'Optional personal key'}
                 className="flex-1 h-8 px-2.5 py-1 text-sm bg-neutral-800 border border-neutral-600 rounded-l text-neutral-200 transition-colors placeholder:text-neutral-500 focus-visible:outline-none"
               />
@@ -210,12 +248,32 @@ export const ProviderCard: React.FC<ProviderCardProps> = ({ provider, stats }) =
           </div>
         )}
 
-        {/* Metrics Row (bottom) */}
-        {stats && localConfig.enabled && (
-          <div className="text-xs text-neutral-400 pt-2 border-t border-neutral-700/50">
-            <span className="font-medium">Last 24 hours:</span> {stats.totalCalls24h} calls • Last fetch: {formatTimeAgo(stats.lastSuccessfulFetch)}
+        {/* Bottom Row: Metrics (left) + Enable Switch (right) */}
+        <div className="flex items-center justify-between pt-3 border-t border-neutral-700/50">
+          <div className="text-xs text-neutral-400">
+            {stats && localConfig.enabled ? (
+              <>
+                <span className="font-medium">Last 24 hours:</span> {stats.totalCalls24h} calls • Last fetch: {formatTimeAgo(stats.lastSuccessfulFetch)}
+              </>
+            ) : (
+              <span className="text-neutral-500">
+                {provider.metadata.requiresApiKey && !hasApiKey ? 'API key required to enable' : 'Disabled'}
+              </span>
+            )}
           </div>
-        )}
+
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-neutral-400">
+              {localConfig.enabled ? 'Enabled' : 'Disabled'}
+            </span>
+            <Switch
+              checked={localConfig.enabled}
+              onCheckedChange={handleToggle}
+              disabled={switchDisabled}
+              className="scale-75"
+            />
+          </div>
+        </div>
       </div>
     </div>
   );
