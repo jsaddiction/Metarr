@@ -259,7 +259,7 @@ export function Workflow() {
               {/* Media Type Groups */}
               <div className="space-y-3">
                 {assetLimitsByMediaType().map(([mediaType, group]) => (
-                  <div key={mediaType} className="border border-neutral-700 rounded-md">
+                  <div key={mediaType} className="bg-neutral-900 border border-neutral-700 rounded-md">
                     {/* Media Type Header */}
                     <button
                       type="button"
