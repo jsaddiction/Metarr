@@ -127,19 +127,20 @@ export const GridField = React.memo<GridFieldProps>(
               }
             }}
             placeholder={type === 'date' ? 'YYYY-MM-DD' : undefined}
-            className={`flex-1 h-8 px-2.5 py-1 text-sm bg-neutral-800 border text-neutral-200 transition-colors placeholder:text-neutral-500 focus-visible:outline-none rounded-r border-l-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
-              type === 'number' || type === 'date' ? 'pr-6' : ''
+            className={`flex-1 h-8 px-2.5 py-1 text-sm bg-neutral-800 border text-neutral-200 transition-colors placeholder:text-neutral-500 focus-visible:outline-none ${
+              type === 'number' ? 'rounded-none border-r-0' : 'rounded-r'
             } ${
+              type === 'date' ? 'pr-8' : ''
+            } border-l-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
               locked
                 ? 'border-red-500/50'
                 : 'border-neutral-600'
             }`}
           />
           {type === 'number' && (
-            <div className={cn(
-              "absolute right-0 top-0 bottom-0 flex flex-col w-5 border-l rounded-r overflow-hidden",
-              locked ? "border-red-500/50" : "border-neutral-600"
-            )}>
+            <div className={`flex flex-col border-t border-b border-r rounded-r overflow-hidden ${
+              locked ? 'border-red-500/50' : 'border-neutral-600'
+            }`}>
               <button
                 type="button"
                 onClick={handleIncrement}
@@ -148,7 +149,7 @@ export const GridField = React.memo<GridFieldProps>(
               >
                 <FontAwesomeIcon icon={faChevronUp} className="text-[10px]" />
               </button>
-              <div className={cn("border-t", locked ? "border-red-500/50" : "border-neutral-600")}></div>
+              <div className={`border-t ${locked ? 'border-red-500/50' : 'border-neutral-600'}`}></div>
               <button
                 type="button"
                 onClick={handleDecrement}
