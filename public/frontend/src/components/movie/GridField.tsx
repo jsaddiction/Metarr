@@ -78,100 +78,98 @@ export const GridField = React.memo<GridFieldProps>(
         <label className="text-xs font-medium text-neutral-400 mb-1 block">
           {label}
         </label>
-        <div className={`flex items-stretch relative rounded transition-all group ${
+        <div className={cn(
+          "min-w-0 flex items-stretch rounded transition-all group",
           locked
             ? 'hover:ring-1 hover:ring-red-500 focus-within:ring-1 focus-within:ring-red-500'
             : 'hover:ring-1 hover:ring-primary-500 focus-within:ring-1 focus-within:ring-primary-500'
-        }`}>
-          {type === 'date' && (
-            <input
-              ref={hiddenDateInputRef}
-              type="date"
-              value={value || ''}
-              onChange={handleDateChange}
-              className="absolute opacity-0"
-              style={{
-                top: 0,
-                left: 0,
-                width: '100%',
-                height: '100%',
-                zIndex: -1,
-                pointerEvents: 'none',
-                textAlign: 'right',
-              }}
-            />
-          )}
+        )}>
           <button
             type="button"
             onClick={() => onToggleLock(field)}
-            className={`px-2 rounded-l border flex items-center transition-colors ${
+            className={`w-7 rounded-l border flex items-center justify-center transition-colors ${
               locked
                 ? 'bg-red-500/20 border-red-500/50 text-red-400 hover:bg-red-500/30'
                 : 'bg-neutral-700 border-neutral-600 text-neutral-400 hover:bg-neutral-600'
             }`}
             title={locked ? 'Locked' : 'Unlocked'}
           >
-            <FontAwesomeIcon icon={locked ? faLock : faLockOpen} className="text-xs" />
+            <FontAwesomeIcon icon={locked ? faLock : faLockOpen} className="text-sm" />
           </button>
-          <input
-            ref={type === 'date' ? dateInputRef : null}
-            type={type === 'date' ? 'text' : type}
-            value={value || ''}
-            onChange={(e) => {
-              if (type === 'number') {
-                onChange(parseFloat(e.target.value));
-              } else if (type === 'date') {
-                handleTextDateChange(e);
-              } else {
-                onChange(e.target.value);
-              }
-            }}
-            placeholder={type === 'date' ? 'YYYY-MM-DD' : undefined}
-            className={`flex-1 h-8 px-2.5 py-1 text-sm bg-neutral-800 border text-neutral-200 transition-colors placeholder:text-neutral-500 focus-visible:outline-none ${
-              type === 'number' ? 'rounded-none border-r-0' : 'rounded-r'
-            } ${
-              type === 'date' ? 'pr-6' : ''
-            } border-l-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
-              locked
-                ? 'border-red-500/50'
-                : 'border-neutral-600'
-            }`}
-          />
-          {type === 'number' && (
-            <div className={`flex flex-col border-t border-b border-r rounded-r overflow-hidden ${
-              locked ? 'border-red-500/50' : 'border-neutral-600'
-            }`}>
+          {type === 'date' ? (
+            <div className="relative flex-1 min-w-0">
+              <input
+                ref={hiddenDateInputRef}
+                type="date"
+                value={value || ''}
+                onChange={handleDateChange}
+                className="absolute opacity-0 pointer-events-none"
+                style={{ zIndex: -1 }}
+              />
+              <input
+                ref={dateInputRef}
+                type="text"
+                value={value || ''}
+                onChange={handleTextDateChange}
+                placeholder="YYYY-MM-DD"
+                className={`w-full h-8 pr-7 pl-2.5 py-1 text-sm bg-neutral-800 border border-l-0 rounded-r text-neutral-200 transition-colors placeholder:text-neutral-500 focus-visible:outline-none ${
+                  locked ? 'border-red-500/50' : 'border-neutral-600'
+                }`}
+              />
               <button
                 type="button"
-                onClick={handleIncrement}
-                className="px-2 flex-1 flex items-center justify-center bg-neutral-700 text-neutral-400 hover:bg-neutral-600 transition-colors"
-                title="Increment"
+                onClick={handleCalendarClick}
+                className={cn(
+                  "absolute right-0 top-0 bottom-0 w-7 flex items-center justify-center bg-neutral-700 text-neutral-400 hover:bg-neutral-600 transition-colors border-l border-t border-r border-b rounded-r",
+                  locked ? "border-red-500/50" : "border-neutral-600"
+                )}
+                title="Select date"
               >
-                <FontAwesomeIcon icon={faChevronUp} className="text-[10px]" />
-              </button>
-              <div className={`border-t ${locked ? 'border-red-500/50' : 'border-neutral-600'}`}></div>
-              <button
-                type="button"
-                onClick={handleDecrement}
-                className="px-2 flex-1 flex items-center justify-center bg-neutral-700 text-neutral-400 hover:bg-neutral-600 transition-colors"
-                title="Decrement"
-              >
-                <FontAwesomeIcon icon={faChevronDown} className="text-[10px]" />
+                <FontAwesomeIcon icon={faCalendar} className="text-sm" />
               </button>
             </div>
-          )}
-          {type === 'date' && (
-            <button
-              type="button"
-              onClick={handleCalendarClick}
-              className={cn(
-                "absolute right-0 top-0 bottom-0 w-6 flex items-center justify-center bg-neutral-700 text-neutral-400 hover:bg-neutral-600 transition-colors border-l rounded-r",
-                locked ? "border-red-500/50" : "border-neutral-600"
+          ) : (
+            <>
+              <input
+                type={type}
+                value={value || ''}
+                onChange={(e) => {
+                  if (type === 'number') {
+                    onChange(parseFloat(e.target.value));
+                  } else {
+                    onChange(e.target.value);
+                  }
+                }}
+                className={`flex-1 min-w-0 h-8 px-2.5 py-1 text-sm bg-neutral-800 border text-neutral-200 transition-colors placeholder:text-neutral-500 focus-visible:outline-none ${
+                  type === 'number' ? 'rounded-none border-r-0' : 'rounded-r'
+                } border-l-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
+                  locked ? 'border-red-500/50' : 'border-neutral-600'
+                }`}
+              />
+              {type === 'number' && (
+                <div className={`w-7 flex flex-col border-t border-b border-r rounded-r overflow-hidden ${
+                  locked ? 'border-red-500/50' : 'border-neutral-600'
+                }`}>
+                  <button
+                    type="button"
+                    onClick={handleIncrement}
+                    className="flex-1 flex items-center justify-center bg-neutral-700 text-neutral-400 hover:bg-neutral-600 transition-colors"
+                    title="Increment"
+                  >
+                    <FontAwesomeIcon icon={faChevronUp} className="text-sm" />
+                  </button>
+                  <div className={`border-t ${locked ? 'border-red-500/50' : 'border-neutral-600'}`}></div>
+                  <button
+                    type="button"
+                    onClick={handleDecrement}
+                    className="flex-1 flex items-center justify-center bg-neutral-700 text-neutral-400 hover:bg-neutral-600 transition-colors"
+                    title="Decrement"
+                  >
+                    <FontAwesomeIcon icon={faChevronDown} className="text-sm" />
+                  </button>
+                </div>
               )}
-              title="Select date"
-            >
-              <FontAwesomeIcon icon={faCalendar} className="text-xs" />
-            </button>
+            </>
           )}
         </div>
       </div>

@@ -53,14 +53,14 @@ export function NumberInputWithLock({
         type="button"
         onClick={onToggleLock}
         className={cn(
-          "px-2 rounded-l border flex items-center justify-center transition-colors",
+          "w-7 rounded-l border flex items-center justify-center transition-colors",
           locked
             ? "bg-red-500/20 border-red-500/50 text-red-400 hover:bg-red-500/30"
             : "bg-neutral-700 border-neutral-600 text-neutral-400 hover:bg-neutral-600"
         )}
         title={locked ? 'Locked' : 'Unlocked'}
       >
-        <FontAwesomeIcon icon={locked ? faLock : faLockOpen} className="text-xs" />
+        <FontAwesomeIcon icon={locked ? faLock : faLockOpen} className="text-sm" />
       </button>
       <input
         id={id}
@@ -78,27 +78,27 @@ export function NumberInputWithLock({
         )}
       />
       <div className={cn(
-        "flex flex-col border-t border-b border-r rounded-r overflow-hidden",
+        "w-7 flex flex-col border-t border-b border-r rounded-r overflow-hidden",
         locked ? "border-red-500/50" : "border-neutral-600"
       )}>
         <button
           type="button"
           onClick={handleIncrement}
           disabled={disabled || value >= max}
-          className="px-2 flex-1 flex items-center justify-center bg-neutral-700 text-neutral-400 hover:bg-neutral-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-neutral-700"
+          className="flex-1 flex items-center justify-center bg-neutral-700 text-neutral-400 hover:bg-neutral-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-neutral-700"
           title="Increment"
         >
-          <ChevronUp className="h-3 w-3" />
+          <ChevronUp className="h-3.5 w-3.5" />
         </button>
         <div className={cn("border-t", locked ? "border-red-500/50" : "border-neutral-600")}></div>
         <button
           type="button"
           onClick={handleDecrement}
           disabled={disabled || value <= min}
-          className="px-2 flex-1 flex items-center justify-center bg-neutral-700 text-neutral-400 hover:bg-neutral-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-neutral-700"
+          className="flex-1 flex items-center justify-center bg-neutral-700 text-neutral-400 hover:bg-neutral-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-neutral-700"
           title="Decrement"
         >
-          <ChevronDown className="h-3 w-3" />
+          <ChevronDown className="h-3.5 w-3.5" />
         </button>
       </div>
     </div>

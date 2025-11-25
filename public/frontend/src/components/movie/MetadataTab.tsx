@@ -704,25 +704,29 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
 
               {/* Row 3: Content Rating + Release Date + User Rating + Tagline */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
-                <GridField
-                  label="Content Rating"
-                  field="content_rating"
-                  value={metadata.content_rating}
-                  locked={metadata.content_rating_locked}
-                  onChange={(val) => handleFieldChange('content_rating', val)}
-                  onToggleLock={handleToggleLock}
-                  placeholder="PG-13"
-                />
-                <GridField
-                  label="Release Date"
-                  field="release_date"
-                  value={metadata.release_date}
-                  locked={metadata.release_date_locked}
-                  type="date"
-                  onChange={(val) => handleFieldChange('release_date', val)}
-                  onToggleLock={handleToggleLock}
-                />
-                <div>
+                <div className="min-w-0">
+                  <GridField
+                    label="Content Rating"
+                    field="content_rating"
+                    value={metadata.content_rating}
+                    locked={metadata.content_rating_locked}
+                    onChange={(val) => handleFieldChange('content_rating', val)}
+                    onToggleLock={handleToggleLock}
+                    placeholder="PG-13"
+                  />
+                </div>
+                <div className="min-w-0">
+                  <GridField
+                    label="Release Date"
+                    field="release_date"
+                    value={metadata.release_date}
+                    locked={metadata.release_date_locked}
+                    type="date"
+                    onChange={(val) => handleFieldChange('release_date', val)}
+                    onToggleLock={handleToggleLock}
+                  />
+                </div>
+                <div className="min-w-0">
                   <label className="text-xs font-medium text-neutral-400 mb-1 block">
                     User Rating
                   </label>
@@ -738,14 +742,16 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
                     className="w-full"
                   />
                 </div>
-                <GridField
-                  label="Tagline"
-                  field="tagline"
-                  value={metadata.tagline}
-                  locked={metadata.tagline_locked}
-                  onChange={(val) => handleFieldChange('tagline', val)}
-                  onToggleLock={handleToggleLock}
-                />
+                <div className="min-w-0">
+                  <GridField
+                    label="Tagline"
+                    field="tagline"
+                    value={metadata.tagline}
+                    locked={metadata.tagline_locked}
+                    onChange={(val) => handleFieldChange('tagline', val)}
+                    onToggleLock={handleToggleLock}
+                  />
+                </div>
               </div>
 
               {/* Row 4: Outline */}
