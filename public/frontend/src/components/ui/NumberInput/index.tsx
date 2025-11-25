@@ -1,2 +1,3 @@
 export { NumberInput } from './NumberInput';
-export type { NumberInputProps } from './types';
+export { NumberInputWithLock } from './NumberInputWithLock';
+export type { NumberInputProps, NumberInputWithLockProps } from './types';

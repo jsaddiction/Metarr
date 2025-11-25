@@ -1,0 +1,106 @@
+import React, { useCallback } from 'react';
+import { ChevronUp, ChevronDown } from 'lucide-react';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faLock, faLockOpen } from '@fortawesome/free-solid-svg-icons';
+import { cn } from '@/lib/utils';
+import type { NumberInputWithLockProps } from './types';
+
+export function NumberInputWithLock({
+  value,
+  onChange,
+  locked = false,
+  onToggleLock,
+  min = 0,
+  max = 999,
+  step = 1,
+  disabled = false,
+  className,
+  id,
+  title,
+}: NumberInputWithLockProps) {
+  const handleIncrement = useCallback(() => {
+    if (disabled) return;
+    const newValue = Math.min(value + step, max);
+    if (newValue !== value) {
+      onChange(newValue);
+    }
+  }, [value, step, max, disabled, onChange]);
+
+  const handleDecrement = useCallback(() => {
+    if (disabled) return;
+    const newValue = Math.max(value - step, min);
+    if (newValue !== value) {
+      onChange(newValue);
+    }
+  }, [value, step, min, disabled, onChange]);
+
+  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const newValue = parseInt(e.target.value, 10);
+    if (!isNaN(newValue) && newValue >= min && newValue <= max) {
+      onChange(newValue);
+    }
+  }, [min, max, onChange]);
+
+  return (
+    <div className={cn(
+      "relative inline-flex h-8 rounded transition-all group",
+      locked
+        ? "hover:ring-1 hover:ring-red-500 focus-within:ring-1 focus-within:ring-red-500"
+        : "hover:ring-1 hover:ring-primary-500 focus-within:ring-1 focus-within:ring-primary-500",
+      className
+    )}>
+      <button
+        type="button"
+        onClick={onToggleLock}
+        className={cn(
+          "px-2 rounded-l border flex items-center justify-center transition-colors",
+          locked
+            ? "bg-red-500/20 border-red-500/50 text-red-400 hover:bg-red-500/30"
+            : "bg-neutral-700 border-neutral-600 text-neutral-400 hover:bg-neutral-600"
+        )}
+        title={locked ? 'Locked' : 'Unlocked'}
+      >
+        <FontAwesomeIcon icon={locked ? faLock : faLockOpen} className="text-xs" />
+      </button>
+      <input
+        id={id}
+        type="number"
+        value={value}
+        onChange={handleInputChange}
+        min={min}
+        max={max}
+        step={step}
+        disabled={disabled}
+        title={title}
+        className={cn(
+          "flex-1 pr-6 px-2.5 text-sm bg-neutral-800 border border-l-0 text-neutral-200 focus-visible:outline-none transition-colors disabled:opacity-50 disabled:cursor-not-allowed [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none",
+          locked ? "border-red-500/50" : "border-neutral-600"
+        )}
+      />
+      <div className={cn(
+        "absolute right-0 top-0 bottom-0 flex flex-col w-5 border-l rounded-r overflow-hidden",
+        locked ? "border-red-500/50" : "border-neutral-600"
+      )}>
+        <button
+          type="button"
+          onClick={handleIncrement}
+          disabled={disabled || value >= max}
+          className="flex-1 flex items-center justify-center bg-neutral-700 text-neutral-300 hover:bg-neutral-600 hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-neutral-700 disabled:hover:text-neutral-300"
+          title="Increment"
+        >
+          <ChevronUp className="h-3 w-3" />
+        </button>
+        <div className={cn("border-t", locked ? "border-red-500/50" : "border-neutral-600")}></div>
+        <button
+          type="button"
+          onClick={handleDecrement}
+          disabled={disabled || value <= min}
+          className="flex-1 flex items-center justify-center bg-neutral-700 text-neutral-300 hover:bg-neutral-600 hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-neutral-700 disabled:hover:text-neutral-300"
+          title="Decrement"
+        >
+          <ChevronDown className="h-3 w-3" />
+        </button>
+      </div>
+    </div>
+  );
+}

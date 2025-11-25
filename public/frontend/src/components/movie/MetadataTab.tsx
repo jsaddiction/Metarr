@@ -15,6 +15,7 @@ import { ReadOnlyDataGrid } from '../ui/ReadOnlyDataGrid';
 import { TagInput } from '../ui/TagInput';
 import { getLanguageName } from '@/utils/languages';
 import { TabSection } from '../ui/TabSection';
+import { NumberInputWithLock } from '../ui/NumberInput';
 
 interface MetadataTabProps {
   movieId: number;
@@ -664,15 +665,21 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
                   onToggleLock={handleToggleLock}
                   className="sm:col-span-1 lg:col-span-3"
                 />
-                <GridField
-                  label="Year"
-                  field="year"
-                  value={metadata.year}
-                  locked={metadata.year_locked}
-                  type="number"
-                  onChange={(val) => handleFieldChange('year', val)}
-                  onToggleLock={handleToggleLock}
-                />
+                <div>
+                  <label className="text-xs font-medium text-neutral-400 mb-1 block">
+                    Year
+                  </label>
+                  <NumberInputWithLock
+                    id="year"
+                    value={metadata.year || 0}
+                    onChange={(val) => handleFieldChange('year', val)}
+                    locked={metadata.year_locked}
+                    onToggleLock={() => handleToggleLock('year')}
+                    min={1900}
+                    max={2100}
+                    className="w-full"
+                  />
+                </div>
               </div>
 
               {/* Row 2: Original Title + Sort Title */}
@@ -715,15 +722,22 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
                   onChange={(val) => handleFieldChange('release_date', val)}
                   onToggleLock={handleToggleLock}
                 />
-                <GridField
-                  label="User Rating"
-                  field="user_rating"
-                  value={metadata.user_rating}
-                  locked={metadata.user_rating_locked}
-                  type="number"
-                  onChange={(val) => handleFieldChange('user_rating', val)}
-                  onToggleLock={handleToggleLock}
-                />
+                <div>
+                  <label className="text-xs font-medium text-neutral-400 mb-1 block">
+                    User Rating
+                  </label>
+                  <NumberInputWithLock
+                    id="user_rating"
+                    value={metadata.user_rating || 0}
+                    onChange={(val) => handleFieldChange('user_rating', val)}
+                    locked={metadata.user_rating_locked}
+                    onToggleLock={() => handleToggleLock('user_rating')}
+                    min={0}
+                    max={10}
+                    step={0.1}
+                    className="w-full"
+                  />
+                </div>
                 <GridField
                   label="Tagline"
                   field="tagline"
