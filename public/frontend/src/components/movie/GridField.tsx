@@ -161,7 +161,7 @@ export const GridField = React.memo<GridFieldProps>(
             <button
               type="button"
               onClick={handleCalendarClick}
-              className={`px-2 border-t border-b border-r rounded-r flex items-center justify-center bg-neutral-700 text-neutral-400 hover:bg-neutral-600 transition-colors ${
+              className={`px-2 h-8 border-t border-b border-r rounded-r flex items-center justify-center bg-neutral-700 text-neutral-400 hover:bg-neutral-600 transition-colors ${
                 locked ? 'border-red-500/50' : 'border-neutral-600'
               }`}
               title="Select date"
