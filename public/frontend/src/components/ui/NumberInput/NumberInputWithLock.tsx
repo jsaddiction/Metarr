@@ -43,7 +43,7 @@ export function NumberInputWithLock({
 
   return (
     <div className={cn(
-      "relative inline-flex h-8 rounded transition-all group",
+      "flex items-stretch rounded transition-all group",
       locked
         ? "hover:ring-1 hover:ring-red-500 focus-within:ring-1 focus-within:ring-red-500"
         : "hover:ring-1 hover:ring-primary-500 focus-within:ring-1 focus-within:ring-primary-500",
@@ -73,19 +73,19 @@ export function NumberInputWithLock({
         disabled={disabled}
         title={title}
         className={cn(
-          "flex-1 pr-6 px-2.5 text-sm bg-neutral-800 border border-l-0 text-neutral-200 focus-visible:outline-none transition-colors disabled:opacity-50 disabled:cursor-not-allowed [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none",
+          "flex-1 h-8 px-2.5 py-1 text-sm bg-neutral-800 border rounded-none border-l-0 text-neutral-200 focus-visible:outline-none transition-colors disabled:opacity-50 disabled:cursor-not-allowed [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none",
           locked ? "border-red-500/50" : "border-neutral-600"
         )}
       />
       <div className={cn(
-        "absolute right-0 top-0 bottom-0 flex flex-col w-5 border-l rounded-r overflow-hidden",
+        "flex flex-col border-t border-b border-r rounded-r overflow-hidden",
         locked ? "border-red-500/50" : "border-neutral-600"
       )}>
         <button
           type="button"
           onClick={handleIncrement}
           disabled={disabled || value >= max}
-          className="flex-1 flex items-center justify-center bg-neutral-700 text-neutral-300 hover:bg-neutral-600 hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-neutral-700 disabled:hover:text-neutral-300"
+          className="px-2 flex-1 flex items-center justify-center bg-neutral-700 text-neutral-400 hover:bg-neutral-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-neutral-700"
           title="Increment"
         >
           <ChevronUp className="h-3 w-3" />
@@ -95,7 +95,7 @@ export function NumberInputWithLock({
           type="button"
           onClick={handleDecrement}
           disabled={disabled || value <= min}
-          className="flex-1 flex items-center justify-center bg-neutral-700 text-neutral-300 hover:bg-neutral-600 hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-neutral-700 disabled:hover:text-neutral-300"
+          className="px-2 flex-1 flex items-center justify-center bg-neutral-700 text-neutral-400 hover:bg-neutral-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-neutral-700"
           title="Decrement"
         >
           <ChevronDown className="h-3 w-3" />
