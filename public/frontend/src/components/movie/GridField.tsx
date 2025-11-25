@@ -129,6 +129,8 @@ export const GridField = React.memo<GridFieldProps>(
             placeholder={type === 'date' ? 'YYYY-MM-DD' : undefined}
             className={`flex-1 h-8 px-2.5 py-1 text-sm bg-neutral-800 border text-neutral-200 transition-colors placeholder:text-neutral-500 focus-visible:outline-none ${
               type === 'number' || type === 'date' ? 'rounded-none border-r-0' : 'rounded-r'
+            } ${
+              type === 'date' ? 'pr-8' : ''
             } border-l-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
               locked
                 ? 'border-red-500/50'
@@ -162,9 +164,10 @@ export const GridField = React.memo<GridFieldProps>(
             <button
               type="button"
               onClick={handleCalendarClick}
-              className={`px-2 h-8 border-t border-b border-r rounded-r flex items-center justify-center bg-neutral-700 text-neutral-400 hover:bg-neutral-600 transition-colors ${
-                locked ? 'border-red-500/50' : 'border-neutral-600'
-              }`}
+              className={cn(
+                "absolute right-0 top-0 bottom-0 w-8 flex items-center justify-center bg-neutral-700 text-neutral-400 hover:bg-neutral-600 transition-colors border-l rounded-r",
+                locked ? "border-red-500/50" : "border-neutral-600"
+              )}
               title="Select date"
             >
               <FontAwesomeIcon icon={faCalendar} className="text-xs" />
