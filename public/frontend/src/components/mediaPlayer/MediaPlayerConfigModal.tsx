@@ -5,6 +5,7 @@ import { MediaPlayer, MediaPlayerFormData, MediaPlayerType, TestConnectionStatus
 import { mediaPlayerApi } from '../../utils/api';
 import { useMediaPlayerGroups } from '../../hooks/useMediaPlayerGroups';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/NumberInput';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
@@ -240,13 +241,12 @@ export const MediaPlayerConfigModal: React.FC<MediaPlayerConfigModalProps> = ({
             <Label htmlFor="player-httpPort" className="block text-sm font-medium text-neutral-300 mb-1">
               HTTP Port <span className="text-error">*</span>
             </Label>
-            <Input
+            <NumberInput
               id="player-httpPort"
-              type="number"
               value={formData.httpPort}
-              onChange={(e) => handleChange('httpPort', parseInt(e.target.value))}
-              placeholder="8080"
-              required
+              onChange={(value) => handleChange('httpPort', value)}
+              min={1}
+              max={65535}
             />
             <p className="text-xs text-neutral-500 mt-1">
               Default: 8080. WebSocket (9090) will be tried first with automatic fallback.

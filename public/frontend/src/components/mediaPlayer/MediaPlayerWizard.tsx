@@ -5,6 +5,7 @@ import { MediaPlayerType, MediaPlayerFormData } from '../../types/mediaPlayer';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/NumberInput';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 
@@ -329,12 +330,11 @@ export const MediaPlayerWizard: React.FC<MediaPlayerWizardProps> = ({
                   </div>
                   <div>
                     <Label className="text-xs text-neutral-400 mb-1 block">HTTP Port</Label>
-                    <Input
-                      type="number"
+                    <NumberInput
                       value={currentMember.httpPort || 8080}
-                      onChange={(e) => setCurrentMember({ ...currentMember, httpPort: parseInt(e.target.value) || 8080 })}
-                      placeholder="8080"
-                      className="h-9 text-sm"
+                      onChange={(value) => setCurrentMember({ ...currentMember, httpPort: value })}
+                      min={1}
+                      max={65535}
                     />
                   </div>
                   <div className="col-span-2">
@@ -391,11 +391,11 @@ export const MediaPlayerWizard: React.FC<MediaPlayerWizardProps> = ({
                 </div>
                 <div>
                   <Label className="text-sm text-neutral-300 mb-1 block">HTTP Port</Label>
-                  <Input
-                    type="number"
+                  <NumberInput
                     value={singlePlayerData.httpPort}
-                    onChange={(e) => setSinglePlayerData({ ...singlePlayerData, httpPort: parseInt(e.target.value) || 8080 })}
-                    placeholder="8080"
+                    onChange={(value) => setSinglePlayerData({ ...singlePlayerData, httpPort: value })}
+                    min={1}
+                    max={65535}
                   />
                   <p className="text-xs text-neutral-500 mt-1">
                     Default: 8080. WebSocket (9090) will be tried first with automatic fallback.

@@ -7,6 +7,7 @@ import { LoadingState } from '@/components/ui/LoadingState/LoadingState';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/NumberInput';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { usePhaseConfig } from '@/hooks/usePhaseConfig';
@@ -290,20 +291,13 @@ export function Workflow() {
                                   <span className="text-primary-400" title="Custom value">*</span>
                                 )}
                               </Label>
-                              <Input
+                              <NumberInput
                                 id={`limit-${limit.assetType}`}
-                                type="number"
                                 min={limit.minAllowed}
                                 max={limit.maxAllowed}
                                 value={limit.currentLimit}
-                                onChange={(e) => {
-                                  const value = parseInt(e.target.value, 10);
-                                  if (!isNaN(value) && value >= limit.minAllowed && value <= limit.maxAllowed) {
-                                    updateLimit({ assetType: limit.assetType, limit: value });
-                                  }
-                                }}
+                                onChange={(value) => updateLimit({ assetType: limit.assetType, limit: value })}
                                 disabled={isUpdating}
-                                className="h-8 text-sm"
                                 title={limit.description}
                               />
                             </div>
