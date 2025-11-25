@@ -5,13 +5,10 @@ import { Switch } from '../../components/ui/switch';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import { Alert, AlertDescription } from '../../components/ui/alert';
-import { AnimatedTabs, AnimatedTabsContent } from '../../components/ui/AnimatedTabs';
 import { usePhaseConfig } from '../../hooks/usePhaseConfig';
 import { useAssetLimits } from '../../hooks/useAssetLimits';
 import { toast } from 'sonner';
 import { InfoIcon, SaveIcon, RotateCcwIcon, ChevronDown, ChevronRight } from 'lucide-react';
-
-type TabValue = 'enrichment' | 'publish';
 
 // Language options
 const LANGUAGES = [
@@ -35,7 +32,6 @@ const LANGUAGES = [
 export function Workflow() {
   const { config, loading, error, saving, updateConfig, resetToDefaults } = usePhaseConfig();
   const { limits: assetLimits, updateLimit, isUpdating } = useAssetLimits();
-  const [activeTab, setActiveTab] = useState<TabValue>('enrichment');
 
   // Local state for form values
   const [formData, setFormData] = useState<any>(null);
@@ -216,228 +212,216 @@ export function Workflow() {
         </Alert>
       )}
 
-      {/* Tabbed Interface */}
-      <AnimatedTabs
-        value={activeTab}
-        onValueChange={(value) => setActiveTab(value as TabValue)}
-        tabs={[
-          { value: 'enrichment', label: '✨ Enrichment' },
-          { value: 'publish', label: '📤 Publishing' },
-        ]}
-        className="mb-6"
-      >
-        {/* Enrichment Tab */}
-        <AnimatedTabsContent value="enrichment">
-          <Card>
-            <CardHeader>
-              <CardTitle>Metadata & Asset Enrichment</CardTitle>
-              <CardDescription>
-                Control how Metarr fetches and selects assets from providers
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              {/* Auto-select Assets Toggle */}
-              <div className="flex items-center justify-between">
-                <div className="space-y-1">
-                  <Label htmlFor="autoSelect">Automatic Asset Selection</Label>
-                  <p className="text-sm text-neutral-500">
-                    When enabled, Metarr automatically selects the best assets. When disabled, you manually choose assets in the UI.
-                  </p>
-                </div>
-                <Switch
-                  id="autoSelect"
-                  checked={isAutoSelect}
-                  onCheckedChange={setAutoSelect}
-                />
+      {/* Two-card layout */}
+      <div className="space-y-6">
+        {/* Enrichment Card */}
+        <Card className="bg-neutral-800/50">
+          <CardHeader>
+            <CardTitle>✨ Metadata & Asset Enrichment</CardTitle>
+            <CardDescription>
+              Control how Metarr fetches and selects assets from providers
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {/* Auto-select Assets Toggle */}
+            <div className="flex items-center justify-between">
+              <div className="space-y-1">
+                <Label htmlFor="autoSelect">Automatic Asset Selection</Label>
+                <p className="text-sm text-neutral-500">
+                  When enabled, Metarr automatically selects the best assets. When disabled, you manually choose assets in the UI.
+                </p>
               </div>
+              <Switch
+                id="autoSelect"
+                checked={isAutoSelect}
+                onCheckedChange={setAutoSelect}
+              />
+            </div>
 
-              {/* Language */}
-              <div className="space-y-2">
-                <Label htmlFor="language">Preferred Language</Label>
-                <select
-                  id="language"
-                  value={formData.enrichment.preferredLanguage}
-                  onChange={(e) => updateField('enrichment.preferredLanguage', e.target.value)}
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                >
-                  {LANGUAGES.map(lang => (
-                    <option key={lang.code} value={lang.code}>
-                      {lang.name} ({lang.code})
-                    </option>
-                  ))}
-                </select>
+            {/* Language */}
+            <div className="space-y-2">
+              <Label htmlFor="language">Preferred Language</Label>
+              <select
+                id="language"
+                value={formData.enrichment.preferredLanguage}
+                onChange={(e) => updateField('enrichment.preferredLanguage', e.target.value)}
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              >
+                {LANGUAGES.map(lang => (
+                  <option key={lang.code} value={lang.code}>
+                    {lang.name} ({lang.code})
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-neutral-500">
+                Used when scoring assets - higher priority for matching language
+              </p>
+            </div>
+
+            {/* Asset Download Limits Section */}
+            <div className="space-y-4">
+              <div>
+                <h3 className="text-sm font-medium text-neutral-200 mb-1">Asset Download Limits</h3>
                 <p className="text-xs text-neutral-500">
-                  Used when scoring assets - higher priority for matching language
+                  Maximum number of each asset type to download per media item. Set to 0 to disable that type.
                 </p>
               </div>
 
-              {/* Asset Download Limits Section */}
-              <div className="space-y-4">
-                <div>
-                  <h3 className="text-sm font-medium text-neutral-200 mb-1">Asset Download Limits</h3>
-                  <p className="text-xs text-neutral-500">
-                    Maximum number of each asset type to download per media item. Set to 0 to disable that type.
-                  </p>
-                </div>
+              {/* Media Type Groups */}
+              <div className="space-y-3">
+                {assetLimitsByMediaType().map(([mediaType, group]) => (
+                  <div key={mediaType} className="border border-neutral-700 rounded-md">
+                    {/* Media Type Header */}
+                    <button
+                      type="button"
+                      onClick={() => toggleMediaType(mediaType)}
+                      className="w-full flex items-center justify-between p-3 text-left hover:bg-neutral-800/30 transition-colors rounded-md"
+                    >
+                      <div className="flex items-center gap-2">
+                        {expandedMediaTypes.has(mediaType) ?
+                          <ChevronDown className="h-3 w-3 text-neutral-400" /> :
+                          <ChevronRight className="h-3 w-3 text-neutral-400" />
+                        }
+                        <span className="text-sm font-medium text-neutral-200">{group.displayName}</span>
+                        <span className="text-xs text-neutral-500">
+                          ({group.limits.length} asset {group.limits.length === 1 ? 'type' : 'types'})
+                        </span>
+                      </div>
+                    </button>
 
-                {/* Media Type Groups */}
-                <div className="space-y-3">
-                  {assetLimitsByMediaType().map(([mediaType, group]) => (
-                    <div key={mediaType} className="border border-neutral-700 rounded-md">
-                      {/* Media Type Header */}
-                      <button
-                        type="button"
-                        onClick={() => toggleMediaType(mediaType)}
-                        className="w-full flex items-center justify-between p-3 text-left hover:bg-neutral-800/30 transition-colors rounded-md"
-                      >
-                        <div className="flex items-center gap-2">
-                          {expandedMediaTypes.has(mediaType) ?
-                            <ChevronDown className="h-3 w-3 text-neutral-400" /> :
-                            <ChevronRight className="h-3 w-3 text-neutral-400" />
-                          }
-                          <span className="text-sm font-medium text-neutral-200">{group.displayName}</span>
-                          <span className="text-xs text-neutral-500">
-                            ({group.limits.length} asset {group.limits.length === 1 ? 'type' : 'types'})
-                          </span>
+                    {/* Asset Type Inputs */}
+                    {expandedMediaTypes.has(mediaType) && (
+                      <div className="border-t border-neutral-700 p-3">
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                          {group.limits.map((limit) => (
+                            <div key={limit.assetType} className="space-y-1">
+                              <Label htmlFor={`limit-${limit.assetType}`} className="text-xs flex items-center gap-1">
+                                {limit.displayName}
+                                {!limit.isDefault && (
+                                  <span className="text-primary-400" title="Custom value">*</span>
+                                )}
+                              </Label>
+                              <Input
+                                id={`limit-${limit.assetType}`}
+                                type="number"
+                                min={limit.minAllowed}
+                                max={limit.maxAllowed}
+                                value={limit.currentLimit}
+                                onChange={(e) => {
+                                  const value = parseInt(e.target.value, 10);
+                                  if (!isNaN(value) && value >= limit.minAllowed && value <= limit.maxAllowed) {
+                                    updateLimit({ assetType: limit.assetType, limit: value });
+                                  }
+                                }}
+                                disabled={isUpdating}
+                                className="h-8 text-sm"
+                                title={limit.description}
+                              />
+                            </div>
+                          ))}
                         </div>
-                      </button>
-
-                      {/* Asset Type Inputs */}
-                      {expandedMediaTypes.has(mediaType) && (
-                        <div className="border-t border-neutral-700 p-3">
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                            {group.limits.map((limit) => (
-                              <div key={limit.assetType} className="space-y-1">
-                                <Label htmlFor={`limit-${limit.assetType}`} className="text-xs flex items-center gap-1">
-                                  {limit.displayName}
-                                  {!limit.isDefault && (
-                                    <span className="text-primary-400" title="Custom value">*</span>
-                                  )}
-                                </Label>
-                                <Input
-                                  id={`limit-${limit.assetType}`}
-                                  type="number"
-                                  min={limit.minAllowed}
-                                  max={limit.maxAllowed}
-                                  value={limit.currentLimit}
-                                  onChange={(e) => {
-                                    const value = parseInt(e.target.value, 10);
-                                    if (!isNaN(value) && value >= limit.minAllowed && value <= limit.maxAllowed) {
-                                      updateLimit({ assetType: limit.assetType, limit: value });
-                                    }
-                                  }}
-                                  disabled={isUpdating}
-                                  className="h-8 text-sm"
-                                  title={limit.description}
-                                />
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-
-                <div className="text-xs text-neutral-500 space-y-1">
-                  <p>* Custom value (different from default)</p>
-                  <p>Hover over inputs for description of each asset type</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </AnimatedTabsContent>
-
-        {/* Publish Tab */}
-        <AnimatedTabsContent value="publish">
-          <Card>
-            <CardHeader>
-              <CardTitle>Library Publishing</CardTitle>
-              <CardDescription>
-                Choose what gets copied to your media library and when
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Auto-publish setting */}
-              <div className="flex items-center justify-between">
-                <div className="space-y-1">
-                  <Label htmlFor="autoPublish">Automatic Publishing</Label>
-                  <p className="text-sm text-neutral-500">
-                    When enabled, assets are automatically published after enrichment completes.
-                    When disabled, you must manually review and publish from the UI.
-                  </p>
-                </div>
-                <Switch
-                  id="autoPublish"
-                  checked={formData.general.autoPublish}
-                  onCheckedChange={(checked) => updateField('general.autoPublish', checked)}
-                />
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
 
-              <Alert>
-                <InfoIcon className="h-4 w-4" />
-                <AlertDescription>
-                  <strong>Recommended: Off</strong> - Review metadata and selected assets before publishing to your library.
-                  Turn on for fully automated workflow without manual review.
-                </AlertDescription>
-              </Alert>
-
-              {/* Divider */}
-              <div className="border-t border-neutral-700 my-6"></div>
-
-              {/* What to publish */}
-              <div className="flex items-center justify-between">
-                <div className="space-y-1">
-                  <Label htmlFor="publishAssets">Publish assets (posters, fanart, logos)</Label>
-                  <p className="text-sm text-neutral-500">
-                    Copy selected images to your media library
-                  </p>
-                </div>
-                <Switch
-                  id="publishAssets"
-                  checked={formData.publish.publishAssets}
-                  onCheckedChange={(checked) => updateField('publish.publishAssets', checked)}
-                />
+              <div className="text-xs text-neutral-500 space-y-1">
+                <p>* Custom value (different from default)</p>
+                <p>Hover over inputs for description of each asset type</p>
               </div>
+            </div>
+          </CardContent>
+        </Card>
 
-              <div className="flex items-center justify-between">
-                <div className="space-y-1">
-                  <Label htmlFor="publishActors">Publish actor headshots</Label>
-                  <p className="text-sm text-neutral-500">
-                    Create .actors/ folder with cast thumbnails (Kodi/Jellyfin format)
-                  </p>
-                </div>
-                <Switch
-                  id="publishActors"
-                  checked={formData.publish.publishActors}
-                  onCheckedChange={(checked) => updateField('publish.publishActors', checked)}
-                />
+        {/* Publishing Card */}
+        <Card className="bg-neutral-800/50">
+          <CardHeader>
+            <CardTitle>📤 Library Publishing</CardTitle>
+            <CardDescription>
+              Choose what gets copied to your media library and when
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Auto-publish setting */}
+            <div className="flex items-center justify-between">
+              <div className="space-y-1">
+                <Label htmlFor="autoPublish">Automatic Publishing</Label>
+                <p className="text-sm text-neutral-500">
+                  When enabled, assets are automatically published after enrichment completes.
+                  When disabled, you must manually review and publish from the UI.
+                </p>
               </div>
+              <Switch
+                id="autoPublish"
+                checked={formData.general.autoPublish}
+                onCheckedChange={(checked) => updateField('general.autoPublish', checked)}
+              />
+            </div>
 
-              <div className="flex items-center justify-between">
-                <div className="space-y-1">
-                  <Label htmlFor="publishTrailers">Publish trailers</Label>
-                  <p className="text-sm text-neutral-500">
-                    Download and save trailer files (⚠️ uses significant disk space)
-                  </p>
-                </div>
-                <Switch
-                  id="publishTrailers"
-                  checked={formData.publish.publishTrailers}
-                  onCheckedChange={(checked) => updateField('publish.publishTrailers', checked)}
-                />
+            <Alert>
+              <InfoIcon className="h-4 w-4" />
+              <AlertDescription>
+                <strong>Recommended: Off</strong> - Review metadata and selected assets before publishing to your library.
+                Turn on for fully automated workflow without manual review.
+              </AlertDescription>
+            </Alert>
+
+            {/* Divider */}
+            <div className="border-t border-neutral-700 my-6"></div>
+
+            {/* What to publish */}
+            <div className="flex items-center justify-between">
+              <div className="space-y-1">
+                <Label htmlFor="publishAssets">Publish assets (posters, fanart, logos)</Label>
+                <p className="text-sm text-neutral-500">
+                  Copy selected images to your media library
+                </p>
               </div>
+              <Switch
+                id="publishAssets"
+                checked={formData.publish.publishAssets}
+                onCheckedChange={(checked) => updateField('publish.publishAssets', checked)}
+              />
+            </div>
 
-              <Alert>
-                <InfoIcon className="h-4 w-4" />
-                <AlertDescription>
-                  <strong>NFO files are always generated</strong> regardless of these settings. They contain metadata required by media players.
-                </AlertDescription>
-              </Alert>
-            </CardContent>
-          </Card>
-        </AnimatedTabsContent>
-      </AnimatedTabs>
+            <div className="flex items-center justify-between">
+              <div className="space-y-1">
+                <Label htmlFor="publishActors">Publish actor headshots</Label>
+                <p className="text-sm text-neutral-500">
+                  Create .actors/ folder with cast thumbnails (Kodi/Jellyfin format)
+                </p>
+              </div>
+              <Switch
+                id="publishActors"
+                checked={formData.publish.publishActors}
+                onCheckedChange={(checked) => updateField('publish.publishActors', checked)}
+              />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div className="space-y-1">
+                <Label htmlFor="publishTrailers">Publish trailers</Label>
+                <p className="text-sm text-neutral-500">
+                  Download and save trailer files (⚠️ uses significant disk space)
+                </p>
+              </div>
+              <Switch
+                id="publishTrailers"
+                checked={formData.publish.publishTrailers}
+                onCheckedChange={(checked) => updateField('publish.publishTrailers', checked)}
+              />
+            </div>
+
+            <Alert>
+              <InfoIcon className="h-4 w-4" />
+              <AlertDescription>
+                <strong>NFO files are always generated</strong> regardless of these settings. They contain metadata required by media players.
+              </AlertDescription>
+            </Alert>
+          </CardContent>
+        </Card>
+      </div>
 
       {/* Save Bar (Fixed at bottom) */}
       {hasChanges && (
