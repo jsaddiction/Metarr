@@ -551,10 +551,16 @@ const MyCard = ({ children }) => {
 - `Button` – Action buttons with variants (primary, outline, ghost, destructive)
 - `Input` – Text input fields
 - `Label` – Form labels (paired with inputs)
-- `Switch` – Toggle switches
+- `Switch` – Toggle switches (smaller by default: h-5 w-9)
 - `Dialog` – Modal dialogs
 - `Alert` – Message alerts
 - `Select` – Dropdown menus
+
+**Boolean Controls**:
+- **ALWAYS use Switch** for boolean/toggle controls
+- **NEVER use Checkbox** - Checkbox component has been removed from codebase
+- Switch is smaller by default (20px height vs. 24px)
+- Switch provides clearer on/off visual state
 
 **Customization approach**:
 1. Use component as-is if it fits

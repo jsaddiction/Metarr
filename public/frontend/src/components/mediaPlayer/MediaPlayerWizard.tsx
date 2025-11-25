@@ -6,7 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Checkbox } from '@/components/ui/checkbox';
+import { Switch } from '@/components/ui/switch';
 
 interface MediaPlayerWizardProps {
   isOpen: boolean;
@@ -417,14 +417,13 @@ export const MediaPlayerWizard: React.FC<MediaPlayerWizardProps> = ({
                   />
                 </div>
                 <div className="flex items-center gap-2">
-                  <Checkbox
-                    id="enabled"
+                  <Switch
                     checked={singlePlayerData.enabled}
                     onCheckedChange={(checked) =>
                       setSinglePlayerData({ ...singlePlayerData, enabled: checked as boolean })
                     }
                   />
-                  <Label htmlFor="enabled" className="text-sm text-neutral-300 cursor-pointer">
+                  <Label className="text-sm text-neutral-300 cursor-pointer">
                     Enabled
                   </Label>
                 </div>

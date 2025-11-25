@@ -228,7 +228,6 @@ export const ProviderCard: React.FC<ProviderCardProps> = ({ provider, stats }) =
             checked={localConfig.enabled}
             onCheckedChange={handleToggle}
             disabled={switchDisabled}
-            className="scale-75"
           />
         </div>
 

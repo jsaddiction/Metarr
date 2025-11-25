@@ -6,7 +6,7 @@ import { mediaPlayerApi } from '../../utils/api';
 import { useMediaPlayerGroups } from '../../hooks/useMediaPlayerGroups';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Checkbox } from '@/components/ui/checkbox';
+import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -211,12 +211,11 @@ export const MediaPlayerConfigModal: React.FC<MediaPlayerConfigModalProps> = ({
 
           {/* Enabled */}
           <div className="flex items-center gap-2">
-            <Checkbox
-              id="enabled"
+            <Switch
               checked={formData.enabled}
               onCheckedChange={(checked) => handleChange('enabled', checked as boolean)}
             />
-            <Label htmlFor="enabled" className="text-sm text-neutral-300 cursor-pointer">
+            <Label className="text-sm text-neutral-300 cursor-pointer">
               Enabled
             </Label>
           </div>
@@ -286,12 +285,11 @@ export const MediaPlayerConfigModal: React.FC<MediaPlayerConfigModalProps> = ({
           {formData.type === 'kodi' && (
             <div className="space-y-4 p-4 border border-neutral-700 rounded-lg bg-neutral-800/30">
               <div className="flex items-center gap-2">
-                <Checkbox
-                  id="isSharedMysql"
+                <Switch
                   checked={formData.isSharedMysql}
                   onCheckedChange={(checked) => handleChange('isSharedMysql', checked as boolean)}
                 />
-                <Label htmlFor="isSharedMysql" className="text-sm text-neutral-300 cursor-pointer font-medium">
+                <Label className="text-sm text-neutral-300 cursor-pointer font-medium">
                   Shared MySQL Backend
                 </Label>
               </div>

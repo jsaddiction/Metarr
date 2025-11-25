@@ -25,7 +25,9 @@
 | [SaveBar](#savebar) | Forms | Fixed bottom save bar |
 
 **shadcn/ui Primitives** (imported, not custom):
-- Button, Card, Input, Label, Switch, Select, Dialog, Alert, Checkbox, Badge, Tooltip, Table, Progress, Tabs
+- Button, Card, Input, Label, Switch, Select, Dialog, Alert, Badge, Tooltip, Table, Progress, Tabs
+
+**Note**: Checkbox has been removed - always use Switch for boolean controls.
 
 ---
 
@@ -408,9 +410,8 @@ Located in `components/asset/`
 - **Button** - Buttons with variants (default, outline, ghost, destructive)
 - **Input** - Text input fields
 - **Label** - Form labels
-- **Switch** - Toggle switches
+- **Switch** - Toggle switches for boolean controls (use instead of checkboxes)
 - **Select** - Dropdown selects
-- **Checkbox** - Checkboxes
 
 ### Feedback
 - **Alert** - Alert messages (info, warning, error)
