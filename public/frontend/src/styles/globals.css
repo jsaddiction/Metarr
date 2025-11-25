@@ -125,6 +125,27 @@
 
   /* Shadow with violet tint */
   --shadow-purple: 0 0 0 3px rgba(139, 92, 246, 0.1);
+
+  /* Surface Colors */
+  --color-surface-app: #171717;
+  --color-surface-raised: #262626;
+  --color-surface-overlay: #404040;
+
+  /* Borders */
+  --color-border-default: #404040;
+  --color-border-subtle: #2626267f;
+
+  /* Spacing */
+  --spacing-card: 1.5rem;
+  --spacing-compact: 0.75rem;
+  --spacing-section: 1.5rem;
+
+  /* Sizing */
+  --input-height-standard: 2.5rem;
+  --input-height-compact: 2rem;
+
+  /* Radius */
+  --radius-card: 0.75rem;
 }
 
 @layer base {
@@ -176,6 +197,58 @@
 }
 
 @layer components {
+  /* Cards */
+  .card-raised {
+    @apply bg-neutral-800 border border-neutral-700 rounded-xl;
+  }
+
+  .card-raised-subtle {
+    @apply bg-neutral-800/50 border border-neutral-700 rounded-xl;
+  }
+
+  /* Layout */
+  .content-spacing {
+    @apply pt-16;
+  }
+
+  .page-container {
+    @apply pt-16 pb-24;
+  }
+
+  .page-header {
+    @apply mb-6;
+  }
+
+  .page-title {
+    @apply text-2xl font-semibold text-white;
+  }
+
+  .page-subtitle {
+    @apply text-sm text-neutral-400 mt-1;
+  }
+
+  /* Forms */
+  .setting-row {
+    @apply flex items-center justify-between;
+  }
+
+  .input-standard {
+    @apply h-10 text-sm bg-neutral-800 border border-neutral-600;
+  }
+
+  .input-compact {
+    @apply h-8 text-sm bg-neutral-800 border border-neutral-600;
+  }
+
+  /* Spacing */
+  .section-stack {
+    @apply space-y-6;
+  }
+
+  .section-stack-compact {
+    @apply space-y-3;
+  }
+
   /* Button Components */
   .btn {
     @apply inline-flex items-center justify-center px-4 py-2 border border-transparent rounded-md text-sm font-medium leading-4 text-center no-underline cursor-pointer transition-all duration-200 select-none;
@@ -774,12 +847,6 @@
   /* Breaks out of parent padding to span full width */
   .full-width-section {
     @apply -mx-6;
-  }
-
-  /* Standard content spacing below controls */
-  /* Accounts for fixed ViewControls header (height ~48px with py-2) + gap */
-  .content-spacing {
-    @apply pt-16;
   }
 
   /* Responsive sidebar */

@@ -8,7 +8,7 @@ import { Layout } from './components/layout/Layout';
 import { RouteErrorBoundary } from './components/error/RouteErrorBoundary';
 
 // Lazy-loaded route components for code splitting
-const Dashboard = lazy(() => import('./pages/Dashboard').then(m => ({ default: m.Dashboard })));
+const Dashboard = lazy(() => import('./pages/activity/Dashboard').then(m => ({ default: m.Dashboard })));
 const Movies = lazy(() => import('./pages/metadata/Movies').then(m => ({ default: m.Movies })));
 const MovieEdit = lazy(() => import('./pages/metadata/MovieEdit').then(m => ({ default: m.MovieEdit })));
 const Actors = lazy(() => import('./pages/metadata/Actors').then(m => ({ default: m.Actors })));

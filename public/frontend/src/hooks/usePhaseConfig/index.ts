@@ -1,0 +1,1 @@
+export { usePhaseConfig } from './usePhaseConfig';
