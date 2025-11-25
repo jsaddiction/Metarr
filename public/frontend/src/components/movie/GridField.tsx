@@ -1,6 +1,7 @@
 import React from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faLock, faLockOpen, faChevronUp, faChevronDown, faCalendar } from '@fortawesome/free-solid-svg-icons';
+import { cn } from '@/lib/utils';
 
 interface GridFieldProps {
   label: string;
@@ -73,7 +74,7 @@ export const GridField = React.memo<GridFieldProps>(
     };
 
     return (
-      <div className={className}>
+      <div className={cn("min-w-0", className)}>
         <label className="text-xs font-medium text-neutral-400 mb-1 block">
           {label}
         </label>
