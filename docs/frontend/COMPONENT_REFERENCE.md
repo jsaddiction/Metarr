@@ -124,7 +124,6 @@ Components specific to settings pages.
 - `title: string` - Card title
 - `description?: string` - Card description
 - `icon?: ReactNode` - Optional emoji or icon
-- `variant?: 'default' | 'subtle'` - Background style (solid or transparent)
 - `children: ReactNode` - Card content
 
 **Composes With**: Contains SettingRow components, used inside SectionStack
@@ -445,7 +444,7 @@ Located in `components/asset/`
 <PageContainer title="..." subtitle="...">
   <SectionStack>
     <SectionHeader title="..." />
-    <SettingCard title="..." variant="subtle">
+    <SettingCard title="...">
       <SettingRow label="..." description="...">
         <Switch />
       </SettingRow>
@@ -465,7 +464,7 @@ Located in `components/asset/`
 ```
 <PageContainer title="Settings" subtitle="Configure...">
   <SectionStack>
-    <SettingCard title="General" variant="subtle">
+    <SettingCard title="General">
       <SettingRow label="Setting 1">
         <Switch />
       </SettingRow>

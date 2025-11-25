@@ -223,10 +223,6 @@
     @apply bg-neutral-800 border border-neutral-700 rounded-xl;
   }
 
-  .card-raised-subtle {
-    @apply bg-neutral-800/50 border border-neutral-700 rounded-xl;
-  }
-
   /* Layout */
   .content-spacing {
     @apply pt-16;

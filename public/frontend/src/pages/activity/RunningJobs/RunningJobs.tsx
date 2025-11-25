@@ -71,7 +71,6 @@ export const RunningJobs: React.FC = () => {
             <SettingCard
               title="Pending"
               icon={<FontAwesomeIcon icon={faClipboardList} className="w-5 h-5" />}
-              variant="subtle"
             >
               <div className="text-3xl font-bold text-neutral-400">{stats.pending}</div>
             </SettingCard>
@@ -79,7 +78,6 @@ export const RunningJobs: React.FC = () => {
             <SettingCard
               title="Running"
               icon={<FontAwesomeIcon icon={faPlayCircle} className="w-5 h-5" />}
-              variant="subtle"
             >
               <div className="text-3xl font-bold text-primary-500">{stats.running}</div>
             </SettingCard>
@@ -87,7 +85,6 @@ export const RunningJobs: React.FC = () => {
             <SettingCard
               title="Completed"
               icon={<FontAwesomeIcon icon={faCheckCircle} className="w-5 h-5" />}
-              variant="subtle"
             >
               <div className="text-3xl font-bold text-green-500">{stats.completed}</div>
             </SettingCard>
@@ -95,7 +92,6 @@ export const RunningJobs: React.FC = () => {
             <SettingCard
               title="Failed"
               icon={<FontAwesomeIcon icon={faTimesCircle} className="w-5 h-5" />}
-              variant="subtle"
             >
               <div className="text-3xl font-bold text-red-500">{stats.failed}</div>
             </SettingCard>

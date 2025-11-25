@@ -214,7 +214,6 @@ export function Workflow() {
         <SettingCard
           title="✨ Metadata & Asset Enrichment"
           description="Control how Metarr fetches and selects assets from providers"
-          variant="subtle"
         >
           <div className="space-y-6">
             {/* Auto-select Assets Toggle */}
@@ -328,7 +327,6 @@ export function Workflow() {
         <SettingCard
           title="📤 Library Publishing"
           description="Choose what gets copied to your media library and when"
-          variant="subtle"
         >
           <div className="space-y-4">
             {/* Auto-publish setting */}
