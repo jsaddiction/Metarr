@@ -235,29 +235,40 @@ Access at: `http://localhost:3000/settings` (or your server URL)
 - Affects metadata conflicts (title, plot, etc.)
 - Does not affect asset selection (scoring system)
 
-### Phase Configuration
+### Workflow Configuration
 
-**Purpose**: Enable/disable automation phases
+**Purpose**: Configure global workflow behavior
 
-**Available phases**:
-- **Scanning** - Discover media files (always enabled)
-- **Enrichment** - Fetch metadata and assets
-- **Publishing** - Deploy assets to library
-- **Player Sync** - Update media players
-- **Verification** - Validate cache consistency
-- **Notification** - Send notifications
+**Location**: Settings → General (Workflow)
 
-**Configuration**:
-1. Navigate to **Settings → Phases**
-2. Toggle phases on/off
-3. Configure phase-specific settings
+**Configuration Scope**: GLOBAL (applies to all libraries)
 
-**Common scenarios**:
-- **Manual mode**: Disable enrichment/publishing, manual approval
-- **Full automation**: Enable all phases
-- **Metadata only**: Enrichment on, publishing off
+**Available settings**:
 
-See [Phase Documentation](../phases/OVERVIEW.md) for details.
+**Enrichment Tab**:
+- **Automatic Asset Selection** - Auto-select best assets vs manual review
+- **Preferred Language** - Language preference for asset scoring (e.g., 'en')
+- **Asset Download Limits** - Maximum number of each asset type to download (per media type)
+
+**Publishing Tab**:
+- **Automatic Publishing** - Auto-publish after enrichment vs manual trigger
+- **Publish Assets** - Copy posters, fanart, logos to library
+- **Publish Actors** - Copy actor headshots to .actors/ folder
+- **Publish Trailers** - Download and save trailer files
+
+**Configuration Philosophy**:
+- **Global settings** control BEHAVIOR (how Metarr works)
+- **Per-library settings** control SCOPE (what gets processed):
+  - Library paths and types (Settings → Libraries)
+  - Asset limits per media type (Settings → General → Enrichment)
+  - Scheduler intervals (Settings → Libraries → individual library)
+
+**Common workflows**:
+- **Fully automated**: Auto-select ON, Auto-publish ON
+- **Review gate** (recommended): Auto-select ON, Auto-publish OFF
+- **Manual curation**: Auto-select OFF, Auto-publish OFF
+
+See [Phase Documentation](../phases/OVERVIEW.md) for workflow details.
 
 ### Player Connections
 
