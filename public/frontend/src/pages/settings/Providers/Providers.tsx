@@ -1,5 +1,7 @@
 import React from 'react';
-import { PageContainer } from '@/components/ui/PageContainer/PageContainer';
+import { PageContainer } from '@/components/ui/PageContainer';
+import { LoadingState } from '@/components/ui/LoadingState/LoadingState';
+import { EmptyState } from '@/components/ui/EmptyState/EmptyState';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useProviders, useProviderStats } from '@/hooks/useProviders';
 import { ProviderCard } from '@/components/provider/ProviderCard';
@@ -17,11 +19,7 @@ export const Providers: React.FC = () => {
       subtitle="Configure metadata and asset providers"
     >
       {/* Loading State */}
-      {isLoading && (
-        <div className="text-center py-12">
-          <p className="text-muted-foreground">Loading providers...</p>
-        </div>
-      )}
+      {isLoading && <LoadingState message="Loading providers..." />}
 
       {/* Error State */}
       {error && (
@@ -46,11 +44,7 @@ export const Providers: React.FC = () => {
 
           {/* Empty State */}
           {configurableProviders.length === 0 && (
-            <div className="text-center py-12">
-              <p className="text-muted-foreground">
-                No providers found
-              </p>
-            </div>
+            <EmptyState title="No providers found" />
           )}
         </div>
       )}

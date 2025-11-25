@@ -1,5 +1,5 @@
 import React from 'react';
-import { PageContainer } from '@/components/ui/PageContainer/PageContainer';
+import { PageContainer } from '@/components/ui/PageContainer';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 export const Notifications: React.FC = () => {

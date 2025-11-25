@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { PageContainer } from '@/components/ui/PageContainer/PageContainer';
+import { PageContainer } from '@/components/ui/PageContainer';
 import { SectionStack } from '@/components/ui/SectionStack/SectionStack';
 import { SettingCard } from '@/components/ui/SettingCard/SettingCard';
 import { SettingRow } from '@/components/ui/SettingRow/SettingRow';
+import { LoadingState } from '@/components/ui/LoadingState/LoadingState';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
@@ -191,9 +192,7 @@ export function Workflow() {
   if (loading || !formData) {
     return (
       <PageContainer title="General Settings">
-        <div className="flex items-center justify-center h-64">
-          <div className="text-neutral-400">Loading configuration...</div>
-        </div>
+        <LoadingState message="Loading configuration..." />
       </PageContainer>
     );
   }
@@ -244,7 +243,7 @@ export function Workflow() {
                   </option>
                 ))}
               </select>
-              <p className="text-xs text-neutral-500">
+              <p className="text-xs text-muted-foreground">
                 Used when scoring assets - higher priority for matching language
               </p>
             </div>
@@ -253,7 +252,7 @@ export function Workflow() {
             <div className="space-y-4">
               <div>
                 <h3 className="text-sm font-medium text-neutral-200 mb-1">Asset Download Limits</h3>
-                <p className="text-xs text-neutral-500">
+                <p className="text-xs text-muted-foreground">
                   Maximum number of each asset type to download per media item. Set to 0 to disable that type.
                 </p>
               </div>
@@ -317,7 +316,7 @@ export function Workflow() {
                 ))}
               </div>
 
-              <div className="text-xs text-neutral-500 space-y-1">
+              <div className="text-xs text-muted-foreground space-y-1">
                 <p>* Custom value (different from default)</p>
                 <p>Hover over inputs for description of each asset type</p>
               </div>
@@ -399,7 +398,7 @@ export function Workflow() {
       {hasChanges && (
         <div className="fixed bottom-0 left-0 right-0 bg-neutral-900 border-t border-neutral-700 shadow-lg p-4 z-50">
           <div className="container mx-auto flex items-center justify-between max-w-7xl">
-            <div className="text-sm text-neutral-400">
+            <div className="text-sm text-muted-foreground">
               You have unsaved changes
             </div>
             <div className="flex gap-3">

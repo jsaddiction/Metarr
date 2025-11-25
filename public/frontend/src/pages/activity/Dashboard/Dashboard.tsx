@@ -6,7 +6,10 @@ import { RecentActivityList } from '@/components/dashboard/RecentActivityList';
 import { useLibraries } from '@/hooks/useLibraryScans';
 import { usePlayers } from '@/hooks/usePlayers';
 import { useJobHistory } from '@/hooks/useJobs';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { SectionHeader } from '@/components/ui/SectionHeader/SectionHeader';
+import { EmptyState } from '@/components/ui/EmptyState/EmptyState';
+import { LoadingState } from '@/components/ui/LoadingState/LoadingState';
+import { DataCard } from '@/components/ui/DataCard/DataCard';
 
 export const Dashboard: React.FC = () => {
   const { data: libraries = [], isLoading: loadingLibraries } = useLibraries();
@@ -24,24 +27,20 @@ export const Dashboard: React.FC = () => {
       <div className="section-stack">
         {/* Libraries Section */}
         <section>
-          <h2 className="text-2xl font-bold mb-4">Libraries</h2>
+          <SectionHeader title="Libraries" />
 
-          {loadingLibraries && (
-            <div className="text-muted-foreground">Loading libraries...</div>
-          )}
+          {loadingLibraries && <LoadingState message="Loading libraries..." size="sm" />}
 
           {!loadingLibraries && libraries.length === 0 && (
-            <Card>
-              <CardContent className="py-8 text-center">
-                <p className="text-muted-foreground mb-4">No libraries configured</p>
-                <a
-                  href="/settings/libraries"
-                  className="text-primary underline-offset-4 hover:underline"
-                >
-                  Add a library to get started
-                </a>
-              </CardContent>
-            </Card>
+            <DataCard>
+              <EmptyState
+                title="No libraries configured"
+                action={{
+                  label: 'Add a library to get started',
+                  href: '/settings/libraries'
+                }}
+              />
+            </DataCard>
           )}
 
           {!loadingLibraries && libraries.length > 0 && (
@@ -55,24 +54,20 @@ export const Dashboard: React.FC = () => {
 
         {/* Media Players Section */}
         <section>
-          <h2 className="text-2xl font-bold mb-4">Media Players</h2>
+          <SectionHeader title="Media Players" />
 
-          {loadingPlayers && (
-            <div className="text-muted-foreground">Loading media players...</div>
-          )}
+          {loadingPlayers && <LoadingState message="Loading media players..." size="sm" />}
 
           {!loadingPlayers && players.length === 0 && (
-            <Card>
-              <CardContent className="py-8 text-center">
-                <p className="text-muted-foreground mb-4">No media players configured</p>
-                <a
-                  href="/settings/media-players"
-                  className="text-primary underline-offset-4 hover:underline"
-                >
-                  Add a media player to get started
-                </a>
-              </CardContent>
-            </Card>
+            <DataCard>
+              <EmptyState
+                title="No media players configured"
+                action={{
+                  label: 'Add a media player to get started',
+                  href: '/settings/media-players'
+                }}
+              />
+            </DataCard>
           )}
 
           {!loadingPlayers && players.length > 0 && (
@@ -90,22 +85,12 @@ export const Dashboard: React.FC = () => {
 
         {/* Recent Activity Section */}
         <section>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-2xl font-bold">Recent Activity</h2>
-          </div>
+          <SectionHeader title="Recent Activity" />
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Last 10 Jobs</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {loadingHistory && (
-                <div className="text-muted-foreground">Loading activity...</div>
-              )}
-
-              {!loadingHistory && <RecentActivityList jobs={recentJobs} />}
-            </CardContent>
-          </Card>
+          <DataCard title="Last 10 Jobs">
+            {loadingHistory && <LoadingState message="Loading activity..." size="sm" />}
+            {!loadingHistory && <RecentActivityList jobs={recentJobs} />}
+          </DataCard>
         </section>
       </div>
     </PageContainer>

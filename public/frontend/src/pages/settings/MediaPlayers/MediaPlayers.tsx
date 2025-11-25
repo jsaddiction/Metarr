@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { PageContainer } from '@/components/ui/PageContainer/PageContainer';
+import { PageContainer } from '@/components/ui/PageContainer';
+import { LoadingState } from '@/components/ui/LoadingState/LoadingState';
 import { MediaPlayer, MediaPlayerFormData } from '@/types/mediaPlayer';
 import { AddMediaPlayerCard } from '@/components/mediaPlayer/AddMediaPlayerCard';
 import { MediaPlayerGroupCard } from '@/components/mediaPlayer/MediaPlayerGroupCard';
@@ -100,9 +101,7 @@ export const MediaPlayers: React.FC = () => {
       subtitle="Configure connections to your media players for automatic library updates"
     >
       {loading ? (
-        <div className="text-center py-12">
-          <p className="text-neutral-400">Loading media players...</p>
-        </div>
+        <LoadingState message="Loading media players..." />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           <AddMediaPlayerCard onClick={handleAddClick} />

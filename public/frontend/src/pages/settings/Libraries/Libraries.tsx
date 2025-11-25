@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
-import { PageContainer } from '@/components/ui/PageContainer/PageContainer';
+import { PageContainer } from '@/components/ui/PageContainer';
+import { LoadingState } from '@/components/ui/LoadingState/LoadingState';
+import { EmptyState } from '@/components/ui/EmptyState/EmptyState';
 import { Library, LibraryFormData } from '@/types/library';
 import { AddLibraryCard } from '@/components/library/AddLibraryCard';
 import { LibraryCard } from '@/components/library/LibraryCard';
@@ -135,9 +137,7 @@ export const Libraries: React.FC = () => {
       >
         <AnimatedTabsContent value="libraries" className="space-y-6">
           {loading ? (
-            <div className="text-center py-12">
-              <p className="text-neutral-400">Loading libraries...</p>
-            </div>
+            <LoadingState message="Loading libraries..." />
           ) : (
             <>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -163,11 +163,10 @@ export const Libraries: React.FC = () => {
               </div>
 
               {libraries.length === 0 && (
-                <div className="text-center py-12">
-                  <p className="text-neutral-400">
-                    No libraries configured. Click "Add Library" to get started.
-                  </p>
-                </div>
+                <EmptyState
+                  title="No libraries configured"
+                  description="Click 'Add Library' to get started."
+                />
               )}
             </>
           )}

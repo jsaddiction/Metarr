@@ -117,6 +117,27 @@
   --color-neutral-900: #171717;
   --color-neutral-950: #0a0a0a;
 
+  /* shadcn semantic colors (mapped from CSS variables) */
+  --color-foreground: hsl(var(--foreground));
+  --color-background: hsl(var(--background));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+
   /* Semantic Status Colors */
   --color-success: #22c55e;   /* Tailwind green-500 */
   --color-warning: #f97316;   /* Tailwind orange-500 */
@@ -225,6 +246,15 @@
 
   .page-subtitle {
     @apply text-sm text-neutral-400 mt-1;
+  }
+
+  /* Section Headers */
+  .section-header-title {
+    @apply text-2xl font-semibold text-foreground;
+  }
+
+  .section-header-subtitle {
+    @apply text-sm text-muted-foreground mt-1;
   }
 
   /* Forms */

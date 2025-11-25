@@ -1,7 +1,9 @@
 import React from 'react';
 import { PageContainer } from '@/components/ui/PageContainer';
 import { SettingCard } from '@/components/ui/SettingCard';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { LoadingState } from '@/components/ui/LoadingState/LoadingState';
+import { DataCard } from '@/components/ui/DataCard/DataCard';
+import { EmptyState } from '@/components/ui/EmptyState/EmptyState';
 import { useJobs, useJobStats } from '@/hooks/useJobs';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
@@ -22,9 +24,7 @@ export const RunningJobs: React.FC = () => {
   if (isLoading) {
     return (
       <PageContainer title="Running Jobs" subtitle="Monitor active and queued job processing">
-        <div className="flex items-center justify-center py-32 text-neutral-400">
-          Loading jobs...
-        </div>
+        <LoadingState message="Loading jobs..." size="lg" />
       </PageContainer>
     );
   }
@@ -103,82 +103,75 @@ export const RunningJobs: React.FC = () => {
         )}
 
         {/* Jobs Table */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Active Jobs</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {!jobs || jobs.length === 0 ? (
-              <div className="text-center py-8 text-neutral-400">
-                No active jobs
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {jobs.map(job => (
-                  <div
-                    key={job.id}
-                    className="flex items-center gap-4 p-4 rounded-lg bg-neutral-800/50 border border-neutral-700"
-                  >
-                    {/* Status Icon */}
-                    <div className={`w-8 h-8 flex items-center justify-center ${getStatusColor(job.status)}`}>
-                      <FontAwesomeIcon
-                        icon={getStatusIcon(job.status)}
-                        className={isRunning(job.status) ? 'animate-spin' : ''}
-                      />
-                    </div>
-
-                    {/* Job Info */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="font-medium text-white">{job.type}</span>
-                        <span className="text-xs text-neutral-400">
-                          Priority: {job.priority}
-                        </span>
-                      </div>
-
-                      {/* Progress Bar */}
-                      {isRunning(job.status) && job.progress !== undefined && (
-                        <div className="mb-1">
-                          <div className="h-2 bg-neutral-700 rounded-full overflow-hidden">
-                            <div
-                              className="h-full bg-primary-500 transition-all duration-300"
-                              style={{ width: `${job.progress}%` }}
-                            />
-                          </div>
-                          <div className="text-xs text-neutral-400 mt-1">
-                            {job.progress}% - {job.message || 'Processing...'}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Error Message */}
-                      {job.status === 'failed' && job.error && (
-                        <div className="text-sm text-red-400">{job.error}</div>
-                      )}
-
-                      {/* Completed Message */}
-                      {job.status === 'completed' && job.message && (
-                        <div className="text-sm text-green-400">{job.message}</div>
-                      )}
-
-                      {/* Retry Info */}
-                      {job.status === 'retrying' && (
-                        <div className="text-sm text-yellow-400">
-                          Retrying... (Attempt {job.attempts}/{job.maxAttempts})
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Timestamp */}
-                    <div className="text-xs text-neutral-500">
-                      {new Date(job.createdAt).toLocaleTimeString()}
-                    </div>
+        <DataCard title="Active Jobs">
+          {!jobs || jobs.length === 0 ? (
+            <EmptyState title="No active jobs" />
+          ) : (
+            <div className="space-y-3">
+              {jobs.map(job => (
+                <div
+                  key={job.id}
+                  className="flex items-center gap-4 p-4 rounded-lg bg-neutral-800/50 border border-neutral-700"
+                >
+                  {/* Status Icon */}
+                  <div className={`w-8 h-8 flex items-center justify-center ${getStatusColor(job.status)}`}>
+                    <FontAwesomeIcon
+                      icon={getStatusIcon(job.status)}
+                      className={isRunning(job.status) ? 'animate-spin' : ''}
+                    />
                   </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+
+                  {/* Job Info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-medium text-white">{job.type}</span>
+                      <span className="text-xs text-neutral-400">
+                        Priority: {job.priority}
+                      </span>
+                    </div>
+
+                    {/* Progress Bar */}
+                    {isRunning(job.status) && job.progress !== undefined && (
+                      <div className="mb-1">
+                        <div className="h-2 bg-neutral-700 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-primary-500 transition-all duration-300"
+                            style={{ width: `${job.progress}%` }}
+                          />
+                        </div>
+                        <div className="text-xs text-neutral-400 mt-1">
+                          {job.progress}% - {job.message || 'Processing...'}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Error Message */}
+                    {job.status === 'failed' && job.error && (
+                      <div className="text-sm text-red-400">{job.error}</div>
+                    )}
+
+                    {/* Completed Message */}
+                    {job.status === 'completed' && job.message && (
+                      <div className="text-sm text-green-400">{job.message}</div>
+                    )}
+
+                    {/* Retry Info */}
+                    {job.status === 'retrying' && (
+                      <div className="text-sm text-yellow-400">
+                        Retrying... (Attempt {job.attempts}/{job.maxAttempts})
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Timestamp */}
+                  <div className="text-xs text-neutral-500">
+                    {new Date(job.createdAt).toLocaleTimeString()}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </DataCard>
       </div>
     </PageContainer>
   );

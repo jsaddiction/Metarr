@@ -3,6 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import Fuse from 'fuse.js';
 import { ViewControls, ViewMode } from '@/components/ui/ViewControls';
 import { VirtualizedMovieTable } from '@/components/movie/VirtualizedMovieTable';
+import { PageContainer } from '@/components/ui/PageContainer';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { LoadingState } from '@/components/ui/LoadingState';
 import { MovieListItem } from '@/types/movie';
 import { useMovies } from '@/hooks/useMovies';
 
@@ -90,32 +93,25 @@ export const Movies: React.FC = () => {
   // Loading state
   if (loading) {
     return (
-      <div className="content-spacing">
-        <div className="flex items-center justify-center py-32 text-neutral-400">
-          <div className="text-center">
-            <div className="text-xl mb-2">Loading movies...</div>
-            <div className="text-sm">Please wait</div>
-          </div>
-        </div>
-      </div>
+      <PageContainer title="Movies" subtitle="Manage your movie library">
+        <LoadingState size="lg" message="Loading movies..." />
+      </PageContainer>
     );
   }
 
   // Empty database state - no movies at all
   if (movies.length === 0) {
     return (
-      <div className="content-spacing">
-        <div className="flex flex-col items-center justify-center py-32 text-neutral-400">
-          <p className="text-xl mb-4">No movies found in database</p>
-          <p className="text-sm mb-6">Add a movie library to get started</p>
-          <button
-            onClick={() => navigate('/settings/libraries')}
-            className="btn btn-primary"
-          >
-            Setup Movie Library
-          </button>
-        </div>
-      </div>
+      <PageContainer title="Movies" subtitle="Manage your movie library">
+        <EmptyState
+          title="No movies found in database"
+          description="Add a movie library to get started"
+          action={{
+            label: "Setup Movie Library",
+            onClick: () => navigate('/settings/libraries')
+          }}
+        />
+      </PageContainer>
     );
   }
 
@@ -149,12 +145,12 @@ export const Movies: React.FC = () => {
           </ViewControls>
         </div>
 
-        <div className="content-spacing">
-          <div className="flex flex-col items-center justify-center py-20 text-neutral-400">
-            <p className="text-lg">No movies matching "{searchTerm}"</p>
-            <p className="text-sm mt-2">Try adjusting your search terms or status filter</p>
-          </div>
-        </div>
+        <PageContainer title="Movies" subtitle="Manage your movie library">
+          <EmptyState
+            title={`No movies matching "${searchTerm}"`}
+            description="Try adjusting your search terms or status filter"
+          />
+        </PageContainer>
       </>
     );
   }
@@ -188,13 +184,13 @@ export const Movies: React.FC = () => {
         </ViewControls>
       </div>
 
-      <div className="content-spacing">
+      <PageContainer title="Movies" subtitle="Manage your movie library">
         <VirtualizedMovieTable
           movies={filteredMovies}
           onMovieClick={handleMovieClick}
           onRefreshClick={handleRefreshClick}
         />
-      </div>
+      </PageContainer>
     </>
   );
 };
