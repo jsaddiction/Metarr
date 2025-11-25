@@ -1,5 +1,5 @@
 import React, { useCallback } from 'react';
-import { Minus, Plus } from 'lucide-react';
+import { ChevronUp, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { NumberInputProps } from './types';
 
@@ -59,7 +59,7 @@ export function NumberInput({
           className="flex-1 flex items-center justify-center bg-neutral-700 border-b border-neutral-600 rounded-tr text-neutral-300 hover:bg-neutral-600 hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-neutral-700 disabled:hover:text-neutral-300"
           title="Increment"
         >
-          <Plus className="h-2.5 w-2.5" />
+          <ChevronUp className="h-3 w-3" />
         </button>
         <button
           type="button"
@@ -68,7 +68,7 @@ export function NumberInput({
           className="flex-1 flex items-center justify-center bg-neutral-700 rounded-br text-neutral-300 hover:bg-neutral-600 hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-neutral-700 disabled:hover:text-neutral-300"
           title="Decrement"
         >
-          <Minus className="h-2.5 w-2.5" />
+          <ChevronDown className="h-3 w-3" />
         </button>
       </div>
     </div>
