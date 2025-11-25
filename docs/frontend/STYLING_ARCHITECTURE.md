@@ -1,68 +1,140 @@
 # Frontend Styling Architecture
 
-**Purpose**: Centralized styling system architecture for consistent UI/UX across Metarr
+**Purpose**: Centralized styling system and project structure for consistent UI/UX
 
-**Related Docs**:
-- Parent: [Frontend Documentation](../INDEX.md#frontend)
-- See also: [Styling Guidelines](STYLING_GUIDELINES.md), [Components](COMPONENTS.md)
+**Related Docs**: [Styling Guidelines](STYLING_GUIDELINES.md), [Components](COMPONENTS.md)
 
 ---
 
-## Current State Analysis
+## Core Principles
 
-### Problem Statement
-
-**Scattered Styling**: Inline Tailwind classes duplicated across 123 components
-- `bg-neutral-800` appears 44 times across 24 files
-- `border border-neutral-700` appears 71 times across 26 files
-- Inconsistent card backgrounds, borders, and spacing
-- No single source of truth for component styling
-
-**Inconsistencies**:
-- Workflow page: `bg-neutral-800/50` cards
-- Provider page: `bg-neutral-800` cards
-- Some pages: Harsh borders, others subtle
-- Mixed padding patterns (p-3, p-4, p-6)
-
-**Maintenance Issues**:
-- Style changes require editing multiple files
-- Easy to introduce inconsistencies
-- Difficult to maintain design system
-- No component-level reusability
+1. **Component-Based Styling**: Create reusable components when patterns appear 2+ times
+2. **Global Patterns**: Use CSS variables and utility classes, not inline Tailwind
+3. **Industry Standard Structure**: Files organized by logical scope, discoverable by convention
+4. **Type Colocation**: Types live where they're scoped (global vs component-specific)
+5. **Single Source of Truth**: One place to change, applies everywhere
 
 ---
 
-## Proposed Architecture
+## File Structure
 
-### Core Principle
+### Current State Issues
+- ❌ Inconsistent directory structure
+- ❌ Types scattered between global and component-specific
+- ❌ Components without proper index.tsx exports
+- ❌ Supporting code not properly encapsulated
 
-> **"Component-Based Styling with Global Patterns"**
->
-> Create reusable components whenever a pattern appears 2+ times. Apply styling via global utility classes and CSS variables, not inline Tailwind.
+### Target Structure
 
-### Industry Best Practices Alignment
+```
+public/frontend/src/
+├── components/
+│   ├── ui/                          # Generic reusable components
+│   │   ├── PageContainer/
+│   │   │   ├── index.tsx           # Export only
+│   │   │   ├── PageContainer.tsx   # Implementation
+│   │   │   └── types.ts            # Component-specific types
+│   │   ├── SettingCard/
+│   │   │   ├── index.tsx
+│   │   │   ├── SettingCard.tsx
+│   │   │   └── types.ts
+│   │   ├── SettingRow/
+│   │   │   ├── index.tsx
+│   │   │   ├── SettingRow.tsx
+│   │   │   └── types.ts
+│   │   └── SectionStack/
+│   │       ├── index.tsx
+│   │       └── SectionStack.tsx
+│   ├── asset/                       # Asset-specific components
+│   │   ├── AssetCard/
+│   │   │   ├── index.tsx
+│   │   │   ├── AssetCard.tsx
+│   │   │   └── types.ts
+│   │   └── ...
+│   ├── provider/                    # Provider-specific components
+│   │   ├── ProviderCard/
+│   │   │   ├── index.tsx
+│   │   │   ├── ProviderCard.tsx
+│   │   │   ├── types.ts
+│   │   │   └── ProviderCard.test.tsx
+│   │   └── ...
+│   ├── movie/                       # Movie-specific components
+│   └── library/                     # Library-specific components
+│
+├── pages/
+│   ├── settings/                    # Settings section
+│   │   ├── Workflow/
+│   │   │   ├── index.tsx           # Export only
+│   │   │   ├── Workflow.tsx        # Page implementation
+│   │   │   └── types.ts            # Page-specific types
+│   │   ├── Providers/
+│   │   ├── Libraries/
+│   │   └── MediaPlayers/
+│   ├── metadata/                    # Metadata section
+│   │   ├── Movies/
+│   │   ├── Actors/
+│   │   └── Series/
+│   └── activity/                    # Activity section
+│
+├── hooks/
+│   ├── useProviders/
+│   │   ├── index.ts
+│   │   ├── useProviders.ts
+│   │   └── types.ts                # Hook-specific types
+│   └── usePhaseConfig/
+│       ├── index.ts
+│       └── usePhaseConfig.ts
+│
+├── types/
+│   ├── index.ts                    # Re-exports all global types
+│   ├── api.ts                      # API response/request types
+│   ├── provider.ts                 # Provider domain types (used by multiple pages)
+│   ├── movie.ts                    # Movie domain types (used by multiple pages)
+│   └── config.ts                   # Config types (used by multiple pages)
+│
+├── styles/
+│   └── globals.css                 # Design tokens + utility classes
+│
+└── utils/
+    ├── api.ts
+    └── formatting.ts
+```
 
-This architecture aligns with:
+### Organization Rules
 
-1. **Atomic Design** (Brad Frost)
-   - Atoms: Basic styled components (Button, Input, Card)
-   - Molecules: Composed components (FormField, SettingRow)
-   - Organisms: Complex components (ProviderCard, WorkflowSection)
+**Components** (`components/[domain]/[ComponentName]/`):
+- `index.tsx` - Export only: `export { ComponentName } from './ComponentName'`
+- `ComponentName.tsx` - Implementation
+- `types.ts` - Component-specific types (if any)
+- `ComponentName.test.tsx` - Tests (optional)
+- Supporting files (helpers, constants) stay in directory
 
-2. **Design Tokens** (Salesforce, Adobe)
-   - Semantic naming (--color-surface, --spacing-section)
-   - Theme-able via CSS variables
-   - Single source of truth
+**Pages** (`pages/[section]/[PageName]/`):
+- `index.tsx` - Export only: `export { PageName } from './PageName'`
+- `PageName.tsx` - Page implementation
+- `types.ts` - Page-specific types (if any)
+- Page-specific components stay in directory (if not reusable)
 
-3. **Component-Driven Development** (Storybook pattern)
-   - Isolated, reusable components
-   - Consistent API across similar components
-   - Self-documenting through props
+**Hooks** (`hooks/[hookName]/`):
+- `index.ts` - Export only
+- `hookName.ts` - Hook implementation
+- `types.ts` - Hook-specific types (if any)
 
-4. **BEM + Utility-First Hybrid**
-   - Global utility classes for common patterns
-   - Component-specific variants via props
-   - Tailwind for one-offs only
+**Types** (`types/`):
+- **ONLY** for types used by **2+ pages/components**
+- Domain-organized (api.ts, provider.ts, movie.ts)
+- `index.ts` re-exports all for convenience
+
+### Type Scoping Decision Tree
+
+```
+Is type used by 2+ pages/components?
+├─ YES → types/[domain].ts (global)
+└─ NO → Is it for a component, page, or hook?
+    ├─ Component → components/[domain]/[Component]/types.ts
+    ├─ Page → pages/[section]/[Page]/types.ts
+    └─ Hook → hooks/[hookName]/types.ts
+```
 
 ---
 
@@ -70,531 +142,252 @@ This architecture aligns with:
 
 ### Layer 1: Design Tokens (CSS Variables)
 
-**Location**: `public/frontend/src/styles/globals.css` (exists)
+**Location**: `public/frontend/src/styles/globals.css` → `@theme {}`
 
-Define semantic tokens instead of using Tailwind classes directly:
-
+**Add**:
 ```css
 @theme {
-  /* Surface Colors (instead of neutral-X) */
-  --color-surface-app: #171717;        /* Page background */
-  --color-surface-raised: #262626;     /* Card background */
-  --color-surface-overlay: #404040;    /* Modal/popover background */
+  /* Surface Colors */
+  --color-surface-app: #171717;
+  --color-surface-raised: #262626;
+  --color-surface-overlay: #404040;
 
-  /* Border Colors */
-  --color-border-default: #404040;     /* Standard borders */
-  --color-border-subtle: #2626267f;    /* Subtle dividers (50% opacity) */
+  /* Borders */
+  --color-border-default: #404040;
+  --color-border-subtle: #2626267f;
 
-  /* Spacing Scale */
-  --spacing-card: 1.5rem;              /* 24px - Card padding */
-  --spacing-compact: 0.75rem;          /* 12px - Compact padding */
-  --spacing-section: 1.5rem;           /* 24px - Between sections */
-  --spacing-list: 0.75rem;             /* 12px - Between list items */
+  /* Spacing */
+  --spacing-card: 1.5rem;
+  --spacing-compact: 0.75rem;
+  --spacing-section: 1.5rem;
 
-  /* Component Sizing */
-  --input-height-standard: 2.5rem;     /* 40px - h-10 */
-  --input-height-compact: 2rem;        /* 32px - h-8 */
+  /* Sizing */
+  --input-height-standard: 2.5rem;
+  --input-height-compact: 2rem;
 
-  /* Border Radius */
-  --radius-card: 0.75rem;              /* 12px - rounded-xl */
-  --radius-input: 0.375rem;            /* 6px - rounded-md */
+  /* Radius */
+  --radius-card: 0.75rem;
 }
 ```
 
-**Benefits**:
-- Change entire theme by updating tokens
-- Semantic names (surface vs neutral-800)
-- Easier to maintain
-- Theme switching capability
+### Layer 2: Utility Classes
 
-### Layer 2: Utility Classes (Global Patterns)
+**Location**: `public/frontend/src/styles/globals.css` → `@layer components {}`
 
-**Location**: `public/frontend/src/styles/globals.css` (expand existing `@layer components`)
-
-Create utility classes for repeated patterns:
-
+**Add**:
 ```css
 @layer components {
-  /* === CARDS === */
-  .card-raised {
-    @apply bg-[var(--color-surface-raised)] border border-[var(--color-border-default)] rounded-[var(--radius-card)] shadow-sm;
-  }
+  /* Cards */
+  .card-raised { /* bg-neutral-800 border border-neutral-700 rounded-xl */ }
+  .card-raised-subtle { /* bg-neutral-800/50 border border-neutral-700 rounded-xl */ }
 
-  .card-raised-subtle {
-    @apply bg-[var(--color-surface-raised)]/50 border border-[var(--color-border-default)] rounded-[var(--radius-card)] shadow-sm;
-  }
+  /* Layout */
+  .page-container { /* content-spacing pb-24 */ }
+  .page-header { /* mb-6 */ }
+  .page-title { /* text-2xl font-semibold text-white */ }
+  .page-subtitle { /* text-sm text-neutral-400 mt-1 */ }
 
-  /* === CARD SECTIONS === */
-  .card-section {
-    @apply p-[var(--spacing-card)];
-  }
+  /* Forms */
+  .setting-row { /* flex items-center justify-between */ }
+  .input-standard { /* h-10 text-sm bg-neutral-800 border border-neutral-600 */ }
+  .input-compact { /* h-8 text-sm bg-neutral-800 border border-neutral-600 */ }
 
-  .card-section-compact {
-    @apply p-[var(--spacing-compact)];
-  }
-
-  .card-divider {
-    @apply border-t border-[var(--color-border-subtle)] my-[var(--spacing-section)];
-  }
-
-  /* === PAGE LAYOUT === */
-  .page-container {
-    @apply content-spacing pb-24;
-  }
-
-  .page-header {
-    @apply mb-6;
-  }
-
-  .page-title {
-    @apply text-2xl font-semibold text-white;
-  }
-
-  .page-subtitle {
-    @apply text-sm text-neutral-400 mt-1;
-  }
-
-  /* === FORM PATTERNS === */
-  .setting-row {
-    @apply flex items-center justify-between;
-  }
-
-  .setting-label-group {
-    @apply space-y-1;
-  }
-
-  .input-standard {
-    @apply h-[var(--input-height-standard)] text-sm bg-neutral-800 border border-neutral-600 rounded-md;
-  }
-
-  .input-compact {
-    @apply h-[var(--input-height-compact)] text-sm bg-neutral-800 border border-neutral-600 rounded-md;
-  }
-
-  /* === SECTION SPACING === */
-  .section-stack {
-    @apply space-y-[var(--spacing-section)];
-  }
-
-  .section-stack-compact {
-    @apply space-y-[var(--spacing-list)];
-  }
+  /* Spacing */
+  .section-stack { /* space-y-6 */ }
+  .section-stack-compact { /* space-y-3 */ }
 }
 ```
 
-**Usage Example**:
+### Layer 3: Components
+
+**Create** (in `components/ui/`):
+- `PageContainer/` - Page layout wrapper (title + subtitle + content)
+- `SettingCard/` - Card with title, description, icon, variant
+- `SettingRow/` - Label + description + control
+- `SectionStack/` - Vertical spacing container (default or compact)
+- `FormField/` - Input with label and optional error
+- `CollapsibleSection/` - Expandable section with chevron
+
+**Usage Pattern**:
 ```tsx
-// Before (inline Tailwind)
-<div className="bg-neutral-800/50 border border-neutral-700 rounded-xl shadow-sm p-6">
-
-// After (utility class)
-<div className="card-raised-subtle card-section">
-```
-
-### Layer 3: Reusable Components
-
-**Location**: `public/frontend/src/components/ui/`
-
-Create components for repeated patterns:
-
-#### 3.1 PageContainer Component
-
-```tsx
-// components/ui/PageContainer.tsx
-interface PageContainerProps {
-  title: string;
-  subtitle?: string;
-  children: React.ReactNode;
-}
-
-export function PageContainer({ title, subtitle, children }: PageContainerProps) {
-  return (
-    <div className="page-container">
-      <div className="page-header">
-        <h1 className="page-title">{title}</h1>
-        {subtitle && <p className="page-subtitle">{subtitle}</p>}
-      </div>
-      {children}
-    </div>
-  );
-}
-```
-
-**Usage**:
-```tsx
-<PageContainer
-  title="General Settings"
-  subtitle="Configure metadata enrichment and library publishing behavior"
->
-  {/* Page content */}
-</PageContainer>
-```
-
-#### 3.2 SettingCard Component
-
-```tsx
-// components/ui/SettingCard.tsx
-interface SettingCardProps {
-  title: string;
-  description?: string;
-  icon?: string;
-  variant?: 'default' | 'subtle';
-  children: React.ReactNode;
-}
-
-export function SettingCard({
-  title,
-  description,
-  icon,
-  variant = 'default',
-  children
-}: SettingCardProps) {
-  const cardClass = variant === 'subtle' ? 'card-raised-subtle' : 'card-raised';
-
-  return (
-    <Card className={cardClass}>
-      <CardHeader>
-        <CardTitle>{icon} {title}</CardTitle>
-        {description && <CardDescription>{description}</CardDescription>}
-      </CardHeader>
-      <CardContent className="section-stack">
-        {children}
-      </CardContent>
-    </Card>
-  );
-}
-```
-
-**Usage**:
-```tsx
-<SettingCard
-  title="Metadata & Asset Enrichment"
-  description="Control how Metarr fetches and selects assets from providers"
-  icon="✨"
-  variant="subtle"
->
-  {/* Settings */}
-</SettingCard>
-```
-
-#### 3.3 SettingRow Component
-
-```tsx
-// components/ui/SettingRow.tsx
-interface SettingRowProps {
-  label: string;
-  description?: string;
-  children: React.ReactNode;
-}
-
-export function SettingRow({ label, description, children }: SettingRowProps) {
-  return (
-    <div className="setting-row">
-      <div className="setting-label-group">
-        <Label>{label}</Label>
-        {description && <p className="text-sm text-neutral-500">{description}</p>}
-      </div>
-      {children}
-    </div>
-  );
-}
-```
-
-**Usage**:
-```tsx
-<SettingRow
-  label="Automatic Publishing"
-  description="When enabled, assets are automatically published after enrichment completes."
->
-  <Switch checked={autoPublish} onCheckedChange={setAutoPublish} />
-</SettingRow>
-```
-
-#### 3.4 SectionStack Component
-
-```tsx
-// components/ui/SectionStack.tsx
-interface SectionStackProps {
-  spacing?: 'default' | 'compact';
-  children: React.ReactNode;
-}
-
-export function SectionStack({ spacing = 'default', children }: SectionStackProps) {
-  const stackClass = spacing === 'compact' ? 'section-stack-compact' : 'section-stack';
-  return <div className={stackClass}>{children}</div>;
-}
-```
-
-**Usage**:
-```tsx
-<SectionStack spacing="compact">
-  {providers.map(provider => (
-    <ProviderCard key={provider.id} provider={provider} />
-  ))}
-</SectionStack>
-```
-
----
-
-## Component Reuse Rule
-
-### When to Create a Component
-
-**Rule**: Create a reusable component when a pattern appears **2 or more times**
-
-**Examples**:
-
-✅ **Create Component** (appears 2+ times):
-- Setting toggle row (appears on every settings page)
-- Card with title/description (appears on all pages)
-- Input with label (appears in all forms)
-- Page header (title + subtitle)
-- Collapsible section (used 5+ times)
-
-❌ **Don't Create Component** (one-off):
-- Unique layout for dashboard
-- Custom visualization components
-- Page-specific complex forms
-
-### Component Naming Convention
-
-```
-[Domain][Purpose]Component
-
-Examples:
-- SettingRow (settings domain)
-- PageContainer (page domain)
-- FormField (form domain)
-- AssetCard (asset domain)
-- ProviderCard (provider domain)
-```
-
----
-
-## Migration Strategy
-
-### Phase 1: Foundation (Week 1)
-
-1. **Add Design Tokens**
-   - Expand `@theme` in globals.css
-   - Define semantic color, spacing, sizing tokens
-   - Document token usage
-
-2. **Create Utility Classes**
-   - Add to `@layer components` in globals.css
-   - Cover: cards, page layout, forms, spacing
-   - Test in one page first
-
-3. **Build Core Components**
-   - PageContainer
-   - SettingCard
-   - SettingRow
-   - SectionStack
-
-### Phase 2: Page Migration (Week 2)
-
-1. **Settings Pages** (highest priority)
-   - Workflow page (already 50% migrated)
-   - Providers page
-   - Libraries page
-   - Media Players page
-
-2. **Content Pages**
-   - Movies page
-   - Actors page
-   - Dashboard page
-
-### Phase 3: Refinement (Week 3)
-
-1. **Component Library Audit**
-   - Identify remaining duplicated patterns
-   - Create additional components as needed
-   - Remove inline Tailwind where possible
-
-2. **Documentation**
-   - Update STYLING_GUIDELINES.md
-   - Create component usage examples
-   - Document token system
-
----
-
-## File Structure
-
-```
-public/frontend/src/
-├── styles/
-│   └── globals.css           # Design tokens + utility classes
-├── components/
-│   └── ui/
-│       ├── PageContainer.tsx    # Page layout wrapper
-│       ├── SettingCard.tsx      # Card with title/description
-│       ├── SettingRow.tsx       # Label + control row
-│       ├── SectionStack.tsx     # Vertical spacing container
-│       ├── FormField.tsx        # Input with label
-│       ├── CollapsibleSection.tsx
-│       └── ...
-└── pages/
-    └── settings/
-        └── Workflow.tsx         # Uses components
-```
-
----
-
-## Benefits of This Architecture
-
-### Consistency
-- Single source of truth for styles
-- All pages use same components
-- Impossible to create visual inconsistencies
-
-### Maintainability
-- Change style once, applies everywhere
-- No hunting for duplicate Tailwind classes
-- Easy to refactor
-
-### Developer Experience
-- Import component, not copy/paste styles
-- Self-documenting through component names
-- TypeScript props enforce correct usage
-
-### Performance
-- Smaller bundle (reused components vs duplicated classes)
-- Better tree-shaking
-- Faster builds
-
-### Theme-ability
-- CSS variables enable theme switching
-- Light/dark mode easier to maintain
-- Brand color changes in one place
-
----
-
-## Example: Before & After
-
-### Before (Current)
-
-```tsx
-// Workflow.tsx
+// Before: Inline Tailwind
 <div className="p-6 pb-24">
   <div className="mb-6">
-    <h1 className="text-2xl font-semibold text-white">General Settings</h1>
-    <p className="text-sm text-neutral-400 mt-1">Configure metadata enrichment</p>
+    <h1 className="text-2xl font-semibold text-white">Title</h1>
   </div>
-
   <div className="space-y-6">
     <Card className="bg-neutral-800/50">
-      <CardHeader>
-        <CardTitle>✨ Metadata & Asset Enrichment</CardTitle>
-        <CardDescription>Control how Metarr fetches assets</CardDescription>
-      </CardHeader>
       <CardContent className="space-y-6">
         <div className="flex items-center justify-between">
-          <div className="space-y-1">
-            <Label>Automatic Asset Selection</Label>
-            <p className="text-sm text-neutral-500">Description</p>
-          </div>
+          <Label>Setting</Label>
           <Switch />
         </div>
       </CardContent>
     </Card>
   </div>
 </div>
-```
 
-**Problems**:
-- Inline Tailwind classes (`p-6`, `pb-24`, `mb-6`, etc.)
-- Repeated patterns (`flex items-center justify-between`)
-- Hard to maintain consistency
-
-### After (Proposed)
-
-```tsx
-// Workflow.tsx
-<PageContainer
-  title="General Settings"
-  subtitle="Configure metadata enrichment and library publishing behavior"
->
+// After: Components
+<PageContainer title="Title">
   <SectionStack>
-    <SettingCard
-      title="Metadata & Asset Enrichment"
-      description="Control how Metarr fetches and selects assets from providers"
-      icon="✨"
-      variant="subtle"
-    >
-      <SettingRow
-        label="Automatic Asset Selection"
-        description="When enabled, Metarr automatically selects the best assets."
-      >
-        <Switch checked={autoSelect} onCheckedChange={setAutoSelect} />
+    <SettingCard title="Section" variant="subtle">
+      <SettingRow label="Setting">
+        <Switch />
       </SettingRow>
     </SettingCard>
   </SectionStack>
 </PageContainer>
 ```
 
-**Benefits**:
-- Zero inline Tailwind classes
-- Semantic component names
-- Reusable across all pages
-- Single source of truth for styling
+---
+
+## Migration Strategy
+
+### Phase 1: Foundation Setup
+1. Add design tokens to globals.css
+2. Add utility classes to globals.css
+3. Create component directories with index.tsx exports
+4. Create core UI components (PageContainer, SettingCard, SettingRow, SectionStack)
+
+### Phase 2: Structure Reorganization
+1. Move pages to proper directory structure with index.tsx
+2. Move components to domain-organized directories with index.tsx
+3. Relocate types according to scoping rules
+4. Update all imports to use index.tsx exports
+
+### Phase 3: Page Migration
+1. Settings pages (Workflow, Providers, Libraries, MediaPlayers)
+2. Metadata pages (Movies, Actors, Series)
+3. Activity pages (Dashboard, RunningJobs, History)
+
+### Phase 4: Cleanup
+1. Remove duplicate inline styles
+2. Delete unused utility classes
+3. Audit for remaining inconsistencies
+4. Update documentation
 
 ---
 
-## Implementation Checklist
+## Implementation with Specialized Agents
 
-### Setup Phase
-- [ ] Add design tokens to globals.css
-- [ ] Create utility classes in @layer components
-- [ ] Test tokens and utilities on one page
+### Agent Roles & Responsibilities
 
-### Component Creation
-- [ ] Create PageContainer component
-- [ ] Create SettingCard component
-- [ ] Create SettingRow component
-- [ ] Create SectionStack component
-- [ ] Create FormField component
-- [ ] Create CollapsibleSection component
+**1. Structure Agent** (foundation-builder)
+- Create directory structure
+- Create index.tsx exports
+- Move and reorganize files
+- Update imports
 
-### Migration
-- [ ] Migrate Workflow page
-- [ ] Migrate Providers page
-- [ ] Migrate Libraries page
-- [ ] Migrate remaining settings pages
-- [ ] Migrate content pages
+**2. Component Agent** (component-builder)
+- Create UI components (PageContainer, SettingCard, etc.)
+- Implement design tokens in globals.css
+- Create utility classes in globals.css
+- Write component types
 
-### Documentation
-- [ ] Update STYLING_GUIDELINES.md with new system
-- [ ] Document all components with examples
-- [ ] Create migration guide for future pages
+**3. Migration Agent** (page-migrator)
+- Convert pages to use new components
+- Replace inline Tailwind with components
+- Update page structure to match conventions
+- Test after each page migration
+
+**4. Type Agent** (type-organizer)
+- Analyze type usage across codebase
+- Move types according to scoping rules
+- Create types/index.ts with re-exports
+- Update imports
+
+**5. Validation Agent** (quality-checker)
+- Run type checks after changes
+- Run builds after changes
+- Verify no broken imports
+- Check for remaining inline styles
+
+### Parallel Execution Strategy
+
+**Maximum Concurrency**: 6 agents (per user's hardware limit)
+
+**Wave 1** (Parallel):
+1. Structure Agent - Create directories
+2. Component Agent - Build UI components + CSS
+
+**Wave 2** (Parallel):
+3. Type Agent - Reorganize types
+4. Migration Agent (Settings) - Migrate settings pages
+5. Migration Agent (Metadata) - Migrate metadata pages
+6. Migration Agent (Activity) - Migrate activity pages
+
+**Wave 3** (Sequential):
+7. Validation Agent - Run all checks
+8. Cleanup - Remove dead code
+
+### Context Window Management
+
+**Problem**: Large codebase (123 TSX files) exceeds context limits
+
+**Solution**: Agent specialization with focused scope
+- Each agent works on specific domains only
+- Agents read only files they need to modify
+- Structure Agent provides file map, other agents reference it
+- No agent loads entire codebase
 
 ---
 
-## Decision Log
+## Success Criteria
 
-### Why Not Full CSS Modules?
-CSS Modules would work but:
-- Adds build complexity
-- Harder to share styles across components
-- Utility-first approach better for rapid iteration
+**Structure**:
+- [ ] All components have directory + index.tsx export
+- [ ] All pages have directory + index.tsx export
+- [ ] All hooks have directory + index.ts export
+- [ ] Types properly scoped (global vs component-specific)
 
-### Why Keep Tailwind?
-Tailwind is kept for:
-- One-off unique styles (rare)
-- Rapid prototyping
-- Responsive utilities (md:, lg:, etc.)
-- Existing shadcn/ui components
+**Styling**:
+- [ ] Design tokens defined in globals.css
+- [ ] Utility classes defined in globals.css
+- [ ] Core UI components created (6 minimum)
+- [ ] Zero inline `bg-neutral-800` or `border border-neutral-700`
 
-### Why CSS Variables Over Sass?
-CSS variables because:
-- Native browser support
-- Theme switching at runtime
-- Easier debugging (inspect in DevTools)
-- No build step required
+**Migration**:
+- [ ] All settings pages use new components
+- [ ] All metadata pages use new components
+- [ ] All activity pages use new components
+- [ ] Consistent styling across all pages
+
+**Quality**:
+- [ ] TypeScript compiles without errors
+- [ ] Frontend builds successfully
+- [ ] All imports resolve correctly
+- [ ] No broken UI in browser
 
 ---
 
-## See Also
+## File Checklist
 
-- [Styling Guidelines](STYLING_GUIDELINES.md) - Design system reference
-- [Component Library](COMPONENTS.md) - Component documentation
-- [Tailwind Config](../../public/frontend/tailwind.config.js) - Tailwind customization
+### To Create
+- [ ] `components/ui/PageContainer/`
+- [ ] `components/ui/SettingCard/`
+- [ ] `components/ui/SettingRow/`
+- [ ] `components/ui/SectionStack/`
+- [ ] `components/ui/FormField/`
+- [ ] `components/ui/CollapsibleSection/`
+
+### To Reorganize
+- [ ] Move pages to `pages/[section]/[Page]/` structure
+- [ ] Move components to `components/[domain]/[Component]/` structure
+- [ ] Move hooks to `hooks/[hookName]/` structure
+- [ ] Relocate types per scoping rules
+
+### To Update
+- [ ] `globals.css` - Add tokens and utility classes
+- [ ] All imports to use index.tsx exports
+- [ ] Pages to use new components
+- [ ] Remove inline Tailwind styling
+
+---
+
+## Next Steps
+
+1. Review and approve this architecture
+2. Begin Phase 1 with Structure + Component agents (parallel)
+3. Execute Phase 2 with Type + Migration agents (parallel)
+4. Run Validation agent
+5. Update STYLING_GUIDELINES.md with new patterns
