@@ -1,24 +1,23 @@
 import React from 'react';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { DataCardProps } from './types';
 
 export function DataCard({ title, description, action, children, noPadding = false }: DataCardProps) {
   return (
-    <Card className="bg-neutral-800 border border-neutral-700 rounded-xl">
+    <div className="card">
       {(title || description || action) && (
-        <CardHeader>
+        <div className="card-header">
           <div className="flex items-center justify-between">
             <div>
-              {title && <CardTitle>{title}</CardTitle>}
-              {description && <CardDescription>{description}</CardDescription>}
+              {title && <h3 className="text-lg font-semibold text-white">{title}</h3>}
+              {description && <p className="text-sm text-neutral-400 mt-1">{description}</p>}
             </div>
             {action}
           </div>
-        </CardHeader>
+        </div>
       )}
-      <CardContent className={noPadding ? 'p-0' : ''}>
+      <div className={noPadding ? 'p-0' : 'card-body'}>
         {children}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

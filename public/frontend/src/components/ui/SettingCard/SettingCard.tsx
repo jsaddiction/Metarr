@@ -1,5 +1,4 @@
 import React from 'react';
-import { Card, CardHeader, CardContent } from '@/components/ui/card';
 import type { SettingCardProps } from './types';
 
 export function SettingCard({
@@ -9,8 +8,8 @@ export function SettingCard({
   children,
 }: SettingCardProps) {
   return (
-    <Card className="card-raised">
-      <CardHeader>
+    <div className="card">
+      <div className="card-header">
         <div className="flex items-center gap-3">
           {icon && <div className="text-primary-500">{icon}</div>}
           <div className="flex-1">
@@ -18,8 +17,8 @@ export function SettingCard({
             {description && <p className="text-sm text-neutral-400 mt-1">{description}</p>}
           </div>
         </div>
-      </CardHeader>
-      <CardContent>{children}</CardContent>
-    </Card>
+      </div>
+      <div className="card-body">{children}</div>
+    </div>
   );
 }
