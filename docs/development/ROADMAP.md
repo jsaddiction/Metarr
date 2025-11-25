@@ -3,7 +3,7 @@
 Last updated: 2025-11-22
 
 ## In Progress
-- [ ] TBD - awaiting user direction (provider page redesign completed)
+- [ ] Configuration UI refinement - Continue improving settings organization and clarity
 
 ## Next Up (Priority Order)
 
@@ -61,6 +61,14 @@ Last updated: 2025-11-22
   - Handle player-specific edge cases
 
 ## Completed Recently
+- [x] Configuration consolidation (2025-11-25)
+  - Removed redundant per-library automation configuration
+  - Consolidated to global workflow settings via PhaseConfigService
+  - Clarified global vs per-library configuration philosophy
+  - Global settings control BEHAVIOR (auto-select, auto-publish, language)
+  - Per-library settings control SCOPE (paths, types, schedules)
+  - Removed 485 lines of unused code (AutomationConfigService, controller)
+  - Updated documentation to reflect simplified configuration model
 - [x] Provider page redesign (2025-11-22)
   - Ultra-compact single-row card layout (Name + ? | API Key | Stats | Test | Switch)
   - Grey background (bg-neutral-800/50) matching metadata tab styling
