@@ -127,7 +127,7 @@ export const GridField = React.memo<GridFieldProps>(
             }}
             placeholder={type === 'date' ? 'YYYY-MM-DD' : undefined}
             className={`flex-1 h-8 px-2.5 py-1 text-sm bg-neutral-800 border text-neutral-200 transition-colors placeholder:text-neutral-500 focus-visible:outline-none ${
-              type === 'number' || type === 'date' ? 'rounded-none' : 'rounded-r'
+              type === 'number' || type === 'date' ? 'rounded-none border-r-0' : 'rounded-r'
             } border-l-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
               locked
                 ? 'border-red-500/50'
