@@ -25,7 +25,7 @@ const LANGUAGES = [
 ];
 
 /**
- * General Settings Page
+ * Workflow Settings Page
  *
  * IMPORTANT: Only exposes settings that are ACTUALLY USED by backend services.
  */
@@ -187,7 +187,7 @@ export function Workflow() {
 
   if (loading || !formData) {
     return (
-      <div className="p-6">
+      <div className="content-spacing">
         <div className="flex items-center justify-center h-64">
           <div className="text-neutral-400">Loading configuration...</div>
         </div>
@@ -196,10 +196,10 @@ export function Workflow() {
   }
 
   return (
-    <div className="p-6 pb-24">
-      {/* Header */}
+    <div className="content-spacing pb-24">
+      {/* Page Header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white">General Settings</h1>
+        <h1 className="text-2xl font-semibold text-white">General Settings</h1>
         <p className="text-sm text-neutral-400 mt-1">
           Configure metadata enrichment and library publishing behavior
         </p>
