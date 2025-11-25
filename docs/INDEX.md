@@ -96,6 +96,7 @@ Complete documentation map for Metarr - intelligent metadata management for medi
 | Document | Description |
 |----------|-------------|
 | [ARCHITECTURE.md](frontend/ARCHITECTURE.md) | Frontend architecture and structure |
+| [COMPONENT_GUIDELINES.md](frontend/COMPONENT_GUIDELINES.md) | **Component creation rules and principles (prescriptive)** |
 | [COMPONENTS.md](frontend/COMPONENTS.md) | Component organization and patterns |
 | [STATE_MANAGEMENT.md](frontend/STATE_MANAGEMENT.md) | TanStack Query + hooks |
 | [API_LAYER.md](frontend/API_LAYER.md) | API communication patterns |
