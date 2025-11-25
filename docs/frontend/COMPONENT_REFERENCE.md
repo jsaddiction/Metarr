@@ -27,7 +27,12 @@
 **shadcn/ui Primitives** (imported, not custom):
 - Button, Card, Input, Label, Switch, Select, Dialog, Alert, Badge, Tooltip, Table, Progress, Tabs
 
-**Note**: Checkbox has been removed - always use Switch for boolean controls.
+**Custom Input Components**:
+- NumberInput - Always use for number inputs (never use `<Input type="number">`)
+
+**Important Notes**:
+- Checkbox has been removed - always use Switch for boolean controls
+- Never use `<Input type="number">` - always use NumberInput component
 
 ---
 
@@ -408,6 +413,7 @@ Located in `components/asset/`
 ### Controls
 - **Button** - Buttons with variants (default, outline, ghost, destructive)
 - **Input** - Text input fields
+- **NumberInput** - Number input with custom +/- buttons (use instead of type="number")
 - **Label** - Form labels
 - **Switch** - Toggle switches for boolean controls (use instead of checkboxes)
 - **Select** - Dropdown selects
