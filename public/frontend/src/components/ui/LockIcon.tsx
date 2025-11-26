@@ -1,5 +1,6 @@
 import * as React from 'react';
-import { Lock, LockOpen } from 'lucide-react';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faLock, faLockOpen } from '@fortawesome/free-solid-svg-icons';
 import { cn } from '@/lib/utils';
 
 export interface LockIconProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
@@ -127,9 +128,9 @@ export const LockIcon = React.forwardRef<HTMLButtonElement, LockIconProps>(
               />
             </svg>
           ) : locked ? (
-            <Lock className={iconClasses} />
+            <FontAwesomeIcon icon={faLock} className={iconClasses} />
           ) : (
-            <LockOpen className={iconClasses} />
+            <FontAwesomeIcon icon={faLockOpen} className={iconClasses} />
           )}
         </div>
       );
@@ -173,10 +174,10 @@ export const LockIcon = React.forwardRef<HTMLButtonElement, LockIconProps>(
           </svg>
         ) : locked ? (
           // Locked icon (red)
-          <Lock className={iconClasses} />
+          <FontAwesomeIcon icon={faLock} className={iconClasses} />
         ) : (
           // Unlocked icon (gray)
-          <LockOpen className={iconClasses} />
+          <FontAwesomeIcon icon={faLockOpen} className={iconClasses} />
         )}
       </button>
     );

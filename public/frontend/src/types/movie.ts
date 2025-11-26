@@ -321,3 +321,42 @@ export interface ResetMetadataResponse {
   success: boolean;
   unlockedFields: string[];
 }
+
+/**
+ * Movie actor link (cast member)
+ */
+export interface MovieActorLink {
+  id: number;
+  movie_id: number;
+  actor_id: number;
+  actor_name: string;
+  role: string | null;
+  actor_order: number | null;
+  role_locked: boolean;
+  removed: boolean;
+}
+
+/**
+ * Cast update request
+ * PATCH /api/movies/:id/cast
+ */
+export interface CastUpdateRequest {
+  actors: Array<{
+    actor_id: number;
+    role: string | null;
+    actor_order: number;
+    role_locked: boolean;
+    removed: boolean;
+  }>;
+  actors_order_locked: boolean;
+}
+
+/**
+ * Cast response
+ * GET /api/movies/:id/cast
+ * PATCH /api/movies/:id/cast
+ */
+export interface CastResponse {
+  actors: MovieActorLink[];
+  actors_order_locked: boolean;
+}

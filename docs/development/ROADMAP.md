@@ -1,9 +1,18 @@
 # Development Roadmap
 
-Last updated: 2025-11-22
+Last updated: 2025-11-26
 
 ## In Progress
-- [ ] Configuration UI refinement - Continue improving settings organization and clarity
+- [ ] Cast/Actors tab redesign (WIP)
+  - [x] Database: Added `actors_order_locked`, `role_locked`, `removed` fields to movie_actors
+  - [x] Backend: MovieCastController, getCast/updateCast service methods, API routes
+  - [x] Frontend: useCast hook, SortableActorRow, RemovedActorsList components
+  - [x] Native HTML5 drag-drop for actor reordering (replaced @dnd-kit and @hello-pangea/dnd)
+  - [x] Per-actor role locking with TextInput lock integration
+  - [x] Movie-level order lock (auto-locks when user reorders)
+  - [x] Soft-delete actors with restore capability
+  - [ ] CSS refinement for drag-drop visual feedback
+  - [ ] Actor images display (API endpoint exists, needs testing)
 
 ## Next Up (Priority Order)
 
@@ -38,6 +47,10 @@ Last updated: 2025-11-22
   - Consider presenting logs in UI (system monitoring page)
 
 ### Future Enhancements
+- [ ] Actor page linking
+  - Actor name in cast list should link to actor edit page
+  - Actor edit page shows all movies actor appears in
+  - Actor profile management (biography, image, etc.)
 - [ ] Download manager API client integration
   - Investigate Radarr/Sonarr/Lidarr API clients
   - Auto-configure directory scanning from download manager

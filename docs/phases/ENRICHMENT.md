@@ -417,9 +417,17 @@ for (const id of toDelete) {
 
 ## Phase 6: Fetch Actor Data and Download Thumbnails
 
-**Goal**: Create actor records and download thumbnails to cache for UI display.
+**Goal**: Create actor records and download thumbnails to cache for UI display, respecting user locks.
 
 **Critical**: Actors are created during enrichment (not scan) to avoid naming ambiguities.
+
+### Lock-Respecting Behavior
+
+Enrichment respects three types of cast locks:
+
+1. **Global Order Lock** (`movies.actors_order_locked`): Prevents reordering of entire cast list
+2. **Role Lock** (`movie_actors.role_locked`): Prevents updating specific actor's role text
+3. **Removal Flag** (`movie_actors.removed`): Skips actors marked as removed by user
 
 ```typescript
 const movie = await db.movies.findById(entityId);
@@ -427,6 +435,12 @@ if (!movie.tmdb_id) return { actorsFetched: 0 };
 
 const credits = await tmdbClient.getMovieCredits(movie.tmdb_id);
 const cast = credits.cast.slice(0, 15); // Top 15 actors
+
+// Get existing cast to respect locks
+const existingCast = await db.movie_actors.findByMovie(entityId);
+const existingByTmdbId = new Map(
+  existingCast.map(link => [link.actor.tmdb_id, link])
+);
 
 for (const tmdbActor of cast) {
   let actor = await db.actors.findByTmdbId(tmdbActor.id);
@@ -440,13 +454,40 @@ for (const tmdbActor of cast) {
     });
   }
 
-  // Link actor to movie
-  await db.movie_actors.create({
-    movie_id: entityId,
-    actor_id: actor.id,
-    character: tmdbActor.character,
-    actor_order: tmdbActor.order,
-  });
+  const existing = existingByTmdbId.get(tmdbActor.id);
+
+  // Skip if actor was removed by user
+  if (existing?.removed) {
+    continue;
+  }
+
+  // Respect role lock - keep user's custom role text
+  const role = existing?.role_locked
+    ? existing.role
+    : tmdbActor.character;
+
+  // Respect order lock - keep user's custom order
+  const actorOrder = movie.actors_order_locked && existing
+    ? existing.actor_order
+    : tmdbActor.order;
+
+  if (existing) {
+    // Update existing link (preserving locks)
+    await db.movie_actors.update(existing.id, {
+      role,
+      actor_order: actorOrder,
+    });
+  } else {
+    // Create new link
+    await db.movie_actors.create({
+      movie_id: entityId,
+      actor_id: actor.id,
+      role,
+      actor_order: actorOrder,
+      role_locked: false,
+      removed: false,
+    });
+  }
 
   // Download thumbnail to cache
   if (tmdbActor.profile_path) {
@@ -476,7 +517,15 @@ for (const tmdbActor of cast) {
 }
 ```
 
-**Output**: Actors table populated, thumbnails in cache, visible in UI.
+**Output**: Actors table populated, thumbnails in cache, user edits preserved, visible in UI.
+
+### Cast Lock Summary
+
+| Lock Type | Database Field | Effect During Enrichment |
+|-----------|----------------|--------------------------|
+| **Order Lock** | `movies.actors_order_locked` | Preserves user's custom cast ordering |
+| **Role Lock** | `movie_actors.role_locked` | Keeps user's custom role text unchanged |
+| **Removed** | `movie_actors.removed` | Skips actor entirely (soft delete) |
 
 ---
 
@@ -527,7 +576,31 @@ if (movie.poster_locked) {
   logger.debug('Poster selection locked by user', { entityId });
   return; // Skip automated selection for this type
 }
+
+// Check if cast order is locked
+if (movie.actors_order_locked) {
+  logger.debug('Cast order locked by user', { entityId });
+  // Use existing actor_order values, don't override with provider order
+}
+
+// Check if individual actor role is locked
+const existingActor = await db.movie_actors.findByActorAndMovie(actorId, movieId);
+if (existingActor?.role_locked) {
+  logger.debug('Actor role locked by user', { actorId, movieId });
+  // Keep existing role text, don't override with provider character name
+}
+
+// Check if actor was removed by user
+if (existingActor?.removed) {
+  logger.debug('Actor removed by user, skipping', { actorId, movieId });
+  continue; // Skip this actor entirely
+}
 ```
+
+**Cast Lock Types**:
+- **Global Order Lock** (`movies.actors_order_locked`): Prevents reordering entire cast list
+- **Individual Role Lock** (`movie_actors.role_locked`): Preserves custom character name for specific actor
+- **Removal Flag** (`movie_actors.removed`): Soft-deletes actor from movie (restoration possible in UI)
 
 **See**: [Field Locking Reference](../architecture/ASSET_MANAGEMENT/FIELD_LOCKING.md) for complete behavior.
 

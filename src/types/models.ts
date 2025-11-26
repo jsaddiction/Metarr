@@ -43,6 +43,9 @@ export interface Movie {
   genres?: string[];
   library_id?: number;
 
+  // Lock Fields
+  actors_order_locked?: boolean;
+
   // Workflow Status
   workflow_status: 'pending' | 'processing' | 'completed' | 'failed' | 'needs_identification';
 

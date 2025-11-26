@@ -12,6 +12,7 @@ import { getErrorMessage } from '../utils/errorHandling.js';
 import { SqlParam } from '../types/database.js';
 import { ResourceNotFoundError } from '../errors/index.js';
 import { buildExternalUrls } from '../utils/externalIds.js';
+import { MovieActorLink, CastUpdateRequest, CastUpdateResponse } from '../types/movie.js';
 
 export type AssetStatus = 'none' | 'partial' | 'complete';
 
@@ -73,6 +74,18 @@ export interface AssetStatuses {
   trailer: AssetStatus;
   subtitle: AssetStatus;
   theme: AssetStatus;
+}
+
+// Database row type for cast query result
+interface CastRow {
+  id: number;
+  movie_id: number;
+  actor_id: number;
+  actor_name: string;
+  role: string | null;
+  actor_order: number | null;
+  role_locked: number;
+  removed: number;
 }
 
 export interface Movie {
@@ -1218,6 +1231,86 @@ export class MovieService {
     return this.workflowService.triggerPublish(movieId);
   }
 
+
+  /**
+   * Get cast list for a movie with role and ordering information
+   * Returns all actors linked to the movie, ordered by actor_order
+   *
+   * @param movieId - Movie ID
+   * @returns Array of actor links with role and metadata
+   */
+  async getCast(movieId: number): Promise<MovieActorLink[]> {
+    const conn = this.db.getConnection();
+
+    const rows = await conn.query<CastRow>(
+      `SELECT ma.id, ma.movie_id, ma.actor_id, a.name as actor_name,
+              ma.role, ma.actor_order, ma.role_locked, ma.removed
+       FROM movie_actors ma
+       JOIN actors a ON a.id = ma.actor_id
+       WHERE ma.movie_id = ?
+       ORDER BY ma.actor_order`,
+      [movieId]
+    );
+    return rows.map(row => ({
+      id: row.id,
+      movie_id: row.movie_id,
+      actor_id: row.actor_id,
+      actor_name: row.actor_name,
+      role: row.role,
+      actor_order: row.actor_order,
+      role_locked: Boolean(row.role_locked),
+      removed: Boolean(row.removed)
+    }));
+  }
+
+  /**
+   * Update cast information for a movie
+   * Updates actor roles, ordering, locks, and removed flags
+   * Also updates the movie-level actors_order_locked flag
+   *
+   * @param movieId - Movie ID
+   * @param request - Cast update request with actor data and locks
+   * @returns Updated cast list and success status
+   */
+  async updateCast(movieId: number, request: CastUpdateRequest): Promise<CastUpdateResponse> {
+    const conn = this.db.getConnection();
+
+    try {
+      // 1. Update movie-level order lock
+      await conn.execute(
+        'UPDATE movies SET actors_order_locked = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+        [request.actors_order_locked ? 1 : 0, movieId]
+      );
+
+      // 2. Update each actor link
+      for (const actor of request.actors) {
+        await conn.execute(
+          `UPDATE movie_actors
+           SET role = ?, actor_order = ?, role_locked = ?, removed = ?
+           WHERE movie_id = ? AND actor_id = ?`,
+          [actor.role, actor.actor_order, actor.role_locked ? 1 : 0,
+           actor.removed ? 1 : 0, movieId, actor.actor_id]
+        );
+      }
+
+      // 3. Fetch updated cast
+      const actors = await this.getCast(movieId);
+
+      // 4. Get updated movie to return actors_order_locked
+      const movie = await this.getById(movieId);
+
+      logger.info('Cast updated', { movieId, actorCount: actors.length });
+      return {
+        success: true,
+        message: 'Cast updated successfully',
+        actors,
+        actors_order_locked: Boolean(movie?.actors_order_locked)
+      };
+    } catch (error) {
+      logger.error('Failed to update cast', { movieId, error: getErrorMessage(error) });
+      throw error;
+    }
+  }
 
   /**
    * Clean up orphaned cache files (files not referenced in database)

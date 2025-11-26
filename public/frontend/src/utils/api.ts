@@ -599,6 +599,25 @@ export const movieApi = {
   async getTagSuggestions(): Promise<string[]> {
     return fetchApi<string[]>('/movies/suggestions/tags');
   },
+
+  /**
+   * Get cast for a movie
+   * GET /api/movies/:id/cast
+   */
+  async getCast(id: number): Promise<import('../types/movie').CastResponse> {
+    return fetchApi<import('../types/movie').CastResponse>(`/movies/${id}/cast`);
+  },
+
+  /**
+   * Update cast for a movie
+   * PATCH /api/movies/:id/cast
+   */
+  async updateCast(id: number, data: import('../types/movie').CastUpdateRequest): Promise<import('../types/movie').CastResponse> {
+    return fetchApi<import('../types/movie').CastResponse>(`/movies/${id}/cast`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  },
 };
 
 export const providerApi = {

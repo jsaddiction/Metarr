@@ -8,6 +8,7 @@ import { MovieJobController } from '../controllers/movie/MovieJobController.js';
 import { MovieFieldLockController } from '../controllers/movie/MovieFieldLockController.js';
 import { MovieUnknownFilesController } from '../controllers/movie/MovieUnknownFilesController.js';
 import { MovieSuggestionsController } from '../controllers/movie/MovieSuggestionsController.js';
+import { MovieCastController } from '../controllers/movie/MovieCastController.js';
 import { IgnorePatternController } from '../controllers/ignorePatternController.js';
 import { ImageController } from '../controllers/imageController.js';
 import { JobController } from '../controllers/jobController.js';
@@ -94,6 +95,7 @@ export const createApiRouter = (
   const movieFieldLockController = new MovieFieldLockController(movieService);
   const movieUnknownFilesController = new MovieUnknownFilesController(movieService);
   const movieSuggestionsController = new MovieSuggestionsController(dbManager);
+  const movieCastController = new MovieCastController(movieService);
 
   // Initialize ignore pattern service and controller
   const ignorePatternService = new IgnorePatternService(dbManager);
@@ -390,6 +392,17 @@ export const createApiRouter = (
   router.patch('/movies/:id/metadata', (req, res, next) => {
     logger.debug('[Route Hit] /movies/:id/metadata with id:', req.params.id);
     movieCrudController.updateMetadata(req, res, next);
+  });
+
+  // Cast management
+  router.get('/movies/:id/cast', (req, res, next) => {
+    logger.debug('[Route Hit] GET /movies/:id/cast');
+    movieCastController.getCast(req, res, next);
+  });
+
+  router.patch('/movies/:id/cast', (req, res, next) => {
+    logger.debug('[Route Hit] PATCH /movies/:id/cast');
+    movieCastController.updateCast(req, res, next);
   });
 
   // Toggle monitored status

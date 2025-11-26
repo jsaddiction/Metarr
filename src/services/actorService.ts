@@ -280,20 +280,45 @@ export class ActorService {
 
       // Move all movie_actors links from source to target
       // Handle duplicates by deleting the source link if target already linked
-      const sourceLinks = await conn.query(
-        'SELECT movie_id, role, actor_order FROM movie_actors WHERE actor_id = ?',
+      // Skip removed links (don't merge removed actors)
+      const sourceLinks = await conn.query<{
+        movie_id: number;
+        role: string | null;
+        actor_order: number | null;
+        removed: number;
+      }>(
+        'SELECT movie_id, role, actor_order, removed FROM movie_actors WHERE actor_id = ?',
         [sourceActorId]
       );
 
       for (const link of sourceLinks) {
+        // Skip removed links - they should stay removed
+        if (link.removed) {
+          logger.debug('Skipping removed link during merge', {
+            sourceActorId,
+            targetActorId,
+            movieId: link.movie_id
+          });
+          continue;
+        }
+
         // Check if target already linked to this movie
-        const existing = await conn.query(
-          'SELECT id FROM movie_actors WHERE actor_id = ? AND movie_id = ?',
+        const existing = await conn.query<{ id: number; removed: number }>(
+          'SELECT id, removed FROM movie_actors WHERE actor_id = ? AND movie_id = ?',
           [targetActorId, link.movie_id]
         );
 
         if (existing && existing.length > 0) {
-          // Target already linked - just delete source link
+          // Target already linked to this movie
+          if (existing[0].removed) {
+            // Target link is removed - don't merge, just delete source
+            logger.debug('Target link is removed - deleting source link', {
+              sourceActorId,
+              targetActorId,
+              movieId: link.movie_id
+            });
+          }
+          // Delete source link (whether target is active or removed)
           await conn.execute(
             'DELETE FROM movie_actors WHERE actor_id = ? AND movie_id = ?',
             [sourceActorId, link.movie_id]

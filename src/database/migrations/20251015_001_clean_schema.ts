@@ -478,6 +478,7 @@ export class CleanSchemaMigration {
         content_rating_locked BOOLEAN DEFAULT 0,
         release_date_locked BOOLEAN DEFAULT 0,
         user_rating_locked BOOLEAN DEFAULT 0,
+        actors_order_locked BOOLEAN DEFAULT 0,
         monitored BOOLEAN NOT NULL DEFAULT 1,
         identification_status TEXT DEFAULT 'unidentified' CHECK(identification_status IN ('unidentified', 'identified', 'enriched', 'published')),
         enrichment_priority INTEGER DEFAULT 5,
@@ -904,6 +905,8 @@ export class CleanSchemaMigration {
         actor_id INTEGER NOT NULL,
         role TEXT,
         actor_order INTEGER,
+        role_locked BOOLEAN DEFAULT 0,
+        removed BOOLEAN DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (movie_id) REFERENCES movies(id) ON DELETE CASCADE,
         FOREIGN KEY (actor_id) REFERENCES actors(id) ON DELETE CASCADE

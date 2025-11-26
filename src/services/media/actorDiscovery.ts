@@ -335,30 +335,90 @@ export async function linkActorToMovie(
   order?: number
 ): Promise<void> {
   // Check if link already exists
-  const existing = await db.query(
-    'SELECT id FROM movie_actors WHERE movie_id = ? AND actor_id = ?',
+  const existing = await db.query<{
+    id: number;
+    role_locked: number;
+    removed: number;
+  }>(
+    'SELECT id, role_locked, removed FROM movie_actors WHERE movie_id = ? AND actor_id = ?',
     [movieId, actorId]
   );
 
   if (existing && existing.length > 0) {
-    // Update existing link
-    await db.execute(
-      `UPDATE movie_actors
-       SET role = ?, actor_order = ?
-       WHERE movie_id = ? AND actor_id = ?`,
-      [role || null, order || null, movieId, actorId]
+    const link = existing[0];
+
+    // Skip removed actors
+    if (link.removed) {
+      logger.debug('Skipping removed actor link', { movieId, actorId });
+      return;
+    }
+
+    // Build update fields based on locks
+    const updateFields: string[] = [];
+    const updateValues: any[] = [];
+
+    // Only update role if not locked and role provided
+    if (!link.role_locked && role !== undefined) {
+      updateFields.push('role = ?');
+      updateValues.push(role || null);
+    }
+
+    // Check if movie's actors_order_locked is false before updating order
+    const movie = await db.query<{ actors_order_locked: number }>(
+      'SELECT actors_order_locked FROM movies WHERE id = ?',
+      [movieId]
     );
 
-    logger.debug('Updated movie-actor link', { movieId, actorId, role, order });
+    if (movie[0] && !movie[0].actors_order_locked && order !== undefined) {
+      updateFields.push('actor_order = ?');
+      updateValues.push(order || null);
+    }
+
+    // Only execute update if there are fields to update
+    if (updateFields.length > 0) {
+      updateValues.push(movieId, actorId);
+      await db.execute(
+        `UPDATE movie_actors SET ${updateFields.join(', ')} WHERE movie_id = ? AND actor_id = ?`,
+        updateValues
+      );
+
+      logger.debug('Updated movie-actor link', {
+        movieId,
+        actorId,
+        role: !link.role_locked ? role : 'locked',
+        order: movie[0] && !movie[0].actors_order_locked ? order : 'locked'
+      });
+    } else {
+      logger.debug('Skipped movie-actor link update (all fields locked)', { movieId, actorId });
+    }
   } else {
+    // Before inserting, check if a removed record exists
+    const removedLink = await db.query<{ id: number; removed: number }>(
+      'SELECT id, removed FROM movie_actors WHERE movie_id = ? AND actor_id = ?',
+      [movieId, actorId]
+    );
+
+    if (removedLink && removedLink.length > 0 && removedLink[0].removed) {
+      logger.debug('Skipping insert for removed actor', { movieId, actorId });
+      return;
+    }
+
+    // Check if movie's actors_order_locked is set before assigning order
+    const movie = await db.query<{ actors_order_locked: number }>(
+      'SELECT actors_order_locked FROM movies WHERE id = ?',
+      [movieId]
+    );
+
+    const finalOrder = (movie[0] && movie[0].actors_order_locked) ? null : (order || null);
+
     // Insert new link
     await db.execute(
       `INSERT INTO movie_actors (movie_id, actor_id, role, actor_order, created_at)
        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-      [movieId, actorId, role || null, order || null]
+      [movieId, actorId, role || null, finalOrder]
     );
 
-    logger.debug('Inserted movie-actor link', { movieId, actorId, role, order });
+    logger.debug('Inserted movie-actor link', { movieId, actorId, role, order: finalOrder });
   }
 }
 

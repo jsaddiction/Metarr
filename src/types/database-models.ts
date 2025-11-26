@@ -78,6 +78,7 @@ export interface MovieRow {
   discart_locked: number; // SQLite boolean
   keyart_locked: number; // SQLite boolean
   landscape_locked: number; // SQLite boolean
+  actors_order_locked: number; // SQLite boolean
 
   // Workflow Status
   monitored: number; // SQLite boolean

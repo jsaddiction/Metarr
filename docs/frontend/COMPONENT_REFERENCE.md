@@ -346,7 +346,104 @@ Located in `components/movie/`
 - **MetadataTab** / **ImagesTab** / **CastTab** / **ExtrasTab** - MovieEdit page tabs
 - **EnrichmentStatusBadge** - Badge showing enrichment status
 
+**Cast Management Components**:
+- **CastTab** - Main cast management interface with drag-drop reordering
+- **SortableActorRow** - Draggable actor row with role editing and lock support
+- **RemovedActorsList** - Displays removed actors with restore capability
+
 **Use When**: Working with movie-specific UI
+
+---
+
+#### CastTab
+
+**Purpose**: Main cast management component providing full CRUD operations for movie actors.
+
+**Features**:
+- Drag-and-drop reordering using @dnd-kit
+- Role editing with lock support (prevents enrichment from overwriting)
+- Actor removal (soft delete)
+- Restore removed actors
+- Global cast order lock (prevents enrichment from reordering)
+- Auto-save with optimistic UI updates
+
+**Props**:
+- `movieId: number` - The movie ID to manage cast for
+
+**State Management**:
+- Fetches cast data via `useCast(movieId)` hook
+- Updates via `useUpdateCast()` mutation hook
+- Local state for tracking unsaved changes
+- Optimistic updates for instant feedback
+
+**Use When**: Displaying cast list in MovieEdit page
+
+**Composes With**: SortableActorRow, RemovedActorsList, TabSection
+
+**Database Fields Used**:
+- `movies.actors_order_locked` - Global order lock
+- `movie_actors.role` - Character name
+- `movie_actors.role_locked` - Individual role lock
+- `movie_actors.removed` - Soft delete flag
+- `movie_actors.actor_order` - Display order
+
+---
+
+#### SortableActorRow
+
+**Purpose**: Draggable actor row component for cast reordering.
+
+**Features**:
+- Drag handle with visual feedback (@dnd-kit/sortable)
+- Read-only actor name display
+- Editable role field with lock icon
+- Remove button with confirmation
+- Opacity animation during drag
+
+**Props**:
+- `actor: { actor_id, actor_name, role, role_locked }` - Actor data
+- `onRoleChange: (actorId, role) => void` - Role change handler
+- `onRoleLockToggle: (actorId) => void` - Lock toggle handler
+- `onRemove: (actorId) => void` - Remove handler
+- `isDragging?: boolean` - Drag state indicator
+
+**Use When**: Rendering individual actor rows in CastTab
+
+**Composes With**: TextInput (with lock support), LockIcon
+
+**Visual States**:
+- Normal: Full opacity, neutral background
+- Dragging: 50% opacity, elevated shadow
+- Locked role: Lock icon displayed in TextInput
+
+---
+
+#### RemovedActorsList
+
+**Purpose**: Displays actors that have been removed from the movie with restore capability.
+
+**Features**:
+- Collapsible section (auto-hidden when empty)
+- Shows actor name and role (if present)
+- Restore button with icon
+- Dimmed appearance to indicate removed state
+
+**Props**:
+- `actors: Array<{ actor_id, actor_name, role }>` - Removed actors
+- `onRestore: (actorId) => void` - Restore handler
+
+**Use When**: Displaying removed actors in CastTab
+
+**Behavior**:
+- Returns null if `actors.length === 0`
+- Shows count badge "(N)" in section header
+- Restore action calls API and refetches cast data
+
+**Visual Design**:
+- Lighter background (neutral-900/50)
+- Grey text for actor names (neutral-400)
+- Dimmed role text (neutral-600)
+- Primary color restore button
 
 ### Provider Components
 

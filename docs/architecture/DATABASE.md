@@ -135,6 +135,7 @@ CREATE TABLE movies (
   studios_locked BOOLEAN DEFAULT 0,
   countries_locked BOOLEAN DEFAULT 0,
   tags_locked BOOLEAN DEFAULT 0,
+  actors_order_locked BOOLEAN DEFAULT 0,  -- Prevents automation from reordering cast
 
   FOREIGN KEY (library_id) REFERENCES libraries(id)
 );
@@ -588,31 +589,38 @@ CREATE INDEX idx_people_tmdb ON people(tmdb_id);
 CREATE INDEX idx_people_name ON people(name);
 ```
 
-### movie_cast / series_cast
+### movie_actors
 
-Cast associations with characters.
+Cast associations with characters and manual control features.
 
 ```sql
-CREATE TABLE movie_cast (
+CREATE TABLE movie_actors (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
   movie_id INTEGER NOT NULL,
-  person_id INTEGER NOT NULL,
-  character TEXT,
-  order_index INTEGER,
-  PRIMARY KEY (movie_id, person_id),
+  actor_id INTEGER NOT NULL,
+  role TEXT,                        -- Character name/role
+  actor_order INTEGER,              -- Display order (1-based)
+  role_locked BOOLEAN DEFAULT 0,    -- Prevents automation from updating this actor's role
+  removed BOOLEAN DEFAULT 0,        -- Actor removed from this movie by user
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (movie_id) REFERENCES movies(id) ON DELETE CASCADE,
-  FOREIGN KEY (person_id) REFERENCES people(id)
+  FOREIGN KEY (actor_id) REFERENCES actors(id) ON DELETE CASCADE
 );
 
-CREATE TABLE series_cast (
-  series_id INTEGER NOT NULL,
-  person_id INTEGER NOT NULL,
-  character TEXT,
-  order_index INTEGER,
-  PRIMARY KEY (series_id, person_id),
-  FOREIGN KEY (series_id) REFERENCES series(id) ON DELETE CASCADE,
-  FOREIGN KEY (person_id) REFERENCES people(id)
-);
+CREATE INDEX idx_movie_actors_movie ON movie_actors(movie_id);
+CREATE INDEX idx_movie_actors_actor ON movie_actors(actor_id);
 ```
+
+**Cast Management Features**:
+
+- **`role_locked`**: When true, prevents enrichment from updating this specific actor's role text. Used when user manually corrects a character name.
+- **`removed`**: Soft-delete flag. When true, actor is hidden from cast list but preserved in database. Enrichment skips removed actors entirely.
+- **`actor_order`**: User can drag-drop reorder cast in UI. When `movies.actors_order_locked=1`, enrichment preserves custom order.
+
+**Enrichment Behavior**:
+- Actors with `role_locked=true` keep their role text unchanged during re-enrichment
+- Movies with `actors_order_locked=true` preserve user's custom cast ordering
+- Actors with `removed=true` are skipped entirely during enrichment
 
 ### movie_crew / series_crew
 

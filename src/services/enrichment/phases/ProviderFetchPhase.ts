@@ -484,8 +484,16 @@ export class ProviderFetchPhase {
         return;
       }
 
+      // Check if movie's actors_order_locked is set
+      const movie = await this.db.get<{ actors_order_locked: number }>(
+        'SELECT actors_order_locked FROM movies WHERE id = ?',
+        [movieId]
+      );
+      const actorsOrderLocked = movie?.actors_order_locked || false;
+
       let actorsCreated = 0;
       let linksCreated = 0;
+      let linksSkipped = 0;
 
       for (const castMember of cachedMovie.cast) {
         // Find or create actor
@@ -532,33 +540,92 @@ export class ProviderFetchPhase {
         }
 
         // Link actor to movie (check if exists first since table has no UNIQUE constraint)
-        const existingLink = await this.db.get<{ id: number }>(
-          'SELECT id FROM movie_actors WHERE movie_id = ? AND actor_id = ?',
+        const existingLink = await this.db.get<{
+          id: number;
+          role_locked: number;
+          removed: number;
+        }>(
+          'SELECT id, role_locked, removed FROM movie_actors WHERE movie_id = ? AND actor_id = ?',
           [movieId, actorId]
         );
 
         if (existingLink) {
-          // Update existing link
-          await this.db.execute(
-            'UPDATE movie_actors SET role = ?, actor_order = ? WHERE id = ?',
-            [castMember.character_name || null, castMember.cast_order || null, existingLink.id]
-          );
+          // Skip removed actors
+          if (existingLink.removed) {
+            logger.debug('[ProviderFetchPhase] Skipping removed actor', { movieId, actorId });
+            linksSkipped++;
+            continue;
+          }
+
+          // Build update fields based on locks
+          const updateFields: string[] = [];
+          const updateValues: any[] = [];
+
+          // Only update role if not locked
+          if (!existingLink.role_locked && castMember.character_name !== undefined) {
+            updateFields.push('role = ?');
+            updateValues.push(castMember.character_name || null);
+          }
+
+          // Only update order if movie's actors_order_locked is false
+          if (!actorsOrderLocked && castMember.cast_order !== undefined) {
+            updateFields.push('actor_order = ?');
+            updateValues.push(castMember.cast_order || null);
+          }
+
+          // Only execute update if there are fields to update
+          if (updateFields.length > 0) {
+            updateValues.push(existingLink.id);
+            await this.db.execute(
+              `UPDATE movie_actors SET ${updateFields.join(', ')} WHERE id = ?`,
+              updateValues
+            );
+            logger.debug('[ProviderFetchPhase] Updated movie-actor link', {
+              movieId,
+              actorId,
+              roleLocked: existingLink.role_locked,
+              orderLocked: actorsOrderLocked
+            });
+          } else {
+            logger.debug('[ProviderFetchPhase] Skipped movie-actor update (all fields locked)', {
+              movieId,
+              actorId
+            });
+            linksSkipped++;
+          }
         } else {
-          // Create new link
+          // Before inserting, check if a removed record exists
+          const removedCheck = await this.db.get<{ id: number; removed: number }>(
+            'SELECT id, removed FROM movie_actors WHERE movie_id = ? AND actor_id = ? AND removed = 1',
+            [movieId, actorId]
+          );
+
+          if (removedCheck) {
+            logger.debug('[ProviderFetchPhase] Skipping insert for removed actor', {
+              movieId,
+              actorId
+            });
+            linksSkipped++;
+            continue;
+          }
+
+          // Create new link, respecting actors_order_locked
+          const finalOrder = actorsOrderLocked ? null : (castMember.cast_order || null);
           await this.db.execute(
             'INSERT INTO movie_actors (movie_id, actor_id, role, actor_order) VALUES (?, ?, ?, ?)',
-            [movieId, actorId, castMember.character_name || null, castMember.cast_order || null]
+            [movieId, actorId, castMember.character_name || null, finalOrder]
           );
+          linksCreated++;
         }
-
-        linksCreated++;
       }
 
       logger.info('[ProviderFetchPhase] Cast copied to actors', {
         movieId,
         actorsCreated,
         linksCreated,
+        linksSkipped,
         totalCast: cachedMovie.cast.length,
+        actorsOrderLocked
       });
     } catch (error) {
       logger.error('[ProviderFetchPhase] Failed to copy cast', {
