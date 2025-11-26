@@ -2,7 +2,6 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faExternalLinkAlt, faExclamationTriangle, faChevronDown, faChevronUp, faSave, faUndo, faExclamationCircle } from '@fortawesome/free-solid-svg-icons';
 import { useMovie, useToggleLockField, useGenreSuggestions, useDirectorSuggestions, useWriterSuggestions, useStudioSuggestions, useCountrySuggestions, useTagSuggestions } from '../../hooks/useMovies';
-import { GridField } from './GridField';
 import { TextAreaField } from './TextAreaField';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
@@ -15,7 +14,9 @@ import { ReadOnlyDataGrid } from '../ui/ReadOnlyDataGrid';
 import { TagInput } from '../ui/TagInput';
 import { getLanguageName } from '@/utils/languages';
 import { TabSection } from '../ui/TabSection';
-import { NumberInputWithLock } from '../ui/NumberInput';
+import { TextInput } from '../ui/TextInput';
+import { NumberInput } from '../ui/NumberInput';
+import { DateInput } from '../ui/DateInput';
 
 interface MetadataTabProps {
   movieId: number;
@@ -656,20 +657,23 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
         <div className="space-y-2">
               {/* Row 1: Title (span 3) + Year */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
-                <GridField
-                  label="Title"
-                  field="title"
-                  value={metadata.title}
-                  locked={metadata.title_locked}
-                  onChange={(val) => handleFieldChange('title', val)}
-                  onToggleLock={handleToggleLock}
-                  className="sm:col-span-1 lg:col-span-3"
-                />
-                <div>
+                <div className="sm:col-span-1 lg:col-span-3 min-w-0">
+                  <label className="text-xs font-medium text-neutral-400 mb-1 block">
+                    Title
+                  </label>
+                  <TextInput
+                    value={metadata.title || ''}
+                    onChange={(val) => handleFieldChange('title', val)}
+                    locked={metadata.title_locked}
+                    onToggleLock={() => handleToggleLock('title')}
+                    className="w-full"
+                  />
+                </div>
+                <div className="min-w-0">
                   <label className="text-xs font-medium text-neutral-400 mb-1 block">
                     Year
                   </label>
-                  <NumberInputWithLock
+                  <NumberInput
                     id="year"
                     value={metadata.year || 0}
                     onChange={(val) => handleFieldChange('year', val)}
@@ -684,53 +688,64 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
 
               {/* Row 2: Original Title + Sort Title */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <GridField
-                  label="Original Title"
-                  field="original_title"
-                  value={metadata.original_title}
-                  locked={metadata.original_title_locked}
-                  onChange={(val) => handleFieldChange('original_title', val)}
-                  onToggleLock={handleToggleLock}
-                />
-                <GridField
-                  label="Sort Title"
-                  field="sort_title"
-                  value={metadata.sort_title}
-                  locked={metadata.sort_title_locked}
-                  onChange={(val) => handleFieldChange('sort_title', val)}
-                  onToggleLock={handleToggleLock}
-                />
+                <div className="min-w-0">
+                  <label className="text-xs font-medium text-neutral-400 mb-1 block">
+                    Original Title
+                  </label>
+                  <TextInput
+                    value={metadata.original_title || ''}
+                    onChange={(val) => handleFieldChange('original_title', val)}
+                    locked={metadata.original_title_locked}
+                    onToggleLock={() => handleToggleLock('original_title')}
+                    className="w-full"
+                  />
+                </div>
+                <div className="min-w-0">
+                  <label className="text-xs font-medium text-neutral-400 mb-1 block">
+                    Sort Title
+                  </label>
+                  <TextInput
+                    value={metadata.sort_title || ''}
+                    onChange={(val) => handleFieldChange('sort_title', val)}
+                    locked={metadata.sort_title_locked}
+                    onToggleLock={() => handleToggleLock('sort_title')}
+                    className="w-full"
+                  />
+                </div>
               </div>
 
               {/* Row 3: Content Rating + Release Date + User Rating + Tagline */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
                 <div className="min-w-0">
-                  <GridField
-                    label="Content Rating"
-                    field="content_rating"
-                    value={metadata.content_rating}
-                    locked={metadata.content_rating_locked}
+                  <label className="text-xs font-medium text-neutral-400 mb-1 block">
+                    Content Rating
+                  </label>
+                  <TextInput
+                    value={metadata.content_rating || ''}
                     onChange={(val) => handleFieldChange('content_rating', val)}
-                    onToggleLock={handleToggleLock}
+                    locked={metadata.content_rating_locked}
+                    onToggleLock={() => handleToggleLock('content_rating')}
                     placeholder="PG-13"
+                    className="w-full"
                   />
                 </div>
                 <div className="min-w-0">
-                  <GridField
-                    label="Release Date"
-                    field="release_date"
-                    value={metadata.release_date}
-                    locked={metadata.release_date_locked}
-                    type="date"
+                  <label className="text-xs font-medium text-neutral-400 mb-1 block">
+                    Release Date
+                  </label>
+                  <DateInput
+                    value={metadata.release_date || ''}
                     onChange={(val) => handleFieldChange('release_date', val)}
-                    onToggleLock={handleToggleLock}
+                    locked={metadata.release_date_locked}
+                    onToggleLock={() => handleToggleLock('release_date')}
+                    className="w-full"
                   />
                 </div>
                 <div className="min-w-0">
                   <label className="text-xs font-medium text-neutral-400 mb-1 block">
                     User Rating
                   </label>
-                  <NumberInputWithLock
+                  <NumberInput
                     id="user_rating"
                     value={metadata.user_rating || 0}
                     onChange={(val) => handleFieldChange('user_rating', val)}
@@ -743,13 +758,15 @@ export const MetadataTab: React.FC<MetadataTabProps> = ({ movieId }) => {
                   />
                 </div>
                 <div className="min-w-0">
-                  <GridField
-                    label="Tagline"
-                    field="tagline"
-                    value={metadata.tagline}
-                    locked={metadata.tagline_locked}
+                  <label className="text-xs font-medium text-neutral-400 mb-1 block">
+                    Tagline
+                  </label>
+                  <TextInput
+                    value={metadata.tagline || ''}
                     onChange={(val) => handleFieldChange('tagline', val)}
-                    onToggleLock={handleToggleLock}
+                    locked={metadata.tagline_locked}
+                    onToggleLock={() => handleToggleLock('tagline')}
+                    className="w-full"
                   />
                 </div>
               </div>

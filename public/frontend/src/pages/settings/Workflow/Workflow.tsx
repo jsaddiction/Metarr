@@ -299,6 +299,7 @@ export function Workflow() {
                                 onChange={(value) => updateLimit({ assetType: limit.assetType, limit: value })}
                                 disabled={isUpdating}
                                 title={limit.description}
+                                className="w-full"
                               />
                             </div>
                           ))}

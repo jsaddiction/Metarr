@@ -1,3 +1,2 @@
 export { DateInput } from './DateInput';
-export { DateInputWithLock } from './DateInputWithLock';
-export type { DateInputProps, DateInputWithLockProps } from './types';
+export type { DateInputProps } from './types';

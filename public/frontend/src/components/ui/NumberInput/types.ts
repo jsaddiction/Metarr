@@ -8,9 +8,6 @@ export interface NumberInputProps {
   className?: string;
   id?: string;
   title?: string;
-}
-
-export interface NumberInputWithLockProps extends NumberInputProps {
-  locked: boolean;
-  onToggleLock: () => void;
+  locked?: boolean;
+  onToggleLock?: () => void;
 }
