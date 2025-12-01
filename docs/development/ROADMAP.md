@@ -1,6 +1,6 @@
 # Development Roadmap
 
-Last updated: 2025-11-26
+Last updated: 2025-12-01
 
 ## In Progress
 - [ ] Cast/Actors tab redesign (WIP)
@@ -9,10 +9,13 @@ Last updated: 2025-11-26
   - [x] Frontend: useCast hook, SortableActorRow, RemovedActorsList components
   - [x] Native HTML5 drag-drop for actor reordering (replaced @dnd-kit and @hello-pangea/dnd)
   - [x] Per-actor role locking with TextInput lock integration
-  - [x] Movie-level order lock (auto-locks when user reorders)
+  - [x] Movie-level order lock with smart state machine (auto-locks on reorder, reverts to server state when restored)
   - [x] Soft-delete actors with restore capability
-  - [ ] CSS refinement for drag-drop visual feedback
-  - [ ] Actor images display (API endpoint exists, needs testing)
+  - [x] Actor images via direct cache serving (image_hash in API response)
+  - [x] Stacked layout with larger actor photos (w-18 h-18)
+  - [x] Flush handle/trash buttons as integrated row controls
+  - [x] Smart hasChanges detection (Save/Revert hide when state matches server)
+  - [ ] Final testing and polish
 
 ## Next Up (Priority Order)
 
