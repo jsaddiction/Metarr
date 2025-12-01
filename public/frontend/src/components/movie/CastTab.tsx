@@ -17,6 +17,7 @@ interface LocalActorState {
   actor_order: number;
   role_locked: boolean;
   removed: boolean;
+  image_hash: string | null;
 }
 
 export const CastTab: React.FC<CastTabProps> = ({ movieId }) => {
@@ -25,11 +26,12 @@ export const CastTab: React.FC<CastTabProps> = ({ movieId }) => {
 
   // Local state for tracking changes
   const [localActors, setLocalActors] = useState<LocalActorState[]>([]);
-  const [localOrderLocked, setLocalOrderLocked] = useState(false);
   const [originalState, setOriginalState] = useState<{
     actors: LocalActorState[];
     orderLocked: boolean;
   } | null>(null);
+  // Track if user has manually toggled the lock (null = no manual override)
+  const [manualLockOverride, setManualLockOverride] = useState<boolean | null>(null);
 
   // Drag state
   const dragItem = useRef<number | null>(null);
@@ -46,13 +48,14 @@ export const CastTab: React.FC<CastTabProps> = ({ movieId }) => {
         actor_order: a.actor_order ?? idx + 1,
         role_locked: a.role_locked,
         removed: a.removed,
+        image_hash: a.image_hash,
       }));
       setLocalActors(actors);
-      setLocalOrderLocked(castData.actors_order_locked);
       setOriginalState({
         actors: JSON.parse(JSON.stringify(actors)),
         orderLocked: castData.actors_order_locked,
       });
+      setManualLockOverride(null); // Reset manual override when server data loads
     }
   }, [castData]);
 
@@ -67,19 +70,56 @@ export const CastTab: React.FC<CastTabProps> = ({ movieId }) => {
     [localActors]
   );
 
+  // Check if the current order differs from the original order
+  const orderChanged = useMemo(() => {
+    if (!originalState) return false;
+    const originalOrder = originalState.actors
+      .filter((a) => !a.removed)
+      .sort((a, b) => a.actor_order - b.actor_order)
+      .map((a) => a.actor_id);
+    const currentOrder = localActors
+      .filter((a) => !a.removed)
+      .sort((a, b) => a.actor_order - b.actor_order)
+      .map((a) => a.actor_id);
+    return JSON.stringify(originalOrder) !== JSON.stringify(currentOrder);
+  }, [localActors, originalState]);
+
+  // Derive the effective lock state:
+  // - If user manually toggled, use that value
+  // - Else if order changed and server was unlocked, show locked (auto-lock)
+  // - Else show server state
+  const effectiveLockState = useMemo(() => {
+    if (manualLockOverride !== null) {
+      return manualLockOverride;
+    }
+    if (orderChanged && originalState && !originalState.orderLocked) {
+      return true; // Auto-lock when order changes and server was unlocked
+    }
+    return originalState?.orderLocked ?? false;
+  }, [manualLockOverride, orderChanged, originalState]);
+
   // Detect if there are unsaved changes
   const hasChanges = useMemo(() => {
     if (!originalState) return false;
-    const currentJson = JSON.stringify({
-      actors: localActors,
-      orderLocked: localOrderLocked,
-    });
-    const originalJson = JSON.stringify({
-      actors: originalState.actors,
-      orderLocked: originalState.orderLocked,
-    });
-    return currentJson !== originalJson;
-  }, [localActors, localOrderLocked, originalState]);
+
+    // Check if lock state changed
+    const lockChanged = effectiveLockState !== originalState.orderLocked;
+    if (lockChanged) return true;
+
+    // Check if order changed (by actor_id sequence, not actor_order values)
+    if (orderChanged) return true;
+
+    // Check if any actor's role, role_locked, or removed status changed
+    for (const localActor of localActors) {
+      const originalActor = originalState.actors.find((a) => a.actor_id === localActor.actor_id);
+      if (!originalActor) return true; // New actor somehow
+      if (localActor.role !== originalActor.role) return true;
+      if (localActor.role_locked !== originalActor.role_locked) return true;
+      if (localActor.removed !== originalActor.removed) return true;
+    }
+
+    return false;
+  }, [localActors, effectiveLockState, orderChanged, originalState]);
 
   // Handle drag start
   const handleDragStart = useCallback((index: number) => {
@@ -117,9 +157,6 @@ export const CastTab: React.FC<CastTabProps> = ({ movieId }) => {
 
         return [...updatedActive, ...removedItems];
       });
-
-      // Auto-lock order when user reorders
-      setLocalOrderLocked(true);
     }
 
     dragItem.current = null;
@@ -158,10 +195,18 @@ export const CastTab: React.FC<CastTabProps> = ({ movieId }) => {
     });
   }, []);
 
-  // Handle order lock toggle
+  // Handle order lock toggle - sets manual override
   const handleOrderLockToggle = useCallback(() => {
-    setLocalOrderLocked((prev) => !prev);
-  }, []);
+    setManualLockOverride((prev) => {
+      // Toggle from current effective state
+      const currentEffective = prev !== null
+        ? prev
+        : (orderChanged && originalState && !originalState.orderLocked)
+          ? true
+          : originalState?.orderLocked ?? false;
+      return !currentEffective;
+    });
+  }, [orderChanged, originalState]);
 
   // Handle save
   const handleSave = useCallback(async () => {
@@ -175,16 +220,16 @@ export const CastTab: React.FC<CastTabProps> = ({ movieId }) => {
           role_locked: a.role_locked,
           removed: a.removed,
         })),
-        actors_order_locked: localOrderLocked,
+        actors_order_locked: effectiveLockState,
       },
     });
-  }, [movieId, localActors, localOrderLocked, updateCast]);
+  }, [movieId, localActors, effectiveLockState, updateCast]);
 
   // Handle revert - reset to original state
   const handleRevert = useCallback(() => {
     if (originalState) {
       setLocalActors(JSON.parse(JSON.stringify(originalState.actors)));
-      setLocalOrderLocked(originalState.orderLocked);
+      setManualLockOverride(null); // Clear manual override, will show server state
     }
   }, [originalState]);
 
@@ -211,8 +256,8 @@ export const CastTab: React.FC<CastTabProps> = ({ movieId }) => {
         emptyIcon={faUserGroup}
         emptyMessage="No actors found for this movie"
       >
-        {/* Action buttons row */}
-        <div className="flex items-center justify-between mb-4">
+        {/* Action buttons row - ml-9 aligns with row content (past the w-6 index + gap-3) */}
+        <div className="flex items-center justify-between mb-4 ml-9">
           {/* Order lock button */}
           <button
             type="button"
@@ -220,11 +265,11 @@ export const CastTab: React.FC<CastTabProps> = ({ movieId }) => {
             className="flex items-center gap-2 px-2 py-1 rounded hover:bg-neutral-800 transition-colors"
           >
             <FontAwesomeIcon
-              icon={localOrderLocked ? faLock : faLockOpen}
-              className={localOrderLocked ? 'text-red-400' : 'text-neutral-500'}
+              icon={effectiveLockState ? faLock : faLockOpen}
+              className={effectiveLockState ? 'text-red-400' : 'text-neutral-500'}
             />
             <span className="text-sm text-neutral-400">
-              {localOrderLocked ? 'Order locked' : 'Order unlocked'}
+              {effectiveLockState ? 'Order locked' : 'Order unlocked'}
             </span>
           </button>
 
@@ -280,6 +325,7 @@ export const CastTab: React.FC<CastTabProps> = ({ movieId }) => {
             actor_id: a.actor_id,
             actor_name: a.actor_name,
             role: a.role,
+            image_hash: a.image_hash,
           }))}
           onRestore={handleRestore}
         />
