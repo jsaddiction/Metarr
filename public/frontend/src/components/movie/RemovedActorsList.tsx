@@ -2,28 +2,42 @@ import React, { useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faRotateLeft, faUser } from '@fortawesome/free-solid-svg-icons';
 
+/**
+ * Convert image hash to cache URL
+ * Cache structure: /cache/actors/{first2chars}/{next2chars}/{fullhash}.jpg
+ */
+function getActorImageUrl(hash: string | null): string | null {
+  if (!hash) return null;
+  const first2 = hash.substring(0, 2);
+  const next2 = hash.substring(2, 4);
+  return `/cache/actors/${first2}/${next2}/${hash}.jpg`;
+}
+
 interface RemovedActorRowProps {
   actor: {
     actor_id: number;
     actor_name: string;
     role: string | null;
+    image_hash: string | null;
   };
   onRestore: (actorId: number) => void;
 }
 
 function RemovedActorRow({ actor, onRestore }: RemovedActorRowProps) {
   const [imageError, setImageError] = useState(false);
+  const imageUrl = getActorImageUrl(actor.image_hash);
 
   return (
     <div className="flex items-center justify-between px-4 py-2 bg-neutral-900/50 rounded border border-neutral-800">
       <div className="flex items-center gap-3">
         {/* Actor image */}
         <div className="w-6 h-6 rounded-full bg-neutral-800 flex items-center justify-center overflow-hidden flex-shrink-0">
-          {!imageError && actor.actor_id ? (
+          {!imageError && imageUrl ? (
             <img
-              src={`/api/actors/${actor.actor_id}/image`}
+              src={imageUrl}
               alt={actor.actor_name}
               className="w-full h-full object-cover"
+              loading="lazy"
               onError={() => setImageError(true)}
             />
           ) : (
@@ -55,6 +69,7 @@ interface RemovedActorsListProps {
     actor_id: number;
     actor_name: string;
     role: string | null;
+    image_hash: string | null;
   }>;
   onRestore: (actorId: number) => void;
 }
