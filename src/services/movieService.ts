@@ -86,6 +86,7 @@ interface CastRow {
   actor_order: number | null;
   role_locked: number;
   removed: number;
+  image_hash: string | null;
 }
 
 export interface Movie {
@@ -1244,7 +1245,7 @@ export class MovieService {
 
     const rows = await conn.query<CastRow>(
       `SELECT ma.id, ma.movie_id, ma.actor_id, a.name as actor_name,
-              ma.role, ma.actor_order, ma.role_locked, ma.removed
+              ma.role, ma.actor_order, ma.role_locked, ma.removed, a.image_hash
        FROM movie_actors ma
        JOIN actors a ON a.id = ma.actor_id
        WHERE ma.movie_id = ?
@@ -1259,7 +1260,8 @@ export class MovieService {
       role: row.role,
       actor_order: row.actor_order,
       role_locked: Boolean(row.role_locked),
-      removed: Boolean(row.removed)
+      removed: Boolean(row.removed),
+      image_hash: row.image_hash
     }));
   }
 

@@ -17,6 +17,7 @@ export interface MovieActorLink {
   actor_order: number | null;
   role_locked: boolean;
   removed: boolean;
+  image_hash: string | null;
 }
 
 /**
