@@ -479,6 +479,7 @@ export class CleanSchemaMigration {
         release_date_locked BOOLEAN DEFAULT 0,
         user_rating_locked BOOLEAN DEFAULT 0,
         actors_order_locked BOOLEAN DEFAULT 0,
+        trailer_locked BOOLEAN DEFAULT 0,
         monitored BOOLEAN NOT NULL DEFAULT 1,
         identification_status TEXT DEFAULT 'unidentified' CHECK(identification_status IN ('unidentified', 'identified', 'enriched', 'published')),
         enrichment_priority INTEGER DEFAULT 5,
@@ -2258,6 +2259,143 @@ export class CleanSchemaMigration {
     }
 
     console.log('✅ Clean schema migration completed successfully!');
+
+    // ============================================================
+    // TRAILER CANDIDATES TABLE
+    // ============================================================
+    // Stores trailer candidates from providers and user input
+    // Supports the trailer management feature with selection, download, and failure tracking
+
+    console.log('🎬 Creating trailer_candidates table...');
+
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS trailer_candidates (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        entity_type TEXT NOT NULL CHECK(entity_type IN ('movie', 'episode')),
+        entity_id INTEGER NOT NULL,
+
+        -- Source info
+        source_type TEXT NOT NULL CHECK(source_type IN ('provider', 'user', 'upload')),
+        source_url TEXT,
+        provider_name TEXT,
+        provider_video_id TEXT,
+
+        -- TMDB metadata (from provider_cache_videos)
+        tmdb_name TEXT,
+        tmdb_official BOOLEAN DEFAULT 0,
+        tmdb_language TEXT,
+
+        -- yt-dlp enriched metadata
+        analyzed BOOLEAN DEFAULT 0,
+        ytdlp_metadata TEXT,
+        title TEXT,
+        duration_seconds INTEGER,
+        best_width INTEGER,
+        best_height INTEGER,
+        estimated_size_bytes INTEGER,
+        thumbnail_url TEXT,
+
+        -- Selection state
+        score INTEGER,
+        is_selected BOOLEAN DEFAULT 0,
+        is_locked BOOLEAN DEFAULT 0,
+        selected_at TIMESTAMP,
+        selected_by TEXT,
+
+        -- Download state
+        cache_video_file_id INTEGER REFERENCES cache_video_files(id),
+        downloaded_at TIMESTAMP,
+
+        -- Failure tracking
+        failed_at TIMESTAMP,
+        failure_reason TEXT,
+        retry_after TIMESTAMP,
+        failure_count INTEGER DEFAULT 0,
+
+        -- Timestamps
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await db.execute(`
+      CREATE INDEX IF NOT EXISTS idx_trailer_candidates_entity
+      ON trailer_candidates(entity_type, entity_id)
+    `);
+
+    await db.execute(`
+      CREATE INDEX IF NOT EXISTS idx_trailer_candidates_selected
+      ON trailer_candidates(entity_type, entity_id, is_selected)
+    `);
+
+    await db.execute(`
+      CREATE INDEX IF NOT EXISTS idx_trailer_candidates_retry
+      ON trailer_candidates(retry_after)
+      WHERE retry_after IS NOT NULL
+    `);
+
+    await db.execute(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_trailer_candidates_source_url
+      ON trailer_candidates(entity_type, entity_id, source_url)
+      WHERE source_url IS NOT NULL
+    `);
+
+    await db.execute(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_trailer_candidates_provider_video
+      ON trailer_candidates(entity_type, entity_id, provider_video_id)
+      WHERE provider_video_id IS NOT NULL
+    `);
+
+    console.log('✅ trailer_candidates table created');
+
+    // ============================================================
+    // VIDEO DOWNLOADER CONFIG TABLE
+    // ============================================================
+    // Stores configuration for yt-dlp including YouTube cookies
+
+    console.log('🔧 Creating video_downloader_config table...');
+
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS video_downloader_config (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        config_type TEXT NOT NULL UNIQUE,
+        config_data TEXT,
+        status TEXT DEFAULT 'unconfigured',
+        status_message TEXT,
+        last_validated_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    console.log('✅ video_downloader_config table created');
+
+    // ============================================================
+    // TRAILER CASCADE DELETE TRIGGER
+    // ============================================================
+    // Clean up trailer candidates when movie/episode is deleted
+
+    console.log('🔗 Creating trailer cascade delete triggers...');
+
+    await db.execute(`
+      CREATE TRIGGER IF NOT EXISTS delete_movie_trailer_candidates
+      AFTER DELETE ON movies
+      FOR EACH ROW
+      BEGIN
+        DELETE FROM trailer_candidates WHERE entity_type = 'movie' AND entity_id = OLD.id;
+      END
+    `);
+
+    await db.execute(`
+      CREATE TRIGGER IF NOT EXISTS delete_episode_trailer_candidates
+      AFTER DELETE ON episodes
+      FOR EACH ROW
+      BEGIN
+        DELETE FROM trailer_candidates WHERE entity_type = 'episode' AND entity_id = OLD.id;
+      END
+    `);
+
+    console.log('✅ Trailer cascade delete triggers created');
   }
 
   static async down(): Promise<void> {
