@@ -135,6 +135,7 @@
     "winston-daily-rotate-file": "^5.0.0",
     "ws": "^8.18.3",
     "xml2js": "^0.6.2",
+    "youtube-dl-exec": "^3.0.27",
     "zod": "^4.1.12"
   }
 }
