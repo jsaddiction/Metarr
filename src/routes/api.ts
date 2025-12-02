@@ -9,7 +9,9 @@ import { MovieFieldLockController } from '../controllers/movie/MovieFieldLockCon
 import { MovieUnknownFilesController } from '../controllers/movie/MovieUnknownFilesController.js';
 import { MovieSuggestionsController } from '../controllers/movie/MovieSuggestionsController.js';
 import { MovieCastController } from '../controllers/movie/MovieCastController.js';
+import { MovieTrailerController } from '../controllers/movie/MovieTrailerController.js';
 import { IgnorePatternController } from '../controllers/ignorePatternController.js';
+import { VideoDownloaderConfigController } from '../controllers/videoDownloaderConfigController.js';
 import { ImageController } from '../controllers/imageController.js';
 import { JobController } from '../controllers/jobController.js';
 import { DatabaseManager } from '../database/DatabaseManager.js';
@@ -21,6 +23,9 @@ import { MovieService } from '../services/movieService.js';
 import { IgnorePatternService } from '../services/ignorePatternService.js';
 import { ImageService } from '../services/imageService.js';
 import { JobQueueService } from '../services/jobQueue/JobQueueService.js';
+import { TrailerService } from '../services/trailers/TrailerService.js';
+import { TrailerDownloadService } from '../services/trailers/TrailerDownloadService.js';
+import { VideoDownloaderConfigService } from '../services/trailers/VideoDownloaderConfigService.js';
 import { ActorController } from '../controllers/actorController.js';
 import { ProviderConfigService } from '../services/providerConfigService.js';
 import { ProviderConfigController } from '../controllers/providerConfigController.js';
@@ -96,6 +101,18 @@ export const createApiRouter = (
   const movieUnknownFilesController = new MovieUnknownFilesController(movieService);
   const movieSuggestionsController = new MovieSuggestionsController(dbManager);
   const movieCastController = new MovieCastController(movieService);
+
+  // Initialize trailer services and controller
+  const trailerService = new TrailerService(dbManager);
+  const trailerDownloadService = new TrailerDownloadService();
+  const videoDownloaderConfigService = new VideoDownloaderConfigService(dbManager);
+  const movieTrailerController = new MovieTrailerController(
+    movieService,
+    trailerService,
+    trailerDownloadService,
+    dbManager
+  );
+  const videoDownloaderConfigController = new VideoDownloaderConfigController(videoDownloaderConfigService);
 
   // Initialize ignore pattern service and controller
   const ignorePatternService = new IgnorePatternService(dbManager);
@@ -405,6 +422,56 @@ export const createApiRouter = (
     movieCastController.updateCast(req, res, next);
   });
 
+  // Trailer management
+  router.get('/movies/:id/trailer', (req, res, next) => {
+    logger.debug('[Route Hit] GET /movies/:id/trailer');
+    movieTrailerController.getTrailer(req, res, next);
+  });
+
+  router.get('/movies/:id/trailer/stream', (req, res, next) => {
+    logger.debug('[Route Hit] GET /movies/:id/trailer/stream');
+    movieTrailerController.streamTrailer(req, res, next);
+  });
+
+  router.get('/movies/:id/trailer/candidates', (req, res, next) => {
+    logger.debug('[Route Hit] GET /movies/:id/trailer/candidates');
+    movieTrailerController.getCandidates(req, res, next);
+  });
+
+  router.post('/movies/:id/trailer/select', (req, res, next) => {
+    logger.debug('[Route Hit] POST /movies/:id/trailer/select');
+    movieTrailerController.selectTrailer(req, res, next);
+  });
+
+  router.post('/movies/:id/trailer/url', (req, res, next) => {
+    logger.debug('[Route Hit] POST /movies/:id/trailer/url');
+    movieTrailerController.addUrl(req, res, next);
+  });
+
+  router.post(
+    '/movies/:id/trailer/upload',
+    movieTrailerController.upload.single('trailer'),
+    (req, res, next) => {
+      logger.debug('[Route Hit] POST /movies/:id/trailer/upload');
+      movieTrailerController.uploadTrailer(req, res, next);
+    }
+  );
+
+  router.delete('/movies/:id/trailer', (req, res, next) => {
+    logger.debug('[Route Hit] DELETE /movies/:id/trailer');
+    movieTrailerController.deleteTrailer(req, res, next);
+  });
+
+  router.post('/movies/:id/trailer/lock', (req, res, next) => {
+    logger.debug('[Route Hit] POST /movies/:id/trailer/lock');
+    movieTrailerController.lockTrailer(req, res, next);
+  });
+
+  router.post('/movies/:id/trailer/unlock', (req, res, next) => {
+    logger.debug('[Route Hit] POST /movies/:id/trailer/unlock');
+    movieTrailerController.unlockTrailer(req, res, next);
+  });
+
   // Toggle monitored status
   router.post('/movies/:id/toggle-monitored', (req, res, next) => {
     logger.debug('[Route Hit] /movies/:id/toggle-monitored with id:', req.params.id);
@@ -661,6 +728,24 @@ export const createApiRouter = (
   );
   router.post('/settings/asset-limits/reset-all', (req, res, next) =>
     assetConfigController.resetAllLimits(req, res, next)
+  );
+
+  // ========================================
+  // Video Downloader Configuration Routes
+  // ========================================
+  logger.debug('[API Router] Registering video downloader configuration routes');
+
+  router.get('/settings/video-downloader', (req, res) =>
+    videoDownloaderConfigController.getStatus(req, res)
+  );
+  router.post('/settings/video-downloader/cookies', (req, res) =>
+    videoDownloaderConfigController.setCookies(req, res)
+  );
+  router.delete('/settings/video-downloader/cookies', (req, res) =>
+    videoDownloaderConfigController.clearCookies(req, res)
+  );
+  router.post('/settings/video-downloader/validate', (req, res) =>
+    videoDownloaderConfigController.validateCookies(req, res)
   );
 
   // ========================================
