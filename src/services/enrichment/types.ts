@@ -29,6 +29,8 @@ export interface EnrichmentResult {
   assetsFetched?: number; // Changed to optional for metadata-only enrichments
   assetsSelected?: number; // Changed to optional since this was already optional in some contexts
   thumbnailsDownloaded?: number; // Already optional
+  trailersAnalyzed?: number; // Number of trailers analyzed via yt-dlp
+  trailerSelected?: boolean; // Whether a trailer was selected
   errors?: string[]; // Changed to optional to match usage pattern
   message?: string; // NEW: optional message (e.g., for rate limit info)
 }

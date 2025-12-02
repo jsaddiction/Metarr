@@ -19,6 +19,10 @@ import { CacheMatchingPhase } from './phases/CacheMatchingPhase.js';
 import { AssetAnalysisPhase } from './phases/AssetAnalysisPhase.js';
 import { AssetSelectionPhase } from './phases/AssetSelectionPhase.js';
 import { ActorEnrichmentPhase } from './phases/ActorEnrichmentPhase.js';
+import { TrailerAnalysisPhase } from './phases/TrailerAnalysisPhase.js';
+import { TrailerSelectionPhase } from './phases/TrailerSelectionPhase.js';
+import { TrailerDownloadService } from '../trailers/TrailerDownloadService.js';
+import { TrailerSelectionService } from '../trailers/TrailerSelectionService.js';
 import { EnrichmentConfig, EnrichmentResult } from './types.js';
 import { logger } from '../../middleware/logging.js';
 import { getErrorMessage } from '../../utils/errorHandling.js';
@@ -31,6 +35,8 @@ export class EnrichmentOrchestrator {
   private readonly assetAnalysisPhase: AssetAnalysisPhase;
   private readonly assetSelectionPhase: AssetSelectionPhase;
   private readonly actorEnrichmentPhase: ActorEnrichmentPhase;
+  private readonly trailerAnalysisPhase: TrailerAnalysisPhase;
+  private readonly trailerSelectionPhase: TrailerSelectionPhase;
   private readonly db: DatabaseConnection;
 
   constructor(
@@ -48,6 +54,12 @@ export class EnrichmentOrchestrator {
     this.assetAnalysisPhase = new AssetAnalysisPhase(db, tempDir);
     this.assetSelectionPhase = new AssetSelectionPhase(db, dbManager, cacheDir);
     this.actorEnrichmentPhase = new ActorEnrichmentPhase(db, cacheDir);
+
+    // Initialize trailer phases
+    const trailerDownloadService = new TrailerDownloadService();
+    const trailerSelectionService = new TrailerSelectionService();
+    this.trailerAnalysisPhase = new TrailerAnalysisPhase(db, trailerDownloadService);
+    this.trailerSelectionPhase = new TrailerSelectionPhase(db, trailerSelectionService);
   }
 
   /**
@@ -154,6 +166,46 @@ export class EnrichmentOrchestrator {
         thumbnailsDownloaded: phase5CResult.thumbnailsDownloaded,
       });
 
+      // Phase 6: Trailer Analysis (analyze trailers from provider cache via yt-dlp)
+      let phase6Result = { trailersAnalyzed: 0, trailersSkipped: 0 };
+      let phase7Result = { selected: false, candidateId: null as number | null, score: null as number | null };
+
+      // Check if trailers are enabled before running trailer phases
+      const trailersEnabled = await this.isTrailersEnabled();
+      if (trailersEnabled && entityType === 'movie') {
+        logger.info('[EnrichmentOrchestrator] Phase 6: Trailer Analysis');
+        try {
+          phase6Result = await this.trailerAnalysisPhase.execute(config);
+          logger.info('[EnrichmentOrchestrator] Phase 6 complete', {
+            trailersAnalyzed: phase6Result.trailersAnalyzed,
+            trailersSkipped: phase6Result.trailersSkipped,
+          });
+        } catch (error) {
+          logger.error('[EnrichmentOrchestrator] Phase 6 failed (non-fatal)', {
+            error: getErrorMessage(error),
+          });
+          errors.push(`Trailer analysis failed: ${getErrorMessage(error)}`);
+        }
+
+        // Phase 7: Trailer Selection (score and select best trailer)
+        logger.info('[EnrichmentOrchestrator] Phase 7: Trailer Selection');
+        try {
+          phase7Result = await this.trailerSelectionPhase.execute(config);
+          logger.info('[EnrichmentOrchestrator] Phase 7 complete', {
+            selected: phase7Result.selected,
+            candidateId: phase7Result.candidateId,
+            score: phase7Result.score,
+          });
+        } catch (error) {
+          logger.error('[EnrichmentOrchestrator] Phase 7 failed (non-fatal)', {
+            error: getErrorMessage(error),
+          });
+          errors.push(`Trailer selection failed: ${getErrorMessage(error)}`);
+        }
+      } else if (!trailersEnabled) {
+        logger.debug('[EnrichmentOrchestrator] Trailer phases skipped (trailers disabled)');
+      }
+
       // Update entity enrichment status
       await this.updateEnrichmentStatus(entityType, entityId);
 
@@ -166,6 +218,8 @@ export class EnrichmentOrchestrator {
         assetsAnalyzed: phase3Result.assetsAnalyzed,
         assetsSelected: phase5Result.assetsSelected,
         thumbnailsDownloaded: phase5CResult.thumbnailsDownloaded,
+        trailersAnalyzed: phase6Result.trailersAnalyzed,
+        trailerSelected: phase7Result.selected,
       });
 
       return {
@@ -178,6 +232,8 @@ export class EnrichmentOrchestrator {
         assetsFetched: phase1Result.assetsFetched,
         assetsSelected: phase5Result.assetsSelected,
         thumbnailsDownloaded: phase5CResult.thumbnailsDownloaded,
+        trailersAnalyzed: phase6Result.trailersAnalyzed,
+        trailerSelected: phase7Result.selected,
         ...(errors.length > 0 && { errors }),
       };
     } catch (error) {
@@ -247,5 +303,25 @@ export class EnrichmentOrchestrator {
       actor: 'actors',
     };
     return tableMap[entityType] || null;
+  }
+
+  /**
+   * Check if trailers are enabled in settings
+   * Defaults to true if setting doesn't exist
+   */
+  private async isTrailersEnabled(): Promise<boolean> {
+    try {
+      const result = await this.db.get<{ value: string }>(
+        `SELECT value FROM settings WHERE key = 'movies.trailers.enabled'`
+      );
+      // Default to true if setting doesn't exist
+      if (!result) return true;
+      return result.value === 'true';
+    } catch (error) {
+      logger.warn('[EnrichmentOrchestrator] Failed to check trailers enabled setting, defaulting to true', {
+        error: getErrorMessage(error),
+      });
+      return true;
+    }
   }
 }
