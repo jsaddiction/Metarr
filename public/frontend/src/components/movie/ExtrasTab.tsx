@@ -1,34 +1,25 @@
 import React from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
-  faVideo,
   faClosedCaptioning,
   faMusic,
   faTrash,
   faPlus,
   faFile,
-  faCheck,
   faExclamationTriangle,
 } from '@fortawesome/free-solid-svg-icons';
 import {
   useMovieExtras,
-  useDeleteTrailer,
   useDeleteSubtitle,
   useDeleteThemeSong,
 } from '../../hooks/useMovieAssets';
 import { useConfirm } from '../../hooks/useConfirm';
 import { TabSection } from '../ui/TabSection';
+import { TrailerSection } from './TrailerSection';
 
 interface ExtrasTabProps {
   movieId: number;
-}
-
-interface Trailer {
-  id: number;
-  file_path: string;
-  file_size: number;
-  duration?: number;
-  resolution?: string;
+  movieTitle?: string;
 }
 
 interface Subtitle {
@@ -47,18 +38,16 @@ interface ThemeSong {
   duration?: number;
 }
 
-export const ExtrasTab: React.FC<ExtrasTabProps> = ({ movieId }) => {
+export const ExtrasTab: React.FC<ExtrasTabProps> = ({ movieId, movieTitle = 'Movie' }) => {
   // Accessible confirmation dialog
   const { confirm, ConfirmDialog } = useConfirm();
 
   // Use TanStack Query hooks
   const { data: extras, isLoading: loading } = useMovieExtras(movieId);
-  const deleteTrailerMutation = useDeleteTrailer(movieId);
   const deleteSubtitleMutation = useDeleteSubtitle(movieId);
   const deleteThemeMutation = useDeleteThemeSong(movieId);
 
   // Extract data from query result
-  const trailer = extras?.trailer || null;
   const subtitles = extras?.subtitles || [];
   const themeSong = extras?.themeSong || null;
 
@@ -74,27 +63,6 @@ export const ExtrasTab: React.FC<ExtrasTabProps> = ({ movieId }) => {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  const handleDeleteTrailer = async () => {
-    if (!trailer) return;
-
-    const confirmed = await confirm({
-      title: 'Delete Trailer',
-      description: 'Are you sure you want to delete the trailer? This action cannot be undone.',
-      confirmText: 'Delete',
-      cancelText: 'Cancel',
-      variant: 'destructive',
-    });
-
-    if (!confirmed) return;
-
-    try {
-      await deleteTrailerMutation.mutateAsync();
-    } catch (error) {
-      console.error('Failed to delete trailer:', error);
-      alert('Failed to delete trailer');
-    }
   };
 
   const handleDeleteSubtitle = async (subtitleId: number) => {
@@ -149,42 +117,8 @@ export const ExtrasTab: React.FC<ExtrasTabProps> = ({ movieId }) => {
 
   return (
     <div className="space-y-3">
-      {/* Trailer Section */}
-      <TabSection
-        title="Trailer"
-        isEmpty={!trailer}
-        emptyIcon={faVideo}
-        emptyMessage="No trailer detected"
-        onAction={!trailer ? () => {} : undefined}
-        actionLabel="Add Trailer"
-        actionIcon={faPlus}
-      >
-        {trailer && (
-          <div className="border border-neutral-700 rounded-lg p-4 bg-neutral-800/50">
-            <div className="flex items-start justify-between">
-              <div className="flex-1">
-                <div className="flex items-center space-x-2 mb-2">
-                  <FontAwesomeIcon icon={faFile} className="text-neutral-400" />
-                  <span className="text-neutral-200 font-mono text-sm">
-                    {trailer.file_path?.split('/').pop() || 'No path available'}
-                  </span>
-                </div>
-                <div className="flex items-center space-x-4 text-sm text-neutral-400">
-                  <span>{formatFileSize(trailer.file_size)}</span>
-                  {trailer.duration && <span>{formatDuration(trailer.duration)}</span>}
-                  {trailer.resolution && <span>{trailer.resolution}</span>}
-                </div>
-              </div>
-              <button
-                onClick={handleDeleteTrailer}
-                className="btn btn-ghost btn-sm text-error hover:bg-error/20"
-              >
-                <FontAwesomeIcon icon={faTrash} />
-              </button>
-            </div>
-          </div>
-        )}
-      </TabSection>
+      {/* Trailer Section - New trailer management component */}
+      <TrailerSection movieId={movieId} movieTitle={movieTitle} />
 
       {/* Subtitles Section */}
       <TabSection

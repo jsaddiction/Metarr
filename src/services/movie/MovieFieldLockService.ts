@@ -16,7 +16,8 @@ export const LOCKABLE_FIELDS = [
   'content_rating',
   'release_date',
   'user_rating',
-  'trailer_url'
+  'trailer_url',
+  'trailer'
 ] as const;
 
 /**
@@ -147,7 +148,8 @@ export class MovieFieldLockService {
         'content_rating_locked',
         'release_date_locked',
         'user_rating_locked',
-        'trailer_url_locked'
+        'trailer_url_locked',
+        'trailer_locked'
       ];
 
       // Build UPDATE query to unlock all metadata fields

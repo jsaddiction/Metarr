@@ -158,6 +158,24 @@ export class PublishingService {
         logger.info('[PublishingService] Skipping assets (publishAssets=false, publishTrailers=false)');
       }
 
+      // Publish trailer from trailer_candidates (only if publishing trailers is enabled)
+      if (phaseConfig.publishTrailers) {
+        try {
+          const trailerPublished = await this.publishTrailer(config);
+          if (trailerPublished) {
+            logger.info('[PublishingService] Published trailer');
+            result.assetsPublished++;
+          } else {
+            logger.debug('[PublishingService] No trailer to publish (none selected or not downloaded)');
+          }
+        } catch (error) {
+          logger.error('Error publishing trailer', { error: getErrorMessage(error) });
+          result.errors.push(`Trailer: ${getErrorMessage(error)}`);
+        }
+      } else {
+        logger.info('[PublishingService] Skipping trailer (publishTrailers=false)');
+      }
+
       // Publish actor thumbnails (only if publishing actors is enabled)
       if (phaseConfig.publishActors) {
         try {
@@ -664,6 +682,105 @@ export class PublishingService {
     };
 
     return mapping[entityType] || null;
+  }
+
+  /**
+   * Publish trailer from trailer_candidates table
+   *
+   * Trailers are managed separately from image assets in trailer_candidates table.
+   * This method:
+   * 1. Gets the selected, downloaded trailer from trailer_candidates
+   * 2. Copies from cache to library with Kodi naming ({moviefilename}-trailer.{ext})
+   * 3. Creates library_video_files record
+   *
+   * @returns true if trailer was published, false if no trailer available
+   */
+  private async publishTrailer(config: PublishJobConfig): Promise<boolean> {
+    // Get selected trailer that has been downloaded
+    const trailer = await this.db.get<{
+      id: number;
+      cache_video_file_id: number;
+      title: string | null;
+    }>(
+      `SELECT tc.id, tc.cache_video_file_id, tc.title
+       FROM trailer_candidates tc
+       WHERE tc.entity_type = ? AND tc.entity_id = ?
+         AND tc.is_selected = 1
+         AND tc.cache_video_file_id IS NOT NULL`,
+      [config.entityType, config.entityId]
+    );
+
+    if (!trailer) {
+      logger.debug('[PublishingService] No selected/downloaded trailer found');
+      return false;
+    }
+
+    // Get cache file details
+    const cacheFile = await this.db.get<{
+      id: number;
+      file_path: string;
+      file_name: string;
+    }>(
+      `SELECT id, file_path, file_name FROM cache_video_files WHERE id = ?`,
+      [trailer.cache_video_file_id]
+    );
+
+    if (!cacheFile) {
+      logger.warn('[PublishingService] Trailer cache file not found', {
+        cacheVideoFileId: trailer.cache_video_file_id,
+      });
+      return false;
+    }
+
+    // Check if cache file exists on disk
+    try {
+      await fs.access(cacheFile.file_path);
+    } catch {
+      throw new FileNotFoundError(cacheFile.file_path, 'Trailer cache file not found on disk');
+    }
+
+    // Build library filename: {mediaFilename}-trailer.{ext}
+    const ext = path.extname(cacheFile.file_name) || '.mp4';
+    const baseFilename = config.mediaFilename || 'movie';
+    const trailerFilename = `${baseFilename}-trailer${ext}`;
+    const trailerLibraryPath = path.join(config.libraryPath, trailerFilename);
+
+    // Ensure library directory exists
+    await fs.mkdir(config.libraryPath, { recursive: true });
+
+    // Copy from cache to library
+    await fs.copyFile(cacheFile.file_path, trailerLibraryPath);
+
+    // Check if library_video_files entry exists
+    const existingLibraryFile = await this.db.get<{ id: number }>(
+      `SELECT id FROM library_video_files WHERE cache_file_id = ?`,
+      [cacheFile.id]
+    );
+
+    if (existingLibraryFile) {
+      // Update existing entry
+      await this.db.execute(
+        `UPDATE library_video_files
+         SET file_path = ?, published_at = CURRENT_TIMESTAMP
+         WHERE id = ?`,
+        [trailerLibraryPath, existingLibraryFile.id]
+      );
+    } else {
+      // Create new library entry
+      await this.db.execute(
+        `INSERT INTO library_video_files (cache_file_id, file_path, published_at)
+         VALUES (?, ?, CURRENT_TIMESTAMP)`,
+        [cacheFile.id, trailerLibraryPath]
+      );
+    }
+
+    logger.info('[PublishingService] Trailer published', {
+      trailerId: trailer.id,
+      trailerTitle: trailer.title,
+      libraryPath: trailerLibraryPath,
+    });
+
+    return true;
   }
 
   /**
