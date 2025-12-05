@@ -80,7 +80,6 @@ export interface TrailerCandidate {
   failed_at: string | null;
   failure_reason: string | null;
   retry_after: string | null;
-  failure_count: number;
 
   // Timestamps
   created_at: string;
@@ -874,7 +873,6 @@ export class TrailerService {
              downloaded_at = CURRENT_TIMESTAMP,
              failed_at = NULL,
              failure_reason = NULL,
-             failure_count = 0,
              updated_at = CURRENT_TIMESTAMP
          WHERE id = ?`,
         [cacheFileId, candidateId]
@@ -896,60 +894,38 @@ export class TrailerService {
    * Record download failure for trailer candidate
    *
    * Updates failure tracking fields for retry logic.
-   * Increments failure_count and sets retry_after timestamp.
    *
-   * Failure Tracking:
-   * - Sets failed_at timestamp
-   * - Stores failure_reason
-   * - Increments failure_count
-   * - Sets retry_after for exponential backoff
+   * Failure Types:
+   * - 'unavailable': Video confirmed gone via oEmbed - permanent, never retry automatically
+   * - 'rate_limited': Provider rate limit - transient, retry on next scheduled run
+   * - 'download_error': Network/unknown - transient, retry on next enrichment cycle
+   *
+   * With proactive verification, we know immediately WHY a failure occurred.
+   * No need for retry counts - the failure reason tells us everything.
    *
    * @param candidateId - Candidate ID
-   * @param reason - Failure reason ('removed', 'rate_limited', 'download_error')
-   * @param retryAfter - Optional retry timestamp
+   * @param reason - Failure reason ('unavailable', 'rate_limited', 'download_error')
    * @returns Success status
    */
   async recordFailure(
     candidateId: number,
-    reason: string,
-    retryAfter?: Date
+    reason: string
   ): Promise<{ success: boolean }> {
     const conn = this.db.getConnection();
 
     try {
-      // Get current failure count
-      const candidate = await conn.get<{ failure_count: number }>(
-        `SELECT failure_count FROM trailer_candidates WHERE id = ?`,
-        [candidateId]
-      );
-
-      if (!candidate) {
-        throw new ResourceNotFoundError(
-          'trailer_candidate',
-          candidateId,
-          'Trailer candidate not found',
-          { service: 'TrailerService', operation: 'recordFailure' }
-        );
-      }
-
-      const newFailureCount = (candidate.failure_count || 0) + 1;
-
       await conn.execute(
         `UPDATE trailer_candidates
          SET failed_at = CURRENT_TIMESTAMP,
              failure_reason = ?,
-             failure_count = ?,
-             retry_after = ?,
              updated_at = CURRENT_TIMESTAMP
          WHERE id = ?`,
-        [reason, newFailureCount, retryAfter?.toISOString() || null, candidateId]
+        [reason, candidateId]
       );
 
       logger.warn('Trailer download failure recorded', {
         candidateId,
         reason,
-        failureCount: newFailureCount,
-        retryAfter: retryAfter?.toISOString()
       });
 
       return { success: true };
@@ -957,6 +933,40 @@ export class TrailerService {
       logger.error('Failed to record failure', createErrorLogContext(error, {
         candidateId,
         reason
+      }));
+      throw error;
+    }
+  }
+
+  /**
+   * Clear failure state for a candidate
+   *
+   * Called when:
+   * - Download succeeds after previous failures
+   * - User force-retries and it succeeds
+   * - Re-verification shows video is available again
+   *
+   * @param candidateId - Candidate ID
+   * @returns Success status
+   */
+  async clearFailure(candidateId: number): Promise<{ success: boolean }> {
+    const conn = this.db.getConnection();
+
+    try {
+      await conn.execute(
+        `UPDATE trailer_candidates
+         SET failed_at = NULL,
+             failure_reason = NULL,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = ?`,
+        [candidateId]
+      );
+
+      logger.info('Trailer failure state cleared', { candidateId });
+      return { success: true };
+    } catch (error) {
+      logger.error('Failed to clear failure state', createErrorLogContext(error, {
+        candidateId
       }));
       throw error;
     }

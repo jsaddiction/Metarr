@@ -1,11 +1,17 @@
 /**
  * Trailer Analysis Phase
  *
- * Analyzes trailer candidates using yt-dlp to extract video metadata:
+ * Analyzes trailer candidates using a two-step verification:
  * 1. Query provider_cache_videos for trailers
- * 2. For each trailer, extract metadata via yt-dlp (resolution, duration, formats)
- * 3. Create/update entries in trailer_candidates table
- * 4. Handle rate limiting and removed videos gracefully
+ * 2. For each trailer, first verify via oEmbed (lightweight check)
+ * 3. If oEmbed passes, extract full metadata via yt-dlp (resolution, duration, formats)
+ * 4. Create/update entries in trailer_candidates table
+ * 5. Handle permanent unavailability vs transient errors differently
+ *
+ * Proactive Verification Strategy:
+ * - oEmbed check is fast and tells us if video exists at all
+ * - Avoids expensive yt-dlp calls for unavailable videos
+ * - Immediately marks unavailable videos (no retry guessing)
  */
 
 import { DatabaseConnection } from '../../../types/database.js';
@@ -138,17 +144,25 @@ export class TrailerAnalysisPhase {
 
   /**
    * Get trailers from provider_cache_videos for an entity
+   *
+   * Uses a robust join that handles NULL tmdb_id by also trying imdb_id and tvdb_id.
+   * This ensures we find the provider cache entry regardless of which ID was set first.
    */
   private async getTrailersFromProviderCache(
     entityId: number,
     entityType: string
   ): Promise<ProviderCacheVideo[]> {
     // Query provider_cache_videos joined with provider_cache_movies
+    // Use the same robust join pattern as the movie_provider_cache_view
     const query = `
       SELECT pv.*
       FROM provider_cache_videos pv
       JOIN provider_cache_movies pcm ON pv.entity_cache_id = pcm.id
-      JOIN movies m ON m.tmdb_id = pcm.tmdb_id
+      JOIN movies m ON (
+        (m.tmdb_id IS NOT NULL AND pcm.tmdb_id = m.tmdb_id) OR
+        (m.imdb_id IS NOT NULL AND pcm.imdb_id = m.imdb_id) OR
+        (m.tvdb_id IS NOT NULL AND pcm.tvdb_id = m.tvdb_id)
+      )
       WHERE m.id = ?
         AND pv.entity_type = 'movie'
         AND pv.video_type = 'trailer'
@@ -167,7 +181,13 @@ export class TrailerAnalysisPhase {
   }
 
   /**
-   * Analyze a single trailer using yt-dlp
+   * Analyze a single trailer using two-step verification
+   *
+   * Step 1: oEmbed check (fast, lightweight) - determines if video exists at all
+   * Step 2: yt-dlp metadata extraction (slower) - only if video exists
+   *
+   * This proactive approach avoids expensive yt-dlp calls for unavailable videos
+   * and immediately classifies unavailable videos without retry guessing.
    *
    * @returns True if analyzed, false if skipped
    */
@@ -176,7 +196,7 @@ export class TrailerAnalysisPhase {
     entityType: string,
     trailer: ProviderCacheVideo
   ): Promise<boolean> {
-    // Build YouTube URL
+    // Build video URL (supports YouTube and Vimeo)
     const sourceUrl = this.buildVideoUrl(trailer.site, trailer.key);
     if (!sourceUrl) {
       logger.warn('[TrailerAnalysisPhase] Unsupported video site', {
@@ -203,7 +223,35 @@ export class TrailerAnalysisPhase {
       return false;
     }
 
-    // Call yt-dlp to get video info
+    // STEP 1: Proactive oEmbed verification (fast check)
+    // This tells us if the video exists before expensive yt-dlp call
+    const verifyResult = await this.trailerDownloadService.verifyVideoExists(sourceUrl);
+
+    if (verifyResult === 'not_found') {
+      // Video is confirmed unavailable - mark permanently and skip yt-dlp
+      logger.info('[TrailerAnalysisPhase] Video unavailable (oEmbed check)', {
+        entityId,
+        sourceUrl,
+        providerVideoId: trailer.provider_video_id,
+      });
+
+      if (existingCandidate) {
+        await this.updateTrailerCandidate(existingCandidate.id, null, 'unavailable', null);
+      } else {
+        await this.createTrailerCandidate(
+          entityId,
+          entityType,
+          trailer,
+          sourceUrl,
+          null,
+          'unavailable',
+          null
+        );
+      }
+      return false;
+    }
+
+    // STEP 2: yt-dlp metadata extraction (only if oEmbed passed or was unknown)
     let videoInfo: VideoInfo | null = null;
     let failureReason: string | null = null;
     let retryAfter: Date | null = null;
@@ -212,17 +260,20 @@ export class TrailerAnalysisPhase {
       videoInfo = await this.trailerDownloadService.getVideoInfo(sourceUrl);
 
       if (!videoInfo) {
-        // Video is unavailable or removed
-        failureReason = 'removed';
-        logger.info('[TrailerAnalysisPhase] Video is unavailable', {
+        // yt-dlp returned null - video may be unavailable
+        // Do a follow-up oEmbed check to confirm
+        const recheck = await this.trailerDownloadService.verifyVideoExists(sourceUrl);
+        failureReason = recheck === 'not_found' ? 'unavailable' : 'download_error';
+        logger.info('[TrailerAnalysisPhase] Video info returned null', {
           entityId,
           sourceUrl,
+          failureReason,
         });
       }
     } catch (error) {
       const errorMsg = getErrorMessage(error);
 
-      if (errorMsg.includes('Rate limited')) {
+      if (errorMsg.includes('Rate limited') || errorMsg.includes('429')) {
         // Rate limited - retry after 1 hour
         failureReason = 'rate_limited';
         retryAfter = new Date(Date.now() + 60 * 60 * 1000); // 1 hour from now
@@ -232,11 +283,13 @@ export class TrailerAnalysisPhase {
           retryAfter,
         });
       } else {
-        // Other error - mark as failed
-        failureReason = 'download_error';
+        // Other error - verify with oEmbed to determine if permanent or transient
+        const recheck = await this.trailerDownloadService.verifyVideoExists(sourceUrl);
+        failureReason = recheck === 'not_found' ? 'unavailable' : 'download_error';
         logger.error('[TrailerAnalysisPhase] Failed to get video info', {
           entityId,
           sourceUrl,
+          failureReason,
           error: errorMsg,
         });
       }
@@ -262,13 +315,22 @@ export class TrailerAnalysisPhase {
 
   /**
    * Build video URL from site and key
+   *
+   * Supports:
+   * - YouTube: https://www.youtube.com/watch?v={key}
+   * - Vimeo: https://vimeo.com/{key}
    */
   private buildVideoUrl(site: string, key: string): string | null {
-    if (site.toLowerCase() === 'youtube') {
+    const siteLower = site.toLowerCase();
+
+    if (siteLower === 'youtube') {
       return `https://www.youtube.com/watch?v=${key}`;
     }
 
-    // TODO: Support other video sites (Vimeo, etc.)
+    if (siteLower === 'vimeo') {
+      return `https://vimeo.com/${key}`;
+    }
+
     logger.debug('[TrailerAnalysisPhase] Unsupported video site', { site, key });
     return null;
   }
@@ -334,10 +396,9 @@ export class TrailerAnalysisPhase {
         failed_at,
         failure_reason,
         retry_after,
-        failure_count,
         created_at,
         updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
 
     const values = [
@@ -361,7 +422,6 @@ export class TrailerAnalysisPhase {
       failureReason ? now : null,
       failureReason,
       retryAfter ? retryAfter.toISOString() : null,
-      failureReason ? 1 : 0,
       now,
       now,
     ];
@@ -402,7 +462,6 @@ export class TrailerAnalysisPhase {
         failed_at = ?,
         failure_reason = ?,
         retry_after = ?,
-        failure_count = CASE WHEN ? IS NOT NULL THEN failure_count + 1 ELSE failure_count END,
         updated_at = ?
       WHERE id = ?
     `;
@@ -419,7 +478,6 @@ export class TrailerAnalysisPhase {
       failureReason ? now : null,
       failureReason,
       retryAfter ? retryAfter.toISOString() : null,
-      failureReason,
       now,
       candidateId,
     ];

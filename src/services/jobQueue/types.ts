@@ -44,6 +44,9 @@ export type JobType =
   | 'scheduled-verification'      // Verify cache ↔ library hash matches
   | 'bulk-enrich'                 // Bulk enrichment of all monitored movies
 
+  // Trailer downloads
+  | 'download-trailer'            // Download trailer video (sequential queue)
+
   // Webhook routing
   | 'webhook-received';   // Webhook router (creates other jobs)
 
@@ -149,6 +152,15 @@ export type JobPayloadMap = {
   'bulk-enrich': {
     taskId: 'bulk-enrich';
     manual: boolean;
+  };
+
+  // Trailer downloads
+  'download-trailer': {
+    entityType: 'movie' | 'series' | 'episode';
+    entityId: number;
+    candidateId: number;
+    sourceUrl: string;
+    movieTitle?: string; // For logging/display purposes
   };
 
   // Webhook routing

@@ -19,6 +19,7 @@ import { WebhookJobHandlers } from './WebhookJobHandlers.js';
 import { NotificationJobHandlers } from './NotificationJobHandlers.js';
 import { AssetJobHandlers } from './AssetJobHandlers.js';
 import { ScheduledJobHandlers } from './ScheduledJobHandlers.js';
+import { TrailerJobHandlers } from './TrailerJobHandlers.js';
 
 /**
  * Dependencies required for job handlers
@@ -87,12 +88,15 @@ export function registerAllJobHandlers(
 
   const scheduledHandlers = new ScheduledJobHandlers(deps.db, deps.dbManager, deps.jobQueue);
 
+  const trailerHandlers = new TrailerJobHandlers(deps.db, deps.dbManager, deps.jobQueue);
+
   // Register all handlers with the job queue
   scanHandlers.registerHandlers(jobQueue);
   webhookHandlers.registerHandlers(jobQueue);
   notificationHandlers.registerHandlers(jobQueue);
   assetHandlers.registerHandlers(jobQueue);
   scheduledHandlers.registerHandlers(jobQueue);
+  trailerHandlers.registerHandlers(jobQueue);
 
   console.log('[JobHandlers] All handlers registered successfully');
   console.log('[JobHandlers] Handler breakdown:');
@@ -101,7 +105,8 @@ export function registerAllJobHandlers(
   console.log('  - NotificationJobHandlers: 3 handlers (notify-kodi, notify-jellyfin, notify-plex)');
   console.log('  - AssetJobHandlers: 2 handlers (enrich-metadata, publish)');
   console.log('  - ScheduledJobHandlers: 3 handlers (cleanup, provider-update, verification)');
-  console.log('  - Total: 11 handlers registered');
+  console.log('  - TrailerJobHandlers: 1 handler (download-trailer)');
+  console.log('  - Total: 12 handlers registered');
 }
 
 // Export all handler classes for direct access if needed
@@ -110,3 +115,4 @@ export { WebhookJobHandlers } from './WebhookJobHandlers.js';
 export { NotificationJobHandlers } from './NotificationJobHandlers.js';
 export { AssetJobHandlers } from './AssetJobHandlers.js';
 export { ScheduledJobHandlers } from './ScheduledJobHandlers.js';
+export { TrailerJobHandlers } from './TrailerJobHandlers.js';
