@@ -110,7 +110,8 @@ export const createApiRouter = (
     movieService,
     trailerService,
     trailerDownloadService,
-    dbManager
+    dbManager,
+    jobQueueService
   );
   const videoDownloaderConfigController = new VideoDownloaderConfigController(videoDownloaderConfigService);
 
@@ -470,6 +471,21 @@ export const createApiRouter = (
   router.post('/movies/:id/trailer/unlock', (req, res, next) => {
     logger.debug('[Route Hit] POST /movies/:id/trailer/unlock');
     movieTrailerController.unlockTrailer(req, res, next);
+  });
+
+  router.post('/movies/:id/trailer/candidates/:candidateId/retry', (req, res, next) => {
+    logger.debug('[Route Hit] POST /movies/:id/trailer/candidates/:candidateId/retry');
+    movieTrailerController.retryDownload(req, res, next);
+  });
+
+  router.post('/movies/:id/trailer/candidates/verify', (req, res, next) => {
+    logger.debug('[Route Hit] POST /movies/:id/trailer/candidates/verify');
+    movieTrailerController.verifyCandidates(req, res, next);
+  });
+
+  router.post('/movies/:id/trailer/candidates/:candidateId/test', (req, res, next) => {
+    logger.debug('[Route Hit] POST /movies/:id/trailer/candidates/:candidateId/test');
+    movieTrailerController.testCandidate(req, res, next);
   });
 
   // Toggle monitored status

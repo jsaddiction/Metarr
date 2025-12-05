@@ -2,6 +2,8 @@ import { Request, Response, NextFunction } from 'express';
 import { MovieService } from '../../services/movieService.js';
 import { TrailerService } from '../../services/trailers/TrailerService.js';
 import { TrailerDownloadService } from '../../services/trailers/TrailerDownloadService.js';
+import { JobQueueService } from '../../services/jobQueue/JobQueueService.js';
+import { JOB_PRIORITY } from '../../services/jobQueue/types.js';
 import { websocketBroadcaster } from '../../services/websocketBroadcaster.js';
 import { logger } from '../../middleware/logging.js';
 import multer from 'multer';
@@ -56,13 +58,17 @@ const upload = multer({
  */
 export class MovieTrailerController {
   public upload = upload;
+  private jobQueue: JobQueueService | null = null;
 
   constructor(
     private movieService: MovieService,
     private trailerService: TrailerService,
     private trailerDownloadService: TrailerDownloadService,
-    private db: DatabaseManager
-  ) {}
+    private db: DatabaseManager,
+    jobQueue?: JobQueueService
+  ) {
+    this.jobQueue = jobQueue || null;
+  }
 
   /**
    * GET /api/movies/:id/trailer
@@ -344,13 +350,38 @@ export class MovieTrailerController {
         needsDownload: selected && !selected.cache_video_file_id && selected.source_url,
       });
 
-      // Respond immediately - download will happen in background
-      res.json({ success: true, candidateId });
-
-      // Trigger download in background if needed (don't await - let it run async)
+      // Queue download job if needed
+      let jobId: number | null = null;
       if (selected && !selected.cache_video_file_id && selected.source_url) {
-        this.downloadTrailerInBackground(movieId, candidateId, selected.source_url);
+        if (this.jobQueue) {
+          // Use job queue for sequential downloads with progress
+          jobId = await this.jobQueue.addJob({
+            type: 'download-trailer',
+            priority: JOB_PRIORITY.HIGH, // User-initiated
+            payload: {
+              entityType: 'movie',
+              entityId: movieId,
+              candidateId,
+              sourceUrl: selected.source_url,
+              movieTitle: movie.title as string,
+            },
+            retry_count: 0,
+            max_retries: 2,
+          });
+
+          logger.info('Created download-trailer job', {
+            movieId,
+            candidateId,
+            jobId,
+          });
+        } else {
+          // Fallback to background download if job queue not available
+          this.downloadTrailerInBackground(movieId, candidateId, selected.source_url);
+        }
       }
+
+      // Respond immediately - download will happen via job queue
+      res.json({ success: true, candidateId, jobId });
     } catch (error) {
       logger.error('Select trailer failed', {
         movieId: req.params.id,
@@ -566,6 +597,168 @@ export class MovieTrailerController {
   }
 
   /**
+   * POST /api/movies/:id/trailer/candidates/verify
+   * Verify availability of all trailer candidates via oEmbed
+   *
+   * Called when trailer selection modal opens to check which candidates
+   * are still available. Uses parallel oEmbed requests for speed.
+   *
+   * Returns:
+   * {
+   *   results: {
+   *     [candidateId: number]: 'available' | 'unavailable' | 'unknown'
+   *   }
+   * }
+   */
+  async verifyCandidates(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const movieId = parseInt(req.params.id);
+
+      // Validate movie exists
+      const movie = await this.movieService.getById(movieId);
+      if (!movie) {
+        res.status(404).json({ error: 'Movie not found' });
+        return;
+      }
+
+      // Get all candidates
+      const candidates = await this.trailerService.getCandidates('movie', movieId);
+
+      // Filter to only candidates with source URLs (skip uploads)
+      const candidatesWithUrls = candidates.filter(c => c.source_url);
+
+      // Parallel oEmbed verification
+      const results: Record<number, 'available' | 'unavailable' | 'unknown'> = {};
+
+      await Promise.all(
+        candidatesWithUrls.map(async (candidate) => {
+          try {
+            const result = await this.trailerDownloadService.verifyVideoExists(candidate.source_url!);
+            results[candidate.id] = result === 'exists' ? 'available' :
+                                    result === 'not_found' ? 'unavailable' : 'unknown';
+          } catch (error) {
+            results[candidate.id] = 'unknown';
+          }
+        })
+      );
+
+      // Mark uploads as available (they're local files)
+      for (const candidate of candidates) {
+        if (candidate.source_type === 'upload') {
+          results[candidate.id] = 'available';
+        }
+      }
+
+      logger.debug('Verified trailer candidates', {
+        movieId,
+        totalCandidates: candidates.length,
+        verified: Object.keys(results).length,
+      });
+
+      res.json({ results });
+    } catch (error) {
+      logger.error('Verify candidates failed', {
+        movieId: req.params.id,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/movies/:id/trailer/candidates/:candidateId/test
+   * Test if a specific trailer candidate can be downloaded
+   *
+   * Uses yt-dlp --simulate to test the full download chain without
+   * actually downloading. Catches region blocks, format issues, etc.
+   *
+   * Body: { maxResolution?: number } (default: 1080)
+   *
+   * Returns:
+   * { success: true } or
+   * { success: false, error: string, message: string }
+   */
+  async testCandidate(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const movieId = parseInt(req.params.id);
+      const candidateId = parseInt(req.params.candidateId);
+      const maxResolution = req.body.maxResolution || 1080;
+
+      // Validate movie exists
+      const movie = await this.movieService.getById(movieId);
+      if (!movie) {
+        res.status(404).json({ error: 'Movie not found' });
+        return;
+      }
+
+      // Get candidate
+      const candidates = await this.trailerService.getCandidates('movie', movieId);
+      const candidate = candidates.find(c => c.id === candidateId);
+
+      if (!candidate) {
+        res.status(404).json({ error: 'Trailer candidate not found' });
+        return;
+      }
+
+      if (!candidate.source_url) {
+        // Uploads don't need testing
+        if (candidate.source_type === 'upload') {
+          res.json({ success: true });
+          return;
+        }
+        res.status(400).json({ error: 'Candidate has no source URL to test' });
+        return;
+      }
+
+      logger.debug('Testing trailer candidate download', {
+        movieId,
+        candidateId,
+        sourceUrl: candidate.source_url,
+        maxResolution,
+      });
+
+      // Run simulation
+      const result = await this.trailerDownloadService.simulateDownload(
+        candidate.source_url,
+        maxResolution
+      );
+
+      if (!result.success) {
+        // Update candidate failure state in database
+        await this.trailerService.recordFailure(candidateId, result.error);
+
+        logger.info('Trailer candidate test failed', {
+          movieId,
+          candidateId,
+          error: result.error,
+          message: result.message,
+        });
+
+        res.json({
+          success: false,
+          error: result.error,
+          message: result.message,
+        });
+        return;
+      }
+
+      logger.info('Trailer candidate test passed', {
+        movieId,
+        candidateId,
+      });
+
+      res.json({ success: true });
+    } catch (error) {
+      logger.error('Test candidate failed', {
+        movieId: req.params.id,
+        candidateId: req.params.candidateId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      next(error);
+    }
+  }
+
+  /**
    * DELETE /api/movies/:id/trailer
    * Remove selected trailer
    *
@@ -683,6 +876,79 @@ export class MovieTrailerController {
   }
 
   /**
+   * POST /api/movies/:id/trailer/candidates/:candidateId/retry
+   * Retry downloading a failed trailer candidate
+   *
+   * Clears the failure state and triggers a new download attempt.
+   * For unavailable videos, warns the user that the video may no longer exist.
+   *
+   * Returns:
+   * {
+   *   success: true,
+   *   message: string,
+   *   wasUnavailable: boolean
+   * }
+   */
+  async retryDownload(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const movieId = parseInt(req.params.id);
+      const candidateId = parseInt(req.params.candidateId);
+
+      // Validate movie exists
+      const movie = await this.movieService.getById(movieId);
+      if (!movie) {
+        res.status(404).json({ error: 'Movie not found' });
+        return;
+      }
+
+      // Get candidate to check current state
+      const candidates = await this.trailerService.getCandidates('movie', movieId);
+      const candidate = candidates.find(c => c.id === candidateId);
+
+      if (!candidate) {
+        res.status(404).json({ error: 'Trailer candidate not found' });
+        return;
+      }
+
+      if (!candidate.source_url) {
+        res.status(400).json({ error: 'Candidate has no source URL to retry' });
+        return;
+      }
+
+      const wasUnavailable = candidate.failure_reason === 'unavailable';
+
+      // Clear failure state
+      await this.trailerService.clearFailure(candidateId);
+
+      logger.info('Retrying trailer download', {
+        movieId,
+        candidateId,
+        wasUnavailable,
+        previousFailureReason: candidate.failure_reason,
+      });
+
+      // Respond immediately
+      res.json({
+        success: true,
+        message: wasUnavailable
+          ? 'Retry initiated. Note: This video was previously marked as unavailable.'
+          : 'Retry initiated.',
+        wasUnavailable,
+      });
+
+      // Trigger download in background
+      this.downloadTrailerInBackground(movieId, candidateId, candidate.source_url);
+    } catch (error) {
+      logger.error('Retry trailer download failed', {
+        movieId: req.params.id,
+        candidateId: req.params.candidateId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      next(error);
+    }
+  }
+
+  /**
    * Download a trailer in the background
    *
    * This method runs asynchronously after the API response is sent.
@@ -714,7 +980,8 @@ export class MovieTrailerController {
       const result = await this.trailerDownloadService.downloadVideo(sourceUrl, outputPath, 1080);
 
       if (!result.success) {
-        // Record failure
+        // Record failure - the error type is already determined by downloadVideo
+        // which does oEmbed verification to distinguish permanent vs transient failures
         logger.error('Trailer download failed', {
           movieId,
           candidateId,
@@ -722,14 +989,7 @@ export class MovieTrailerController {
           message: result.message,
         });
 
-        // Calculate retry time based on error type
-        let retryAfter: Date | undefined;
-        if (result.error === 'rate_limited') {
-          retryAfter = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
-        }
-        // 'removed' videos never retry (retryAfter stays undefined)
-
-        await this.trailerService.recordFailure(candidateId, result.error, retryAfter);
+        await this.trailerService.recordFailure(candidateId, result.error);
 
         // Broadcast failure update
         websocketBroadcaster.broadcastMoviesUpdated([movieId]);
@@ -770,11 +1030,7 @@ export class MovieTrailerController {
 
       // Record generic failure
       try {
-        await this.trailerService.recordFailure(
-          candidateId,
-          'download_error',
-          new Date(Date.now() + 60 * 60 * 1000) // Retry in 1 hour
-        );
+        await this.trailerService.recordFailure(candidateId, 'download_error');
       } catch (recordError) {
         logger.error('Failed to record download failure', {
           candidateId,
