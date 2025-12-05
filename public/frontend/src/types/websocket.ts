@@ -256,6 +256,40 @@ export interface PlayerActivityMessage extends BaseServerMessage {
   };
 }
 
+// Trailer download progress messages
+export interface TrailerProgressMessage extends BaseServerMessage {
+  type: 'trailer:progress';
+  entityType: 'movie' | 'series' | 'episode';
+  entityId: number;
+  candidateId: number;
+  progress: {
+    percentage: number;
+    downloadedBytes: number;
+    totalBytes: number;
+    speed: string;
+    eta: number;
+  };
+}
+
+export interface TrailerCompletedMessage extends BaseServerMessage {
+  type: 'trailer:completed';
+  entityType: 'movie' | 'series' | 'episode';
+  entityId: number;
+  candidateId: number;
+  cacheFileId: number;
+  filePath: string;
+  fileSize: number;
+}
+
+export interface TrailerFailedMessage extends BaseServerMessage {
+  type: 'trailer:failed';
+  entityType: 'movie' | 'series' | 'episode';
+  entityId: number;
+  candidateId: number;
+  error: 'unavailable' | 'rate_limited' | 'download_error';
+  message: string;
+}
+
 export type ServerMessage =
   | PongMessage
   | ResyncDataMessage
@@ -276,7 +310,10 @@ export type ServerMessage =
   | ProviderScrapeCompleteMessage
   | ProviderScrapeErrorMessage
   | JobStatusMessage
-  | JobQueueStatsMessage;
+  | JobQueueStatsMessage
+  | TrailerProgressMessage
+  | TrailerCompletedMessage
+  | TrailerFailedMessage;
 
 // ============================================================================
 // Connection State Types

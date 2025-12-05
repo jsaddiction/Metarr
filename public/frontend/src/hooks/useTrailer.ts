@@ -353,8 +353,144 @@ export const useToggleTrailerLock = (movieId: number) => {
 };
 
 /**
+ * Retry a failed trailer download
+ *
+ * Clears the failure state and triggers a new download attempt.
+ * Returns wasUnavailable to indicate if the video was previously
+ * marked as permanently unavailable (for UI warning).
+ */
+export const useRetryTrailerDownload = (movieId: number) => {
+  const queryClient = useQueryClient();
+
+  return useMutation<
+    { success: boolean; message: string; wasUnavailable: boolean },
+    Error,
+    number
+  >({
+    mutationFn: async (candidateId: number) => {
+      const response = await fetch(
+        `/api/movies/${movieId}/trailer/candidates/${candidateId}/retry`,
+        {
+          method: 'POST',
+        }
+      );
+
+      if (!response.ok) {
+        const errorMsg = await getErrorMessage(response);
+        throw new Error(errorMsg);
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['trailer', movieId] });
+      queryClient.invalidateQueries({ queryKey: ['trailerCandidates', movieId] });
+    },
+  });
+};
+
+/**
  * Get stream URL for a trailer
  */
 export const getTrailerStreamUrl = (movieId: number): string => {
   return `/api/movies/${movieId}/trailer/stream`;
+};
+
+/**
+ * Trailer download progress interface
+ */
+export interface TrailerProgress {
+  entityId: number;
+  percentage: number;
+  speed: string;
+  eta: number;
+}
+
+/**
+ * Hook to get trailer download progress for a movie
+ * Progress is updated in real-time via WebSocket events
+ */
+export const useTrailerProgress = (movieId: number | null) => {
+  return useQuery<TrailerProgress | null>({
+    queryKey: ['trailerProgress', movieId],
+    queryFn: () => null, // Initial value - updated via WebSocket
+    enabled: !!movieId,
+    staleTime: Infinity, // Progress is only updated via WebSocket
+    gcTime: 5 * 60 * 1000, // Keep in cache for 5 minutes
+  });
+};
+
+/**
+ * Verification status for trailer candidates
+ */
+export type CandidateVerificationStatus = 'available' | 'unavailable' | 'unknown';
+
+export interface VerifyCandidatesResult {
+  results: Record<number, CandidateVerificationStatus>;
+}
+
+/**
+ * Verify availability of all trailer candidates via oEmbed
+ * Called when trailer selection modal opens
+ */
+export const useVerifyCandidates = (movieId: number) => {
+  const queryClient = useQueryClient();
+
+  return useMutation<VerifyCandidatesResult, Error, void>({
+    mutationFn: async () => {
+      const response = await fetch(`/api/movies/${movieId}/trailer/candidates/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      if (!response.ok) {
+        const errorMsg = await getErrorMessage(response);
+        throw new Error(errorMsg);
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      // Optionally refresh candidates after verification
+      queryClient.invalidateQueries({ queryKey: ['trailerCandidates', movieId] });
+    },
+  });
+};
+
+/**
+ * Test result for a single trailer candidate
+ */
+export interface TestCandidateResult {
+  success: boolean;
+  error?: 'unavailable' | 'rate_limited' | 'region_blocked' | 'format_error';
+  message?: string;
+}
+
+/**
+ * Test if a specific trailer candidate can be downloaded
+ * Uses yt-dlp --simulate to test full download chain
+ */
+export const useTestCandidate = (movieId: number) => {
+  const queryClient = useQueryClient();
+
+  return useMutation<TestCandidateResult, Error, number>({
+    mutationFn: async (candidateId: number) => {
+      const response = await fetch(
+        `/api/movies/${movieId}/trailer/candidates/${candidateId}/test`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+
+      if (!response.ok) {
+        const errorMsg = await getErrorMessage(response);
+        throw new Error(errorMsg);
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      // Refresh candidates to reflect any failure state changes
+      queryClient.invalidateQueries({ queryKey: ['trailerCandidates', movieId] });
+      queryClient.invalidateQueries({ queryKey: ['trailer', movieId] });
+    },
+  });
 };

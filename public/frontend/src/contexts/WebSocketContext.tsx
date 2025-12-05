@@ -324,6 +324,67 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({ children }
         queryClient.invalidateQueries({ queryKey: ['jobStats'] });
         break;
 
+      case 'trailer:progress':
+        // Trailer download progress - update trailer progress cache
+        {
+          const msg = message as any;
+          console.log('[WebSocket] Trailer progress:', {
+            entityId: msg.entityId,
+            percentage: msg.progress?.percentage,
+            speed: msg.progress?.speed,
+          });
+          // Update the trailer progress in query cache for the specific movie
+          queryClient.setQueryData<{ entityId: number; percentage: number; speed: string; eta: number } | null>(
+            ['trailerProgress', msg.entityId],
+            {
+              entityId: msg.entityId,
+              percentage: msg.progress?.percentage || 0,
+              speed: msg.progress?.speed || '',
+              eta: msg.progress?.eta || 0,
+            }
+          );
+        }
+        break;
+
+      case 'trailer:completed':
+        // Trailer download completed - clear progress and invalidate trailer data
+        {
+          const msg = message as any;
+          console.log('[WebSocket] Trailer completed:', {
+            entityId: msg.entityId,
+            candidateId: msg.candidateId,
+          });
+          // Clear progress
+          queryClient.setQueryData(['trailerProgress', msg.entityId], null);
+          // Invalidate trailer data to refetch
+          queryClient.invalidateQueries({ queryKey: ['trailer', msg.entityId] });
+          queryClient.invalidateQueries({ queryKey: ['trailerCandidates', msg.entityId] });
+          toast.success('Trailer downloaded', {
+            description: 'Trailer is ready to play',
+          });
+        }
+        break;
+
+      case 'trailer:failed':
+        // Trailer download failed - clear progress and invalidate trailer data
+        {
+          const msg = message as any;
+          console.log('[WebSocket] Trailer failed:', {
+            entityId: msg.entityId,
+            error: msg.error,
+            message: msg.message,
+          });
+          // Clear progress
+          queryClient.setQueryData(['trailerProgress', msg.entityId], null);
+          // Invalidate trailer data to refetch failure state
+          queryClient.invalidateQueries({ queryKey: ['trailer', msg.entityId] });
+          queryClient.invalidateQueries({ queryKey: ['trailerCandidates', msg.entityId] });
+          toast.error('Trailer download failed', {
+            description: msg.message || 'Download error',
+          });
+        }
+        break;
+
       default:
         // Handle other message types
         break;
