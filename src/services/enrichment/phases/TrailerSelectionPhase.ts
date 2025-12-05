@@ -9,7 +9,7 @@
  * Key Features:
  * - Respects entity-level lock (movies.trailer_locked) - skip if locked
  * - Only processes analyzed candidates (analyzed=true)
- * - Filters out failed candidates (failure_reason='removed')
+ * - Filters out unavailable candidates (failure_reason='unavailable')
  * - Updates database selection flags and scores
  * - Uses TrailerSelectionService for scoring logic
  */
@@ -99,11 +99,11 @@ export class TrailerSelectionPhase {
         totalCandidates: candidates.length,
       });
 
-      // STEP 3: Filter out failed candidates
-      const validCandidates = candidates.filter((c) => c.failure_reason !== 'removed');
+      // STEP 3: Filter out permanently unavailable candidates
+      const validCandidates = candidates.filter((c) => c.failure_reason !== 'unavailable');
 
       if (validCandidates.length === 0) {
-        logger.warn('[TrailerSelectionPhase] All candidates are failed/removed', {
+        logger.warn('[TrailerSelectionPhase] All candidates are unavailable', {
           entityType,
           entityId,
           totalCandidates: candidates.length,
@@ -210,7 +210,7 @@ export class TrailerSelectionPhase {
    */
   private async getTrailerConfig(): Promise<TrailerConfig> {
     const settings = await this.db.query<{ key: string; value: string }>(
-      `SELECT key, value FROM settings WHERE key LIKE 'movies.trailers.%'`
+      `SELECT key, value FROM app_settings WHERE key LIKE 'movies.trailers.%'`
     );
 
     // Parse settings into config object

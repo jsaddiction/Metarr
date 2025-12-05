@@ -312,7 +312,7 @@ export class EnrichmentOrchestrator {
   private async isTrailersEnabled(): Promise<boolean> {
     try {
       const result = await this.db.get<{ value: string }>(
-        `SELECT value FROM settings WHERE key = 'movies.trailers.enabled'`
+        `SELECT value FROM app_settings WHERE key = 'movies.trailers.enabled'`
       );
       // Default to true if setting doesn't exist
       if (!result) return true;

@@ -60,7 +60,7 @@ export class BackupService {
    */
   private async getSettings(): Promise<BackupOptions> {
     const settings = await this.db.query<{ key: string; value: string }>(
-      `SELECT key, value FROM settings WHERE key LIKE 'backup_%'`
+      `SELECT key, value FROM app_settings WHERE key LIKE 'backup_%'`
     );
 
     const config: BackupOptions = {

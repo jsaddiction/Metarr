@@ -168,7 +168,20 @@ export class TMDBCacheAdapter {
     );
 
     // Get the movie cache ID
-    const movieCacheId = result.insertId!;
+    // IMPORTANT: For upserts, SQLite's last_insert_rowid() returns 0 or previous ID when row is updated (not inserted).
+    // We must query for the actual ID using tmdb_id to get the correct value.
+    let movieCacheId = result.insertId;
+    if (!movieCacheId || movieCacheId === 0) {
+      // Row was updated, not inserted - fetch the actual ID
+      const existingRow = await this.db.get<{ id: number }>(
+        'SELECT id FROM provider_cache_movies WHERE tmdb_id = ?',
+        [tmdbData.id]
+      );
+      if (!existingRow) {
+        throw new Error(`Failed to get provider_cache_movies ID for tmdb_id ${tmdbData.id}`);
+      }
+      movieCacheId = existingRow.id;
+    }
 
     // Clear old relationships (for updates)
     await this.clearOldRelationships(movieCacheId);

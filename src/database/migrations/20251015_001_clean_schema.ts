@@ -2298,19 +2298,18 @@ export class CleanSchemaMigration {
         -- Selection state
         score INTEGER,
         is_selected BOOLEAN DEFAULT 0,
-        is_locked BOOLEAN DEFAULT 0,
         selected_at TIMESTAMP,
-        selected_by TEXT,
+        selected_by TEXT,  -- 'auto' or 'user'
 
         -- Download state
         cache_video_file_id INTEGER REFERENCES cache_video_files(id),
         downloaded_at TIMESTAMP,
 
         -- Failure tracking
+        -- failure_reason: 'unavailable' (permanent) | 'rate_limited' | 'download_error' (transient)
         failed_at TIMESTAMP,
         failure_reason TEXT,
-        retry_after TIMESTAMP,
-        failure_count INTEGER DEFAULT 0,
+        retry_after TIMESTAMP,  -- For rate_limited: when to retry
 
         -- Timestamps
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -2328,10 +2327,11 @@ export class CleanSchemaMigration {
       ON trailer_candidates(entity_type, entity_id, is_selected)
     `);
 
+    // Index for finding candidates to retry (failed but not permanently unavailable)
     await db.execute(`
       CREATE INDEX IF NOT EXISTS idx_trailer_candidates_retry
-      ON trailer_candidates(retry_after)
-      WHERE retry_after IS NOT NULL
+      ON trailer_candidates(failure_reason)
+      WHERE failure_reason IS NOT NULL AND failure_reason != 'unavailable'
     `);
 
     await db.execute(`
