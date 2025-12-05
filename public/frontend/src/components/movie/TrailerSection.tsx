@@ -27,6 +27,7 @@ import {
   useTrailer,
   useDeleteTrailerSelection,
   useToggleTrailerLock,
+  useTrailerProgress,
   getTrailerStreamUrl,
 } from '../../hooks/useTrailer';
 import { useConfirm } from '../../hooks/useConfirm';
@@ -45,6 +46,7 @@ export const TrailerSection: React.FC<TrailerSectionProps> = ({ movieId, movieTi
 
   // Queries and mutations
   const { data: trailerData, isLoading, error } = useTrailer(movieId);
+  const { data: trailerProgress } = useTrailerProgress(movieId);
   const deleteMutation = useDeleteTrailerSelection(movieId);
   const toggleLockMutation = useToggleTrailerLock(movieId);
 
@@ -299,9 +301,31 @@ export const TrailerSection: React.FC<TrailerSectionProps> = ({ movieId, movieTi
 
                 {/* Status messages */}
                 {!selectedTrailer.cache_video_file_id && !selectedTrailer.failed_at && (
-                  <div className="mt-auto text-sm text-neutral-500">
-                    <FontAwesomeIcon icon={faSpinner} spin className="mr-2" />
-                    Downloading...
+                  <div className="mt-auto">
+                    {trailerProgress && trailerProgress.percentage > 0 ? (
+                      // Show download progress
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between text-xs text-neutral-400">
+                          <span>
+                            <FontAwesomeIcon icon={faSpinner} spin className="mr-2" />
+                            Downloading... {trailerProgress.percentage.toFixed(0)}%
+                          </span>
+                          <span>{trailerProgress.speed}</span>
+                        </div>
+                        <div className="w-full bg-neutral-700 rounded-full h-1.5 overflow-hidden">
+                          <div
+                            className="bg-primary-500 h-full rounded-full transition-all duration-300"
+                            style={{ width: `${trailerProgress.percentage}%` }}
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      // Show waiting state (queued but not yet started)
+                      <div className="text-sm text-neutral-500">
+                        <FontAwesomeIcon icon={faSpinner} spin className="mr-2" />
+                        Waiting in queue...
+                      </div>
+                    )}
                   </div>
                 )}
 
