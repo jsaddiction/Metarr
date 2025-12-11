@@ -136,6 +136,7 @@ CREATE TABLE movies (
   countries_locked BOOLEAN DEFAULT 0,
   tags_locked BOOLEAN DEFAULT 0,
   actors_order_locked BOOLEAN DEFAULT 0,  -- Prevents automation from reordering cast
+  trailer_locked BOOLEAN DEFAULT 0,       -- Prevents automation from changing trailer selection
 
   FOREIGN KEY (library_id) REFERENCES libraries(id)
 );
@@ -429,6 +430,123 @@ CREATE INDEX idx_candidates_selected ON asset_candidates(is_selected);
 CREATE INDEX idx_candidates_score ON asset_candidates(score DESC);
 ```
 
+### trailer_candidates
+
+Trailer video candidates from providers, user URLs, and uploads.
+
+```sql
+CREATE TABLE trailer_candidates (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+  -- Entity reference
+  entity_type TEXT NOT NULL CHECK(entity_type IN ('movie', 'episode')),
+  entity_id INTEGER NOT NULL,
+
+  -- Source info
+  source_type TEXT NOT NULL CHECK(source_type IN ('provider', 'user', 'upload')),
+  source_url TEXT,
+  provider_name TEXT,                    -- 'tmdb', 'youtube', 'vimeo'
+  provider_video_id TEXT,
+
+  -- TMDB metadata (from provider_cache_videos)
+  tmdb_name TEXT,
+  tmdb_official BOOLEAN,
+  tmdb_language TEXT,
+
+  -- yt-dlp enriched metadata (populated during analysis)
+  analyzed BOOLEAN DEFAULT 0,
+  ytdlp_metadata TEXT,                   -- JSON blob from yt-dlp
+  title TEXT,
+  duration_seconds INTEGER,
+  best_width INTEGER,
+  best_height INTEGER,
+  estimated_size_bytes INTEGER,
+  thumbnail_url TEXT,
+
+  -- Selection state
+  score INTEGER,
+  is_selected BOOLEAN DEFAULT 0,
+  selected_at TIMESTAMP,
+  selected_by TEXT,                      -- 'user', 'enrichment', etc.
+
+  -- Download state
+  cache_video_file_id INTEGER,           -- FK to cache_video_files
+  downloaded_at TIMESTAMP,
+
+  -- Failure tracking
+  failed_at TIMESTAMP,
+  failure_reason TEXT CHECK(failure_reason IN ('unavailable', 'rate_limited', 'download_error')),
+  retry_after TIMESTAMP,
+
+  -- Timestamps
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+  FOREIGN KEY (cache_video_file_id) REFERENCES cache_video_files(id)
+);
+
+CREATE INDEX idx_trailer_candidates_entity ON trailer_candidates(entity_type, entity_id);
+CREATE INDEX idx_trailer_candidates_selected ON trailer_candidates(entity_type, entity_id, is_selected);
+CREATE INDEX idx_trailer_candidates_failure ON trailer_candidates(failure_reason)
+  WHERE failure_reason IS NOT NULL AND failure_reason != 'unavailable';
+CREATE UNIQUE INDEX idx_trailer_candidates_url ON trailer_candidates(entity_type, entity_id, source_url)
+  WHERE source_url IS NOT NULL;
+```
+
+**Source Types**:
+- `provider`: Discovered from TMDB trailers
+- `user`: User-provided YouTube/Vimeo URL
+- `upload`: User uploaded video file
+
+**Failure Tracking**:
+- `unavailable`: Video permanently gone (verified via oEmbed) - never auto-retry
+- `rate_limited`: Provider rate limit - retry on next enrichment cycle
+- `download_error`: Other failures - retry on next enrichment cycle
+
+**Selection Behavior**:
+- User selections auto-lock trailer field on entity (`movies.trailer_locked`)
+- Lock prevents automation from changing selection
+- User can unlock to allow automation to find better trailers
+
+### cache_video_files
+
+Protected cache storage for downloaded trailer videos.
+
+```sql
+CREATE TABLE cache_video_files (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+  -- Polymorphic association
+  entity_type TEXT NOT NULL CHECK(entity_type IN ('movie', 'episode')),
+  entity_id INTEGER NOT NULL,
+
+  -- File information (content-addressed)
+  file_path TEXT UNIQUE NOT NULL,        -- /data/cache/videos/ab/abc123...mp4
+  file_name TEXT NOT NULL,
+  file_size INTEGER NOT NULL,
+  file_hash TEXT NOT NULL,               -- SHA256 hash
+
+  -- Video metadata
+  duration_seconds INTEGER,
+  width INTEGER,
+  height INTEGER,
+  codec TEXT,                            -- 'h264', 'h265', 'vp9'
+  format TEXT NOT NULL,                  -- 'mp4', 'webm'
+
+  -- Provenance tracking
+  source_type TEXT CHECK(source_type IN ('provider', 'user', 'upload')),
+  source_url TEXT,
+  provider_name TEXT,
+
+  -- Timestamps
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  last_accessed_at TIMESTAMP
+);
+
+CREATE INDEX idx_cache_videos_entity ON cache_video_files(entity_type, entity_id);
+CREATE INDEX idx_cache_videos_hash ON cache_video_files(file_hash);
+```
+
 ## Stream Information Tables
 
 ### video_streams
@@ -566,28 +684,44 @@ CREATE INDEX idx_jobs_entity ON jobs(entity_type, entity_id);
 
 ## Metadata Tables
 
-### people
+### actors
 
-Actors, directors, crew members.
+Central registry for actors - one record per unique actor across all media.
 
 ```sql
-CREATE TABLE people (
+CREATE TABLE actors (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
+  name_normalized TEXT NOT NULL UNIQUE,  -- Lowercase, trimmed for deduplication
   tmdb_id INTEGER UNIQUE,
-  imdb_id TEXT UNIQUE,
-  profile_image TEXT,
-  biography TEXT,
-  birthday DATE,
-  deathday DATE,
-  birthplace TEXT,
+  imdb_id TEXT,
+
+  -- Single best image (from local OR provider)
+  image_cache_path TEXT,                 -- Path to cached image file
+  image_hash TEXT,                       -- SHA256 hash for deduplication
+  image_ctime INTEGER,                   -- Cache file creation time
+
+  -- Enrichment tracking (two-phase: identified → enriched)
+  identification_status TEXT DEFAULT 'identified'
+    CHECK(identification_status IN ('identified', 'enriched')),
+  enrichment_priority INTEGER DEFAULT 5,
+
+  -- Field locking for user overrides
+  name_locked BOOLEAN DEFAULT 0,
+  image_locked BOOLEAN DEFAULT 0,
+
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_people_tmdb ON people(tmdb_id);
-CREATE INDEX idx_people_name ON people(name);
+CREATE INDEX idx_actors_tmdb ON actors(tmdb_id);
+CREATE INDEX idx_actors_name_normalized ON actors(name_normalized);
+CREATE INDEX idx_actors_identification ON actors(identification_status);
 ```
+
+**Actor Enrichment Status**:
+- **`identified`**: Actor exists from NFO/scan, may have TMDB ID but no profile enrichment
+- **`enriched`**: Full actor profile fetched (best image selected, metadata complete)
 
 ### movie_actors
 
@@ -622,29 +756,64 @@ CREATE INDEX idx_movie_actors_actor ON movie_actors(actor_id);
 - Movies with `actors_order_locked=true` preserve user's custom cast ordering
 - Actors with `removed=true` are skipped entirely during enrichment
 
+### episode_actors
+
+Cast associations for TV episodes.
+
+```sql
+CREATE TABLE episode_actors (
+  episode_id INTEGER NOT NULL,
+  actor_id INTEGER NOT NULL,
+  role TEXT,
+  sort_order INTEGER,
+  PRIMARY KEY (episode_id, actor_id),
+  FOREIGN KEY (episode_id) REFERENCES episodes(id) ON DELETE CASCADE,
+  FOREIGN KEY (actor_id) REFERENCES actors(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_episode_actors_episode ON episode_actors(episode_id);
+CREATE INDEX idx_episode_actors_actor ON episode_actors(actor_id);
+```
+
+### crew
+
+Central registry for crew members (directors, writers, producers).
+
+```sql
+CREATE TABLE crew (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE,
+  tmdb_id INTEGER UNIQUE,
+  imdb_id TEXT,
+  thumb_id INTEGER,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (thumb_id) REFERENCES cache_image_files(id) ON DELETE SET NULL
+);
+```
+
 ### movie_crew / series_crew
 
-Crew associations (directors, writers, producers).
+Crew associations linking crew members to movies/series.
 
 ```sql
 CREATE TABLE movie_crew (
   movie_id INTEGER NOT NULL,
-  person_id INTEGER NOT NULL,
+  crew_id INTEGER NOT NULL,
   job TEXT NOT NULL,                    -- 'Director', 'Writer', 'Producer'
   department TEXT,
-  PRIMARY KEY (movie_id, person_id, job),
+  PRIMARY KEY (movie_id, crew_id, job),
   FOREIGN KEY (movie_id) REFERENCES movies(id) ON DELETE CASCADE,
-  FOREIGN KEY (person_id) REFERENCES people(id)
+  FOREIGN KEY (crew_id) REFERENCES crew(id) ON DELETE CASCADE
 );
 
 CREATE TABLE series_crew (
   series_id INTEGER NOT NULL,
-  person_id INTEGER NOT NULL,
+  crew_id INTEGER NOT NULL,
   job TEXT NOT NULL,
   department TEXT,
-  PRIMARY KEY (series_id, person_id, job),
+  PRIMARY KEY (series_id, crew_id, job),
   FOREIGN KEY (series_id) REFERENCES series(id) ON DELETE CASCADE,
-  FOREIGN KEY (person_id) REFERENCES people(id)
+  FOREIGN KEY (crew_id) REFERENCES crew(id) ON DELETE CASCADE
 );
 ```
 

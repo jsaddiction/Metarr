@@ -112,14 +112,6 @@ Query: delete_files (boolean, move to recycle)
 Response: { success: true }
 ```
 
-**Enrich Movie**:
-```
-POST /api/v1/movies/:id/enrich
-Body: { force?: boolean, providers?: string[] }
-
-Response: { data: { job_id: number } }
-```
-
 **Publish Movie Assets**:
 ```
 POST /api/v1/movies/:id/publish
@@ -193,6 +185,146 @@ Response: { data: { cache_file_id: number } }
 GET /api/v1/assets/:hash
 
 Response: Binary image data (Content-Type: image/jpeg|png)
+```
+
+### Trailers
+
+**Get Selected Trailer**:
+```
+GET /api/v1/movies/:id/trailer
+
+Response: {
+  data: {
+    id: number,
+    source_url: string,
+    title: string,
+    duration_seconds: number,
+    is_locked: boolean,
+    cache_file_path?: string,
+    downloaded_at?: string
+  } | null
+}
+```
+
+**Stream Trailer**:
+```
+GET /api/v1/movies/:id/trailer/stream
+Headers: Range (optional, for HTTP Range requests)
+
+Response: Binary video data (Content-Type: video/mp4)
+```
+
+**Get Trailer Candidates**:
+```
+GET /api/v1/movies/:id/trailer/candidates
+
+Response: {
+  data: TrailerCandidate[] (sorted by score)
+}
+```
+
+**Select Trailer**:
+```
+POST /api/v1/movies/:id/trailer/select
+Body: { candidateId: number }
+
+Response: {
+  data: {
+    success: true,
+    jobId?: number,  // If download queued
+    message: string
+  }
+}
+```
+
+Automatically locks trailer field and queues download job if needed.
+
+**Add Trailer URL**:
+```
+POST /api/v1/movies/:id/trailer/url
+Body: { url: string }
+
+Response: {
+  data: {
+    candidateId: number,
+    title: string,
+    duration: number
+  }
+}
+```
+
+Validates URL via yt-dlp, fetches metadata, auto-selects and locks.
+
+**Upload Trailer**:
+```
+POST /api/v1/movies/:id/trailer/upload
+Body: multipart/form-data (file)
+
+Response: {
+  data: {
+    candidateId: number,
+    cacheFileId: number,
+    filePath: string
+  }
+}
+```
+
+**Verify Trailer Candidates**:
+```
+POST /api/v1/movies/:id/trailer/candidates/verify
+
+Response: {
+  data: {
+    results: {
+      [candidateId: string]: 'available' | 'unavailable' | 'unknown'
+    }
+  }
+}
+```
+
+Parallel oEmbed verification of all candidates (YouTube/Vimeo).
+
+**Test Trailer Candidate**:
+```
+POST /api/v1/movies/:id/trailer/candidates/:candidateId/test
+
+Response: {
+  data: {
+    success: boolean,
+    error?: 'unavailable' | 'rate_limited' | 'region_blocked' | 'format_error',
+    message?: string
+  }
+}
+```
+
+Uses yt-dlp `--simulate` to test download without actually downloading.
+
+**Retry Trailer Download**:
+```
+POST /api/v1/movies/:id/trailer/candidates/:candidateId/retry
+
+Response: {
+  data: {
+    success: boolean,
+    message: string,
+    wasUnavailable?: boolean
+  }
+}
+```
+
+**Delete Selected Trailer**:
+```
+DELETE /api/v1/movies/:id/trailer
+
+Response: { success: true }
+```
+
+**Lock/Unlock Trailer**:
+```
+POST /api/v1/movies/:id/trailer/lock
+POST /api/v1/movies/:id/trailer/unlock
+
+Response: { success: true }
 ```
 
 ### Jobs
@@ -576,6 +708,51 @@ socket.on('bulk:progress', (data) => {
 });
 ```
 
+**Trailer Download Progress**:
+```typescript
+socket.on('trailer:progress', (data) => {
+  // data: {
+  //   entityType: 'movie' | 'series' | 'episode',
+  //   entityId: number,
+  //   candidateId: number,
+  //   progress: {
+  //     percentage: number,      // 0-100
+  //     downloadedBytes: number,
+  //     totalBytes: number,
+  //     speed: string,           // e.g., "2.5MiB/s"
+  //     eta: number              // seconds remaining
+  //   }
+  // }
+});
+```
+
+**Trailer Download Complete**:
+```typescript
+socket.on('trailer:completed', (data) => {
+  // data: {
+  //   entityType: 'movie' | 'series' | 'episode',
+  //   entityId: number,
+  //   candidateId: number,
+  //   cacheFileId: number,
+  //   filePath: string,
+  //   fileSize: number
+  // }
+});
+```
+
+**Trailer Download Failed**:
+```typescript
+socket.on('trailer:failed', (data) => {
+  // data: {
+  //   entityType: 'movie' | 'series' | 'episode',
+  //   entityId: number,
+  //   candidateId: number,
+  //   error: 'unavailable' | 'rate_limited' | 'download_error',
+  //   message: string
+  // }
+});
+```
+
 ## Authentication
 
 ### API Key Authentication
@@ -722,11 +899,13 @@ Body: { ids: [1, 2, 3] }
 
 **Bulk Enrich**:
 ```
-POST /api/v1/jobs/bulk
-Body: {
-  type: 'enrich',
-  entity_type: 'movie',
-  entity_ids: [1, 2, 3]
+POST /api/v1/enrichment/bulk-run
+
+Response (202 Accepted): {
+  data: {
+    jobId: number,
+    estimatedDuration: number  // seconds
+  }
 }
 ```
 
@@ -891,4 +1070,4 @@ Different limits for different endpoints:
 - [Architecture Overview](OVERVIEW.md) - System design
 - [Database Schema](DATABASE.md) - Data model
 - [Job Queue](JOB_QUEUE.md) - Background processing
-- [Phase Documentation](../phases/) - API usage by phase
+- [Operational Concepts](../concepts/) - API usage by job

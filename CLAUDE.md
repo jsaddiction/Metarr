@@ -28,7 +28,7 @@ Metarr is a Docker-first metadata management application that bridges media down
 
 ```bash
 # Clone and install
-git clone https://github.com/yourusername/metarr.git
+git clone https://github.com/jsaddiction/Metarr.git
 cd metarr
 npm install
 
@@ -47,18 +47,30 @@ npm start              # Run production server
 
 ## Architecture at a Glance
 
-### Phase-Based System
+### Three-Job Pipeline
 
-Metarr operates through independent, idempotent phases that form an automated chain:
+Metarr processes media through three independent jobs:
 
-1. **Scanning** - Discover and classify files (REQUIRED)
-2. **Enrichment** - Fetch metadata and select assets (optional)
-3. **Publishing** - Deploy assets to library (optional)
+```
+SCANNING → ENRICHMENT → PUBLISHING
+```
+
+1. **Scanning** - Discover files, classify, extract identity (REQUIRED)
+2. **Enrichment** - Fetch metadata, select assets, download to cache (optional)
+3. **Publishing** - Deploy assets to library, generate NFO (optional)
+
+**Operational Concepts** (design principles): [docs/concepts/](docs/concepts/README.md)
+**Implementation Details** (media-specific): [docs/implementation/](docs/implementation/README.md)
+
+### Independent Jobs
+
+Beyond the main pipeline, Metarr supports independent jobs:
+
 4. **Player Sync** - Update media players (optional)
 5. **Verification** - Ensure cache↔library consistency (optional)
 6. **Notification** - Send filtered notifications (optional)
 
-**See**: [docs/phases/OVERVIEW.md](docs/phases/OVERVIEW.md) for complete phase documentation.
+**See**: [docs/concepts/](docs/concepts/README.md) for complete job documentation.
 
 ### Asset Tiers
 
@@ -157,10 +169,11 @@ Before EVERY commit, verify ALL items:
 |-------------|-------------------|
 | New API endpoint | docs/architecture/API.md |
 | Database change | docs/architecture/DATABASE.md |
-| Phase behavior | docs/phases/[PHASE].md |
-| New configuration | docs/getting-started/CONFIGURATION.md |
-| Component pattern | docs/frontend/COMPONENTS.md |
-| Provider change | docs/providers/[PROVIDER].md |
+| Job/phase behavior | docs/concepts/[JOB]/ |
+| Media-specific implementation | docs/implementation/[MEDIA_TYPE]/ |
+| New configuration | Update relevant concepts or architecture doc |
+| Component pattern | docs/frontend/COMPONENT_REFERENCE.md |
+| Provider change | docs/implementation/Providers/[PROVIDER].md |
 | Asset system change | docs/architecture/ASSET_MANAGEMENT/ |
 
 ### Git Commit Standards
@@ -220,10 +233,12 @@ Run: `npm test` or `npm run test:watch`
 - [docs/development/ROADMAP.md](docs/development/ROADMAP.md) - Current priorities
 
 **Key references**:
-- Architecture: [docs/architecture/](docs/architecture/)
-- Phases: [docs/phases/](docs/phases/)
-- Frontend: [docs/frontend/](docs/frontend/)
-- Reference: [docs/reference/](docs/reference/)
+- Operational Concepts: [docs/concepts/](docs/concepts/README.md) - Design principles for each job
+- Implementation: [docs/implementation/](docs/implementation/README.md) - Media-specific details (Movies, TV Shows, Music)
+- Job Queue: [docs/architecture/JOB_QUEUE.md](docs/architecture/JOB_QUEUE.md) - Job priorities, workers, configuration
+- Architecture: [docs/architecture/](docs/architecture/) - Database, API, asset management
+- Frontend: [docs/frontend/](docs/frontend/) - React components, styling
+- Reference: [docs/reference/](docs/reference/) - Technical specifications
 
 ---
 
@@ -256,14 +271,18 @@ data/                # Runtime data (git-ignored)
 
 docs/                # Documentation
 ├── INDEX.md         # Documentation map
-├── getting-started/ # Installation, setup
-├── architecture/    # System design
-├── phases/          # Phase documentation
-├── providers/       # Provider integrations
-├── players/         # Media player APIs
+├── concepts/  # Design principles
+│   ├── Scanning/    # Discovery, classification, identity
+│   ├── Enrichment/  # Scraping, downloading, caching
+│   ├── Publishing/  # Library deployment, NFO generation
+│   ├── PlayerSync/  # Media player notifications
+│   ├── Verification/ # Cache↔library consistency
+│   └── Notification/ # Alert delivery
+├── implementation/  # Media-specific implementation
+│   └── Movies/      # Movie enrichment pipeline
+├── architecture/    # System design (includes job queue)
 ├── frontend/        # Frontend docs
 ├── reference/       # Technical references
-├── operations/      # Troubleshooting, monitoring
 └── development/     # Development workflow
 ```
 
@@ -272,5 +291,5 @@ docs/                # Documentation
 ## Getting Help
 
 - **Documentation**: Start with [docs/INDEX.md](docs/INDEX.md)
-- **Issues**: [GitHub Issues](https://github.com/yourusername/metarr/issues)
+- **Issues**: [GitHub Issues](https://github.com/jsaddiction/Metarr/issues)
 - **Development Questions**: See [docs/development/WORKFLOW.md](docs/development/WORKFLOW.md)
