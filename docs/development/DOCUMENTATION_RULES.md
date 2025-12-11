@@ -173,13 +173,12 @@ wc -l docs/path/to/file.md
 |---------|------------------|----------|
 | New API endpoint | `docs/architecture/API.md` | High |
 | Database schema change | `docs/architecture/DATABASE.md` | High |
-| Phase behavior change | `docs/phases/[PHASE].md` | High |
-| Configuration option added | `docs/getting-started/CONFIGURATION.md` | High |
-| Provider integration change | `docs/providers/[PROVIDER].md` | Medium |
-| New component pattern | `docs/frontend/COMPONENTS.md` | Medium |
+| Job behavior change | `docs/concepts/[JOB]/` | High |
+| Configuration option added | Relevant concepts or architecture doc | High |
+| Provider integration change | `docs/implementation/Providers/[PROVIDER].md` | Medium |
+| New component pattern | `docs/frontend/COMPONENT_REFERENCE.md` | Medium |
 | Job queue change | `docs/architecture/JOB_QUEUE.md` | Medium |
 | Asset system change | `docs/architecture/ASSET_MANAGEMENT/` | High |
-| New troubleshooting case | `docs/operations/TROUBLESHOOTING.md` | Low |
 | Coding standard change | `docs/development/CODING_STANDARDS.md` | Medium |
 
 ### Documentation Quality Checks
@@ -374,7 +373,7 @@ docs/architecture/ASSET_MANAGEMENT/
 
 2. Move entire file (preserve directory structure):
    ```
-   docs/phases/OLD_PHASE.md → docs/archive-2025-11-19/phases/OLD_PHASE.md
+   docs/concepts/OLD_JOB.md → docs/archive-2025-11-19/concepts/OLD_JOB.md
    ```
 
 3. Update links pointing to archived doc:

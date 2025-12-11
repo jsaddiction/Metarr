@@ -5,7 +5,7 @@
 **Related Docs**:
 - Parent: [Architecture Overview](OVERVIEW.md)
 - Database: [Jobs Table](DATABASE.md#job-queue-table)
-- Phases: [Phase Documentation](../phases/)
+- Operational Concepts: [Job Documentation](../concepts/)
 
 ## Quick Reference
 
@@ -141,6 +141,7 @@ interface Job {
 | `sync-player` | Update media player | player | Post-publish, manual |
 | `verify-cache` | Check cache consistency | - | Manual, schedule |
 | `cleanup-orphans` | Remove orphaned files | - | Schedule |
+| `download-trailer` | Download trailer video | movie/episode | User selection, retry |
 
 ## Worker Pool
 
@@ -349,21 +350,38 @@ async function handleEnrichMetadata(job: Job): Promise<void> {
 
 ### Chain Configuration
 
-Chaining controlled by phase configuration:
+Chaining controlled by job configuration. See [Operational Concepts](../concepts/README.md#job-configuration) for full configuration options.
+
+### Pass-Through Behavior
+
+When a job is disabled, it passes through immediately to the next job in the chain:
 
 ```typescript
-// Phase config example
-{
-  enrichment: {
-    enabled: true,
-    chainToPublish: true    // Create publish job after enrichment
-  },
-  publishing: {
-    enabled: true,
-    chainToSync: false      // Don't auto-sync players
+async function processEnrichmentJob(job: Job): Promise<void> {
+  const config = await jobConfigService.get('enrichment');
+
+  if (!config.enabled) {
+    logger.info('Enrichment disabled, passing to next job');
+    await createPublishingJob(job.payload.entityId);
+    return; // Job completes immediately
   }
+
+  // Job enabled - execute
+  await enrichmentService.enrich(job.payload);
+  await createPublishingJob(job.payload.entityId);
 }
 ```
+
+This ensures the automation chain continues even when jobs are disabled.
+
+### Chain Termination
+
+If a job fails and cannot recover:
+1. Job marked as failed (status='failed')
+2. Error logged with context
+3. **Next job NOT created** (chain terminates)
+4. Notification job created (if error notifications enabled)
+5. User can retry manually from UI
 
 ## Progress Tracking
 
@@ -531,9 +549,73 @@ GROUP BY type;
 - No workers hung (job timeout)
 - Even job distribution
 
+## Trailer Download Jobs
+
+The `download-trailer` job type handles video downloads with real-time progress reporting.
+
+### Job Payload
+
+```typescript
+interface DownloadTrailerPayload {
+  entityType: 'movie' | 'series' | 'episode';
+  entityId: number;
+  candidateId: number;
+  sourceUrl: string;
+  movieTitle?: string;  // For logging
+}
+```
+
+### Download Flow
+
+1. **Job Created**: User selects trailer candidate via API
+2. **Worker Claims**: Job picked up with high priority (user-initiated)
+3. **Progress Streaming**: yt-dlp stdout parsed for download progress
+4. **WebSocket Broadcasts**: Real-time `trailer:progress` events
+5. **Cache Storage**: Video stored in content-addressed cache
+6. **Completion**: `trailer:completed` event with file details
+
+### Error Classification
+
+The trailer download system classifies errors for smart retry behavior:
+
+| Error Type | Meaning | Retry Behavior |
+|------------|---------|----------------|
+| `unavailable` | Video permanently gone (oEmbed verified) | Never auto-retry |
+| `rate_limited` | Provider rate limit (429) | Retry on next enrichment |
+| `download_error` | Other failures (network, format) | Retry on next enrichment |
+
+### Progress Events
+
+Progress is parsed from yt-dlp stdout and broadcast via WebSocket:
+
+```typescript
+// Example progress event
+{
+  type: 'trailer:progress',
+  entityType: 'movie',
+  entityId: 123,
+  candidateId: 456,
+  progress: {
+    percentage: 45.2,
+    downloadedBytes: 52428800,
+    totalBytes: 115343360,
+    speed: '2.5MiB/s',
+    eta: 23
+  }
+}
+```
+
+### oEmbed Verification
+
+Before and after download failures, the system verifies video availability via oEmbed:
+- **YouTube**: `https://www.youtube.com/oembed?url=...`
+- **Vimeo**: `https://vimeo.com/api/oembed.json?url=...`
+
+HEAD request only (lightweight), returns `exists`, `not_found`, or `unknown`.
+
 ## See Also
 
 - [Architecture Overview](OVERVIEW.md) - System design
 - [Database Schema](DATABASE.md) - Jobs table structure
-- [Phase Documentation](../phases/) - Job handlers for each phase
+- [Operational Concepts](../concepts/) - Job handlers for each job type
 - [API Architecture](API.md) - Job management endpoints

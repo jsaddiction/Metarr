@@ -242,7 +242,7 @@ async function verifyCacheFile(cacheFile: CacheImageFile): Promise<boolean> {
 
 ### Verification Phase Integration
 
-The [Verification Phase](../../phases/VERIFICATION.md) uses content verification to ensure cache integrity:
+The [Verification Phase](../../concepts/Verification/README.md) uses content verification to ensure cache integrity:
 - Recalculate hash for cached files
 - Compare against stored hash
 - Report corruption or missing files
@@ -330,11 +330,11 @@ Before deleting cached files:
 3. Move to recycle bin (30-day retention)
 4. Permanently delete after retention period
 
-See [Verification Phase](../../phases/VERIFICATION.md) for cleanup procedures.
+See [Verification Phase](../../concepts/Verification/README.md) for cleanup procedures.
 
 ## See Also
 
 - [Asset Management Overview](README.md) - Three-tier architecture
 - [Two-Copy System](TWO_COPY_SYSTEM.md) - Cache vs library storage
 - [Database Schema](../DATABASE.md) - Cache table structures
-- [Verification Phase](../../phases/VERIFICATION.md) - Cache integrity checks
+- [Verification Phase](../../concepts/Verification/README.md) - Cache integrity checks

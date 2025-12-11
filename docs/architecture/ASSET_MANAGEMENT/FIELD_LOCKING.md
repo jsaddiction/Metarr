@@ -4,7 +4,7 @@
 
 **Related Docs**:
 - Parent: [Asset Management](README.md)
-- Enrichment: [Enrichment Phase](../../phases/ENRICHMENT.md)
+- Enrichment: [Enrichment Phase](../../concepts/Enrichment/README.md)
 - Database: [Lock Fields](../DATABASE.md#movies)
 
 ## Quick Reference
@@ -127,7 +127,7 @@ Users can unlock fields to re-enable automation:
 
 ## Enrichment Phase Behavior
 
-The [Enrichment Phase](../../phases/ENRICHMENT.md) respects locks during metadata fetching.
+The [Enrichment Phase](../../concepts/Enrichment/README.md) respects locks during metadata fetching.
 
 ### Lock Check Process
 
@@ -173,7 +173,7 @@ Enrichment:
 
 ## Publishing Phase Behavior
 
-The [Publishing Phase](../../phases/PUBLISHING.md) respects locks during asset deployment.
+The [Publishing Phase](../../concepts/Publishing/README.md) respects locks during asset deployment.
 
 ### Asset Publishing with Locks
 
@@ -455,6 +455,6 @@ Lock columns add minimal overhead:
 ## See Also
 
 - [Asset Management Overview](README.md) - Three-tier architecture
-- [Enrichment Phase](../../phases/ENRICHMENT.md) - Lock behavior during enrichment
-- [Publishing Phase](../../phases/PUBLISHING.md) - Lock behavior during publishing
+- [Enrichment Phase](../../concepts/Enrichment/README.md) - Lock behavior during enrichment
+- [Publishing Phase](../../concepts/Publishing/README.md) - Lock behavior during publishing
 - [Database Schema](../DATABASE.md) - Lock column definitions

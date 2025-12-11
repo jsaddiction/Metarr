@@ -315,13 +315,12 @@ Fix bug + Add feature + Update docs + Refactor → Test everything → One big c
 |-------------|-------------------|
 | New API endpoint | `docs/architecture/API.md` |
 | New database table/column | `docs/architecture/DATABASE.md` |
-| Phase behavior change | `docs/phases/[PHASE].md` |
-| New configuration option | `docs/getting-started/CONFIGURATION.md` |
-| New component pattern | `docs/frontend/COMPONENTS.md` |
-| Provider integration change | `docs/providers/[PROVIDER].md` |
+| Job behavior change | `docs/concepts/[JOB]/` |
+| New configuration option | Relevant concepts or architecture doc |
+| New component pattern | `docs/frontend/COMPONENT_REFERENCE.md` |
+| Provider integration change | `docs/implementation/Providers/[PROVIDER].md` |
 | Job queue change | `docs/architecture/JOB_QUEUE.md` |
 | Asset system change | `docs/architecture/ASSET_MANAGEMENT/` |
-| New troubleshooting case | `docs/operations/TROUBLESHOOTING.md` |
 | New test pattern | `docs/development/TESTING.md` |
 | Coding standard change | `docs/development/CODING_STANDARDS.md` |
 

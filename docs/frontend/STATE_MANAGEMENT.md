@@ -4,7 +4,7 @@
 
 **Related Docs**:
 - Parent: [Frontend README](./README.md)
-- Related: [ARCHITECTURE.md](./ARCHITECTURE.md), [API_LAYER.md](./API_LAYER.md), [COMPONENTS.md](./COMPONENTS.md)
+- Related: [ARCHITECTURE.md](./ARCHITECTURE.md), [API_LAYER.md](./API_LAYER.md), [COMPONENT_REFERENCE.md](./COMPONENT_REFERENCE.md)
 
 ---
 
@@ -606,5 +606,5 @@ if (error) return <ErrorMessage error={error} />;
 
 - [ARCHITECTURE.md](./ARCHITECTURE.md) - Overall frontend architecture
 - [API_LAYER.md](./API_LAYER.md) - API client structure
-- [COMPONENTS.md](./COMPONENTS.md) - Component patterns
+- [COMPONENT_REFERENCE.md](./COMPONENT_REFERENCE.md) - Component patterns
 - [ERROR_HANDLING.md](./ERROR_HANDLING.md) - Error handling strategies

@@ -5,8 +5,8 @@
 **Related Docs**:
 - Parent: [Asset Management](README.md)
 - Content Addressing: [CONTENT_ADDRESSING.md](CONTENT_ADDRESSING.md)
-- Publishing: [Publishing Phase](../../phases/PUBLISHING.md)
-- Verification: [Verification Phase](../../phases/VERIFICATION.md)
+- Publishing: [Publishing Phase](../../concepts/Publishing/README.md)
+- Verification: [Verification Phase](../../concepts/Verification/README.md)
 
 ## Quick Reference
 
@@ -221,7 +221,7 @@ Movie (2024)/
 
 ## Synchronization Process
 
-The [Publishing Phase](../../phases/PUBLISHING.md) synchronizes cache to library.
+The [Publishing Phase](../../concepts/Publishing/README.md) synchronizes cache to library.
 
 ### Publishing Workflow
 
@@ -405,6 +405,6 @@ Tools:
 
 - [Asset Management Overview](README.md) - Three-tier architecture
 - [Content Addressing](CONTENT_ADDRESSING.md) - SHA256 hashing and deduplication
-- [Publishing Phase](../../phases/PUBLISHING.md) - Cache to library synchronization
-- [Verification Phase](../../phases/VERIFICATION.md) - Consistency checks
+- [Publishing Phase](../../concepts/Publishing/README.md) - Cache to library synchronization
+- [Verification Phase](../../concepts/Verification/README.md) - Consistency checks
 - [Database Schema](../DATABASE.md) - Cache and library tables

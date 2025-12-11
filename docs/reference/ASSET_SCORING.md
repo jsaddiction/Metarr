@@ -4,7 +4,7 @@
 
 **Related Docs**:
 - Parent: [Reference Documentation](../INDEX.md#reference-technical-details)
-- Related: [Enrichment Phase](../phases/ENRICHMENT.md)
+- Related: [Enrichment Phase](../concepts/Enrichment/README.md)
 
 ---
 
@@ -375,4 +375,4 @@ If two assets have identical scores:
 - Provider metadata updated
 - User changes language preference
 
-**See**: [Enrichment Phase](../phases/ENRICHMENT.md) for how scores are used in asset selection.
+**See**: [Enrichment Phase](../concepts/Enrichment/README.md) for how scores are used in asset selection.

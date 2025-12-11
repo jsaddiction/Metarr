@@ -1,8 +1,11 @@
 # Development Roadmap
 
-Last updated: 2025-12-01
+Last updated: 2025-12-09
 
 ## In Progress
+- [ ] Single movie enrichment bug investigation
+  - Bug: Enriching a single movie enriches all movies in library
+  - Priority: Investigate root cause
 - [ ] Cast/Actors tab redesign (WIP)
   - [x] Database: Added `actors_order_locked`, `role_locked`, `removed` fields to movie_actors
   - [x] Backend: MovieCastController, getCast/updateCast service methods, API routes
@@ -77,6 +80,18 @@ Last updated: 2025-12-01
   - Handle player-specific edge cases
 
 ## Completed Recently
+- [x] Publish settings consolidation (2025-12-09)
+  - Single "Automatic Publishing" toggle replaces individual publish toggles
+  - Publishing always publishes ALL selected assets (posters, fanart, trailers, actors)
+  - Individual asset types controlled via asset limits (set to 0 to disable)
+  - Binary assets (maxAllowed=1) now display as switches instead of number inputs
+  - Removed publishAssets, publishActors, publishTrailers from config
+- [x] Trailer settings consolidation (2025-12-09)
+  - Trailers now use same asset limit pattern as other assets (0 = disabled, 1 = enabled)
+  - Removed separate publishTrailers toggle from phase config
+  - TrailerPlayer simplified to use native HTML5 video controls
+  - Auto-selected trailers now properly queue download jobs during enrichment
+  - Trailer toggle appears under Movies in Asset Download Limits settings
 - [x] Configuration consolidation (2025-11-25)
   - Removed redundant per-library automation configuration
   - Consolidated to global workflow settings via PhaseConfigService

@@ -3,7 +3,7 @@
 **Purpose**: Overview of Metarr's React frontend architecture, build system, and technology stack.
 
 **Related Docs**:
-- Related: [COMPONENTS.md](./COMPONENTS.md), [STATE_MANAGEMENT.md](./STATE_MANAGEMENT.md), [API_LAYER.md](./API_LAYER.md)
+- Related: [COMPONENT_REFERENCE.md](./COMPONENT_REFERENCE.md), [STATE_MANAGEMENT.md](./STATE_MANAGEMENT.md), [API_LAYER.md](./API_LAYER.md)
 
 ---
 
@@ -398,8 +398,8 @@ export const Widgets: React.FC = () => {
 
 ## See Also
 
-- [COMPONENTS.md](./COMPONENTS.md) - Component organization and patterns
+- [COMPONENT_REFERENCE.md](./COMPONENT_REFERENCE.md) - Component organization and patterns
 - [STATE_MANAGEMENT.md](./STATE_MANAGEMENT.md) - TanStack Query patterns
 - [API_LAYER.md](./API_LAYER.md) - Network communication
 - [ERROR_HANDLING.md](./ERROR_HANDLING.md) - Error boundaries and recovery
-- [UI_STANDARDS.md](./UI_STANDARDS.md) - Design system and styling
+- [STYLING_GUIDE.md](./STYLING_GUIDE.md) - Design system and styling

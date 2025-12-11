@@ -4,7 +4,7 @@
 
 **Related Docs**:
 - Parent: [Reference Documentation](../INDEX.md#reference-technical-details)
-- Related: [Webhooks](WEBHOOKS.md), [Configuration](../getting-started/CONFIGURATION.md)
+- Related: [Webhooks](WEBHOOKS.md)
 
 ---
 

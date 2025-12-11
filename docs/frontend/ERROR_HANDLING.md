@@ -4,7 +4,7 @@
 
 **Related Docs**:
 - Parent: [Frontend README](./README.md)
-- Related: [STATE_MANAGEMENT.md](./STATE_MANAGEMENT.md), [COMPONENTS.md](./COMPONENTS.md), [API_LAYER.md](./API_LAYER.md)
+- Related: [STATE_MANAGEMENT.md](./STATE_MANAGEMENT.md), [COMPONENT_REFERENCE.md](./COMPONENT_REFERENCE.md), [API_LAYER.md](./API_LAYER.md)
 
 ---
 
@@ -593,6 +593,6 @@ When handling errors:
 ## See Also
 
 - [STATE_MANAGEMENT.md](./STATE_MANAGEMENT.md) - Error handling in mutations
-- [COMPONENTS.md](./COMPONENTS.md) - Error UI patterns
-- [UI_STANDARDS.md](./UI_STANDARDS.md) - Error state styling
+- [COMPONENT_REFERENCE.md](./COMPONENT_REFERENCE.md) - Error UI patterns
+- [STYLING_GUIDE.md](./STYLING_GUIDE.md) - Error state styling
 - [API_LAYER.md](./API_LAYER.md) - ApiError class

@@ -4,7 +4,7 @@
 
 **Related Docs**:
 - Parent: [Reference Documentation](../INDEX.md#reference-technical-details)
-- Related: [Scanning Phase](../phases/SCANNING.md), [Publishing Phase](../phases/PUBLISHING.md)
+- Related: [Scanning Phase](../concepts/Scanning/README.md), [Publishing Phase](../concepts/Publishing/README.md)
 
 ---
 

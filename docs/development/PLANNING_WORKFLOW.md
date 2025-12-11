@@ -622,7 +622,7 @@ ALTER TABLE movies ADD COLUMN is_favorite BOOLEAN DEFAULT 0;
 - [ ] Integrate FavoriteButton in MovieCard and MovieDetailView
 - [ ] Unit tests for service and component
 - [ ] Integration test for API endpoint
-- [ ] Update docs: DATABASE.md, API.md, COMPONENTS.md
+- [ ] Update docs: DATABASE.md, API.md, COMPONENT_REFERENCE.md
 
 ---
 
@@ -630,7 +630,7 @@ ALTER TABLE movies ADD COLUMN is_favorite BOOLEAN DEFAULT 0;
 
 - [ ] `docs/architecture/DATABASE.md` - movies table schema
 - [ ] `docs/architecture/API.md` - PATCH /movies/:id/favorite endpoint
-- [ ] `docs/frontend/COMPONENTS.md` - FavoriteButton component
+- [ ] `docs/frontend/COMPONENT_REFERENCE.md` - FavoriteButton component
 
 ---
 
@@ -709,7 +709,7 @@ git push
 # Frontend
 git add public/frontend/src/components/atoms/FavoriteButton.tsx
 git add public/frontend/src/hooks/useToggleFavorite.ts
-git add docs/frontend/COMPONENTS.md
+git add docs/frontend/COMPONENT_REFERENCE.md
 git commit -m "feat(ui): add FavoriteButton component with optimistic updates"
 git push
 
@@ -775,7 +775,7 @@ Implementation:
 Documentation updated:
 - docs/architecture/DATABASE.md
 - docs/architecture/API.md
-- docs/frontend/COMPONENTS.md
+- docs/frontend/COMPONENT_REFERENCE.md
 ```
 
 ```bash
@@ -965,7 +965,7 @@ git branch -d feature/movie-favorites
 > ### Documentation Updates
 > - `docs/architecture/DATABASE.md`
 > - `docs/architecture/API.md`
-> - `docs/frontend/COMPONENTS.md`
+> - `docs/frontend/COMPONENT_REFERENCE.md`
 >
 > ### Implementation Tasks (for ROADMAP.md)
 > 1. Database migration

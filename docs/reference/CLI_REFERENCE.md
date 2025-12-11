@@ -129,7 +129,7 @@ DATABASE_URL=./data/metarr.sqlite  # Database path/connection
 TMDB_API_KEY=your_key       # TMDB API key (optional - embedded key provided)
 ```
 
-**See**: [Configuration Guide](../getting-started/CONFIGURATION.md) for complete list
+Environment variables are configured in `.env` file - see `.env.example` for available options.
 
 ---
 

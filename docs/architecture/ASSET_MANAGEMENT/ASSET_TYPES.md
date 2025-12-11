@@ -441,11 +441,11 @@ When multiple providers offer the same asset type:
 3. **User Preference**: Language, style preferences
 4. **Availability**: Fallback to lower-priority provider if preferred unavailable
 
-See [Enrichment Phase](../../phases/ENRICHMENT.md) for scoring algorithm details.
+See [Enrichment Phase](../../concepts/Enrichment/README.md) for scoring algorithm details.
 
 ## See Also
 
 - [Asset Management Overview](README.md) - Three-tier architecture
 - [Content Addressing](CONTENT_ADDRESSING.md) - File storage structure
-- [Enrichment Phase](../../phases/ENRICHMENT.md) - Asset fetching and scoring
-- [Publishing Phase](../../phases/PUBLISHING.md) - Asset deployment
+- [Enrichment Phase](../../concepts/Enrichment/README.md) - Asset fetching and scoring
+- [Publishing Phase](../../concepts/Publishing/README.md) - Asset deployment

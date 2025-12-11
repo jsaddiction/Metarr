@@ -40,12 +40,6 @@
 | **[API Layer](API_LAYER.md)** | API client, request handling, error management | Adding API calls |
 | **[Error Handling](ERROR_HANDLING.md)** | Error boundaries, user feedback, recovery | Implementing error states |
 
-### Reference Documentation
-
-| Document | Purpose | Audience |
-|----------|---------|----------|
-| **[TAILWIND_SHADCN_INTEGRATION.md](TAILWIND_SHADCN_INTEGRATION.md)** | Technical details of Tailwind + shadcn setup | AI agents, advanced developers |
-
 ---
 
 ## Architecture

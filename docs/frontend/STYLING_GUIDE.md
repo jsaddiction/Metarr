@@ -3,8 +3,8 @@
 **Purpose**: Comprehensive styling rules, design system principles, and component conventions for Metarr's frontend UI. Single source of truth for all styling decisions.
 
 **Related Docs**:
-- Parent: [Frontend Documentation](../INDEX.md#frontend)
-- See also: [Components](COMPONENTS.md), [Pages](PAGES.md)
+- Parent: [Frontend Documentation](README.md)
+- See also: [Component Reference](COMPONENT_REFERENCE.md)
 
 ---
 
@@ -70,7 +70,7 @@ The styling architecture operates as three integrated layers:
 **Custom components** (build when needed):
 - PageContainer, SettingCard, EmptyState
 - Compose from utilities + shadcn components
-- Document usage in [Components.md](COMPONENTS.md)
+- Document usage in [Components.md](COMPONENT_REFERENCE.md)
 
 **Rule**: Use existing components before creating custom styles. Ask: "Does this exist in shadcn?" first.
 
@@ -724,15 +724,13 @@ Focused:  ring-1 ring-primary-500
 
 ## Related Documentation
 
-**Component Patterns**: [Components](COMPONENTS.md) - Reusable component examples
-
-**Page Templates**: [Pages](PAGES.md) - Full page layout examples
+**Component Patterns**: [Component Reference](COMPONENT_REFERENCE.md) - Reusable component examples
 
 **Configuration**: [Tailwind Config](../../public/frontend/tailwind.config.js) - Custom theme and token definitions
 
 **Global Styles**: [Global CSS](../../public/frontend/src/styles/globals.css) - Utility class definitions and CSS variables
 
-**Frontend Overview**: [Frontend Docs](../frontend/README.md) - Architecture and structure
+**Frontend Overview**: [Frontend Docs](README.md) - Architecture and structure
 
 ---
 

@@ -5,7 +5,7 @@
 **Related Docs**:
 - Details: [Database](DATABASE.md), [Job Queue](JOB_QUEUE.md), [API](API.md)
 - Asset System: [Asset Management](ASSET_MANAGEMENT/)
-- Phases: [Phase Documentation](../phases/)
+- Operational Concepts: [Job Documentation](../concepts/)
 
 ## Quick Reference
 
@@ -365,13 +365,17 @@ npm start
 - [Job Queue](JOB_QUEUE.md) - Background processing system
 - [API Architecture](API.md) - REST + WebSocket reference
 
-### Phase Documentation
-- [Phase Overview](../phases/) - All phase documentation
-- [Scanning Phase](../phases/SCANNING.md) - File discovery
-- [Enrichment Phase](../phases/ENRICHMENT.md) - Metadata & asset fetching
-- [Publishing Phase](../phases/PUBLISHING.md) - Asset deployment
+### Operational Concepts
+- [Operational Concepts](../concepts/) - Design principles for each job
+- [Scanning](../concepts/Scanning/) - File discovery, classification, identity
+- [Enrichment](../concepts/Enrichment/) - Metadata & asset fetching
+- [Publishing](../concepts/Publishing/) - Asset deployment
+
+### Job System
+- [Job Queue](JOB_QUEUE.md) - Job priorities, workers, configuration
 
 ### Integration
-- [Provider Documentation](../providers/) - External metadata APIs
-- [Player Documentation](../players/) - Media player integrations
+- [Provider Concepts](../concepts/Enrichment/Providers/) - Provider capabilities
+- [Provider Implementation](../implementation/Providers/) - API integration details
+- [Player Sync Implementation](../implementation/PlayerSync/) - Media player integrations
 - [Webhooks](../reference/WEBHOOKS.md) - Download manager webhooks

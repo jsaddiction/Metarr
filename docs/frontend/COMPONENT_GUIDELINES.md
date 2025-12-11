@@ -3,9 +3,9 @@
 **Purpose**: Prescriptive rules and principles for creating React components in the Metarr frontend. Defines when, where, and how to build components that are maintainable, reusable, and follow atomic design principles.
 
 **Related Docs**:
-- [COMPONENTS.md](./COMPONENTS.md) - Component organization and patterns
+- [COMPONENT_REFERENCE.md](./COMPONENT_REFERENCE.md) - Component organization and patterns
 - [ARCHITECTURE.md](./ARCHITECTURE.md) - Overall frontend architecture
-- [UI_STANDARDS.md](./UI_STANDARDS.md) - Design system and styling
+- [STYLING_GUIDE.md](./STYLING_GUIDE.md) - Design system and styling
 - [STATE_MANAGEMENT.md](./STATE_MANAGEMENT.md) - TanStack Query patterns
 - [/CLAUDE.md](/CLAUDE.md) - Coding standards and TypeScript rules
 
@@ -1008,11 +1008,11 @@ Use this flowchart when deciding how to organize components:
 
 **Frontend Architecture**:
 - [ARCHITECTURE.md](./ARCHITECTURE.md) - Overall frontend architecture
-- [COMPONENTS.md](./COMPONENTS.md) - Component organization and patterns
+- [COMPONENT_REFERENCE.md](./COMPONENT_REFERENCE.md) - Component organization and patterns
 - [STATE_MANAGEMENT.md](./STATE_MANAGEMENT.md) - TanStack Query usage
 - [API_LAYER.md](./API_LAYER.md) - API communication patterns
 - [ERROR_HANDLING.md](./ERROR_HANDLING.md) - Error boundaries and UI error handling
-- [UI_STANDARDS.md](./UI_STANDARDS.md) - Design system and Tailwind styling
+- [STYLING_GUIDE.md](./STYLING_GUIDE.md) - Design system and Tailwind styling
 
 **Development**:
 - [/CLAUDE.md](/CLAUDE.md) - AI assistant rules and coding standards

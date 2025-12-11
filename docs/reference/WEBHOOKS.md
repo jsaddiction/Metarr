@@ -4,7 +4,7 @@
 
 **Related Docs**:
 - Parent: [Reference Documentation](../INDEX.md#reference-technical-details)
-- Related: [Scanning Phase](../phases/SCANNING.md), [Path Mapping](PATH_MAPPING.md)
+- Related: [Scanning Phase](../concepts/Scanning/README.md), [Path Mapping](PATH_MAPPING.md)
 
 ---
 

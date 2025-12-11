@@ -56,15 +56,13 @@ npm start
 Complete documentation available in the [`docs/`](docs/) directory:
 
 - **[INDEX.md](docs/INDEX.md)** - Complete documentation map
-- **[Getting Started](docs/getting-started/)** - Installation, configuration, first run
+- **[Development](docs/development/)** - Workflow, roadmap, testing
 - **[Architecture](docs/architecture/)** - System design, asset management, database
-- **[Phases](docs/phases/)** - Scanning, enrichment, publishing workflows
-- **[Providers](docs/providers/)** - TMDB, TVDB, OMDb, Fanart.tv integration
-- **[Players](docs/players/)** - Kodi, Jellyfin, Plex integration
+- **[Operational Concepts](docs/concepts/)** - Scanning, enrichment, publishing workflows
+- **[Providers](docs/concepts/Enrichment/Providers/)** - TMDB, TVDB, OMDb, Fanart.tv concepts
+- **[Implementation](docs/implementation/)** - Media-specific implementations
 - **[Frontend](docs/frontend/)** - React component architecture
 - **[Reference](docs/reference/)** - Asset scoring, NFO format, webhooks
-- **[Development](docs/development/)** - Workflow, roadmap, testing
-
 ---
 
 ## Contributing

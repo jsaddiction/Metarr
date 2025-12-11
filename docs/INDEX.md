@@ -6,11 +6,6 @@ Complete documentation map for Metarr - intelligent metadata management for medi
 
 ## Quick Start
 
-**New to Metarr?** Start here:
-1. [Installation](getting-started/INSTALLATION.md) - Setup and deployment
-2. [Configuration](getting-started/CONFIGURATION.md) - Configure libraries and providers
-3. [First Run](getting-started/FIRST_RUN.md) - Initial scan and workflow
-
 **For Developers**:
 - [CLAUDE.md](/CLAUDE.md) - AI assistant workflow rules (CRITICAL)
 - [WORKFLOW.md](development/WORKFLOW.md) - Development workflow (CRITICAL)
@@ -18,21 +13,53 @@ Complete documentation map for Metarr - intelligent metadata management for medi
 
 ---
 
-## Getting Started
+## Operational Concepts
 
-| Document | Description |
-|----------|-------------|
-| [INSTALLATION.md](getting-started/INSTALLATION.md) | Installation steps (bare metal, Docker, NAS) |
-| [DOCKER.md](getting-started/DOCKER.md) | Docker Compose configuration |
-| [CONFIGURATION.md](getting-started/CONFIGURATION.md) | Environment variables, libraries, providers |
-| [FIRST_RUN.md](getting-started/FIRST_RUN.md) | Initial scan workflow and verification |
-| [MIGRATION.md](getting-started/MIGRATION.md) | Migrating from other systems |
+Design principles and conceptual documentation for how Metarr processes media.
+
+### Main Pipeline
+
+| Job | Documentation | Purpose |
+|-----|---------------|---------|
+| Scanning | [concepts/Scanning/](concepts/Scanning/) | Discover, classify, identify media |
+| Enrichment | [concepts/Enrichment/](concepts/Enrichment/) | Gather metadata and select assets |
+| Publishing | [concepts/Publishing/](concepts/Publishing/) | Deploy to library for players |
+| Player Sync | [concepts/PlayerSync/](concepts/PlayerSync/) | Notify media players of changes |
+
+### Independent Jobs
+
+| Job | Documentation | Purpose |
+|-----|---------------|---------|
+| Verification | [concepts/Verification/](concepts/Verification/) | Ensure cache↔library consistency |
+| Notification | [concepts/Notification/](concepts/Notification/) | Send filtered alerts to users |
+
+---
+
+## Implementation Details
+
+Media-specific implementation for each operational concept.
+
+### Media Types
+
+| Media Type | Documentation | Status |
+|------------|---------------|--------|
+| Movies | [implementation/Movies/](implementation/Movies/) | Complete |
+| TV Shows | Planned | - |
+| Music | Planned | - |
+
+### Cross-Cutting Implementation
+
+| Component | Documentation | Description |
+|-----------|---------------|-------------|
+| Providers | [implementation/Providers/](implementation/Providers/) | Provider API integration details |
+| Player Sync | [implementation/PlayerSync/](implementation/PlayerSync/) | Media player integration (Kodi, Jellyfin, Plex) |
 
 ---
 
 ## Architecture
 
 ### Core System
+
 | Document | Description |
 |----------|-------------|
 | [OVERVIEW.md](architecture/OVERVIEW.md) | System architecture at a glance |
@@ -41,6 +68,7 @@ Complete documentation map for Metarr - intelligent metadata management for medi
 | [API.md](architecture/API.md) | REST API + WebSocket communication |
 
 ### Asset Management
+
 | Document | Description |
 |----------|-------------|
 | [ASSET_MANAGEMENT/README.md](architecture/ASSET_MANAGEMENT/README.md) | Asset system overview (two-copy architecture) |
@@ -51,43 +79,35 @@ Complete documentation map for Metarr - intelligent metadata management for medi
 
 ---
 
-## Phases (Workflow System)
+## Job System
+
+Technical documentation for the job-driven automation system.
 
 | Document | Description |
 |----------|-------------|
-| [OVERVIEW.md](phases/OVERVIEW.md) | Phase system introduction |
-| [SCANNING.md](phases/SCANNING.md) | File discovery and classification (REQUIRED phase) |
-| [ENRICHMENT.md](phases/ENRICHMENT.md) | Metadata fetching and asset selection |
-| [PUBLISHING.md](phases/PUBLISHING.md) | Asset deployment to library |
-| [PLAYER_SYNC.md](phases/PLAYER_SYNC.md) | Media player library updates |
-| [VERIFICATION.md](phases/VERIFICATION.md) | Cache↔library consistency checks |
-| [NOTIFICATION.md](phases/NOTIFICATION.md) | Filtered notification system |
+| [architecture/JOB_QUEUE.md](architecture/JOB_QUEUE.md) | Job priorities, worker pools, pass-through behavior |
 
 ---
 
 ## Providers
 
-| Document | Description |
-|----------|-------------|
-| [OVERVIEW.md](providers/OVERVIEW.md) | Provider system architecture |
-| [RATE_LIMITING.md](providers/RATE_LIMITING.md) | Rate limiting and backoff strategies |
-| [TMDB.md](providers/TMDB.md) | TMDB API integration |
-| [TVDB.md](providers/TVDB.md) | TVDB API integration |
-| [FANART.md](providers/FANART.md) | Fanart.tv integration |
-| [MUSICBRAINZ.md](providers/MUSICBRAINZ.md) | MusicBrainz integration (planned) |
-| [LOCAL_BACKUP.md](providers/LOCAL_BACKUP.md) | Local provider fallback |
-| [GETTING_API_KEYS.md](providers/GETTING_API_KEYS.md) | How to obtain API keys |
-
----
-
-## Media Players
+### Concepts (concepts/Enrichment/Providers/)
 
 | Document | Description |
 |----------|-------------|
-| [OVERVIEW.md](players/OVERVIEW.md) | Player integration overview |
-| [KODI.md](players/KODI.md) | Kodi JSON-RPC integration (WebSocket + HTTP) |
-| [JELLYFIN.md](players/JELLYFIN.md) | Jellyfin API integration (planned) |
-| [PLEX.md](players/PLEX.md) | Plex API integration (planned) |
+| [README.md](concepts/Enrichment/Providers/README.md) | Provider capabilities and selection strategies |
+| [RATE_LIMITING.md](concepts/Enrichment/Providers/RATE_LIMITING.md) | Rate limiting, circuit breakers, backoff |
+
+### Implementation (implementation/Providers/)
+
+| Document | Description |
+|----------|-------------|
+| [TMDB.md](implementation/Providers/TMDB.md) | TMDB API integration |
+| [TVDB.md](implementation/Providers/TVDB.md) | TVDB API integration |
+| [OMDB.md](implementation/Providers/OMDB.md) | OMDb API (IMDb ratings, RT, Metacritic) |
+| [FANART.md](implementation/Providers/FANART.md) | Fanart.tv artwork integration |
+| [MUSICBRAINZ.md](implementation/Providers/MUSICBRAINZ.md) | MusicBrainz integration (planned) |
+| [LOCAL.md](implementation/Providers/LOCAL.md) | Local NFO parsing and backup |
 
 ---
 
@@ -95,13 +115,14 @@ Complete documentation map for Metarr - intelligent metadata management for medi
 
 | Document | Description |
 |----------|-------------|
+| [README.md](frontend/README.md) | Frontend documentation overview |
 | [ARCHITECTURE.md](frontend/ARCHITECTURE.md) | Frontend architecture and structure |
-| [COMPONENT_GUIDELINES.md](frontend/COMPONENT_GUIDELINES.md) | **Component creation rules and principles (prescriptive)** |
-| [COMPONENTS.md](frontend/COMPONENTS.md) | Component organization and patterns |
+| [COMPONENT_GUIDELINES.md](frontend/COMPONENT_GUIDELINES.md) | Component creation rules and principles |
+| [COMPONENT_REFERENCE.md](frontend/COMPONENT_REFERENCE.md) | Complete component inventory |
+| [STYLING_GUIDE.md](frontend/STYLING_GUIDE.md) | Design tokens and styling patterns |
 | [STATE_MANAGEMENT.md](frontend/STATE_MANAGEMENT.md) | TanStack Query + hooks |
 | [API_LAYER.md](frontend/API_LAYER.md) | API communication patterns |
 | [ERROR_HANDLING.md](frontend/ERROR_HANDLING.md) | Error strategy and user feedback |
-| [UI_STANDARDS.md](frontend/UI_STANDARDS.md) | Design system and styling |
 
 ---
 
@@ -114,18 +135,6 @@ Complete documentation map for Metarr - intelligent metadata management for medi
 | [PATH_MAPPING.md](reference/PATH_MAPPING.md) | Docker/NAS path mapping scenarios |
 | [WEBHOOKS.md](reference/WEBHOOKS.md) | Radarr/Sonarr/Lidarr webhook handling |
 | [CLI_REFERENCE.md](reference/CLI_REFERENCE.md) | npm scripts and commands |
-
----
-
-## Operations
-
-| Document | Description |
-|----------|-------------|
-| [TROUBLESHOOTING.md](operations/TROUBLESHOOTING.md) | Common issues and solutions |
-| [PERFORMANCE.md](operations/PERFORMANCE.md) | Performance tuning and optimization |
-| [BACKUP_RECOVERY.md](operations/BACKUP_RECOVERY.md) | Backup strategies and disaster recovery |
-| [SECURITY.md](operations/SECURITY.md) | Security best practices |
-| [MONITORING.md](operations/MONITORING.md) | Logging, metrics, and monitoring |
 
 ---
 
@@ -144,10 +153,8 @@ Complete documentation map for Metarr - intelligent metadata management for medi
 
 ## Navigation Tips
 
-**For AI Assistants**: Always read [CLAUDE.md](/CLAUDE.md), [WORKFLOW.md](development/WORKFLOW.md), [ROADMAP.md](development/ROADMAP.md), and [PLANNING_WORKFLOW.md](development/PLANNING_WORKFLOW.md) at session start.
+**For AI Assistants**: Always read [CLAUDE.md](/CLAUDE.md), [WORKFLOW.md](development/WORKFLOW.md), [ROADMAP.md](development/ROADMAP.md) at session start. Use [concepts/](concepts/) for conceptual understanding, [implementation/](implementation/) for media-specific details.
 
 **For Developers**: Start with [WORKFLOW.md](development/WORKFLOW.md) for complete development process.
 
-**For Users**: Start with [Getting Started](#getting-started) section above.
-
-**Context Efficiency**: Use directory READMEs (e.g., [ASSET_MANAGEMENT/README.md](architecture/ASSET_MANAGEMENT/README.md)) as entry points, then load specific files as needed.
+**Context Efficiency**: Use directory READMEs as entry points, then load specific files as needed.

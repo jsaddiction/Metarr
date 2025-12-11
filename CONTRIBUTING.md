@@ -149,7 +149,7 @@ src/services/assetScoring.test.ts
 - New features: Update relevant phase/architecture docs
 - API changes: Update [docs/architecture/API.md](docs/architecture/API.md)
 - Database changes: Update [docs/architecture/DATABASE.md](docs/architecture/DATABASE.md)
-- Configuration changes: Update [docs/getting-started/CONFIGURATION.md](docs/getting-started/CONFIGURATION.md)
+- Configuration changes: Update relevant concepts or architecture doc
 
 **Documentation standards**: See [docs/development/DOCUMENTATION_RULES.md](docs/development/DOCUMENTATION_RULES.md)
 

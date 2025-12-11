@@ -5,7 +5,7 @@
 **Related Docs**:
 - Parent: [Architecture Overview](../OVERVIEW.md)
 - Database: [Asset Tables](../DATABASE.md#asset-management-tables)
-- Phases: [Enrichment](../../phases/ENRICHMENT.md), [Publishing](../../phases/PUBLISHING.md)
+- Phases: [Enrichment](../../concepts/Enrichment/README.md), [Publishing](../../concepts/Publishing/README.md)
 
 ## Quick Reference
 
@@ -279,7 +279,7 @@ This README provides the overview. For specific details:
 
 ## See Also
 
-- [Enrichment Phase](../../phases/ENRICHMENT.md) - Fetches candidates, downloads to cache
-- [Publishing Phase](../../phases/PUBLISHING.md) - Deploys cache to library
-- [Verification Phase](../../phases/VERIFICATION.md) - Ensures cache↔library consistency
+- [Enrichment Phase](../../concepts/Enrichment/README.md) - Fetches candidates, downloads to cache
+- [Publishing Phase](../../concepts/Publishing/README.md) - Deploys cache to library
+- [Verification Phase](../../concepts/Verification/README.md) - Ensures cache↔library consistency
 - [Database Schema](../DATABASE.md) - Asset table structures
