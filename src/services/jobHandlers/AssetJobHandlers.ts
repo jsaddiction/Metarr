@@ -1,11 +1,11 @@
 import { DatabaseConnection } from '../../types/database.js';
 import { DatabaseManager } from '../../database/DatabaseManager.js';
-import { Job } from '../jobQueue/types.js';
+import { Job, JOB_PRIORITY } from '../jobQueue/types.js';
 import { JobQueueService } from '../jobQueue/JobQueueService.js';
 import { EnrichmentOrchestrator } from '../enrichment/EnrichmentOrchestrator.js';
-import { MetadataEnrichmentService } from '../enrichment/MetadataEnrichmentService.js';
 import { PublishingService } from '../publishingService.js';
 import { PhaseConfigService } from '../PhaseConfigService.js';
+import { TrailerDownloadService } from '../trailers/TrailerDownloadService.js';
 import { websocketBroadcaster } from '../websocketBroadcaster.js';
 import { logger } from '../../middleware/logging.js';
 import path from 'path';
@@ -22,26 +22,28 @@ export class AssetJobHandlers {
   private enrichment: EnrichmentOrchestrator;
   private publishing: PublishingService;
   private phaseConfig: PhaseConfigService;
+  private trailerDownloadService: TrailerDownloadService;
 
   constructor(
     db: DatabaseConnection,
     jobQueue: JobQueueService,
     phaseConfig: PhaseConfigService,
     cacheDir: string,
-    dbManager?: DatabaseManager,
-    metadataEnrichmentService?: MetadataEnrichmentService // NEW: optional for now
+    dbManager?: DatabaseManager
   ) {
     this.db = db;
     this.jobQueue = jobQueue;
     this.phaseConfig = phaseConfig;
+    this.trailerDownloadService = new TrailerDownloadService();
     if (!dbManager) {
-      throw new ValidationError(
-        'DatabaseManager is required for AssetJobHandlers',
-        { service: 'AssetJobHandlers', operation: 'constructor', metadata: { field: 'dbManager' } }
-      );
+      throw new ValidationError('DatabaseManager is required for AssetJobHandlers', {
+        service: 'AssetJobHandlers',
+        operation: 'constructor',
+        metadata: { field: 'dbManager' },
+      });
     }
-    this.enrichment = new EnrichmentOrchestrator(db, dbManager, metadataEnrichmentService);
-    this.publishing = new PublishingService(db, cacheDir);
+    this.enrichment = new EnrichmentOrchestrator(db, dbManager);
+    this.publishing = new PublishingService(db, cacheDir, dbManager);
   }
 
   /**
@@ -139,6 +141,11 @@ export class AssetJobHandlers {
       websocketBroadcaster.broadcastMoviesUpdated([entityId]);
     }
 
+    // Queue trailer download job if a trailer was selected during enrichment
+    if (result.trailerSelected && result.selectedTrailerCandidateId && entityType === 'movie') {
+      await this.queueTrailerDownloadIfNeeded(entityId, result.selectedTrailerCandidateId);
+    }
+
     // Check if we should publish (metadata OR assets changed)
     const hasMetadataChanges = (result.metadataChanged?.length ?? 0) > 0;
     const hasAssetChanges =
@@ -209,14 +216,12 @@ export class AssetJobHandlers {
    * Handle publish job (PUBLISHING PHASE)
    *
    * This handler:
-   * 1. Deploys selected assets to library (if enabled in config)
-   * 2. Updates NFO files
+   * 1. Deploys ALL selected assets to library (posters, fanart, trailers, actors)
+   * 2. Generates NFO files
    * 3. Chains to player-sync job (future)
    *
-   * Configuration controls BEHAVIOR:
-   * - publishConfig.publishAssets: Whether to deploy posters/fanart
-   * - publishConfig.publishActors: Whether to deploy actor images
-   * - publishConfig.publishTrailers: Whether to deploy trailer files
+   * Publishing always publishes all selected assets. Individual asset types
+   * are controlled via asset limits (set to 0 to disable that type).
    *
    * Payload: {
    *   entityType: 'movie' | 'series' | 'season' | 'episode' | 'album' | 'track',
@@ -234,19 +239,6 @@ export class AssetJobHandlers {
       entityId,
     });
 
-    // Get phase configuration
-    const config = await this.phaseConfig.getAll();
-    const publishConfig = config.publish;
-
-    logger.info('[AssetJobHandlers] Publish configuration', {
-      service: 'AssetJobHandlers',
-      handler: 'handlePublish',
-      jobId: job.id,
-      publishAssets: publishConfig.publishAssets,
-      publishActors: publishConfig.publishActors,
-      publishTrailers: publishConfig.publishTrailers,
-    });
-
     // Get entity and library info
     const entity = await this.getEntityForPublish(entityType, entityId);
     if (!entity) {
@@ -258,13 +250,12 @@ export class AssetJobHandlers {
       );
     }
 
-    // Run publishing with phase config
+    // Run publishing (publishes all selected assets)
     await this.publishing.publish({
       entityType,
       entityId,
       libraryPath: path.dirname(entity.file_path),
       mediaFilename: entity.title,
-      phaseConfig: publishConfig,
     });
 
     logger.info('[AssetJobHandlers] Publish complete', {
@@ -338,6 +329,116 @@ export class AssetJobHandlers {
       [entityId]
     );
     return results.length > 0 ? results[0] : null;
+  }
+
+  /**
+   * Queue trailer download job if the selected candidate needs downloading
+   *
+   * Checks if the candidate:
+   * 1. Exists and has a source_url
+   * 2. Doesn't already have a cache_video_file_id (not yet downloaded)
+   * 3. Doesn't have a permanent failure (failure_reason = 'unavailable')
+   *
+   * @param movieId - Movie ID
+   * @param candidateId - Selected trailer candidate ID
+   */
+  private async queueTrailerDownloadIfNeeded(movieId: number, candidateId: number): Promise<void> {
+    try {
+      // Get candidate details
+      const candidate = await this.db.get<{
+        id: number;
+        source_url: string | null;
+        cache_video_file_id: number | null;
+        failure_reason: string | null;
+      }>(
+        `SELECT id, source_url, cache_video_file_id, failure_reason
+         FROM trailer_candidates WHERE id = ?`,
+        [candidateId]
+      );
+
+      if (!candidate) {
+        logger.warn('[AssetJobHandlers] Selected trailer candidate not found', {
+          movieId,
+          candidateId,
+        });
+        return;
+      }
+
+      // Skip if already downloaded
+      if (candidate.cache_video_file_id) {
+        logger.debug('[AssetJobHandlers] Trailer already downloaded, skipping', {
+          movieId,
+          candidateId,
+          cacheVideoFileId: candidate.cache_video_file_id,
+        });
+        return;
+      }
+
+      // Skip if no source URL (uploaded trailers don't need download)
+      if (!candidate.source_url) {
+        logger.debug('[AssetJobHandlers] No source URL for trailer, skipping download', {
+          movieId,
+          candidateId,
+        });
+        return;
+      }
+
+      // Skip if permanently unavailable
+      if (candidate.failure_reason === 'unavailable') {
+        logger.debug('[AssetJobHandlers] Trailer marked unavailable, skipping download', {
+          movieId,
+          candidateId,
+        });
+        return;
+      }
+
+      // Skip age-restricted trailers unless cookies are available
+      if (candidate.failure_reason === 'age_restricted') {
+        const hasCookies = await this.trailerDownloadService.hasCookieFile();
+        if (!hasCookies) {
+          logger.debug('[AssetJobHandlers] Trailer is age-restricted (no cookies), skipping download', {
+            movieId,
+            candidateId,
+          });
+          return;
+        }
+      }
+
+      // Get movie title for job payload
+      const movie = await this.db.get<{ title: string }>(
+        `SELECT title FROM movies WHERE id = ?`,
+        [movieId]
+      );
+
+      // Queue the download job
+      const jobId = await this.jobQueue.addJob({
+        type: 'download-trailer',
+        priority: JOB_PRIORITY.LOW, // Auto-enrichment uses low priority
+        payload: {
+          entityType: 'movie',
+          entityId: movieId,
+          candidateId,
+          sourceUrl: candidate.source_url,
+          movieTitle: movie?.title || `Movie ${movieId}`,
+        },
+        retry_count: 0,
+        max_retries: 2,
+      });
+
+      logger.info('[AssetJobHandlers] Queued trailer download job', {
+        movieId,
+        candidateId,
+        jobId,
+        sourceUrl: candidate.source_url,
+      });
+    } catch (error) {
+      // Non-fatal: log and continue
+      logger.error('[AssetJobHandlers] Failed to queue trailer download', {
+        movieId,
+        candidateId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
   }
 
 }

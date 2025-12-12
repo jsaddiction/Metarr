@@ -28,18 +28,17 @@ export interface EnrichmentPhaseConfig {
 /**
  * Publishing Phase Configuration
  *
- * Publishing always runs, but what gets published is configurable.
+ * Publishing always runs and publishes ALL selected assets.
+ * Individual asset types are controlled via asset limits (set to 0 to disable).
  * NOTE: NFO generation is ALWAYS enabled (non-configurable - required for media players)
+ *
+ * This interface is kept for API compatibility but has no configurable fields.
+ * Publishing behavior is controlled by:
+ * - general.autoPublish: Whether to auto-publish after enrichment
+ * - Asset limits: Which asset types to fetch/select (0 = disabled)
  */
 export interface PublishConfig {
-  // Publish assets (posters, fanart, logos)
-  publishAssets: boolean;
-
-  // Publish actor headshots to .actors/ folder
-  publishActors: boolean;
-
-  // Publish trailer files (can use significant disk space)
-  publishTrailers: boolean;
+  // No configurable fields - publishing always publishes all selected assets
 }
 
 /**
@@ -74,9 +73,7 @@ export const DEFAULT_PHASE_CONFIG: PhaseConfiguration = {
   },
 
   publish: {
-    publishAssets: true,
-    publishActors: true,
-    publishTrailers: false, // Default: false (saves disk space)
+    // Empty - publishing always publishes all selected assets
   },
 
   general: {

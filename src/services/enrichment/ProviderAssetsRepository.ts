@@ -59,6 +59,7 @@ export interface UpdateProviderAssetParams {
   file_size?: number | undefined;
   score?: number | undefined;
   is_selected?: number | undefined;
+  is_rejected?: number | undefined;
   is_downloaded?: number | undefined;
   analyzed_at?: Date | undefined;
   selected_at?: Date | undefined;

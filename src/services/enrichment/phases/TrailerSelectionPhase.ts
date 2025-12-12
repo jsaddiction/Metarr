@@ -9,7 +9,9 @@
  * Key Features:
  * - Respects entity-level lock (movies.trailer_locked) - skip if locked
  * - Only processes analyzed candidates (analyzed=true)
- * - Filters out unavailable candidates (failure_reason='unavailable')
+ * - Filters out permanent failures (unavailable, geo_blocked)
+ * - Filters out age_restricted candidates unless YouTube cookies are configured
+ * - Includes download_error candidates (user can manually select and retry)
  * - Updates database selection flags and scores
  * - Uses TrailerSelectionService for scoring logic
  */
@@ -17,6 +19,7 @@
 import { DatabaseConnection } from '../../../types/database.js';
 import { EnrichmentConfig } from '../types.js';
 import { TrailerSelectionService, TrailerConfig } from '../../trailers/TrailerSelectionService.js';
+import { TrailerDownloadService } from '../../trailers/TrailerDownloadService.js';
 import { logger } from '../../../middleware/logging.js';
 import { getErrorMessage } from '../../../utils/errorHandling.js';
 
@@ -36,7 +39,8 @@ interface TrailerCandidateRow {
 export class TrailerSelectionPhase {
   constructor(
     private readonly db: DatabaseConnection,
-    private readonly trailerSelectionService: TrailerSelectionService
+    private readonly trailerSelectionService: TrailerSelectionService,
+    private readonly trailerDownloadService: TrailerDownloadService
   ) {}
 
   /**
@@ -99,14 +103,39 @@ export class TrailerSelectionPhase {
         totalCandidates: candidates.length,
       });
 
-      // STEP 3: Filter out permanently unavailable candidates
-      const validCandidates = candidates.filter((c) => c.failure_reason !== 'unavailable');
+      // STEP 3: Filter out candidates that can't be downloaded
+      // - unavailable: Permanent (video removed/private/deleted)
+      // - geo_blocked: Permanent (region restricted)
+      // - age_restricted: Only filter out if cookies not configured
+      // - download_error: Include (user can manually retry)
+      // - rate_limited: Include (transient, can retry)
+      const hasCookies = await this.trailerDownloadService.hasCookieFile();
+
+      const validCandidates = candidates.filter((c) => {
+        // Always filter out permanent failures
+        if (c.failure_reason === 'unavailable') return false;
+        if (c.failure_reason === 'geo_blocked') return false;
+        // Filter out age_restricted unless cookies are available
+        if (c.failure_reason === 'age_restricted' && !hasCookies) return false;
+        // Include download_error and rate_limited (can be retried)
+        return true;
+      });
+
+      const ageRestrictedCount = candidates.filter((c) => c.failure_reason === 'age_restricted').length;
+      const unavailableCount = candidates.filter((c) => c.failure_reason === 'unavailable').length;
+      const geoBlockedCount = candidates.filter((c) => c.failure_reason === 'geo_blocked').length;
+      const downloadErrorCount = candidates.filter((c) => c.failure_reason === 'download_error').length;
 
       if (validCandidates.length === 0) {
-        logger.warn('[TrailerSelectionPhase] All candidates are unavailable', {
+        logger.warn('[TrailerSelectionPhase] No valid candidates for selection', {
           entityType,
           entityId,
           totalCandidates: candidates.length,
+          unavailableCount,
+          geoBlockedCount,
+          ageRestrictedCount,
+          downloadErrorCount,
+          hasCookies,
         });
         return { selected: false, candidateId: null, score: null };
       }
@@ -116,6 +145,11 @@ export class TrailerSelectionPhase {
         entityId,
         validCandidates: validCandidates.length,
         filteredOut: candidates.length - validCandidates.length,
+        unavailableCount,
+        geoBlockedCount,
+        ageRestrictedCount,
+        downloadErrorCount,
+        hasCookies,
       });
 
       // STEP 4: Get trailer configuration from settings

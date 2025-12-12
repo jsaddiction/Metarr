@@ -1775,12 +1775,9 @@ export class CleanSchemaMigration {
         ('phase.enrichment.autoSelectAssets', 'true'),
         ('phase.enrichment.language', 'en'),
 
-        -- Publishing Phase (all three settings used by PublishingService)
-        ('phase.publish.assets', 'true'),
-        ('phase.publish.actors', 'true'),
-        ('phase.publish.trailers', 'false'),
-
         -- General Configuration (applies across all phases)
+        -- NOTE: Publishing always publishes all selected assets
+        -- Individual asset types controlled via asset_limit_* settings (0 = disabled)
         ('phase.general.autoPublish', 'false'),
 
         -- Other Settings
@@ -2306,7 +2303,12 @@ export class CleanSchemaMigration {
         downloaded_at TIMESTAMP,
 
         -- Failure tracking
-        -- failure_reason: 'unavailable' (permanent) | 'rate_limited' | 'download_error' (transient)
+        -- failure_reason values:
+        --   'unavailable' (permanent - video removed/private/deleted)
+        --   'age_restricted' (semi-permanent - requires YouTube cookies)
+        --   'geo_blocked' (permanent - region restricted)
+        --   'rate_limited' (transient - retry after cooldown)
+        --   'download_error' (unknown - user retry only)
         failed_at TIMESTAMP,
         failure_reason TEXT,
         retry_after TIMESTAMP,  -- For rate_limited: when to retry
@@ -2327,11 +2329,13 @@ export class CleanSchemaMigration {
       ON trailer_candidates(entity_type, entity_id, is_selected)
     `);
 
-    // Index for finding candidates to retry (failed but not permanently unavailable)
+    // Index for finding candidates to retry (failed but not permanently blocked)
+    // Excludes: unavailable, geo_blocked (permanent), download_error (user retry only)
     await db.execute(`
       CREATE INDEX IF NOT EXISTS idx_trailer_candidates_retry
       ON trailer_candidates(failure_reason)
-      WHERE failure_reason IS NOT NULL AND failure_reason != 'unavailable'
+      WHERE failure_reason IS NOT NULL
+        AND failure_reason NOT IN ('unavailable', 'geo_blocked', 'download_error')
     `);
 
     await db.execute(`

@@ -99,6 +99,14 @@ export const ASSET_TYPE_DEFAULTS: Record<string, AssetTypeConfig> = {
     description: 'For multi-disc releases',
     mediaTypes: ['movie'],
   },
+  trailer: {
+    displayName: 'Trailers',
+    defaultMax: 1,
+    minAllowed: 0,
+    maxAllowed: 1,
+    description: 'Auto-download trailers during enrichment (0 = disabled)',
+    mediaTypes: ['movie'],
+  },
 
   // ========================================
   // TV EPISODES

@@ -74,7 +74,7 @@ export class ActorEnrichmentPhase {
       });
 
       // Step 2: Batch database operations to prevent N+1 pattern
-      const cacheInserts: Array<[string, number, string, string, string, string, number, number, number, string, string, string, string]> = [];
+      const cacheInserts: Array<[string, number, string, string, string, string, number, number, number, string, string, string, string] | null> = [];
       const actorUpdates: { hash: string; cachePath: string; actorId: number }[] = [];
 
       // Step 3: Process downloads in parallel with concurrency limit
@@ -91,10 +91,12 @@ export class ActorEnrichmentPhase {
         { concurrency: 5 }
       );
 
-      // Step 4: Batch insert all cache records
-      if (cacheInserts.length > 0) {
-        const placeholders = cacheInserts.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ');
-        const values = cacheInserts.flat();
+      // Step 4: Batch insert cache records for new files only
+      // Filter out null entries (files that already existed)
+      const validInserts = cacheInserts.filter((insert): insert is NonNullable<typeof insert> => insert !== null);
+      if (validInserts.length > 0) {
+        const placeholders = validInserts.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ');
+        const values = validInserts.flat();
         await this.db.execute(
           `INSERT INTO cache_image_files (
             entity_type, entity_id, image_type, file_path, file_name,
@@ -135,7 +137,7 @@ export class ActorEnrichmentPhase {
    * Download a single actor thumbnail
    */
   private async downloadActorThumbnail(actor: ActorToEnrich): Promise<{
-    cacheInsert: [string, number, string, string, string, string, number, number, number, string, string, string, string];
+    cacheInsert: [string, number, string, string, string, string, number, number, number, string, string, string, string] | null;
     actorUpdate: { hash: string; cachePath: string; actorId: number };
   } | null> {
     try {
@@ -160,25 +162,43 @@ export class ActorEnrichmentPhase {
 
       // Save to cache with just hash as filename
       const cachePath = path.join(actorCacheDir, `${hash}${ext}`);
-      await fs.writeFile(cachePath, imageBuffer);
+
+      // Check if file already exists (actor might be in multiple movies)
+      let fileExists = false;
+      try {
+        await fs.access(cachePath);
+        fileExists = true;
+        logger.debug('[ActorEnrichmentPhase] Actor thumbnail already cached', {
+          actorId: actor.actor_id,
+          name: actor.name,
+          cachePath,
+        });
+      } catch {
+        // File doesn't exist, need to write it
+        await fs.writeFile(cachePath, imageBuffer);
+      }
 
       // Prepare database operations
       const format = ext.substring(1); // Remove leading dot
-      const cacheInsert: [string, number, string, string, string, string, number, number, number, string, string, string, string] = [
-        'actor',
-        actor.actor_id,
-        'actor_thumb',
-        cachePath,
-        path.basename(cachePath),
-        hash,
-        imageBuffer.length,
-        0, // width - unknown
-        0, // height - unknown
-        format,
-        'provider',
-        tmdbUrl,
-        'tmdb',
-      ];
+
+      // Only need cache insert if file didn't exist (avoids duplicate constraint)
+      const cacheInsert: [string, number, string, string, string, string, number, number, number, string, string, string, string] | null = fileExists
+        ? null
+        : [
+            'actor',
+            actor.actor_id,
+            'actor_thumb',
+            cachePath,
+            path.basename(cachePath),
+            hash,
+            imageBuffer.length,
+            0, // width - unknown
+            0, // height - unknown
+            format,
+            'provider',
+            tmdbUrl,
+            'tmdb',
+          ];
 
       const actorUpdate = { hash, cachePath, actorId: actor.actor_id };
 

@@ -1,18 +1,19 @@
 /**
- * Provider Fetch Phase (Phase 1)
+ * Provider Fetch Phase (Phase 1: SCRAPING)
  *
- * Fetches metadata and asset URLs from external providers:
- * 1. Query provider cache orchestrator (TMDB + Fanart.tv)
+ * Fetches metadata and asset URLs from external providers via ProviderCacheOrchestrator:
+ * 1. Query provider cache orchestrator (TMDB + Fanart.tv + OMDB)
  * 2. Copy metadata to entity tables (respecting field locks)
  * 3. Copy cast/crew to actors tables
- * 4. Populate provider_assets table for downstream scoring
+ * 4. Populate provider_assets table for downstream selection
+ *
+ * See: docs/concepts/Enrichment/SCRAPING/README.md
  */
 
 import { DatabaseConnection } from '../../../types/database.js';
 import { DatabaseManager } from '../../../database/DatabaseManager.js';
 import { ProviderAssetsRepository } from '../ProviderAssetsRepository.js';
 import { ProviderCacheOrchestrator } from '../../providers/ProviderCacheOrchestrator.js';
-import { MetadataEnrichmentService } from '../MetadataEnrichmentService.js';
 import { EnrichmentConfig, MovieDatabaseRow, MovieUpdateFields } from '../types.js';
 import { CompleteMovieData } from '../../../types/providerCache.js';
 import { logger } from '../../../middleware/logging.js';
@@ -24,7 +25,6 @@ import { generateSortTitle } from '../../../utils/sortTitle.js';
 export class ProviderFetchPhase {
   private readonly providerAssetsRepo: ProviderAssetsRepository;
   private readonly providerCacheOrchestrator: ProviderCacheOrchestrator;
-  private readonly metadataEnrichmentService: MetadataEnrichmentService | null;
 
   constructor(
     private readonly db: DatabaseConnection,
@@ -32,66 +32,6 @@ export class ProviderFetchPhase {
   ) {
     this.providerAssetsRepo = new ProviderAssetsRepository(db);
     this.providerCacheOrchestrator = new ProviderCacheOrchestrator(dbManager);
-
-    // Initialize MetadataEnrichmentService with OMDB and TMDB providers
-    this.metadataEnrichmentService = this.initializeMetadataEnrichmentService();
-  }
-
-  /**
-   * Initialize MetadataEnrichmentService with required providers
-   *
-   * NOTE: Metadata enrichment is currently disabled until OMDB provider
-   * is added to the configuration system. Once OMDB config is available,
-   * uncomment the initialization code below.
-   */
-  private initializeMetadataEnrichmentService(): MetadataEnrichmentService | null {
-    try {
-      // TODO: Add OMDB to src/config/types.ts ProviderConfig
-      // TODO: Add OMDB to src/config/defaults.ts
-      // TODO: Uncomment initialization code below
-
-      logger.debug(
-        '[ProviderFetchPhase] Metadata enrichment disabled - OMDB config not yet implemented'
-      );
-
-      return null;
-
-      // // Get config
-      // const config = ConfigManager.getInstance().getConfig();
-      //
-      // // Check if OMDB is configured
-      // const omdbConfig = config.providers.omdb;
-      // if (!omdbConfig?.apiKey) {
-      //   logger.warn('[ProviderFetchPhase] OMDB not configured - metadata enrichment disabled');
-      //   return null;
-      // }
-      //
-      // // Initialize OMDB Provider
-      // const omdbProvider = new OMDBProvider({
-      //   id: 0,
-      //   providerName: 'omdb',
-      //   enabled: true,
-      //   apiKey: omdbConfig.apiKey,
-      //   created_at: new Date(),
-      //   updated_at: new Date(),
-      // });
-      //
-      // // Initialize TMDB Client
-      // const tmdbConfig = config.providers.tmdb;
-      // const tmdbClient = new TMDBClient({
-      //   apiKey: tmdbConfig?.apiKey || '',
-      //   baseUrl: tmdbConfig?.baseUrl || 'https://api.themoviedb.org/3',
-      //   language: 'en-US',
-      //   includeAdult: false,
-      // });
-      //
-      // return new MetadataEnrichmentService(this.db, omdbProvider, tmdbClient);
-    } catch (error) {
-      logger.error('[ProviderFetchPhase] Failed to initialize MetadataEnrichmentService', {
-        error: getErrorMessage(error),
-      });
-      return null;
-    }
   }
 
   /**
@@ -179,30 +119,8 @@ export class ProviderFetchPhase {
       // Step 2B: Copy cast/crew to actors tables
       await this.copyCastToActors(entityId, cachedMovie);
 
-      // Step 2C: Enrich metadata from OMDB + TMDB (webhook mode - best effort)
-      if (this.metadataEnrichmentService) {
-        try {
-          const enrichmentResult = await this.metadataEnrichmentService.enrichMovie(
-            entityId,
-            false // requireComplete=false for webhook/single enrichment mode
-          );
-
-          logger.info('[ProviderFetchPhase] Metadata enrichment complete', {
-            entityId,
-            updated: enrichmentResult.updated,
-            partial: enrichmentResult.partial,
-            rateLimitedProviders: enrichmentResult.rateLimitedProviders,
-            changedFields: enrichmentResult.changedFields,
-            completeness: enrichmentResult.completeness,
-          });
-        } catch (error) {
-          logger.error('[ProviderFetchPhase] Metadata enrichment failed', {
-            entityId,
-            error: getErrorMessage(error),
-          });
-          // Don't throw - enrichment failure shouldn't fail the whole phase
-        }
-      }
+      // Note: Metadata from providers (TMDB, OMDB, Fanart) is already fetched
+      // by ProviderCacheOrchestrator.getMovieData() above and copied in Step 2.
 
       // Step 3: Populate provider_assets
       const assetsFetched = await this.populateProviderAssets(

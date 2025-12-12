@@ -57,9 +57,7 @@ export class PhaseConfigService {
       },
 
       publish: {
-        publishAssets: this.getBool(settings, 'phase.publish.assets', DEFAULT_PHASE_CONFIG.publish.publishAssets),
-        publishActors: this.getBool(settings, 'phase.publish.actors', DEFAULT_PHASE_CONFIG.publish.publishActors),
-        publishTrailers: this.getBool(settings, 'phase.publish.trailers', DEFAULT_PHASE_CONFIG.publish.publishTrailers),
+        // Empty - publishing always publishes all selected assets
       },
 
       general: {

@@ -3,7 +3,8 @@ import path from 'path';
 import crypto from 'crypto';
 import axios from 'axios';
 import { DatabaseConnection } from '../types/database.js';
-import { PublishConfig as PublishPhaseConfig, DEFAULT_PHASE_CONFIG } from '../config/phaseConfig.js';
+import { DatabaseManager } from '../database/DatabaseManager.js';
+import { AssetConfigService } from './assetConfigService.js';
 import { logger } from '../middleware/logging.js';
 import { getErrorMessage } from '../utils/errorHandling.js';
 import {
@@ -32,7 +33,6 @@ export interface PublishJobConfig {
   entityId: number;
   libraryPath: string; // Directory containing media file
   mediaFilename?: string; // For naming assets (e.g., "Movie Name (2023)")
-  phaseConfig?: PublishPhaseConfig; // Optional phase configuration (uses defaults if not provided)
 }
 
 export interface PublishResult {
@@ -45,11 +45,14 @@ export interface PublishResult {
 export class PublishingService {
   private readonly db: DatabaseConnection;
   private readonly cacheDir: string;
+  private readonly assetConfigService: AssetConfigService | null;
 
-  constructor(db: DatabaseConnection, cacheDir?: string) {
+  constructor(db: DatabaseConnection, cacheDir?: string, dbManager?: DatabaseManager) {
     this.db = db;
     // Default to data/cache if not provided
     this.cacheDir = cacheDir || path.join(process.cwd(), 'data', 'cache');
+    // AssetConfigService is optional for backward compatibility
+    this.assetConfigService = dbManager ? new AssetConfigService(dbManager) : null;
   }
 
   /**
@@ -70,11 +73,8 @@ export class PublishingService {
    * @param config.entityId - Database ID of the entity
    * @param config.libraryPath - Library directory path (e.g., "/media/movies/Movie (2023)/")
    * @param config.mediaFilename - Base filename for assets (e.g., "Movie Name (2023)")
-   * @param config.phaseConfig - Optional phase configuration. Controls what gets published:
-   *   - publishAssets: Enable/disable image publishing (poster, fanart, etc.)
-   *   - publishActors: Enable/disable actor thumb publishing
-   *   - publishTrailers: Enable/disable trailer publishing
-   *   - generateNFO: Enable/disable NFO file generation
+   * Publishing always publishes ALL selected assets. Individual asset types
+   * are controlled via asset limits (set to 0 to disable that type).
    *
    * @returns Promise resolving to publish result with asset counts and errors
    *
@@ -109,15 +109,13 @@ export class PublishingService {
       errors: []
     };
 
-    // Use provided phase config or defaults
-    const phaseConfig = config.phaseConfig || DEFAULT_PHASE_CONFIG.publish;
+    // Check if trailers should be published (asset limit > 0)
+    const publishTrailers = await this.isTrailerPublishingEnabled();
 
     logger.info('[PublishingService] Starting publish', {
       entityType: config.entityType,
       entityId: config.entityId,
-      publishAssets: phaseConfig.publishAssets,
-      publishActors: phaseConfig.publishActors,
-      publishTrailers: phaseConfig.publishTrailers,
+      publishTrailers,
     });
 
     try {
@@ -128,38 +126,27 @@ export class PublishingService {
         return result;
       }
 
-      // Get selected assets (only if publishing assets is enabled)
-      if (phaseConfig.publishAssets || phaseConfig.publishTrailers) {
-        const selectedAssets = await this.getSelectedAssets(config.entityType, config.entityId);
+      // Publish all selected assets
+      const selectedAssets = await this.getSelectedAssets(config.entityType, config.entityId);
 
-        // Publish each asset (filter based on phase config)
-        for (const asset of selectedAssets) {
-          // Skip trailers if publishTrailers is false
-          if (asset.asset_type === 'trailer' && !phaseConfig.publishTrailers) {
-            logger.debug(`[PublishingService] Skipping trailer (publishTrailers=false)`);
-            continue;
-          }
-
-          // Skip non-trailer assets if publishAssets is false
-          if (asset.asset_type !== 'trailer' && !phaseConfig.publishAssets) {
-            logger.debug(`[PublishingService] Skipping asset ${asset.asset_type} (publishAssets=false)`);
-            continue;
-          }
-
-          try {
-            await this.publishAsset(asset, config, asset.rank);
-            result.assetsPublished++;
-          } catch (error) {
-            logger.error(`Error publishing asset ${asset.id}`, { error: getErrorMessage(error) });
-            result.errors.push(`Asset ${asset.asset_type}: ${getErrorMessage(error)}`);
-          }
+      for (const asset of selectedAssets) {
+        // Skip trailers if trailer asset limit = 0
+        if (asset.asset_type === 'trailer' && !publishTrailers) {
+          logger.debug(`[PublishingService] Skipping trailer (trailer asset limit = 0)`);
+          continue;
         }
-      } else {
-        logger.info('[PublishingService] Skipping assets (publishAssets=false, publishTrailers=false)');
+
+        try {
+          await this.publishAsset(asset, config, asset.rank);
+          result.assetsPublished++;
+        } catch (error) {
+          logger.error(`Error publishing asset ${asset.id}`, { error: getErrorMessage(error) });
+          result.errors.push(`Asset ${asset.asset_type}: ${getErrorMessage(error)}`);
+        }
       }
 
-      // Publish trailer from trailer_candidates (only if publishing trailers is enabled)
-      if (phaseConfig.publishTrailers) {
+      // Publish trailer from trailer_candidates (if trailer limit > 0)
+      if (publishTrailers) {
         try {
           const trailerPublished = await this.publishTrailer(config);
           if (trailerPublished) {
@@ -173,20 +160,16 @@ export class PublishingService {
           result.errors.push(`Trailer: ${getErrorMessage(error)}`);
         }
       } else {
-        logger.info('[PublishingService] Skipping trailer (publishTrailers=false)');
+        logger.debug('[PublishingService] Skipping trailer (trailer asset limit = 0)');
       }
 
-      // Publish actor thumbnails (only if publishing actors is enabled)
-      if (phaseConfig.publishActors) {
-        try {
-          const actorsPublished = await this.publishActors(config);
-          logger.info(`[PublishingService] Published ${actorsPublished} actor thumbnails`);
-        } catch (error) {
-          logger.error('Error publishing actors', { error: getErrorMessage(error) });
-          result.errors.push(`Actors: ${getErrorMessage(error)}`);
-        }
-      } else {
-        logger.info('[PublishingService] Skipping actors (publishActors=false)');
+      // Publish actor thumbnails
+      try {
+        const actorsPublished = await this.publishActors(config);
+        logger.info(`[PublishingService] Published ${actorsPublished} actor thumbnails`);
+      } catch (error) {
+        logger.error('Error publishing actors', { error: getErrorMessage(error) });
+        result.errors.push(`Actors: ${getErrorMessage(error)}`);
       }
 
       // Generate and write NFO file
@@ -1117,5 +1100,36 @@ export class PublishingService {
       .replace(/\s+/g, ' ') // Normalize whitespace
       .trim()
       .substring(0, 100); // Limit length
+  }
+
+  /**
+   * Check if trailer publishing is enabled via asset limit
+   * Trailers are published if their asset limit > 0
+   * Defaults to true (backward compatibility) if AssetConfigService not available
+   */
+  private async isTrailerPublishingEnabled(): Promise<boolean> {
+    if (!this.assetConfigService) {
+      // Fallback: check legacy setting for backward compatibility
+      try {
+        const result = await this.db.get<{ value: string }>(
+          `SELECT value FROM app_settings WHERE key = 'asset_limit_trailer'`
+        );
+        if (result) {
+          return parseInt(result.value, 10) > 0;
+        }
+      } catch {
+        // Ignore errors, default to enabled
+      }
+      return true;
+    }
+
+    try {
+      return await this.assetConfigService.isAssetTypeEnabled('trailer');
+    } catch (error) {
+      logger.warn('[PublishingService] Failed to check trailer asset limit, defaulting to enabled', {
+        error: getErrorMessage(error),
+      });
+      return true;
+    }
   }
 }

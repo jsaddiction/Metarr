@@ -1,7 +1,7 @@
 import { DatabaseManager } from '../database/DatabaseManager.js';
 import { ConfigManager } from '../config/ConfigManager.js';
 import { logger } from '../middleware/logging.js';
-import * as fs from 'fs-extra';
+import fs from 'fs-extra';
 import { getErrorMessage, getErrorStack } from './errorHandling.js';
 import { imageProcessor } from './ImageProcessor.js';
 

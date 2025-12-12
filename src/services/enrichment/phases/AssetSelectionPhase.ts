@@ -1,16 +1,25 @@
 /**
- * Asset Selection Phase (Phase 5)
+ * Asset Selection Phase (Phase 2: DOWNLOADING + CACHING)
  *
- * Intelligent asset selection with deduplication:
- * 1. Score all provider assets (uses AssetScoringPhase)
+ * Implements docs/concepts/Enrichment/DOWNLOADING.md:
+ * 1. Score all candidates using PROVIDER METADATA (no download yet)
  * 2. Sort by quality score descending
- * 3. Deduplicate visually similar images (O(n) hash bucketing)
- * 4. Select top N per asset type
- * 5. Update database selection flags
- * 6. Download new selections to cache
- * 7. Delete evicted cache files
+ * 3. Download loop (until limit reached):
+ *    - Download to temp file
+ *    - Generate SHA256 + pHash (perceptual hash)
+ *    - Check for duplicates against already-selected (Hamming distance < 10)
+ *    - If unique: move to cache, create cache_image_files record
+ *    - If duplicate: mark as rejected, delete temp
+ * 4. Update provider_assets selection flags
+ *
+ * Key principle: "Trust the providers" - Score using provider-reported metadata,
+ * download only what we need, deduplicate during download.
  */
 
+import crypto from 'crypto';
+import fs from 'fs/promises';
+import path from 'path';
+import sharp from 'sharp';
 import { DatabaseConnection } from '../../../types/database.js';
 import { DatabaseManager } from '../../../database/DatabaseManager.js';
 import { ProviderAssetsRepository } from '../ProviderAssetsRepository.js';
@@ -18,29 +27,32 @@ import { AssetScoringPhase } from './AssetScoringPhase.js';
 import { AssetConfigService } from '../../assetConfigService.js';
 import { PhaseConfigService } from '../../PhaseConfigService.js';
 import { ImageProcessor } from '../../../utils/ImageProcessor.js';
+import { hashFile } from '../../hash/hashService.js';
 import { EnrichmentConfig, ScoredAsset } from '../types.js';
 import { logger } from '../../../middleware/logging.js';
 import { getErrorMessage } from '../../../utils/errorHandling.js';
 import { getAssetTypesForMediaType } from '../../../config/assetTypeDefaults.js';
-import fs from 'fs/promises';
-import path from 'path';
-import sharp from 'sharp';
 
 export class AssetSelectionPhase {
   private readonly providerAssetsRepo: ProviderAssetsRepository;
   private readonly scoringPhase: AssetScoringPhase;
   private readonly phaseConfigService: PhaseConfigService;
+  private readonly imageProcessor: ImageProcessor;
+  private readonly tempDir: string;
 
   private readonly PHASH_SIMILARITY_THRESHOLD = 0.9; // 90% similarity = duplicate
 
   constructor(
     private readonly db: DatabaseConnection,
     private readonly dbManager: DatabaseManager,
-    private readonly cacheDir: string
+    private readonly cacheDir: string,
+    tempDir?: string
   ) {
     this.providerAssetsRepo = new ProviderAssetsRepository(db);
     this.scoringPhase = new AssetScoringPhase();
     this.phaseConfigService = new PhaseConfigService(db);
+    this.imageProcessor = new ImageProcessor();
+    this.tempDir = tempDir || path.join(process.cwd(), 'data', 'temp');
   }
 
   /**
@@ -115,7 +127,13 @@ export class AssetSelectionPhase {
   }
 
   /**
-   * Select assets for a specific asset type
+   * Select assets for a specific asset type using download-during-selection loop.
+   *
+   * Implements docs/concepts/Enrichment/DOWNLOADING.md:
+   * 1. Score all candidates using provider metadata (no download)
+   * 2. Download in ranked order
+   * 3. Hash and deduplicate during download
+   * 4. Stop when limit reached with unique assets
    */
   private async selectAssetsForType(
     entityId: number,
@@ -124,7 +142,7 @@ export class AssetSelectionPhase {
     maxAllowable: number,
     userPreferredLanguage: string
   ): Promise<number> {
-    // STEP 1: Gather all provider assets
+    // STEP 1: Gather all provider assets (candidates)
     const providerAssets = await this.db.query<{
       id: number;
       asset_type: string;
@@ -145,321 +163,244 @@ export class AssetSelectionPhase {
     );
 
     if (providerAssets.length === 0) {
-      logger.info('[AssetSelectionPhase] No provider assets found', {
-        assetType,
-      });
+      logger.debug('[AssetSelectionPhase] No provider assets found', { assetType });
       return 0;
     }
 
-    logger.info('[AssetSelectionPhase] Gathered provider assets', {
+    logger.info('[AssetSelectionPhase] Scoring candidates using provider metadata', {
       assetType,
-      providerCount: providerAssets.length,
+      candidateCount: providerAssets.length,
     });
 
-    // STEP 2: Score all provider assets
-    const scoredAssets: ScoredAsset[] = [];
+    // STEP 2: Score all candidates using PROVIDER METADATA (no download yet)
+    const scoredCandidates: Array<{
+      id: number;
+      provider_url: string;
+      provider_name: string;
+      score: number;
+    }> = [];
 
-    for (const provider of providerAssets) {
+    for (const candidate of providerAssets) {
       const assetForScoring = {
         asset_type: assetType,
-        width: provider.width,
-        height: provider.height,
-        provider_name: provider.provider_name,
-        provider_metadata: provider.provider_metadata,
+        width: candidate.width, // Provider-reported dimensions
+        height: candidate.height,
+        provider_name: candidate.provider_name,
+        provider_metadata: candidate.provider_metadata,
       };
 
       const score = this.scoringPhase.calculateScore(assetForScoring, userPreferredLanguage);
 
-      scoredAssets.push({
-        id: provider.id,
-        provider_url: provider.provider_url,
-        provider_name: provider.provider_name,
-        content_hash: provider.content_hash,
-        perceptual_hash: provider.perceptual_hash,
+      scoredCandidates.push({
+        id: candidate.id,
+        provider_url: candidate.provider_url,
+        provider_name: candidate.provider_name,
         score,
       });
     }
 
     // STEP 3: Sort by score descending
-    scoredAssets.sort((a, b) => b.score - a.score);
+    scoredCandidates.sort((a, b) => b.score - a.score);
 
-    // STEP 4: Deduplicate by perceptual hash (optimized O(n) algorithm)
-    const uniqueAssets = this.deduplicateAssets(scoredAssets, assetType);
+    // STEP 4: Download loop - download in ranked order, deduplicate, cache
+    const selectedAssets: ScoredAsset[] = [];
+    const selectedHashes: string[] = []; // pHashes of already-selected for dedup
+    let downloadsFailed = 0;
+    let duplicatesSkipped = 0;
 
-    // STEP 5: Take top N
-    const topN = uniqueAssets.slice(0, maxAllowable);
-
-    logger.info('[AssetSelectionPhase] Selected top N after deduplication', {
-      assetType,
-      total: scoredAssets.length,
-      unique: uniqueAssets.length,
-      selected: topN.length,
-    });
-
-    // STEP 6: Determine what changed
+    // Reset old selections first
     const oldSelectedIds = providerAssets.filter((p) => p.is_selected === 1).map((p) => p.id);
-    const newSelectedIds = topN.map((a) => a.id);
-
-    const noChanges = this.arraysEqual(oldSelectedIds, newSelectedIds);
-
-    if (noChanges) {
-      logger.info('[AssetSelectionPhase] No selection changes detected, skipping cache updates', {
-        assetType,
-      });
-      return 0;
+    if (oldSelectedIds.length > 0) {
+      await this.db.execute(
+        `UPDATE provider_assets
+         SET is_selected = 0, selected_at = NULL, selected_by = NULL
+         WHERE entity_type = ? AND entity_id = ? AND asset_type = ?`,
+        [entityType, entityId, assetType]
+      );
     }
 
-    // STEP 7: Update is_selected flags
-    await this.updateSelectionFlags(entityType, entityId, assetType, topN);
-
-    // STEP 8: Update cache (download new, delete evicted)
-    await this.updateCache(
-      entityType,
-      entityId,
-      assetType,
-      topN,
-      oldSelectedIds,
-      newSelectedIds,
-      providerAssets
-    );
-
-    logger.info('[AssetSelectionPhase] Phase 5 complete for asset type', {
-      assetType,
-      selectedCount: topN.length,
-    });
-
-    return topN.length;
-  }
-
-  /**
-   * Deduplicate assets using optimized O(n) hash bucketing algorithm
-   */
-  private deduplicateAssets(scoredAssets: ScoredAsset[], assetType: string): ScoredAsset[] {
-    const uniqueAssets: ScoredAsset[] = [];
-    const hashBuckets = new Map<string, ScoredAsset[]>();
-
-    for (const asset of scoredAssets) {
-      if (!asset.perceptual_hash) {
-        uniqueAssets.push(asset); // No phash = can't dedupe, include it
-        continue;
+    for (const candidate of scoredCandidates) {
+      // Stop when we have enough unique assets
+      if (selectedAssets.length >= maxAllowable) {
+        break;
       }
 
-      // Use first 8 chars as bucket key (50% of hash)
-      // Similar images (90%+) will often share this prefix
-      const bucketKey = asset.perceptual_hash.substring(0, 8);
+      try {
+        // Download to temp file
+        const tempPath = path.join(this.tempDir, `metarr-${crypto.randomUUID()}.tmp`);
+        await this.downloadFile(candidate.provider_url, tempPath);
 
-      let isDuplicate = false;
+        // Generate SHA256 content hash
+        const hashResult = await hashFile(tempPath);
+        const contentHash = hashResult.hash;
 
-      // Only check assets in same bucket + adjacent buckets (handle edge cases)
-      const bucketsToCheck: string[] = [bucketKey];
-      const adjacentBuckets = this.getAdjacentBuckets(bucketKey);
-      bucketsToCheck.push(...adjacentBuckets);
+        // Check if this content already exists in cache (exact duplicate)
+        const existingCache = await this.db.get<{ id: number }>(
+          `SELECT id FROM cache_image_files WHERE file_hash = ?`,
+          [contentHash]
+        );
 
-      for (const checkBucket of bucketsToCheck) {
-        const candidates = hashBuckets.get(checkBucket) || [];
+        if (existingCache) {
+          logger.debug('[AssetSelectionPhase] Content already in cache, reusing', {
+            assetType,
+            candidateId: candidate.id,
+            contentHash: contentHash.substring(0, 8),
+          });
+          // Mark as selected but don't re-download
+          await this.providerAssetsRepo.update(candidate.id, {
+            is_selected: 1,
+            selected_at: new Date(),
+            selected_by: 'auto',
+            content_hash: contentHash,
+          });
+          selectedAssets.push({
+            id: candidate.id,
+            provider_url: candidate.provider_url,
+            provider_name: candidate.provider_name,
+            content_hash: contentHash,
+            perceptual_hash: null,
+            score: candidate.score,
+          });
+          await fs.unlink(tempPath).catch(() => {});
+          continue;
+        }
 
-        for (const candidate of candidates) {
-          const similarity = ImageProcessor.hammingSimilarity(
-            asset.perceptual_hash,
-            candidate.perceptual_hash!
-          );
+        // Generate perceptual hash for deduplication
+        const analysis = await this.imageProcessor.analyzeImage(tempPath);
+        const perceptualHash = analysis.perceptualHash;
 
-          if (similarity >= this.PHASH_SIMILARITY_THRESHOLD) {
-            isDuplicate = true;
-            logger.debug('[AssetSelectionPhase] Duplicate detected, keeping higher-scored', {
-              assetType,
-              url: asset.provider_url,
-              score: asset.score,
-              similarity: (similarity * 100).toFixed(2) + '%',
-              candidateScore: candidate.score,
-            });
-            break;
+        // Check for visual duplicates against already-selected
+        let isDuplicate = false;
+        if (perceptualHash) {
+          for (const selectedHash of selectedHashes) {
+            const similarity = ImageProcessor.hammingSimilarity(perceptualHash, selectedHash);
+            if (similarity >= this.PHASH_SIMILARITY_THRESHOLD) {
+              isDuplicate = true;
+              logger.debug('[AssetSelectionPhase] Visual duplicate detected, skipping', {
+                assetType,
+                candidateId: candidate.id,
+                similarity: (similarity * 100).toFixed(1) + '%',
+              });
+              break;
+            }
           }
         }
 
-        if (isDuplicate) break;
-      }
-
-      if (!isDuplicate) {
-        uniqueAssets.push(asset);
-
-        // Add to bucket for future comparisons
-        if (!hashBuckets.has(bucketKey)) {
-          hashBuckets.set(bucketKey, []);
+        if (isDuplicate) {
+          // Mark as rejected, delete temp
+          await this.providerAssetsRepo.update(candidate.id, {
+            is_rejected: 1,
+            content_hash: contentHash,
+            perceptual_hash: perceptualHash ?? undefined,
+          });
+          await fs.unlink(tempPath).catch(() => {});
+          duplicatesSkipped++;
+          continue;
         }
-        hashBuckets.get(bucketKey)!.push(asset);
-      }
-    }
 
-    return uniqueAssets;
-  }
-
-  /**
-   * Get adjacent hash bucket keys for similarity matching
-   * Generates variations with single-bit flips to catch edge cases
-   */
-  private getAdjacentBuckets(bucketKey: string): string[] {
-    const adjacent: string[] = [];
-
-    // Generate buckets with 1-bit flip in each hex position
-    for (let i = 0; i < bucketKey.length; i++) {
-      const hexChar = parseInt(bucketKey[i], 16);
-
-      // Flip each of the 4 bits in this hex char
-      for (let bit = 0; bit < 4; bit++) {
-        const flipped = hexChar ^ (1 << bit);
-        const newKey = bucketKey.substring(0, i) + flipped.toString(16) + bucketKey.substring(i + 1);
-        adjacent.push(newKey);
-      }
-    }
-
-    // Limit to prevent excessive checks
-    return [...new Set(adjacent)].slice(0, 16);
-  }
-
-  /**
-   * Update is_selected flags in database
-   */
-  private async updateSelectionFlags(
-    entityType: string,
-    entityId: number,
-    assetType: string,
-    topN: ScoredAsset[]
-  ): Promise<void> {
-    // Reset all selections for this asset type
-    await this.db.execute(
-      `UPDATE provider_assets
-       SET is_selected = 0, selected_at = NULL, selected_by = NULL
-       WHERE entity_type = ? AND entity_id = ? AND asset_type = ?`,
-      [entityType, entityId, assetType]
-    );
-
-    // Set new selections
-    for (const asset of topN) {
-      await this.providerAssetsRepo.update(asset.id, {
-        is_selected: 1,
-        selected_at: new Date(),
-        selected_by: 'auto',
-      });
-    }
-
-    logger.info('[AssetSelectionPhase] Updated is_selected flags', {
-      assetType,
-      newSelections: topN.length,
-    });
-  }
-
-  /**
-   * Update cache: download new selections, delete evicted
-   */
-  private async updateCache(
-    entityType: string,
-    entityId: number,
-    assetType: string,
-    topN: ScoredAsset[],
-    oldSelectedIds: number[],
-    newSelectedIds: number[],
-    providerAssets: Array<{ id: number; content_hash: string | null }>
-  ): Promise<void> {
-    const cacheTable = this.getCacheTableForAssetType(assetType);
-    if (!cacheTable) {
-      logger.warn('[AssetSelectionPhase] No cache table for asset type, skipping cache updates', {
-        assetType,
-      });
-      return;
-    }
-
-    const toDownload = newSelectedIds.filter((id) => !oldSelectedIds.includes(id));
-    const toDelete = oldSelectedIds.filter((id) => !newSelectedIds.includes(id));
-
-    // Download new selections to cache
-    for (const id of toDownload) {
-      const asset = topN.find((a) => a.id === id);
-      if (!asset || !asset.content_hash) continue;
-
-      await this.downloadAssetToCache(entityType, entityId, assetType, asset, cacheTable);
-    }
-
-    // Delete evicted cache files
-    for (const id of toDelete) {
-      const provider = providerAssets.find((p) => p.id === id);
-      if (!provider || !provider.content_hash) continue;
-
-      await this.deleteAssetFromCache(entityType, entityId, provider.content_hash, cacheTable);
-    }
-
-    // Delete all scanned assets (source_type = 'local')
-    await this.deleteScannedAssets(entityType, entityId, assetType, cacheTable);
-
-    logger.info('[AssetSelectionPhase] Cache updated', {
-      assetType,
-      downloaded: toDownload.length,
-      evicted: toDelete.length,
-    });
-  }
-
-  /**
-   * Download asset to cache
-   */
-  private async downloadAssetToCache(
-    entityType: string,
-    entityId: number,
-    assetType: string,
-    asset: ScoredAsset,
-    cacheTable: string
-  ): Promise<void> {
-    try {
-      const ext = path.extname(new URL(asset.provider_url).pathname) || '.jpg';
-      const cachePath = path.join(
-        this.cacheDir,
-        assetType,
-        asset.content_hash!.slice(0, 2),
-        `${asset.content_hash}${ext}`
-      );
-
-      await fs.mkdir(path.dirname(cachePath), { recursive: true });
-      await this.downloadFile(asset.provider_url, cachePath);
-
-      // Get image metadata
-      const metadata = await sharp(cachePath).metadata();
-
-      await this.db.execute(
-        `INSERT INTO ${cacheTable} (
-          entity_type, entity_id, file_path, file_name, file_size,
-          file_hash, perceptual_hash, image_type, width, height, format,
-          source_type, source_url, provider_name, discovered_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-        [
-          entityType,
-          entityId,
-          cachePath,
-          path.basename(cachePath),
-          (await fs.stat(cachePath)).size,
-          asset.content_hash,
-          asset.perceptual_hash,
+        // UNIQUE asset - move to cache
+        const ext = path.extname(new URL(candidate.provider_url).pathname) || '.jpg';
+        const cachePath = path.join(
+          this.cacheDir,
           assetType,
-          metadata.width,
-          metadata.height,
-          metadata.format,
-          'provider',
-          asset.provider_url,
-          asset.provider_name,
-        ]
-      );
+          contentHash.slice(0, 2),
+          `${contentHash}${ext}`
+        );
 
-      logger.debug('[AssetSelectionPhase] Downloaded new selection to cache', {
-        assetType,
-        providerId: asset.id,
-        cachePath,
-      });
-    } catch (error) {
-      logger.error('[AssetSelectionPhase] Failed to download asset to cache', {
-        assetType,
-        providerId: asset.id,
-        url: asset.provider_url,
-        error: getErrorMessage(error),
-      });
+        await fs.mkdir(path.dirname(cachePath), { recursive: true });
+        await fs.rename(tempPath, cachePath);
+
+        // Get image metadata
+        const metadata = await sharp(cachePath).metadata();
+
+        // Create cache_image_files record
+        await this.db.execute(
+          `INSERT INTO cache_image_files (
+            entity_type, entity_id, file_path, file_name, file_size,
+            file_hash, perceptual_hash, image_type, width, height, format,
+            source_type, source_url, provider_name, discovered_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+          [
+            entityType,
+            entityId,
+            cachePath,
+            path.basename(cachePath),
+            (await fs.stat(cachePath)).size,
+            contentHash,
+            perceptualHash,
+            assetType,
+            metadata.width,
+            metadata.height,
+            metadata.format,
+            'provider',
+            candidate.provider_url,
+            candidate.provider_name,
+          ]
+        );
+
+        // Update provider_assets with selection and hashes
+        await this.providerAssetsRepo.update(candidate.id, {
+          is_selected: 1,
+          selected_at: new Date(),
+          selected_by: 'auto',
+          content_hash: contentHash,
+          perceptual_hash: perceptualHash ?? undefined,
+          width: metadata.width,
+          height: metadata.height,
+        });
+
+        selectedAssets.push({
+          id: candidate.id,
+          provider_url: candidate.provider_url,
+          provider_name: candidate.provider_name,
+          content_hash: contentHash,
+          perceptual_hash: perceptualHash ?? null,
+          score: candidate.score,
+        });
+
+        if (perceptualHash) {
+          selectedHashes.push(perceptualHash);
+        }
+
+        logger.debug('[AssetSelectionPhase] Downloaded and cached asset', {
+          assetType,
+          candidateId: candidate.id,
+          cachePath,
+          score: candidate.score,
+        });
+      } catch (error) {
+        downloadsFailed++;
+        logger.warn('[AssetSelectionPhase] Failed to download/process candidate', {
+          assetType,
+          candidateId: candidate.id,
+          url: candidate.provider_url,
+          error: getErrorMessage(error),
+        });
+      }
     }
+
+    // Delete old cache files that are no longer selected
+    const newSelectedIds = selectedAssets.map((a) => a.id);
+    const toDelete = oldSelectedIds.filter((id) => !newSelectedIds.includes(id));
+    for (const id of toDelete) {
+      const oldAsset = providerAssets.find((p) => p.id === id);
+      if (oldAsset?.content_hash) {
+        await this.deleteAssetFromCache(entityType, entityId, oldAsset.content_hash, 'cache_image_files');
+      }
+    }
+
+    // Delete scanned assets (local source)
+    await this.deleteScannedAssets(entityType, entityId, assetType, 'cache_image_files');
+
+    logger.info('[AssetSelectionPhase] Asset selection complete for type', {
+      assetType,
+      selected: selectedAssets.length,
+      duplicatesSkipped,
+      downloadsFailed,
+      candidatesTotal: scoredCandidates.length,
+    });
+
+    return selectedAssets.length;
   }
 
   /**
@@ -591,42 +532,5 @@ export class AssetSelectionPhase {
 
     // Add other entity types as needed
     return false;
-  }
-
-  /**
-   * Get cache table name for asset type
-   */
-  private getCacheTableForAssetType(assetType: string): string | null {
-    // Images (posters, fanart, etc.)
-    if (
-      [
-        'poster',
-        'fanart',
-        'banner',
-        'clearlogo',
-        'clearart',
-        'discart',
-        'landscape',
-        'keyart',
-        'thumb',
-      ].includes(assetType)
-    ) {
-      return 'cache_image_files';
-    }
-    // Videos (trailers, samples)
-    if (['trailer', 'sample'].includes(assetType)) {
-      return 'cache_video_files';
-    }
-    return null;
-  }
-
-  /**
-   * Compare two arrays for equality
-   */
-  private arraysEqual(a: number[], b: number[]): boolean {
-    if (a.length !== b.length) return false;
-    const sortedA = [...a].sort((x, y) => x - y);
-    const sortedB = [...b].sort((x, y) => x - y);
-    return sortedA.every((val, idx) => val === sortedB[idx]);
   }
 }

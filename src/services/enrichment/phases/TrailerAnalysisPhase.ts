@@ -16,6 +16,7 @@
 
 import { DatabaseConnection } from '../../../types/database.js';
 import { TrailerDownloadService, VideoInfo } from '../../trailers/TrailerDownloadService.js';
+import { classifyError, getRetryDelay } from '../../trailers/errorClassifier.js';
 import { EnrichmentConfig } from '../types.js';
 import { logger } from '../../../middleware/logging.js';
 import { getErrorMessage } from '../../../utils/errorHandling.js';
@@ -53,6 +54,7 @@ interface TrailerCandidate {
   provider_name: string | null;
   provider_video_id: string | null;
   analyzed: number;
+  failure_reason: string | null;
 }
 
 export class TrailerAnalysisPhase {
@@ -214,13 +216,45 @@ export class TrailerAnalysisPhase {
       trailer.provider_video_id
     );
 
-    if (existingCandidate && existingCandidate.analyzed) {
-      logger.debug('[TrailerAnalysisPhase] Trailer already analyzed, skipping', {
-        entityId,
-        candidateId: existingCandidate.id,
-        providerVideoId: trailer.provider_video_id,
-      });
-      return false;
+    if (existingCandidate) {
+      // Skip already analyzed candidates (unless they failed for a retryable reason)
+      if (existingCandidate.analyzed) {
+        logger.debug('[TrailerAnalysisPhase] Trailer already analyzed, skipping', {
+          entityId,
+          candidateId: existingCandidate.id,
+          providerVideoId: trailer.provider_video_id,
+        });
+        return false;
+      }
+
+      // Handle age_restricted candidates: only retry if cookies are now available
+      if (existingCandidate.failure_reason === 'age_restricted') {
+        const hasCookies = await this.trailerDownloadService.hasCookieFile();
+        if (!hasCookies) {
+          logger.debug('[TrailerAnalysisPhase] Age-restricted trailer skipped (no cookies configured)', {
+            entityId,
+            candidateId: existingCandidate.id,
+            providerVideoId: trailer.provider_video_id,
+          });
+          return false;
+        }
+        // Cookies available - will retry analysis below
+        logger.info('[TrailerAnalysisPhase] Retrying age-restricted trailer (cookies now available)', {
+          entityId,
+          candidateId: existingCandidate.id,
+          providerVideoId: trailer.provider_video_id,
+        });
+      }
+
+      // Skip permanently unavailable candidates
+      if (existingCandidate.failure_reason === 'unavailable') {
+        logger.debug('[TrailerAnalysisPhase] Trailer permanently unavailable, skipping', {
+          entityId,
+          candidateId: existingCandidate.id,
+          providerVideoId: trailer.provider_video_id,
+        });
+        return false;
+      }
     }
 
     // STEP 1: Proactive oEmbed verification (fast check)
@@ -273,26 +307,34 @@ export class TrailerAnalysisPhase {
     } catch (error) {
       const errorMsg = getErrorMessage(error);
 
-      if (errorMsg.includes('Rate limited') || errorMsg.includes('429')) {
-        // Rate limited - retry after 1 hour
-        failureReason = 'rate_limited';
-        retryAfter = new Date(Date.now() + 60 * 60 * 1000); // 1 hour from now
-        logger.warn('[TrailerAnalysisPhase] Rate limited by yt-dlp', {
-          entityId,
-          sourceUrl,
-          retryAfter,
-        });
-      } else {
-        // Other error - verify with oEmbed to determine if permanent or transient
-        const recheck = await this.trailerDownloadService.verifyVideoExists(sourceUrl);
-        failureReason = recheck === 'not_found' ? 'unavailable' : 'download_error';
-        logger.error('[TrailerAnalysisPhase] Failed to get video info', {
-          entityId,
-          sourceUrl,
-          failureReason,
-          error: errorMsg,
-        });
+      // Use centralized error classifier for consistent error handling
+      const classification = classifyError(errorMsg);
+      failureReason = classification.reason;
+
+      // Set retry_after for rate-limited errors
+      const retryDelayMs = getRetryDelay(failureReason);
+      if (retryDelayMs) {
+        retryAfter = new Date(Date.now() + retryDelayMs);
       }
+
+      // For download_error (unknown), verify with oEmbed to check if actually unavailable
+      if (failureReason === 'download_error') {
+        const recheck = await this.trailerDownloadService.verifyVideoExists(sourceUrl);
+        if (recheck === 'not_found') {
+          failureReason = 'unavailable';
+        }
+      }
+
+      logger.info('[TrailerAnalysisPhase] Video analysis failed', {
+        entityId,
+        sourceUrl,
+        failureReason,
+        confidence: classification.confidence,
+        matchedPatterns: classification.matchedPatterns,
+        userMessage: classification.userMessage,
+        retryAfter,
+        error: errorMsg,
+      });
     }
 
     // Upsert to trailer_candidates table

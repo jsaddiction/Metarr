@@ -31,6 +31,7 @@ export interface EnrichmentResult {
   thumbnailsDownloaded?: number; // Already optional
   trailersAnalyzed?: number; // Number of trailers analyzed via yt-dlp
   trailerSelected?: boolean; // Whether a trailer was selected
+  selectedTrailerCandidateId?: number | null; // ID of selected trailer candidate (for download queueing)
   errors?: string[]; // Changed to optional to match usage pattern
   message?: string; // NEW: optional message (e.g., for rate limit info)
 }
