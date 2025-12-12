@@ -26,7 +26,7 @@ For each selected asset in temp directory:
     │         └──► New → Continue
     │
     ├──► MOVE to cache directory
-    │         └──► Path: /data/cache/images/{hash[0:2]}/{hash}.{ext}
+    │         └──► Path: /data/cache/{asset_type}/{hash[0:2]}/{hash}.{ext}
     │
     └──► RECORD in cache_image_files table
 
@@ -52,9 +52,11 @@ Benefits:
 
 ### Directory Structure
 
+Assets are organized by **asset type** (poster, fanart, etc.) for better organization:
+
 ```
 /data/cache/
-├── images/
+├── poster/
 │   ├── 0a/
 │   │   ├── 0a1b2c3d...{64 chars}.jpg
 │   │   └── 0a9f8e7d...{64 chars}.png
@@ -62,25 +64,31 @@ Benefits:
 │   │   └── ...
 │   └── ff/
 │       └── ...
-├── videos/
+├── fanart/
 │   └── {same structure}
-└── audio/
-    └── {same structure}
+├── clearlogo/
+│   └── {same structure}
+├── banner/
+│   └── {same structure}
+├── trailer/
+│   └── {same structure for videos}
+└── {other asset types}/
+    └── ...
 ```
 
-First two characters of hash = subdirectory (256 possible directories).
+First two characters of hash = subdirectory (256 possible directories per asset type).
 
 ### File Path Formula
 
 ```
-cache_path = /data/cache/{type}/{hash[0:2]}/{hash}.{ext}
+cache_path = /data/cache/{asset_type}/{hash[0:2]}/{hash}.{ext}
 
 Example:
   hash = "0a1b2c3d4e5f6789..."
   ext = "jpg"
-  type = "images"
+  asset_type = "poster"
 
-  path = /data/cache/images/0a/0a1b2c3d4e5f6789...{64 chars}.jpg
+  path = /data/cache/poster/0a/0a1b2c3d4e5f6789...{64 chars}.jpg
 ```
 
 ---
@@ -90,9 +98,9 @@ Example:
 If hash already exists in cache:
 
 ```
-New asset with hash 0x1234...
+New poster with hash 0x1234...
     │
-    ├──► Check: /data/cache/images/12/1234...jpg exists?
+    ├──► Check: /data/cache/poster/12/1234...jpg exists?
     │
     ├──► YES: File already cached
     │         └──► Skip copy

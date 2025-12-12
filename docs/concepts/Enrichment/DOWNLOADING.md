@@ -29,14 +29,17 @@ For each asset type (poster, fanart, logo, etc.):
     │         ├──► Download top unprocessed candidate
     │         │         └──► Save to temp directory
     │         │
-    │         ├──► Generate pHash
+    │         ├──► Generate SHA256 + pHash
     │         │
-    │         ├──► Check for duplicate
-    │         │         ├──► Hamming distance < 10 → DUPLICATE
-    │         │         │         └──► Discard, continue loop
+    │         ├──► Check for exact duplicate (SHA256)
+    │         │         └──► If hash exists in cache → reuse existing
+    │         │
+    │         ├──► Check for visual duplicate (pHash)
+    │         │         ├──► ≥90% similarity → DUPLICATE
+    │         │         │         └──► Mark rejected, continue loop
     │         │         │
-    │         │         └──► Hamming distance >= 10 → UNIQUE
-    │         │                   └──► Accept, increment selected count
+    │         │         └──► <90% similarity → UNIQUE
+    │         │                   └──► Accept, move to cache
     │         │
     │         └──► Repeat until selected_count == asset_limit
     │                   └──► Or no more candidates
@@ -48,44 +51,67 @@ For each asset type (poster, fanart, logo, etc.):
 
 ## Scoring Algorithm
 
-Score calculated from provider metadata (no download required):
+Score calculated from provider metadata (no download required). Total possible: 100 points.
 
 ```
-score = (resolution_score * 0.35) +
-        (language_score * 0.30) +
-        (provider_score * 0.20) +
-        (vote_score * 0.15)
+score = resolution_score (0-30) +
+        aspect_ratio_score (0-20) +
+        language_score (0-20) +
+        vote_score (0-20) +
+        provider_score (0-10)
 ```
 
-### Resolution Score (35%)
+### Resolution Score (0-30 points)
 
-| Provider Dimensions | Score |
-|---------------------|-------|
-| 4K (3840+ width) | 100 |
-| 1080p (1920+ width) | 85 |
-| 720p (1280+ width) | 70 |
-| SD (below 720) | 50 |
-| Unknown | 60 |
+Based on total pixel count compared to ideal resolution for the asset type:
 
-### Language Score (30%)
+| Asset Type | Ideal Resolution | Ideal Pixels |
+|------------|------------------|--------------|
+| Poster | 2000x3000 | 6,000,000 |
+| Fanart | 1920x1080 | 2,073,600 |
+| Other | 1000x1000 | 1,000,000 |
 
-| Match | Score |
-|-------|-------|
-| Matches preferred language | 100 |
-| Neutral/textless | 80 |
-| Different language | 40 |
+Score scales linearly up to 1.5x ideal (max 30 points for high-res assets).
 
-### Provider Score (20%)
+### Aspect Ratio Score (0-20 points)
 
-| Provider | Score | Rationale |
-|----------|-------|-----------|
-| Fanart.tv | 90 | Curated, high quality |
-| TMDB | 80 | Large catalog |
-| TVDB | 70 | Supplemental |
+Penalizes images that deviate from expected aspect ratio:
 
-### Vote Score (15%)
+| Asset Type | Ideal Ratio |
+|------------|-------------|
+| Poster | 2:3 (0.667) |
+| Fanart | 16:9 (1.778) |
+| Clearlogo | 4:1 (wide) |
 
-Normalized from provider vote counts to 0-100 scale.
+Score = max(0, 20 - deviation × 100)
+
+### Language Score (0-20 points)
+
+| Match | Points |
+|-------|--------|
+| Matches user's preferred language | 20 |
+| Language-neutral (no text/logos) | 18 |
+| English (universal fallback) | 15 |
+| Other languages | 5 |
+
+### Vote Score (0-20 points)
+
+Community votes from provider, weighted by confidence:
+
+```
+normalized = vote_average / 10  (0-1 scale)
+weight = min(vote_count / 50, 1.0)  (need 50+ votes for full confidence)
+score = normalized × weight × 20
+```
+
+### Provider Score (0-10 points)
+
+| Provider | Points | Rationale |
+|----------|--------|-----------|
+| TMDB | 10 | Highest quality, most votes |
+| Fanart.tv | 9 | Curated, high quality |
+| TVDB | 8 | Good for TV shows |
+| Unknown | 5 | Default |
 
 ---
 
@@ -111,14 +137,18 @@ Two similar images produce similar hashes. Difference measured by Hamming distan
 
 ### Duplicate Threshold
 
-| Hamming Distance | Interpretation |
-|------------------|----------------|
-| 0-5 | Nearly identical |
-| 6-10 | Same image, minor differences |
-| 11-20 | Similar but different |
-| 21+ | Different images |
+Uses **90% similarity** threshold (restrictive to catch similar movie posters):
 
-**Threshold: < 10 = duplicate**
+| Similarity | Hamming Distance (64-bit) | Interpretation |
+|------------|---------------------------|----------------|
+| 95-100% | 0-3 bits | Nearly identical |
+| 90-95% | 4-6 bits | Same image, minor differences |
+| 80-90% | 7-13 bits | Similar but different |
+| <80% | 14+ bits | Different images |
+
+**Threshold: ≥90% similarity = duplicate**
+
+This restrictive threshold ensures visually similar posters (same artwork with different text, crops, or color grades) are detected as duplicates.
 
 ---
 

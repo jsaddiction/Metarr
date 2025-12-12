@@ -253,12 +253,12 @@ After scraping completes:
 
 | Service | File | Purpose |
 |---------|------|---------|
-| `MetadataEnrichmentService` | `src/services/enrichment/MetadataEnrichmentService.ts` | Core metadata logic |
+| `ProviderFetchPhase` | `src/services/enrichment/phases/ProviderFetchPhase.ts` | Scraping phase implementation |
+| `ProviderCacheOrchestrator` | `src/services/providers/ProviderCacheOrchestrator.ts` | Provider coordination & caching |
 | `EnrichmentOrchestrator` | `src/services/enrichment/EnrichmentOrchestrator.ts` | Phase coordination |
 | `TMDBClient` | `src/services/providers/tmdb/TMDBClient.ts` | TMDB API client |
 | `OMDBProvider` | `src/services/providers/omdb/OMDBProvider.ts` | OMDB API client |
 | `FanartService` | `src/services/providers/FanartService.ts` | Fanart.tv client |
-| `CacheService` | `src/services/CacheService.ts` | Cache matching |
 
 ---
 
