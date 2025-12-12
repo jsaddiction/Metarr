@@ -7,7 +7,7 @@ import { JOB_PRIORITY } from '../../services/jobQueue/types.js';
 import { websocketBroadcaster } from '../../services/websocketBroadcaster.js';
 import { logger } from '../../middleware/logging.js';
 import multer from 'multer';
-import * as fs from 'fs-extra';
+import fs from 'fs-extra';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { DatabaseManager } from '../../database/DatabaseManager.js';
@@ -734,6 +734,9 @@ export class MovieTrailerController {
           message: result.message,
         });
 
+        // Broadcast update so UI reflects new failure state
+        websocketBroadcaster.broadcastMoviesUpdated([movieId]);
+
         res.json({
           success: false,
           error: result.error,
@@ -742,10 +745,16 @@ export class MovieTrailerController {
         return;
       }
 
+      // Test passed - clear any previous failure state
+      await this.trailerService.clearFailure(candidateId);
+
       logger.info('Trailer candidate test passed', {
         movieId,
         candidateId,
       });
+
+      // Broadcast update so UI reflects cleared failure state
+      websocketBroadcaster.broadcastMoviesUpdated([movieId]);
 
       res.json({ success: true });
     } catch (error) {
