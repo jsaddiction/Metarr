@@ -17,6 +17,7 @@
 import youtubedl from 'youtube-dl-exec';
 import { logger } from '../../middleware/logging.js';
 import { getErrorMessage, getErrorCode } from '../../utils/errorHandling.js';
+import { classifyError, TrailerFailureReason } from './errorClassifier.js';
 import fs from 'fs-extra';
 import * as path from 'path';
 
@@ -69,12 +70,14 @@ export interface VideoInfo {
  *
  * Error types:
  * - 'unavailable': Video confirmed gone via oEmbed - permanent, never retry automatically
+ * - 'age_restricted': Video requires YouTube authentication - semi-permanent, retry when cookies available
+ * - 'geo_blocked': Video not available in region - permanent, never retry automatically
  * - 'rate_limited': Provider rate limit - transient, retry on next enrichment cycle
- * - 'download_error': Network/unknown issue (video still exists) - transient, retry on next enrichment cycle
+ * - 'download_error': Network/unknown issue (video still exists) - user-initiated retry only
  */
 export type DownloadResult =
   | { success: true; filePath: string; fileSize: number }
-  | { success: false; error: 'unavailable' | 'rate_limited' | 'download_error'; message: string };
+  | { success: false; error: TrailerFailureReason; message: string };
 
 /**
  * Simulate download result
@@ -82,7 +85,7 @@ export type DownloadResult =
  */
 export type SimulateResult =
   | { success: true }
-  | { success: false; error: 'unavailable' | 'rate_limited' | 'region_blocked' | 'format_error'; message: string };
+  | { success: false; error: TrailerFailureReason | 'format_error'; message: string };
 
 /**
  * Download progress callback
@@ -386,42 +389,34 @@ export class TrailerDownloadService {
         });
       }
 
-      // Rate limiting (403, 429) - detected by yt-dlp error message
-      // This is transient, retry later
-      if (
-        errorMsg.includes('HTTP Error 429') ||
-        errorMsg.includes('HTTP Error 403') ||
-        errorMsg.includes('Too Many Requests') ||
-        errorMsg.includes('rate limit') ||
-        errorMsg.includes('Sign in to confirm')
-      ) {
-        return {
-          success: false,
-          error: 'rate_limited',
-          message: 'Rate limited by video provider',
-        };
+      // Use centralized error classifier for consistent error handling
+      const classification = classifyError(errorMsg);
+
+      logger.info('Download error classified', {
+        url,
+        reason: classification.reason,
+        confidence: classification.confidence,
+        matchedPatterns: classification.matchedPatterns,
+        userMessage: classification.userMessage,
+      });
+
+      // For download_error (unknown), verify via oEmbed to check if actually unavailable
+      if (classification.reason === 'download_error') {
+        const verifyResult = await this.verifyVideoExists(url);
+        if (verifyResult === 'not_found') {
+          logger.info('Video confirmed unavailable via oEmbed after download failure', { url });
+          return {
+            success: false,
+            error: 'unavailable',
+            message: 'Video is unavailable or has been removed',
+          };
+        }
       }
 
-      // For all other errors, verify via oEmbed to determine if permanent or transient
-      // This proactive check tells us immediately WHY it failed
-      const verifyResult = await this.verifyVideoExists(url);
-
-      if (verifyResult === 'not_found') {
-        // Video confirmed unavailable via oEmbed - permanent failure
-        logger.info('Video confirmed unavailable via oEmbed after download failure', { url });
-        return {
-          success: false,
-          error: 'unavailable',
-          message: 'Video is unavailable or has been removed',
-        };
-      }
-
-      // Video still exists (or unknown) - transient failure
-      // Could be network issue, yt-dlp bug, temporary server issue, etc.
       return {
         success: false,
-        error: 'download_error',
-        message: errorMsg,
+        error: classification.reason,
+        message: classification.userMessage,
       };
     }
   }
@@ -656,55 +651,10 @@ export class TrailerDownloadService {
 
       logger.debug('Download simulation failed', { url, error: errorMsg });
 
-      // Rate limiting
-      if (
-        errorMsg.includes('HTTP Error 429') ||
-        errorMsg.includes('HTTP Error 403') ||
-        errorMsg.includes('Too Many Requests') ||
-        errorMsg.includes('rate limit') ||
-        errorMsg.includes('Sign in to confirm')
-      ) {
-        return {
-          success: false,
-          error: 'rate_limited',
-          message: 'Rate limited by video provider',
-        };
-      }
-
-      // Video unavailable/deleted
-      if (
-        errorMsg.includes('Video unavailable') ||
-        errorMsg.includes('This video is not available') ||
-        errorMsg.includes('Private video') ||
-        errorMsg.includes('has been removed') ||
-        errorMsg.includes('This video has been removed')
-      ) {
-        return {
-          success: false,
-          error: 'unavailable',
-          message: 'Video is unavailable or has been removed',
-        };
-      }
-
-      // Region/geo-blocking
-      if (
-        errorMsg.includes('not available in your country') ||
-        errorMsg.includes('geo') ||
-        errorMsg.includes('blocked') ||
-        errorMsg.includes('uploader has not made this video available')
-      ) {
-        return {
-          success: false,
-          error: 'region_blocked',
-          message: 'Video is not available in your region',
-        };
-      }
-
-      // Format/codec issues
+      // Check for format-specific errors first (simulation-specific)
       if (
         errorMsg.includes('No video formats') ||
-        errorMsg.includes('Requested format is not available') ||
-        errorMsg.includes('format')
+        errorMsg.includes('Requested format is not available')
       ) {
         return {
           success: false,
@@ -713,22 +663,38 @@ export class TrailerDownloadService {
         };
       }
 
-      // Default to unavailable for other errors
-      // Verify with oEmbed to be sure
-      const verifyResult = await this.verifyVideoExists(url);
-      if (verifyResult === 'not_found') {
+      // Use centralized error classifier for consistent error handling
+      const classification = classifyError(errorMsg);
+
+      logger.debug('Simulation error classified', {
+        url,
+        reason: classification.reason,
+        confidence: classification.confidence,
+        matchedPatterns: classification.matchedPatterns,
+      });
+
+      // For download_error (unknown), verify via oEmbed to check if actually unavailable
+      if (classification.reason === 'download_error') {
+        const verifyResult = await this.verifyVideoExists(url);
+        if (verifyResult === 'not_found') {
+          return {
+            success: false,
+            error: 'unavailable',
+            message: 'Video is unavailable or has been removed',
+          };
+        }
+        // Unknown error but video may exist - report as format_error for simulation
         return {
           success: false,
-          error: 'unavailable',
-          message: 'Video is unavailable or has been removed',
+          error: 'format_error',
+          message: errorMsg,
         };
       }
 
-      // Unknown error but video may exist
       return {
         success: false,
-        error: 'format_error',
-        message: errorMsg,
+        error: classification.reason,
+        message: classification.userMessage,
       };
     }
   }
@@ -854,35 +820,33 @@ export class TrailerDownloadService {
         });
       }
 
-      // Rate limiting
-      if (
-        errorMsg.includes('HTTP Error 429') ||
-        errorMsg.includes('HTTP Error 403') ||
-        errorMsg.includes('Too Many Requests') ||
-        errorMsg.includes('rate limit') ||
-        errorMsg.includes('Sign in to confirm')
-      ) {
-        return {
-          success: false,
-          error: 'rate_limited',
-          message: 'Rate limited by video provider',
-        };
-      }
+      // Use centralized error classifier for consistent error handling
+      const classification = classifyError(errorMsg);
 
-      // Verify via oEmbed
-      const verifyResult = await this.verifyVideoExists(url);
-      if (verifyResult === 'not_found') {
-        return {
-          success: false,
-          error: 'unavailable',
-          message: 'Video is unavailable or has been removed',
-        };
+      logger.info('Download with progress error classified', {
+        url,
+        reason: classification.reason,
+        confidence: classification.confidence,
+        matchedPatterns: classification.matchedPatterns,
+        userMessage: classification.userMessage,
+      });
+
+      // For download_error (unknown), verify via oEmbed to check if actually unavailable
+      if (classification.reason === 'download_error') {
+        const verifyResult = await this.verifyVideoExists(url);
+        if (verifyResult === 'not_found') {
+          return {
+            success: false,
+            error: 'unavailable',
+            message: 'Video is unavailable or has been removed',
+          };
+        }
       }
 
       return {
         success: false,
-        error: 'download_error',
-        message: errorMsg,
+        error: classification.reason,
+        message: classification.userMessage,
       };
     }
   }
