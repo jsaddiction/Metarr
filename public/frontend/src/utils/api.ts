@@ -618,6 +618,36 @@ export const movieApi = {
       body: JSON.stringify(data),
     });
   },
+
+  /**
+   * Search TMDB for movie identification candidates
+   * POST /api/movies/:id/search-tmdb
+   */
+  async searchTmdb(id: number, query?: string): Promise<{ results: any[] }> {
+    return fetchApi(`/movies/${id}/search-tmdb`, {
+      method: 'POST',
+      body: JSON.stringify({ query }),
+    });
+  },
+
+  /**
+   * Identify movie with a specific TMDB ID
+   * POST /api/movies/:id/identify
+   */
+  async identify(id: number, tmdbId: number): Promise<{ success: boolean; message: string }> {
+    return fetchApi(`/movies/${id}/identify`, {
+      method: 'POST',
+      body: JSON.stringify({ tmdbId }),
+    });
+  },
+
+  /**
+   * Restore a deleted movie from recycle bin
+   * POST /api/movies/:id/restore
+   */
+  async restore(id: number): Promise<{ success: boolean; message: string }> {
+    return fetchApi(`/movies/${id}/restore`, { method: 'POST' });
+  },
 };
 
 export const providerApi = {
@@ -860,9 +890,40 @@ export const assetApi = {
     return response.candidates;
   },
 
-  // REMOVED: selectCandidate, blockCandidate, unblockCandidate, resetSelection
-  // These API methods are no longer available with the cache-aside pattern.
-  // Asset selection now happens via the replaceAssets endpoint.
+  /**
+   * Select a specific asset candidate
+   * POST /api/asset-candidates/:id/select
+   */
+  async selectCandidate(candidateId: number): Promise<{ success: boolean; message: string }> {
+    return fetchApi(`/asset-candidates/${candidateId}/select`, { method: 'POST' });
+  },
+
+  /**
+   * Block an asset candidate from being selected
+   * POST /api/asset-candidates/:id/block
+   */
+  async blockCandidate(candidateId: number): Promise<{ success: boolean; message: string }> {
+    return fetchApi(`/asset-candidates/${candidateId}/block`, { method: 'POST' });
+  },
+
+  /**
+   * Unblock a previously blocked asset candidate
+   * POST /api/asset-candidates/:id/unblock
+   */
+  async unblockCandidate(candidateId: number): Promise<{ success: boolean; message: string }> {
+    return fetchApi(`/asset-candidates/${candidateId}/unblock`, { method: 'POST' });
+  },
+
+  /**
+   * Reset asset selection for a movie (clear selected asset for a type)
+   * POST /api/movies/:id/reset-asset
+   */
+  async resetSelection(movieId: number, assetType: string): Promise<{ success: boolean; message: string }> {
+    return fetchApi(`/movies/${movieId}/reset-asset`, {
+      method: 'POST',
+      body: JSON.stringify({ assetType }),
+    });
+  },
 };
 
 /**
@@ -958,17 +1019,42 @@ export const jobApi = {
   },
 
   /**
-   * Get job history with optional filters
-   * GET /api/jobs/history?limit=50&type=movie_metadata&status=completed
+   * Get recent/active jobs with optional filters
+   * GET /api/jobs?limit=50&type=movie_metadata
+   *
+   * Note: The /api/jobs/history endpoint was deprecated. This now uses
+   * the main /api/jobs endpoint which returns active jobs (pending/processing).
+   * Completed jobs are removed from the queue and not available.
    */
   async getHistory(filters?: JobHistoryFilters): Promise<JobHistoryResponse> {
     const params = new URLSearchParams();
     if (filters?.limit) params.set('limit', filters.limit.toString());
     if (filters?.type) params.set('type', filters.type);
-    if (filters?.status) params.set('status', filters.status);
+    // Note: status filter not meaningful for history - active jobs only have pending/processing
 
     const queryString = params.toString();
-    return fetchApi<JobHistoryResponse>(`/jobs/history${queryString ? `?${queryString}` : ''}`);
+    const response = await fetchApi<JobsResponse>(`/jobs${queryString ? `?${queryString}` : ''}`);
+
+    // Map Job[] to JobHistoryRecord[] format for backwards compatibility
+    // Note: Some fields unavailable since job history table was removed
+    const history = (response.jobs || []).map((job) => ({
+      id: job.id,
+      job_id: job.id,
+      type: job.type,
+      priority: job.priority,
+      payload: job.payload,
+      status: job.status as 'completed' | 'failed', // Cast for type compat (actually pending/processing)
+      error: job.error || null,
+      retry_count: job.attempts || 0,
+      created_at: job.createdAt,
+      started_at: job.processingStarted || job.createdAt,
+      completed_at: job.processingCompleted || job.createdAt,
+      duration_ms: job.processingStarted && job.processingCompleted
+        ? new Date(job.processingCompleted).getTime() - new Date(job.processingStarted).getTime()
+        : 0,
+    }));
+
+    return { history, total: history.length };
   },
 
   /**

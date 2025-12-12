@@ -149,17 +149,6 @@ export function Workflow() {
         updates['enrichment.language'] = formData.enrichment.preferredLanguage;
       }
 
-      // Publish
-      if (formData.publish.publishAssets !== config?.publish.publishAssets) {
-        updates['publish.assets'] = formData.publish.publishAssets;
-      }
-      if (formData.publish.publishActors !== config?.publish.publishActors) {
-        updates['publish.actors'] = formData.publish.publishActors;
-      }
-      if (formData.publish.publishTrailers !== config?.publish.publishTrailers) {
-        updates['publish.trailers'] = formData.publish.publishTrailers;
-      }
-
       await updateConfig(updates);
       setHasChanges(false);
       toast.success('Configuration saved');
@@ -283,26 +272,42 @@ export function Workflow() {
                     {expandedMediaTypes.has(mediaType) && (
                       <div className="border-t border-neutral-700 p-3">
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                          {group.limits.map((limit) => (
-                            <div key={limit.assetType} className="space-y-1">
-                              <Label htmlFor={`limit-${limit.assetType}`} className="text-xs flex items-center gap-1">
-                                {limit.displayName}
-                                {!limit.isDefault && (
-                                  <span className="text-primary-400" title="Custom value">*</span>
+                          {group.limits.map((limit) => {
+                            // Binary assets (maxAllowed = 1) show as switch
+                            const isBinary = limit.maxAllowed === 1;
+
+                            return (
+                              <div key={limit.assetType} className="space-y-1">
+                                <Label htmlFor={`limit-${limit.assetType}`} className="text-xs flex items-center gap-1">
+                                  {limit.displayName}
+                                  {!limit.isDefault && (
+                                    <span className="text-primary-400" title="Custom value">*</span>
+                                  )}
+                                </Label>
+                                {isBinary ? (
+                                  <div className="flex items-center h-9" title={limit.description}>
+                                    <Switch
+                                      id={`limit-${limit.assetType}`}
+                                      checked={limit.currentLimit > 0}
+                                      onCheckedChange={(checked) => updateLimit({ assetType: limit.assetType, limit: checked ? 1 : 0 })}
+                                      disabled={isUpdating}
+                                    />
+                                  </div>
+                                ) : (
+                                  <NumberInput
+                                    id={`limit-${limit.assetType}`}
+                                    min={limit.minAllowed}
+                                    max={limit.maxAllowed}
+                                    value={limit.currentLimit}
+                                    onChange={(value) => updateLimit({ assetType: limit.assetType, limit: value })}
+                                    disabled={isUpdating}
+                                    title={limit.description}
+                                    className="w-full"
+                                  />
                                 )}
-                              </Label>
-                              <NumberInput
-                                id={`limit-${limit.assetType}`}
-                                min={limit.minAllowed}
-                                max={limit.maxAllowed}
-                                value={limit.currentLimit}
-                                onChange={(value) => updateLimit({ assetType: limit.assetType, limit: value })}
-                                disabled={isUpdating}
-                                title={limit.description}
-                                className="w-full"
-                              />
-                            </div>
-                          ))}
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                     )}
@@ -321,13 +326,13 @@ export function Workflow() {
         {/* Publishing Card */}
         <SettingCard
           title="📤 Library Publishing"
-          description="Choose what gets copied to your media library and when"
+          description="Control when selected assets are copied to your media library"
         >
           <div className="space-y-4">
             {/* Auto-publish setting */}
             <SettingRow
               label="Automatic Publishing"
-              description="When enabled, assets are automatically published after enrichment completes. When disabled, you must manually review and publish from the UI."
+              description="When enabled, all selected assets are automatically published after enrichment. When disabled, you must manually review and trigger publish from the UI."
             >
               <Switch
                 checked={formData.general.autoPublish}
@@ -338,49 +343,9 @@ export function Workflow() {
             <Alert>
               <InfoIcon className="h-4 w-4" />
               <AlertDescription>
-                <strong>Recommended: Off</strong> - Review metadata and selected assets before publishing to your library.
-                Turn on for fully automated workflow without manual review.
-              </AlertDescription>
-            </Alert>
-
-            {/* Divider */}
-            <div className="border-t border-neutral-700 my-6"></div>
-
-            {/* What to publish */}
-            <SettingRow
-              label="Publish assets (posters, fanart, logos)"
-              description="Copy selected images to your media library"
-            >
-              <Switch
-                checked={formData.publish.publishAssets}
-                onCheckedChange={(checked) => updateField('publish.publishAssets', checked)}
-              />
-            </SettingRow>
-
-            <SettingRow
-              label="Publish actor headshots"
-              description="Create .actors/ folder with cast thumbnails (Kodi/Jellyfin format)"
-            >
-              <Switch
-                checked={formData.publish.publishActors}
-                onCheckedChange={(checked) => updateField('publish.publishActors', checked)}
-              />
-            </SettingRow>
-
-            <SettingRow
-              label="Publish trailers"
-              description="Download and save trailer files (⚠️ uses significant disk space)"
-            >
-              <Switch
-                checked={formData.publish.publishTrailers}
-                onCheckedChange={(checked) => updateField('publish.publishTrailers', checked)}
-              />
-            </SettingRow>
-
-            <Alert>
-              <InfoIcon className="h-4 w-4" />
-              <AlertDescription>
-                <strong>NFO files are always generated</strong> regardless of these settings. They contain metadata required by media players.
+                <strong>Recommended: Off</strong> - Review metadata and selected assets before publishing.
+                When publishing (auto or manual), Metarr copies all selected assets to your library:
+                posters, fanart, logos, actor headshots, trailers, and generates NFO files.
               </AlertDescription>
             </Alert>
           </div>

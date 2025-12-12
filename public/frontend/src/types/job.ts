@@ -61,9 +61,11 @@ export interface JobHistoryFilters {
 
 /**
  * Job history API response
+ * Note: Since job history table was removed, this now returns active jobs
  */
 export interface JobHistoryResponse {
   history: JobHistoryRecord[];
+  total: number;
 }
 
 /**

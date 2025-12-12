@@ -20,11 +20,13 @@ export interface EnrichmentConfig {
 
 /**
  * Publishing Phase Configuration
+ *
+ * Publishing always publishes ALL selected assets.
+ * Individual asset types are controlled via asset limits (set to 0 to disable).
+ * This interface is kept for API compatibility.
  */
 export interface PublishConfig {
-  publishAssets: boolean;
-  publishActors: boolean;
-  publishTrailers: boolean;
+  // Empty - publishing publishes all selected assets
 }
 
 /**

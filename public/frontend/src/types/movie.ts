@@ -353,11 +353,19 @@ export interface CastUpdateRequest {
 }
 
 /**
- * Cast response
- * GET /api/movies/:id/cast
- * PATCH /api/movies/:id/cast
+ * Cast response for GET /api/movies/:id/cast
  */
 export interface CastResponse {
+  actors: MovieActorLink[];
+  actors_order_locked: boolean;
+}
+
+/**
+ * Cast update response for PUT /api/movies/:id/cast
+ */
+export interface CastUpdateResponse {
+  success: boolean;
+  message: string;
   actors: MovieActorLink[];
   actors_order_locked: boolean;
 }
