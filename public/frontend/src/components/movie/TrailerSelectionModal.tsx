@@ -31,18 +31,23 @@ import {
   faGlobe,
   faRedo,
 } from '@fortawesome/free-solid-svg-icons';
+import { toast } from 'sonner';
 import {
   useTrailerCandidates,
   useSelectTrailer,
   useAddTrailerUrl,
   useUploadTrailer,
-  useRetryTrailerDownload,
   useVerifyCandidates,
   useTestCandidate,
   TrailerCandidate,
   CandidateVerificationStatus,
 } from '../../hooks/useTrailer';
 import { YouTubePlayer } from '../video/YouTubePlayer';
+import {
+  getFailureInfo,
+  isPermanentFailure,
+  type TrailerFailureReason,
+} from '../../utils/trailerErrors';
 
 interface TrailerSelectionModalProps {
   isOpen: boolean;
@@ -81,16 +86,22 @@ const isYouTubeUrl = (url: string): boolean => {
  * - YouTube URLs: Use YouTube embed iframe (designed for cross-origin)
  * - Cached/downloaded videos: Could use streaming endpoint (future)
  * - Other URLs: Show thumbnail only with link to open in new tab
+ *
+ * Test/Select Flow:
+ * - For failed candidates: Show "Test" button to verify availability
+ * - Test success: Clear failure, enable "Select" button
+ * - Test failure: Update failure reason, keep "Test" button visible
+ * - For non-failed candidates: Show "Select" button directly
  */
 const TrailerPreviewCard: React.FC<{
   candidate: TrailerCandidate;
   isSelected: boolean;
   verificationStatus?: CandidateVerificationStatus;
-  onTestAndSelect: () => Promise<{ success: boolean; message: string }>;
+  onTest: () => Promise<{ success: boolean; error?: string; message?: string }>;
+  onSelect: () => Promise<void>;
   isTesting: boolean;
-  onRetry: () => void;
-  isRetryPending: boolean;
-}> = ({ candidate, isSelected, verificationStatus, onTestAndSelect, isTesting, onRetry, isRetryPending }) => {
+  isSelecting: boolean;
+}> = ({ candidate, isSelected, verificationStatus, onTest, onSelect, isTesting, isSelecting }) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
@@ -145,13 +156,16 @@ const TrailerPreviewCard: React.FC<{
     }
   }, [candidate.source_url]);
 
-  const isUnavailable = candidate.failure_reason === 'unavailable';
+  const failureInfo = candidate.failure_reason
+    ? getFailureInfo(candidate.failure_reason as TrailerFailureReason)
+    : null;
+  const isPermanent = isPermanentFailure(candidate.failure_reason as TrailerFailureReason);
 
   return (
     <div
       className={`
         border rounded-lg overflow-hidden transition-all
-        ${isUnavailable ? 'opacity-60' : ''}
+        ${isPermanent ? 'opacity-60' : ''}
         ${isSelected
           ? 'border-primary-500 bg-primary-500/10'
           : 'border-neutral-700 bg-neutral-800/50 hover:border-neutral-500'
@@ -285,49 +299,17 @@ const TrailerPreviewCard: React.FC<{
 
           {/* Status indicators */}
           <div className="flex items-center gap-3 mt-2 text-xs">
-            {candidate.failed_at && (
-              <>
-                <span className={isUnavailable ? 'text-neutral-500' : 'text-warning'}>
-                  <FontAwesomeIcon icon={faExclamationTriangle} className="mr-1" />
-                  {isUnavailable
-                    ? 'Video unavailable'
-                    : candidate.failure_reason === 'rate_limited'
-                      ? 'Rate limited'
-                      : 'Download error'}
-                </span>
-                {candidate.source_url && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (isUnavailable) {
-                        // Show confirmation for unavailable videos
-                        if (window.confirm(
-                          'This video was previously marked as unavailable. ' +
-                          'It may have been deleted or made private. ' +
-                          'Do you want to retry anyway?'
-                        )) {
-                          onRetry();
-                        }
-                      } else {
-                        onRetry();
-                      }
-                    }}
-                    disabled={isRetryPending}
-                    className={`
-                      px-2 py-0.5 rounded text-xs font-medium transition-colors flex items-center gap-1
-                      ${isUnavailable
-                        ? 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-700'
-                        : 'text-warning hover:text-white hover:bg-warning/20'
-                      }
-                      ${isRetryPending ? 'opacity-50 cursor-wait' : ''}
-                    `}
-                    title={isUnavailable ? 'Retry (video may be unavailable)' : 'Retry download'}
-                  >
-                    <FontAwesomeIcon icon={isRetryPending ? faSpinner : faRedo} spin={isRetryPending} />
-                    Retry
-                  </button>
-                )}
-              </>
+            {candidate.failed_at && failureInfo && (
+              <span
+                className={`cursor-help ${
+                  failureInfo.severity === 'error' ? 'text-neutral-500' :
+                  failureInfo.severity === 'warning' ? 'text-warning' : 'text-info'
+                }`}
+                title={failureInfo.tooltip}
+              >
+                <FontAwesomeIcon icon={faExclamationTriangle} className="mr-1" />
+                {failureInfo.label}
+              </span>
             )}
             {!candidate.analyzed && !candidate.failed_at && (
               <span className="text-neutral-500">
@@ -335,65 +317,121 @@ const TrailerPreviewCard: React.FC<{
                 Not analyzed
               </span>
             )}
+            {testResult?.success === true && (
+              <span className="text-success">
+                <FontAwesomeIcon icon={faCheck} className="mr-1" />
+                Test passed
+              </span>
+            )}
           </div>
 
-          {/* Select Button - uses test-then-select pattern */}
-          <div className="mt-auto pt-2 flex justify-end">
+          {/* Action Buttons - Test for failed, Select for ready */}
+          <div className="mt-auto pt-2 flex justify-end gap-2">
+            {/* Test Button - shown for failed candidates that can be retried */}
+            {candidate.failed_at && failureInfo && candidate.source_url && (
+              <button
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  if (isTesting) return;
+
+                  setTestResult(null);
+                  try {
+                    const result = await onTest();
+                    if (result.success) {
+                      setTestResult({ success: true, message: 'Test passed - ready to select' });
+                      toast.success('Video is available and ready to download');
+                    } else {
+                      setTestResult({ success: false, message: result.message || 'Test failed' });
+                      toast.error(result.message || 'Video test failed');
+                    }
+                  } catch (error) {
+                    const msg = error instanceof Error ? error.message : 'Test failed';
+                    setTestResult({ success: false, message: msg });
+                    toast.error(msg);
+                  }
+                }}
+                disabled={isTesting || isPermanent}
+                title={isPermanent ? failureInfo.tooltip : (failureInfo.retryCondition || 'Test if video is downloadable')}
+                className={`
+                  px-3 py-1.5 rounded text-sm font-medium transition-colors flex items-center justify-center gap-2
+                  ${isPermanent
+                    ? 'border border-neutral-600 text-neutral-500 cursor-not-allowed'
+                    : 'border border-warning text-warning hover:bg-warning/20'
+                  }
+                  ${isTesting ? 'opacity-50 cursor-wait' : ''}
+                `}
+              >
+                {isTesting ? (
+                  <>
+                    <FontAwesomeIcon icon={faSpinner} spin />
+                    Testing...
+                  </>
+                ) : (
+                  <>
+                    <FontAwesomeIcon icon={faRedo} />
+                    Test
+                  </>
+                )}
+              </button>
+            )}
+
+            {/* Select Button */}
             <button
               onClick={async (e) => {
                 e.stopPropagation();
-                if (isSelected || isTesting) return;
+                if (isSelected || isSelecting) return;
 
-                // Clear previous result
-                setTestResult(null);
+                // For failed candidates that haven't passed a test, don't allow select
+                if (candidate.failed_at && !testResult?.success) {
+                  toast.info('Please test the video first to verify it can be downloaded');
+                  return;
+                }
 
                 try {
-                  const result = await onTestAndSelect();
-                  setTestResult(result);
-
-                  // Clear result after 3 seconds
-                  setTimeout(() => setTestResult(null), 3000);
+                  await onSelect();
+                  toast.success('Trailer selected - download queued');
                 } catch (error) {
-                  setTestResult({
-                    success: false,
-                    message: error instanceof Error ? error.message : 'Test failed'
-                  });
-                  setTimeout(() => setTestResult(null), 3000);
+                  toast.error(error instanceof Error ? error.message : 'Selection failed');
                 }
               }}
-              disabled={isSelected || isTesting || verificationStatus === 'unavailable'}
+              disabled={
+                isSelected ||
+                isSelecting ||
+                verificationStatus === 'unavailable' ||
+                isPermanent ||
+                (candidate.failed_at && !testResult?.success)
+              }
               title={
-                verificationStatus === 'unavailable'
-                  ? 'Video is unavailable'
-                  : testResult?.message
+                isPermanent && failureInfo
+                  ? failureInfo.tooltip
+                  : verificationStatus === 'unavailable'
+                    ? 'Video is unavailable'
+                    : candidate.failed_at && !testResult?.success
+                      ? 'Test the video first'
+                      : undefined
               }
               className={`
-                w-24 px-3 py-1.5 rounded text-sm font-medium transition-all flex items-center justify-center gap-2 relative
+                w-24 px-3 py-1.5 rounded text-sm font-medium transition-all flex items-center justify-center gap-2
                 ${isSelected
                   ? 'bg-primary-600 text-white cursor-default'
-                  : testResult?.success === false
-                    ? 'border border-error text-error'
-                    : testResult?.success === true
-                      ? 'border border-success text-success'
-                      : 'border border-primary-500 text-primary-400 hover:bg-primary-500 hover:text-white'
+                  : 'border border-primary-500 text-primary-400 hover:bg-primary-500 hover:text-white'
                 }
-                ${(isTesting || verificationStatus === 'unavailable') ? 'opacity-50 cursor-not-allowed' : ''}
+                ${(isSelecting || verificationStatus === 'unavailable' || isPermanent || (candidate.failed_at && !testResult?.success))
+                  ? 'opacity-50 cursor-not-allowed'
+                  : ''
+                }
               `}
             >
-              {isTesting ? (
+              {isSelecting ? (
                 <>
                   <FontAwesomeIcon icon={faSpinner} spin />
-                  Testing...
+                  ...
                 </>
               ) : isSelected ? (
                 <>
                   <FontAwesomeIcon icon={faCheck} />
                   Selected
                 </>
-              ) : testResult?.success === true ? (
-                <span className="text-success">✓</span>
-              ) : testResult?.success === false ? (
-                <span className="text-error">✗</span>
               ) : (
                 'Select'
               )}
@@ -419,13 +457,13 @@ export const TrailerSelectionModal: React.FC<TrailerSelectionModalProps> = ({
   const [fileTitle, setFileTitle] = useState('');
   const [verificationResults, setVerificationResults] = useState<Record<number, CandidateVerificationStatus>>({});
   const [testingCandidateId, setTestingCandidateId] = useState<number | null>(null);
+  const [selectingCandidateId, setSelectingCandidateId] = useState<number | null>(null);
 
   // Queries and mutations
   const { data: candidates, isLoading, error } = useTrailerCandidates(movieId);
   const selectMutation = useSelectTrailer(movieId);
   const addUrlMutation = useAddTrailerUrl(movieId);
   const uploadMutation = useUploadTrailer(movieId);
-  const retryMutation = useRetryTrailerDownload(movieId);
   const verifyMutation = useVerifyCandidates(movieId);
   const testMutation = useTestCandidate(movieId);
 
@@ -453,52 +491,44 @@ export const TrailerSelectionModal: React.FC<TrailerSelectionModalProps> = ({
     return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
   };
 
-  // Handle test and select - tests download first, then selects if successful
-  const handleTestAndSelect = async (candidateId: number): Promise<{ success: boolean; message: string }> => {
-    // Find the candidate
-    const candidate = candidates?.find(c => c.id === candidateId);
-    if (!candidate) {
-      return { success: false, message: 'Candidate not found' };
-    }
-
-    // Uploads don't need testing - select directly
-    if (candidate.source_type === 'upload') {
-      try {
-        await selectMutation.mutateAsync(candidateId);
-        onClose();
-        return { success: true, message: 'Selected' };
-      } catch (error) {
-        return { success: false, message: error instanceof Error ? error.message : 'Selection failed' };
-      }
-    }
-
-    // Test download first
+  // Handle test - runs simulation to check if video can be downloaded
+  const handleTest = async (candidateId: number): Promise<{ success: boolean; error?: string; message?: string }> => {
     setTestingCandidateId(candidateId);
     try {
-      const testResult = await testMutation.mutateAsync(candidateId);
+      const result = await testMutation.mutateAsync(candidateId);
 
-      if (!testResult.success) {
-        // Test failed - don't select, show error
+      if (!result.success) {
+        // Test failed - show user-friendly error
         const errorMessages: Record<string, string> = {
           'unavailable': 'Video is unavailable or removed',
-          'rate_limited': 'Rate limited by provider',
-          'region_blocked': 'Video not available in your region',
+          'age_restricted': 'Video requires YouTube sign-in (configure cookies in Settings)',
+          'geo_blocked': 'Video not available in your region',
+          'rate_limited': 'Rate limited by provider - try again later',
           'format_error': 'No compatible format available',
+          'download_error': 'Download test failed - video may have issues',
         };
         return {
           success: false,
-          message: testResult.error ? errorMessages[testResult.error] || testResult.message || 'Test failed' : 'Test failed',
+          error: result.error,
+          message: result.error ? errorMessages[result.error] || result.message || 'Test failed' : 'Test failed',
         };
       }
 
-      // Test passed - proceed with selection
-      await selectMutation.mutateAsync(candidateId);
-      onClose();
-      return { success: true, message: 'Download queued' };
-    } catch (error) {
-      return { success: false, message: error instanceof Error ? error.message : 'Test failed' };
+      // Test passed - failure state cleared on backend
+      return { success: true, message: 'Video is available and ready to download' };
     } finally {
       setTestingCandidateId(null);
+    }
+  };
+
+  // Handle select - selects the candidate and queues download
+  const handleSelect = async (candidateId: number): Promise<void> => {
+    setSelectingCandidateId(candidateId);
+    try {
+      await selectMutation.mutateAsync(candidateId);
+      onClose();
+    } finally {
+      setSelectingCandidateId(null);
     }
   };
 
@@ -658,10 +688,10 @@ export const TrailerSelectionModal: React.FC<TrailerSelectionModalProps> = ({
                           candidate={candidate}
                           isSelected={candidate.is_selected}
                           verificationStatus={verificationResults[candidate.id]}
-                          onTestAndSelect={() => handleTestAndSelect(candidate.id)}
+                          onTest={() => handleTest(candidate.id)}
+                          onSelect={() => handleSelect(candidate.id)}
                           isTesting={testingCandidateId === candidate.id}
-                          onRetry={() => retryMutation.mutate(candidate.id)}
-                          isRetryPending={retryMutation.isPending}
+                          isSelecting={selectingCandidateId === candidate.id}
                         />
                       ))}
                   </div>
