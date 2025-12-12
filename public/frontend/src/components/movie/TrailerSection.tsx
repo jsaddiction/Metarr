@@ -31,6 +31,11 @@ import {
   getTrailerStreamUrl,
 } from '../../hooks/useTrailer';
 import { useConfirm } from '../../hooks/useConfirm';
+import {
+  getFailureInfo,
+  canRetryDownload,
+  type TrailerFailureReason,
+} from '../../utils/trailerErrors';
 
 interface TrailerSectionProps {
   movieId: number;
@@ -329,12 +334,24 @@ export const TrailerSection: React.FC<TrailerSectionProps> = ({ movieId, movieTi
                   </div>
                 )}
 
-                {selectedTrailer.failed_at && (
-                  <div className="mt-auto text-sm text-error">
-                    <FontAwesomeIcon icon={faExclamationTriangle} className="mr-2" />
-                    {selectedTrailer.failure_reason || 'Download failed'}
-                  </div>
-                )}
+                {selectedTrailer.failed_at && (() => {
+                  const failureInfo = getFailureInfo(selectedTrailer.failure_reason as TrailerFailureReason);
+                  const severityClass = failureInfo.severity === 'error' ? 'text-error' :
+                    failureInfo.severity === 'warning' ? 'text-warning' : 'text-info';
+
+                  return (
+                    <div
+                      className={`mt-auto text-sm ${severityClass} cursor-help`}
+                      title={failureInfo.tooltip}
+                    >
+                      <FontAwesomeIcon icon={faExclamationTriangle} className="mr-2" />
+                      {failureInfo.label}
+                      {canRetryDownload(selectedTrailer.failure_reason as TrailerFailureReason) && (
+                        <span className="text-neutral-500 ml-2 text-xs">(hover for details)</span>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           </div>
