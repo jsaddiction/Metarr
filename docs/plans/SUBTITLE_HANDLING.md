@@ -2,7 +2,7 @@
 
 **Created**: 2025-12-12
 **Status**: Planning
-**Last Updated**: 2025-12-12
+**Last Updated**: 2025-12-31
 
 ## Overview
 
@@ -13,18 +13,21 @@ This document outlines the complete plan for implementing subtitle handling in M
 1. [Goals & Non-Goals](#goals--non-goals)
 2. [Architecture](#architecture)
 3. [Key Decisions](#key-decisions)
-4. [Providers](#providers)
-5. [Sync Validation](#sync-validation)
-6. [Language Detection](#language-detection)
-7. [Selection Algorithm](#selection-algorithm)
-8. [Database Schema](#database-schema)
-9. [Configuration](#configuration)
-10. [File Naming Convention](#file-naming-convention)
-11. [Implementation Phases](#implementation-phases)
-12. [Technical Details](#technical-details)
-13. [UI Requirements](#ui-requirements)
-14. [Testing Strategy](#testing-strategy)
-15. [Open Questions](#open-questions)
+4. [Subtitle Types](#subtitle-types)
+5. [Providers](#providers)
+6. [Sync Validation](#sync-validation)
+7. [Language Detection](#language-detection)
+8. [Selection Algorithm](#selection-algorithm)
+9. [User Override & Locking](#user-override--locking)
+10. [Database Schema](#database-schema)
+11. [Configuration](#configuration)
+12. [File Naming Convention](#file-naming-convention)
+13. [Subtitle Cleaning](#subtitle-cleaning)
+14. [Implementation Phases](#implementation-phases)
+15. [Technical Details](#technical-details)
+16. [UI Requirements](#ui-requirements)
+17. [Testing Strategy](#testing-strategy)
+18. [Open Questions](#open-questions)
 
 ---
 
@@ -37,6 +40,8 @@ This document outlines the complete plan for implementing subtitle handling in M
 - **User control**: Configurable language preferences with priority ordering
 - **Multi-provider aggregation**: Combine embedded, external, and downloaded subtitles
 - **Cross-platform compatibility**: Naming conventions work with Kodi, Jellyfin, and Plex
+- **Zero-config operation**: Works out-of-box with SubDB; OpenSubtitles enhances when configured
+- **Smart automation with override**: Auto-selects best subtitles, user can override and lock selections
 
 ### Non-Goals
 
@@ -44,6 +49,7 @@ This document outlines the complete plan for implementing subtitle handling in M
 - **Hardcoded subtitle extraction**: Requires OCR, out of scope
 - **Subtitle editing/timing adjustment**: Users should use dedicated tools
 - **Real-time subtitle streaming**: Focus is on file-based subtitles
+- **TV Show support**: Movies first; TV support will follow once movies are complete
 
 ---
 
@@ -129,21 +135,82 @@ PUBLISHING PHASE
 | **Primary provider** | OpenSubtitles | Largest database, hash matching, well-documented API |
 | **Secondary provider** | SubDB | Free, hash-based, no API key needed, open-source friendly |
 | **Sync validation tool** | ffsubsync | Actively maintained (Nov 2025), 7.5k stars, Python-native |
+| **Sync validation fallback** | Skip if unavailable | If ffsubsync not installed, skip sync validation rather than fail |
 | **Language detection** | franc (npm) | Popular, well-maintained, 400+ languages |
 | **Language settings** | Separate from artwork | Different use cases (single vs multi-select) |
 | **Naming convention** | Kodi/Jellyfin/Plex compatible | Maximum player compatibility |
 | **Format strategy** | Text-based only (SRT/ASS/VTT), skip bitmap (PGS/VobSub) | Bitmap requires OCR; text formats are syncable, cleanable |
-| **Subtitle cleaning** | Remove ads, attributions, normalize | High-quality, clean output to cache/library |
+| **Subtitle cleaning** | Always on, remove ads/attributions | High-quality, clean output to cache/library |
 | **Rate limit handling** | HTTP response codes | Same pattern as other providers (429 handling) |
+| **Audio extraction** | Extract once, validate all | Extract audio from video once, reuse for all candidate sync validations |
+| **Selection grouping** | By language + type | Select best per (language, type) combo: full, forced, SDH |
+| **User override** | Manual selection with locking | User can override auto-selection; locked selections preserved on re-enrichment |
+
+---
+
+## Subtitle Types
+
+Subtitles are grouped by **type** within each language. Users may want multiple types for the same language.
+
+### Type Definitions
+
+| Type | Description | Use Case |
+|------|-------------|----------|
+| **Full** | Complete dialogue transcription | Accessibility, language learning, noisy environments |
+| **Forced** | Foreign parts only | When primary audio is your language but some dialogue is foreign (e.g., Elvish in LOTR, Japanese in Kill Bill) |
+| **SDH** | Subtitles for Deaf/Hard of Hearing | Includes `[sound effects]`, `[music]`, speaker identification |
+
+### Examples
+
+For a user with `languages: ['en', 'es']` and `includeForced: true, includeFull: true`:
+
+| File | Type | Purpose |
+|------|------|---------|
+| `Movie.en.srt` | Full | All English dialogue |
+| `Movie.en.forced.srt` | Forced | Only foreign dialogue translated to English |
+| `Movie.es.srt` | Full | All Spanish dialogue |
+| `Movie.es.forced.srt` | Forced | Only foreign dialogue translated to Spanish |
+
+### Provider Support for Forced Flag
+
+| Provider | Forced Detection |
+|----------|------------------|
+| **OpenSubtitles** | `foreign_parts_only: true` in API response |
+| **SubDB** | No forced flag (limited metadata) |
+| **Embedded** | FFprobe `disposition.forced` flag |
+| **External files** | Filename contains `.forced.` |
+
+### Selection Logic
+
+Selection happens per **(language, type)** group, not just per language:
+
+```typescript
+// Selection groups for languages: ['en', 'es'], includeForced: true, includeFull: true, includeSdh: false
+const groups = [
+  { language: 'en', type: 'full' },
+  { language: 'en', type: 'forced' },
+  { language: 'es', type: 'full' },
+  { language: 'es', type: 'forced' },
+];
+
+// Select best candidate for EACH group
+for (const group of groups) {
+  const candidates = getCandidatesFor(group.language, group.type);
+  const best = selectBest(candidates);
+  if (best) markSelected(best);
+}
+```
 
 ---
 
 ## Providers
 
-### OpenSubtitles (Primary)
+### OpenSubtitles (Primary - Optional)
 
 **API**: REST API at `api.opensubtitles.com`
 **Documentation**: https://opensubtitles.stoplight.io/docs/opensubtitles-api
+
+> **Note**: OpenSubtitles requires user account configuration. When not configured, Metarr falls back to SubDB only. Configuring OpenSubtitles significantly improves subtitle availability and quality.
 
 | Aspect | Details |
 |--------|---------|
@@ -153,6 +220,7 @@ PUBLISHING PHASE
 | Rate limit | 40 requests/10 seconds |
 | Hash support | Yes (OpenSubtitles hash algorithm) |
 | Search methods | Hash, IMDB ID, TMDB ID, text |
+| Forced flag | Yes (`foreign_parts_only` field) |
 
 **Hash Algorithm** (first 64KB + last 64KB → sum):
 ```typescript
@@ -190,10 +258,12 @@ async function computeOpenSubtitlesHash(filePath: string): Promise<string> {
 - Hash match: ~99.9%
 - IMDB/TMDB match: ~70% (may need sync adjustment)
 
-### SubDB (Secondary)
+### SubDB (Secondary - Zero Config)
 
 **API**: REST API at `api.thesubdb.com`
 **Documentation**: http://thesubdb.com/api/
+
+> **Note**: SubDB works out-of-box with no configuration required. This enables basic subtitle functionality immediately after installation.
 
 | Aspect | Details |
 |--------|---------|
@@ -202,6 +272,7 @@ async function computeOpenSubtitlesHash(filePath: string): Promise<string> {
 | Rate limit | Not documented |
 | Hash support | Yes (different algorithm - MD5) |
 | Search methods | Hash only |
+| Forced flag | No (limited metadata) |
 
 **Hash Algorithm** (first 64KB + last 64KB → MD5):
 ```typescript
@@ -250,7 +321,59 @@ SubDB/1.0 (Metarr/1.0; https://github.com/jsaddiction/Metarr)
 
 **Requirements**: ffmpeg in PATH for audio extraction
 
-**Why ffsubsync over alternatives**:
+### Fallback Behavior
+
+> **Important**: If ffsubsync is not installed or fails, Metarr skips sync validation rather than failing the entire subtitle workflow. Candidates without sync validation get `sync_score = NULL` and are scored based on other factors (source trust, language match, format).
+
+```typescript
+async function validateSync(videoPath: string, subtitlePath: string): Promise<SyncResult | null> {
+  // Check if ffsubsync is available
+  if (!await isFFSubsyncAvailable()) {
+    logger.warn('ffsubsync not available, skipping sync validation');
+    return null;  // NULL sync_score, not failure
+  }
+
+  // Run validation...
+}
+```
+
+### Audio Extraction Optimization
+
+The most expensive step in sync validation is **audio extraction from the video file** (~10-20 seconds). To avoid extracting audio multiple times when validating multiple candidates:
+
+```
+1. Get all candidates for movie
+2. Extract audio from video file ONCE → temp audio file
+3. For each candidate needing sync validation:
+   - Run ffsubsync with extracted audio as reference
+   - Store sync_score
+4. Clean up temp audio file
+```
+
+This optimization reduces total validation time from `N × 20-30s` to `20-30s + (N × 5-10s)`.
+
+```typescript
+async function validateAllCandidates(
+  videoPath: string,
+  candidates: SubtitleCandidate[]
+): Promise<void> {
+  // Extract audio once
+  const audioPath = await extractAudioForSync(videoPath);
+
+  try {
+    for (const candidate of candidates) {
+      const result = await runFFSubsync(audioPath, candidate.tempPath);
+      await updateSyncScore(candidate.id, result);
+    }
+  } finally {
+    // Clean up extracted audio
+    await fs.unlink(audioPath);
+  }
+}
+```
+
+### Why ffsubsync over alternatives
+
 - **Actively maintained** - Regular releases through 2025
 - **Large community** - 7.5k GitHub stars, 13 contributors
 - **Python-native** - Direct integration, no binary shelling
@@ -262,7 +385,8 @@ SubDB/1.0 (Metarr/1.0; https://github.com/jsaddiction/Metarr)
 - sc0ty/subsync: Archived October 2024
 - tympanix/subsync: Neural net approach, less mature
 
-**Usage**:
+### Usage
+
 ```bash
 # Sync subtitle to video
 ffsubsync video.mkv -i subtitle.srt -o output.srt
@@ -271,20 +395,8 @@ ffsubsync video.mkv -i subtitle.srt -o output.srt
 ffsubsync video.mkv -i subtitle.srt --no-fix
 ```
 
-**Python Integration**:
-```python
-from ffsubsync import ffsubsync
+### Output Parsing
 
-# Programmatic usage
-result = ffsubsync.run(
-    reference='video.mkv',
-    srtin='subtitle.srt',
-    srtout='output.srt',
-    vad='webrtc',  # Voice activity detection
-)
-```
-
-**Output Parsing**:
 ```typescript
 interface FFSubsyncResult {
   // Offset in seconds (positive = subtitle was late)
@@ -296,10 +408,12 @@ interface FFSubsyncResult {
 }
 ```
 
-**Performance**:
+### Performance
+
 - Audio extraction: 10-20 seconds (most expensive step)
 - Alignment computation: 5-10 seconds
 - Total: ~20-30 seconds per subtitle
+- With extracted audio reference: ~5-10 seconds per subtitle
 - With reference SRT (no audio extraction): < 1 second
 
 **Integration Approach**:
@@ -625,6 +739,114 @@ async function selectSubtitles(
 
 ---
 
+## User Override & Locking
+
+Following Metarr's core philosophy of **"Smart Automation with Manual Override"**, users can override automatic subtitle selection and lock their choices.
+
+### The Lock Pattern
+
+This mirrors the existing field-level locking pattern used elsewhere in Metarr:
+
+| State | Behavior |
+|-------|----------|
+| **Unlocked** | Automation selects best candidate; may change on re-enrichment if better found |
+| **Locked** | User's manual selection preserved; automation won't override on re-enrichment |
+
+### User Workflow
+
+1. **View candidates**: User sees all available subtitles grouped by language and type
+2. **See auto-selection**: Currently selected subtitle highlighted with score breakdown
+3. **Override**: User clicks different candidate to select it
+4. **Auto-lock**: Manual selection automatically locks that (language, type) group
+5. **Unlock**: User can unlock to return to auto-selection mode
+
+### Database Fields
+
+```sql
+-- Added to subtitle_candidates table
+user_selected INTEGER DEFAULT 0,     -- User manually chose this (boolean)
+user_selected_at TEXT,               -- When user made selection (ISO datetime)
+```
+
+### Selection Logic with Locking
+
+```typescript
+async function selectSubtitles(
+  entityType: 'movie' | 'episode',
+  entityId: number,
+  config: SubtitleConfig
+): Promise<void> {
+  const candidates = await getCandidates(entityType, entityId);
+
+  // Group by (language, type)
+  const groups = groupByLanguageAndType(candidates);
+
+  for (const [groupKey, groupCandidates] of groups) {
+    // Check if this group has a user-locked selection
+    const userSelected = groupCandidates.find(c => c.user_selected);
+
+    if (userSelected) {
+      // Respect user's locked selection - don't change it
+      continue;
+    }
+
+    // No lock - run auto-selection
+    const best = selectBest(groupCandidates, config);
+    if (best) {
+      await markSelected(best.id);
+    }
+  }
+}
+```
+
+### API Endpoints
+
+```typescript
+// Manual selection (auto-locks)
+POST /api/movies/:id/subtitles/select
+Body: { candidateId: number }
+
+// Unlock (returns to auto-selection)
+POST /api/movies/:id/subtitles/unlock
+Body: { language: string, type: 'full' | 'forced' | 'sdh' }
+
+// Get candidates with selection state
+GET /api/movies/:id/subtitles
+Response: {
+  groups: [
+    {
+      language: 'en',
+      type: 'full',
+      locked: boolean,
+      selected: SubtitleCandidate | null,
+      alternatives: SubtitleCandidate[]
+    }
+  ]
+}
+```
+
+### UI Behavior
+
+When user selects a different candidate:
+
+1. Mark new candidate as `is_selected = 1, user_selected = 1`
+2. Clear previous selection in same group
+3. If new candidate not yet cached:
+   - Download/extract to temp
+   - Validate (language, sync if available)
+   - Clean and cache
+4. Publish to library with correct naming
+
+### Re-enrichment Behavior
+
+| Scenario | Locked Groups | Unlocked Groups |
+|----------|---------------|-----------------|
+| New candidates found | Keep user selection, show new alternatives in UI | May change selection if new candidate scores higher |
+| Selected candidate no longer available | Keep locked, show warning in UI | Auto-select next best |
+| User clicks "Refresh" | Fetch new candidates, preserve locks | Fetch new candidates, re-run auto-selection |
+
+---
+
 ## Database Schema
 
 ### New Table: subtitle_candidates
@@ -678,6 +900,8 @@ CREATE TABLE subtitle_candidates (
   score INTEGER,                  -- Calculated weighted score (0-100)
   is_selected INTEGER DEFAULT 0,  -- Whether selected for use (boolean)
   selected_at TEXT,               -- When selected (ISO datetime)
+  user_selected INTEGER DEFAULT 0,-- User manually selected this (locks against auto-change)
+  user_selected_at TEXT,          -- When user made manual selection
 
   -- Timestamps
   discovered_at TEXT DEFAULT (datetime('now')),
@@ -760,18 +984,19 @@ library_text_files (published subtitle)
 ```typescript
 // Subtitle-specific settings
 'subtitle.languages'           = '["en"]'       // JSON array, ordered by priority
-'subtitle.maxPerLanguage'      = '1'            // Max subtitles per language
-'subtitle.includeForced'       = 'true'         // Include forced subtitles
-'subtitle.includeSdh'          = 'true'         // Include SDH/HI subtitles
-'subtitle.minSyncScore'        = '65'           // Reject below this threshold
-'subtitle.preferExternal'      = 'false'        // Prefer downloads over embedded
+'subtitle.includeFull'         = 'true'         // Include full dialogue subtitles
+'subtitle.includeForced'       = 'true'         // Include forced (foreign parts only) subtitles
+'subtitle.includeSdh'          = 'false'        // Include SDH/HI subtitles
+'subtitle.minSyncScore'        = '65'           // Reject below this threshold (0 to disable)
 'subtitle.stripEmbedded'       = 'false'        // Remove embedded subs from video after publish
 
 // Provider settings (in providers table)
-'opensubtitles.apiKey'      = ''             // User's API key (optional)
-'opensubtitles.username'    = ''             // Account username
+'opensubtitles.apiKey'      = ''             // User's API key (optional, for VIP tier)
+'opensubtitles.username'    = ''             // Account username (required for OpenSubtitles)
 'opensubtitles.password'    = ''             // Account password (encrypted)
 ```
+
+**Note**: When `minSyncScore` is set to 0 or sync validation is unavailable, subtitles are scored based on other factors only.
 
 **Note on `subtitle.stripEmbedded`**:
 When enabled, after publishing external subtitles, Metarr will:
@@ -787,12 +1012,20 @@ When enabled, after publishing external subtitles, Metarr will:
 ```typescript
 interface SubtitleConfig {
   languages: string[];           // Ordered by priority, e.g., ['en', 'es']
-  maxPerLanguage: number;        // Default: 1
-  includeForced: boolean;        // Default: true
-  includeSdh: boolean;           // Default: true
-  minSyncScore: number;          // Default: 65
-  preferExternal: boolean;       // Default: false
+  includeFull: boolean;          // Default: true - get full dialogue subtitles
+  includeForced: boolean;        // Default: true - get forced (foreign parts) subtitles
+  includeSdh: boolean;           // Default: false - get SDH/HI subtitles
+  minSyncScore: number;          // Default: 65, 0 to disable sync filtering
   stripEmbedded: boolean;        // Default: false - remove embedded subs after publish
+}
+
+// Subtitle type enumeration
+type SubtitleType = 'full' | 'forced' | 'sdh';
+
+// Selection group key
+interface SubtitleGroup {
+  language: string;              // ISO 639-1 code, e.g., 'en'
+  type: SubtitleType;            // 'full', 'forced', or 'sdh'
 }
 
 // Keep artwork/trailers on existing single language
@@ -862,6 +1095,157 @@ function generateSubtitleFilename(
 
   return `${baseName}.${language}${flagStr}.${format}`;
 }
+```
+
+---
+
+## Subtitle Cleaning
+
+All subtitles are cleaned before caching to ensure high-quality output. Cleaning is **always enabled** - ads and attributions are never desirable.
+
+### Why Clean Subtitles?
+
+Subtitle files from providers (especially OpenSubtitles) often contain:
+- **Promotional text**: Links to subtitle websites
+- **Attribution lines**: "Subtitles by...", "Synced by..."
+- **Release info**: Quality tags, encoding info
+- **Social media**: Follow/donate requests
+
+These appear at the **beginning and end** of subtitle files, typically in the first and last 1-3 cues.
+
+### Cleaning Patterns
+
+Based on research from community tools ([sub-clean.sh](https://github.com/brianspilner01/media-server-scripts/blob/master/sub-clean.sh), [srtcleaner](https://pypi.org/project/srtcleaner/), [CleanSubs](https://forum.kodi.tv/showthread.php?tid=283342)):
+
+```typescript
+const AD_PATTERNS = [
+  // === Website/Service Ads ===
+  /opensubtitles\.org/gi,
+  /subscene\.com/gi,
+  /addic7ed\.com/gi,
+  /podnapisi\.net/gi,
+  /yifysubtitles/gi,
+  /thesubdb/gi,
+  /(?:www\.|http).*(?:\.com|\.org|\.net)/gi,
+
+  // === Attribution Lines ===
+  /^(?:subtitle|caption|sub)s?\s+(?:by|from|ripped|synced|corrected).*$/gim,
+  /^(?:translated|sync(?:ed|hronized)?|ripped|encoded)\s+by.*$/gim,
+  /^(?:support|download|get)\s+(?:more\s+)?(?:subtitle|sub)s?\s+(?:at|from).*$/gim,
+
+  // === VIP/Support Ads ===
+  /support us and become vip/gi,
+  /advertise your product/gi,
+  /(?:follow|like|subscribe|donate).*(?:twitter|facebook|patreon|paypal)/gi,
+
+  // === Release/Quality Info ===
+  /^\[.*(?:720p|1080p|2160p|4k|x264|x265|hevc|bluray|webrip|dvdrip|brrip).*\]$/gim,
+  /(?:br|dvd|web)[\.\-]?(?:rip|scr)/gi,
+
+  // === Subtitle Site Attributions ===
+  /\[.*(?:subtitle|sub|caption).*\]/gi,
+  /bozxphd|sazu489|psagmeno|normita|anoxmous/gi,
+];
+
+// Patterns that indicate the ENTIRE cue should be removed
+const FULL_CUE_REMOVAL_PATTERNS = [
+  /^www\./i,
+  /^http/i,
+  /^subtitle[sd]?\s+by/i,
+  /^sync(?:ed|hronized)?\s+by/i,
+  /^corrected\s+by/i,
+  /^encoded\s+by/i,
+  /^ripped\s+by/i,
+  /opensubtitles/i,
+  /subscene/i,
+  /addic7ed/i,
+];
+```
+
+### Cleaning Algorithm
+
+```typescript
+interface CleaningResult {
+  cleaned: string;
+  removedCues: number;
+  modifiedCues: number;
+}
+
+async function cleanSubtitle(
+  content: string,
+  format: 'srt' | 'ass' | 'vtt'
+): Promise<CleaningResult> {
+  // 1. Parse into cues
+  const cues = parseSubtitleCues(content, format);
+
+  let removedCues = 0;
+  let modifiedCues = 0;
+
+  // 2. Process each cue
+  const cleanedCues = cues
+    .map(cue => {
+      // Check if entire cue should be removed
+      if (shouldRemoveCue(cue.text)) {
+        removedCues++;
+        return null;
+      }
+
+      // Clean the cue text
+      const cleanedText = cleanCueText(cue.text);
+
+      if (cleanedText !== cue.text) {
+        modifiedCues++;
+      }
+
+      // Remove if now empty
+      if (cleanedText.trim().length === 0) {
+        removedCues++;
+        return null;
+      }
+
+      return { ...cue, text: cleanedText };
+    })
+    .filter(Boolean);
+
+  // 3. Rebuild subtitle file
+  const cleaned = rebuildSubtitleFile(cleanedCues, format);
+
+  return { cleaned, removedCues, modifiedCues };
+}
+
+function shouldRemoveCue(text: string): boolean {
+  const trimmed = text.trim();
+  return FULL_CUE_REMOVAL_PATTERNS.some(pattern => pattern.test(trimmed));
+}
+
+function cleanCueText(text: string): string {
+  let cleaned = text;
+
+  for (const pattern of AD_PATTERNS) {
+    cleaned = cleaned.replace(pattern, '');
+  }
+
+  // Normalize whitespace
+  cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
+  cleaned = cleaned.trim();
+
+  return cleaned;
+}
+```
+
+### Format-Specific Handling
+
+| Format | Considerations |
+|--------|----------------|
+| **SRT** | Simple text, just clean and preserve `<i>`, `<b>` tags |
+| **ASS** | Preserve styling tags `{\an8}`, `{\pos()}`, colors, etc. |
+| **VTT** | Preserve positioning, `::cue` styling, `<c>` tags |
+
+### Logging
+
+```typescript
+// Log cleaning results for transparency
+logger.info(`Cleaned subtitle: removed ${result.removedCues} cues, modified ${result.modifiedCues} cues`);
 ```
 
 ---
@@ -1133,55 +1517,66 @@ export class SyncValidationService {
 │ [+ Add Language]                                            │
 │ Drag to reorder priority                                    │
 │                                                             │
-│ Maximum per language  [1 ▼]                                 │
+│ Subtitle Types                                              │
+│ ☑ Full subtitles (all dialogue)                             │
+│ ☑ Forced subtitles (foreign parts only)                     │
+│ ☐ SDH/CC subtitles (hearing impaired)                       │
 │                                                             │
-│ ☑ Include forced subtitles                                  │
-│ ☑ Include SDH/CC subtitles                                  │
-│                                                             │
-│ Minimum sync score    [65 ▼]  (reject below this)           │
-│                                                             │
-│ Extract embedded      [Fallback ▼]                          │
-│                       (Only when no download available)     │
+│ Minimum sync score    [65 ▼]  (0 to disable)                │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 ### Movie Detail - Subtitles Tab
 
+Subtitles are grouped by **language**, then by **type** (full/forced/SDH). Users can override auto-selection within each group.
+
 ```
-┌─────────────────────────────────────────────────────────────┐
-│ Subtitles                                      [Refresh]    │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│ Available Subtitles (5)                                     │
-│                                                             │
-│ ┌─────────────────────────────────────────────────────────┐ │
-│ │ ☑ English (en)                                          │ │
-│ │   Source: OpenSubtitles (hash match)                    │ │
-│ │   Sync: 98%  │  Format: SRT  │  Score: 95               │ │
-│ ├─────────────────────────────────────────────────────────┤ │
-│ │ ☐ English (en) - SDH                                    │ │
-│ │   Source: OpenSubtitles                                 │ │
-│ │   Sync: 87%  │  Format: SRT  │  Score: 78               │ │
-│ ├─────────────────────────────────────────────────────────┤ │
-│ │ ☐ English (en)                                          │ │
-│ │   Source: Embedded (stream #3)                          │ │
-│ │   Sync: N/A  │  Format: SRT  │  Score: 55               │ │
-│ ├─────────────────────────────────────────────────────────┤ │
-│ │ ☑ Spanish (es)                                          │ │
-│ │   Source: SubDB (hash match)                            │ │
-│ │   Sync: 95%  │  Format: SRT  │  Score: 92               │ │
-│ ├─────────────────────────────────────────────────────────┤ │
-│ │ ☐ German (de)                                           │ │
-│ │   Source: OpenSubtitles                                 │ │
-│ │   Sync: 72%  │  Format: ASS  │  Score: 45               │ │
-│ │   ⚠ Below minimum sync score                            │ │
-│ └─────────────────────────────────────────────────────────┘ │
-│                                                             │
-│ [Save Selection]                                            │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│ Subtitles                                          [↻ Refresh]  │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│ English                                                         │
+│ ┌───────────────────────────────────────────────────────────┐   │
+│ │ FULL SUBTITLES                                            │   │
+│ │ ● OpenSubtitles (hash match)        Score: 95  [✓] 🔒    │   │
+│ │   Sync: 98% │ Format: SRT                                 │   │
+│ │ ○ Embedded (stream #3)              Score: 72            │   │
+│ │   Sync: N/A │ Format: SRT                                 │   │
+│ │ ○ OpenSubtitles                     Score: 68            │   │
+│ │   Sync: 87% │ Format: SRT                                 │   │
+│ ├───────────────────────────────────────────────────────────┤   │
+│ │ FORCED (Foreign Parts Only)                               │   │
+│ │ ● OpenSubtitles (hash match)        Score: 91  [✓]       │   │
+│ │   Sync: 96% │ Format: SRT                                 │   │
+│ │ ○ Embedded (stream #4)              Score: 68            │   │
+│ │   Sync: N/A │ Format: SRT │ forced flag                   │   │
+│ ├───────────────────────────────────────────────────────────┤   │
+│ │ SDH (Hearing Impaired)                         [Disabled] │   │
+│ │   Not enabled in settings                                 │   │
+│ └───────────────────────────────────────────────────────────┘   │
+│                                                                 │
+│ Spanish                                                         │
+│ ┌───────────────────────────────────────────────────────────┐   │
+│ │ FULL SUBTITLES                                            │   │
+│ │ ● SubDB (hash match)                Score: 92  [✓]       │   │
+│ │   Sync: 95% │ Format: SRT                                 │   │
+│ ├───────────────────────────────────────────────────────────┤   │
+│ │ FORCED (Foreign Parts Only)                               │   │
+│ │   No candidates found               [Search Again]        │   │
+│ └───────────────────────────────────────────────────────────┘   │
+│                                                                 │
+│ Legend: ● Selected  ○ Alternative  🔒 User-locked               │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
 ```
+
+**UI Behavior:**
+- **Radio buttons** within each (language, type) group - click to override
+- **🔒 Lock icon** appears when user manually selects (prevents auto-change on re-enrichment)
+- **Click lock** to unlock and return to auto-selection
+- **Score breakdown** shown on hover/click for transparency
+- **Warnings** for candidates below sync threshold
 
 ### Provider Settings
 
@@ -1191,11 +1586,29 @@ Add OpenSubtitles configuration to Providers page:
 ┌─────────────────────────────────────────────────────────────┐
 │ OpenSubtitles                                   [Test] [●]  │
 ├─────────────────────────────────────────────────────────────┤
-│ API Key     [________________________] (optional, for VIP)  │
+│                                                             │
+│ ⓘ Optional - SubDB works without configuration             │
+│   Configure for better results and more languages           │
+│                                                             │
 │ Username    [________________________]                      │
 │ Password    [________________________]                      │
+│ API Key     [________________________] (optional, for VIP)  │
 │                                                             │
 │ Status: Connected (Free tier: 8/10 downloads today)         │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ SubDB                                           [Test] [●]  │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│ ✓ No configuration required                                 │
+│   Hash-based matching only (no text search)                 │
+│                                                             │
+│ Status: Available                                           │
+│                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -1268,13 +1681,19 @@ Create test fixtures with known subtitle files:
 |----------|------------|
 | Artwork multi-language? | Keep single `preferredLanguage` for artwork/trailers |
 | Sync tool choice? | ffsubsync - actively maintained, Python-native |
-| alass Windows support? | N/A - switched to ffsubsync |
+| Sync validation fallback? | **Skip if unavailable** - if ffsubsync not installed, skip sync validation rather than fail |
+| Audio extraction optimization? | **Extract once, validate all** - extract audio from video once, reuse for all candidate validations |
 | SubDB terms compliance? | Yes, Metarr qualifies as open-source/non-commercial |
+| OpenSubtitles required? | **No - optional** - SubDB works out-of-box; OpenSubtitles enhances when configured |
 | Embedded extraction timing? | **After selection phase** - extract only when selected as best option, validate in temp dir first |
 | Embedded subtitle stripping? | **Optional at publish time** - user can choose to remove embedded subs and rehash the video |
 | Provider rate limit handling? | **Same as other providers** - listen to HTTP response codes (429, etc.) |
-| Subtitle format conversion? | **No conversion** - preserve original format, all common formats are supported by players (see below) |
+| Subtitle format conversion? | **No conversion** - preserve original format, all common formats are supported by players |
 | Cache organization? | **Follow existing pattern** - use `cache_text_files` table with `text_type='subtitle'` |
+| Selection grouping? | **By language + type** - select best per (language, type) combo: full, forced, SDH |
+| User override? | **Manual selection with locking** - user can override; locked selections preserved on re-enrichment |
+| Subtitle cleaning? | **Always enabled** - remove ads/attributions using community-tested patterns |
+| TV Show support? | **Movies first** - TV support will follow once movies are complete |
 
 ### Subtitle Format Strategy
 
