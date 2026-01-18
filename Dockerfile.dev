@@ -1,4 +1,5 @@
 # Development Dockerfile for Metarr
+# Supports PUID/PGID like LinuxServer.io containers
 # Includes hot-reload support via volume mounts
 
 FROM node:20-bookworm-slim
@@ -7,13 +8,20 @@ FROM node:20-bookworm-slim
 # - git: for npm packages that pull from git
 # - python3/make/g++: for native node modules (sqlite3, sharp)
 # - imagemagick: for phash-imagemagick
+# - gosu: for stepping down from root to app user
+# - shadow: for usermod/groupmod
 RUN apt-get update && apt-get install -y \
     git \
     python3 \
     make \
     g++ \
     imagemagick \
+    gosu \
     && rm -rf /var/lib/apt/lists/*
+
+# Create app user and group with default IDs (will be modified at runtime)
+RUN groupadd -g 1000 metarr && \
+    useradd -u 1000 -g metarr -m -s /bin/bash metarr
 
 # Set working directory
 WORKDIR /app
@@ -21,17 +29,28 @@ WORKDIR /app
 # Copy package files first (for layer caching)
 COPY package*.json ./
 
-# Install ALL dependencies (including devDependencies)
+# Install ALL dependencies (including devDependencies) as root
+# This ensures node_modules is created with proper permissions
 RUN npm ci
 
 # Copy the rest of the application
 # In development, this is overridden by volume mount
 COPY . .
 
+# Copy entrypoint script
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
+
+# Create data directory
+RUN mkdir -p /data && chown metarr:metarr /data
+
 # Expose ports
 # 3000 = Backend API
 # 3001 = Vite dev server (frontend)
 EXPOSE 3000 3001
+
+# Use entrypoint to handle PUID/PGID
+ENTRYPOINT ["/docker-entrypoint.sh"]
 
 # Default command for development
 CMD ["npm", "run", "dev:all"]
