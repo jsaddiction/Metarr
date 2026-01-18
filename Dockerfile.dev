@@ -1,0 +1,37 @@
+# Development Dockerfile for Metarr
+# Includes hot-reload support via volume mounts
+
+FROM node:20-bookworm-slim
+
+# Install system dependencies
+# - git: for npm packages that pull from git
+# - python3/make/g++: for native node modules (sqlite3, sharp)
+# - imagemagick: for phash-imagemagick
+RUN apt-get update && apt-get install -y \
+    git \
+    python3 \
+    make \
+    g++ \
+    imagemagick \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /app
+
+# Copy package files first (for layer caching)
+COPY package*.json ./
+
+# Install ALL dependencies (including devDependencies)
+RUN npm ci
+
+# Copy the rest of the application
+# In development, this is overridden by volume mount
+COPY . .
+
+# Expose ports
+# 3000 = Backend API
+# 3001 = Vite dev server (frontend)
+EXPOSE 3000 3001
+
+# Default command for development
+CMD ["npm", "run", "dev:all"]

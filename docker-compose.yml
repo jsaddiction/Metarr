@@ -1,0 +1,104 @@
+# Metarr Development Stack
+#
+# Usage:
+#   docker compose up -d          # Start all services
+#   docker compose logs -f metarr # View Metarr logs
+#   docker compose down           # Stop all services
+#
+# Access:
+#   Metarr Frontend: http://localhost:3001
+#   Metarr API:      http://localhost:3000
+#   Radarr:          http://localhost:7878
+#   NZBGet:          http://localhost:6789
+#   MariaDB:         localhost:3306
+
+services:
+  # ===========================================
+  # METARR - Main Application
+  # ===========================================
+  metarr:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: metarr-dev
+    ports:
+      - "3000:3000"   # Backend API
+      - "3001:3001"   # Frontend dev server
+    volumes:
+      # Source code mount - changes reflect immediately
+      - .:/app
+      # Preserve node_modules from container (don't overwrite with host)
+      - /app/node_modules
+      # Persistent data
+      - ./metarr-data:/data
+    environment:
+      - NODE_ENV=development
+      - METARR_DATA_DIR=/data
+      - METARR_LOG_LEVEL=debug
+    depends_on:
+      - mariadb
+    networks:
+      - metarr-network
+    restart: unless-stopped
+
+  # ===========================================
+  # RADARR - Movie Management (Test Instance)
+  # ===========================================
+  radarr:
+    image: lscr.io/linuxserver/radarr:latest
+    container_name: radarr-dev
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/New_York
+    volumes:
+      - ./radarr-config:/config
+      - ./media/movies:/movies
+      - ./downloads:/downloads
+    ports:
+      - "7878:7878"
+    networks:
+      - metarr-network
+    restart: unless-stopped
+
+  # ===========================================
+  # NZBGET - Usenet Downloader
+  # ===========================================
+  nzbget:
+    image: lscr.io/linuxserver/nzbget:latest
+    container_name: nzbget-dev
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/New_York
+    volumes:
+      - ./nzbget-config:/config
+      - ./downloads:/downloads
+    ports:
+      - "6789:6789"
+    networks:
+      - metarr-network
+    restart: unless-stopped
+
+  # ===========================================
+  # MARIADB - Kodi Shared Library Database
+  # ===========================================
+  mariadb:
+    image: mariadb:10.11
+    container_name: mariadb-dev
+    environment:
+      - MYSQL_ROOT_PASSWORD=devroot
+      - MYSQL_DATABASE=kodi_video
+      - MYSQL_USER=kodi
+      - MYSQL_PASSWORD=kodi
+    volumes:
+      - ./mariadb-data:/var/lib/mysql
+    ports:
+      - "3306:3306"
+    networks:
+      - metarr-network
+    restart: unless-stopped
+
+networks:
+  metarr-network:
+    driver: bridge

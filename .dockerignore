@@ -1,0 +1,44 @@
+# Dependencies (installed in container)
+node_modules
+
+# Build outputs
+dist
+public/frontend/dist
+
+# Data directories (created by docker-compose volumes)
+data
+metarr-data
+radarr-config
+nzbget-config
+mariadb-data
+downloads
+media
+logs
+
+# Git
+.git
+.gitignore
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment files with secrets
+.env
+.env.local
+.env.*.local
+
+# Test artifacts
+coverage
+*.log
+
+# Documentation (not needed in container)
+docs
+*.md
+!README.md
