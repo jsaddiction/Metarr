@@ -37,23 +37,24 @@ Current Metarr has:
 ## Simplified Database Schema
 
 **Target: 10 tables** (down from 67)
+**Database: PostgreSQL 16**
 
 ```sql
 -- Connection to *arr applications
 CREATE TABLE arr_connections (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     type TEXT NOT NULL,              -- 'radarr', 'sonarr', 'lidarr'
     name TEXT NOT NULL,
     url TEXT NOT NULL,
     api_key TEXT NOT NULL,
-    enabled INTEGER DEFAULT 1,
-    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    enabled BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Media items (synced from *arr via webhooks)
 CREATE TABLE media_items (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     arr_connection_id INTEGER NOT NULL REFERENCES arr_connections(id),
     arr_id INTEGER NOT NULL,         -- ID in the *arr system
     media_type TEXT NOT NULL,        -- 'movie', 'episode', 'track'
@@ -65,15 +66,15 @@ CREATE TABLE media_items (
     tvdb_id INTEGER,
     status TEXT DEFAULT 'pending',   -- 'pending', 'enriched', 'published', 'error'
     last_event TEXT,                 -- 'import', 'rename', 'delete'
-    last_event_at TEXT,
-    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    last_event_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE(arr_connection_id, arr_id)
 );
 
 -- Assets fetched from providers (candidates + cached)
 CREATE TABLE assets (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     media_item_id INTEGER NOT NULL REFERENCES media_items(id) ON DELETE CASCADE,
     asset_type TEXT NOT NULL,        -- 'poster', 'fanart', 'banner', 'nfo', 'trailer'
     provider TEXT NOT NULL,          -- 'tmdb', 'fanart', 'local', 'generated'
@@ -85,80 +86,80 @@ CREATE TABLE assets (
     height INTEGER,
     vote_average REAL,               -- Provider rating
     vote_count INTEGER,
-    selected INTEGER DEFAULT 0,      -- User or auto-selected for publishing
-    locked INTEGER DEFAULT 0,        -- Don't auto-replace
-    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    selected BOOLEAN DEFAULT FALSE,  -- User or auto-selected for publishing
+    locked BOOLEAN DEFAULT FALSE,    -- Don't auto-replace
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Published assets (what's in the media folder)
 CREATE TABLE published_assets (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     media_item_id INTEGER NOT NULL REFERENCES media_items(id) ON DELETE CASCADE,
     asset_id INTEGER REFERENCES assets(id) ON DELETE SET NULL,
     asset_type TEXT NOT NULL,
     published_path TEXT NOT NULL,    -- e.g., /movies/Title (2024)/poster.jpg
     published_hash TEXT NOT NULL,    -- For detecting external changes
-    published_at TEXT DEFAULT CURRENT_TIMESTAMP
+    published_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Job queue
 CREATE TABLE jobs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     type TEXT NOT NULL,              -- 'enrich', 'publish', 'notify', 'protect'
     media_item_id INTEGER REFERENCES media_items(id) ON DELETE CASCADE,
-    payload TEXT,                    -- JSON
+    payload JSONB,                   -- Job-specific data
     status TEXT DEFAULT 'pending',   -- 'pending', 'running', 'completed', 'failed'
     attempts INTEGER DEFAULT 0,
     max_attempts INTEGER DEFAULT 3,
     error TEXT,
-    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-    started_at TEXT,
-    completed_at TEXT
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    started_at TIMESTAMPTZ,
+    completed_at TIMESTAMPTZ
 );
 
 -- Media player connections
 CREATE TABLE player_connections (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     type TEXT NOT NULL,              -- 'kodi', 'jellyfin', 'plex'
     name TEXT NOT NULL,
     url TEXT NOT NULL,
     username TEXT,
     password TEXT,
     api_key TEXT,
-    enabled INTEGER DEFAULT 1,
-    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    enabled BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Provider configuration
 CREATE TABLE provider_config (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     provider TEXT NOT NULL UNIQUE,   -- 'tmdb', 'fanart', 'omdb'
     api_key TEXT,                    -- User's key (null = use embedded)
-    enabled INTEGER DEFAULT 1,
+    enabled BOOLEAN DEFAULT TRUE,
     priority INTEGER DEFAULT 0,      -- Higher = preferred
     rate_limit_remaining INTEGER,
-    rate_limit_reset TEXT,
-    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    rate_limit_reset TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Application settings (key-value store)
 CREATE TABLE settings (
     key TEXT PRIMARY KEY,
-    value TEXT NOT NULL,             -- JSON encoded
-    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    value JSONB NOT NULL,            -- JSON encoded
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Activity log (recent events)
 CREATE TABLE activity_log (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     event_type TEXT NOT NULL,        -- 'webhook', 'enrich', 'publish', 'error'
     media_item_id INTEGER REFERENCES media_items(id) ON DELETE SET NULL,
     message TEXT NOT NULL,
-    details TEXT,                    -- JSON
-    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    details JSONB,                   -- Additional context
+    created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Indexes
@@ -398,4 +399,5 @@ The `public/frontend/` stays intact. We update:
 | 2025-01-18 | Start with Radarr + Kodi only | Focused MVP, expand later |
 | 2025-01-18 | 10 tables max | Current 67 is unmaintainable |
 | 2025-01-18 | No orchestrators | Simple services with methods |
-| 2025-01-18 | SQLite for development | Matches current, easy to work with |
+| 2025-01-18 | PostgreSQL as database | Better JSON support, production-ready, runs in container with Metarr |
+| 2025-01-18 | Separate Docker stack | Metarr + Postgres only; Radarr/NZBGet/MariaDB managed separately |

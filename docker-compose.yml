@@ -8,9 +8,11 @@
 # Access:
 #   Metarr Frontend: http://localhost:3001
 #   Metarr API:      http://localhost:3000
-#   Radarr:          http://localhost:7878
-#   NZBGet:          http://localhost:6789
-#   MariaDB:         localhost:3306
+#   PostgreSQL:      localhost:5432
+#
+# Note: Radarr, NZBGet, and Kodi MariaDB are managed separately
+# via your existing compose file. Configure Metarr to connect
+# to those services via environment variables.
 
 services:
   # ===========================================
@@ -29,74 +31,46 @@ services:
       - .:/app
       # Preserve node_modules from container (don't overwrite with host)
       - /app/node_modules
-      # Persistent data
+      # Persistent data (cache, logs)
       - ./metarr-data:/data
     environment:
       - NODE_ENV=development
       - METARR_DATA_DIR=/data
       - METARR_LOG_LEVEL=debug
+      # PostgreSQL connection
+      - DATABASE_URL=postgres://metarr:metarr@postgres:5432/metarr
+      # These will be configured via UI, but can be overridden here
+      # - RADARR_URL=http://your-radarr:7878
+      # - RADARR_API_KEY=your-api-key
+      # - KODI_URL=http://your-kodi:8080
     depends_on:
-      - mariadb
+      postgres:
+        condition: service_healthy
     networks:
       - metarr-network
     restart: unless-stopped
 
   # ===========================================
-  # RADARR - Movie Management (Test Instance)
+  # POSTGRESQL - Metarr Database
   # ===========================================
-  radarr:
-    image: lscr.io/linuxserver/radarr:latest
-    container_name: radarr-dev
+  postgres:
+    image: postgres:16-alpine
+    container_name: metarr-postgres
     environment:
-      - PUID=1000
-      - PGID=1000
-      - TZ=America/New_York
+      - POSTGRES_USER=metarr
+      - POSTGRES_PASSWORD=metarr
+      - POSTGRES_DB=metarr
     volumes:
-      - ./radarr-config:/config
-      - ./media/movies:/movies
-      - ./downloads:/downloads
+      - ./postgres-data:/var/lib/postgresql/data
     ports:
-      - "7878:7878"
+      - "5432:5432"
     networks:
       - metarr-network
-    restart: unless-stopped
-
-  # ===========================================
-  # NZBGET - Usenet Downloader
-  # ===========================================
-  nzbget:
-    image: lscr.io/linuxserver/nzbget:latest
-    container_name: nzbget-dev
-    environment:
-      - PUID=1000
-      - PGID=1000
-      - TZ=America/New_York
-    volumes:
-      - ./nzbget-config:/config
-      - ./downloads:/downloads
-    ports:
-      - "6789:6789"
-    networks:
-      - metarr-network
-    restart: unless-stopped
-
-  # ===========================================
-  # MARIADB - Kodi Shared Library Database
-  # ===========================================
-  mariadb:
-    image: mariadb:10.11
-    container_name: mariadb-dev
-    environment:
-      - MYSQL_ROOT_PASSWORD=devroot
-      - MYSQL_DATABASE=kodi_video
-      - MYSQL_USER=kodi
-      - MYSQL_PASSWORD=kodi
-    volumes:
-      - ./mariadb-data:/var/lib/mysql
-    ports:
-      - "3306:3306"
-    networks:
-      - metarr-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U metarr"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
 
 networks:

@@ -53,11 +53,7 @@ test-media/
 
 # Docker development data directories (created by docker-compose)
 metarr-data/
-radarr-config/
-nzbget-config/
-mariadb-data/
-downloads/
-media/
+postgres-data/
 
 # IDE and editor files
 .vscode/
