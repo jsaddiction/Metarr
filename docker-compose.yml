@@ -17,7 +17,6 @@ services:
       - "3001:3001"
     volumes:
       - .:/app
-      - /app/node_modules
       - ./metarr-data:/data
     environment:
       - PUID=${PUID:-1000}

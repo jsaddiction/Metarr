@@ -22,15 +22,25 @@ RUN apt-get update && apt-get install -y \
 RUN groupadd -g 1000 metarr && \
     useradd -u 1000 -g metarr -m -s /bin/bash metarr
 
+# Create directories
+# /app = source code (will be volume mounted)
+# /node_modules = dependencies (stays in container, not mounted)
+# /data = persistent data
+RUN mkdir -p /app /node_modules /data && \
+    chown -R metarr:metarr /app /node_modules /data
+
 # Set working directory
 WORKDIR /app
 
-# Copy package files first (for layer caching)
-COPY package*.json ./
+# Install dependencies to /node_modules (outside of /app)
+# This way the host mount of /app doesn't affect node_modules
+ENV NODE_PATH=/node_modules
+ENV PATH="/node_modules/.bin:${PATH}"
 
-# Install ALL dependencies (including devDependencies) as root
-# This ensures node_modules is created with proper permissions
-RUN npm ci
+# Copy package files and install to /node_modules
+COPY package*.json ./
+RUN npm ci --prefix / && \
+    chown -R metarr:metarr /node_modules
 
 # Copy the rest of the application
 # In development, this is overridden by volume mount
@@ -39,9 +49,6 @@ COPY . .
 # Copy entrypoint script
 COPY docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
-
-# Create data directory
-RUN mkdir -p /data && chown metarr:metarr /data
 
 # Expose single port - Vite proxies API requests internally
 # 3001 = Vite dev server (proxies /api/* to backend on 3000 internally)
