@@ -18,16 +18,17 @@ RUN apt-get update && apt-get install -y \
     gosu \
     && rm -rf /var/lib/apt/lists/*
 
-# Create app user and group with default IDs (will be modified at runtime)
-RUN groupadd -g 1000 metarr && \
-    useradd -u 1000 -g metarr -m -s /bin/bash metarr
+# Create abc user and group with placeholder IDs
+# These will be modified at runtime by the entrypoint to match PUID/PGID
+RUN groupadd -g 911 abc && \
+    useradd -u 911 -g abc -m -s /bin/bash abc
 
 # Create directories
 # /app = source code (will be volume mounted)
 # /node_modules = dependencies (stays in container, not mounted)
 # /data = persistent data
 RUN mkdir -p /app /node_modules /data && \
-    chown -R metarr:metarr /app /node_modules /data
+    chown -R abc:abc /app /node_modules /data
 
 # Set working directory
 WORKDIR /app
@@ -40,7 +41,7 @@ ENV PATH="/node_modules/.bin:${PATH}"
 # Copy package files and install to /node_modules
 COPY package*.json ./
 RUN npm ci --prefix / && \
-    chown -R metarr:metarr /node_modules
+    chown -R abc:abc /node_modules
 
 # Copy the rest of the application
 # In development, this is overridden by volume mount
