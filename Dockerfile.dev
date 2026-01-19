@@ -9,7 +9,6 @@ FROM node:20-bookworm-slim
 # - python3/make/g++: for native node modules (sqlite3, sharp)
 # - imagemagick: for phash-imagemagick
 # - gosu: for stepping down from root to app user
-# - shadow: for usermod/groupmod
 RUN apt-get update && apt-get install -y \
     git \
     python3 \
@@ -44,10 +43,9 @@ RUN chmod +x /docker-entrypoint.sh
 # Create data directory
 RUN mkdir -p /data && chown metarr:metarr /data
 
-# Expose ports
-# 3000 = Backend API
-# 3001 = Vite dev server (frontend)
-EXPOSE 3000 3001
+# Expose single port - Vite proxies API requests internally
+# 3001 = Vite dev server (proxies /api/* to backend on 3000 internally)
+EXPOSE 3001
 
 # Use entrypoint to handle PUID/PGID
 ENTRYPOINT ["/docker-entrypoint.sh"]

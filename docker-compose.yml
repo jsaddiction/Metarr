@@ -1,83 +1,46 @@
-# Metarr Development Stack
+# Metarr Development Stack - Standalone Reference
+#
+# This file is for standalone testing. For integration into a monolithic
+# compose file, see docs/development/DEV_ENVIRONMENT_SETUP.md
 #
 # Usage:
-#   docker compose up -d          # Start all services
-#   docker compose logs -f metarr # View Metarr logs
-#   docker compose down           # Stop all services
-#
-# Access:
-#   Metarr Frontend: http://localhost:3001
-#   Metarr API:      http://localhost:3000
-#   PostgreSQL:      localhost:5432
-#
-# Note: Radarr, NZBGet, and Kodi MariaDB are managed separately
-# via your existing compose file. Configure Metarr to connect
-# to those services via environment variables.
+#   docker compose up -d
+#   docker compose logs -f metarr
 
 services:
-  # ===========================================
-  # METARR - Main Application
-  # ===========================================
   metarr:
     build:
       context: .
       dockerfile: Dockerfile.dev
-    container_name: metarr-dev
+    container_name: metarr
     ports:
-      - "3000:3000"   # Backend API
-      - "3001:3001"   # Frontend dev server
+      - "3001:3001"
     volumes:
-      # Source code mount - changes reflect immediately
       - .:/app
-      # Preserve node_modules from container (don't overwrite with host)
       - /app/node_modules
-      # Persistent data (cache, logs)
       - ./metarr-data:/data
     environment:
-      # LinuxServer.io style PUID/PGID
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
       - TZ=${TZ:-America/New_York}
-      # Application settings
-      - NODE_ENV=development
-      - METARR_DATA_DIR=/data
-      - METARR_LOG_LEVEL=debug
-      # PostgreSQL connection
-      - DATABASE_URL=postgres://metarr:metarr@postgres:5432/metarr
-      # These will be configured via UI, but can be overridden here
-      # - RADARR_URL=http://your-radarr:7878
-      # - RADARR_API_KEY=your-api-key
-      # - KODI_URL=http://your-kodi:8080
+      - DATABASE_URL=postgres://metarr:metarr@metarr-db:5432/metarr
     depends_on:
-      postgres:
+      metarr-db:
         condition: service_healthy
-    networks:
-      - metarr-network
     restart: unless-stopped
 
-  # ===========================================
-  # POSTGRESQL - Metarr Database
-  # ===========================================
-  postgres:
+  metarr-db:
     image: postgres:16-alpine
-    container_name: metarr-postgres
+    container_name: metarr-db
     environment:
       - POSTGRES_USER=metarr
       - POSTGRES_PASSWORD=metarr
       - POSTGRES_DB=metarr
     volumes:
       - ./postgres-data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
-    networks:
-      - metarr-network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U metarr"]
       interval: 5s
       timeout: 5s
       retries: 5
     restart: unless-stopped
-
-networks:
-  metarr-network:
-    driver: bridge
