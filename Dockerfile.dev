@@ -32,11 +32,12 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies in /app/node_modules (standard location)
-# The volume mount will shadow /app but we'll handle node_modules separately
+# Install dependencies to /node_modules (outside /app to avoid volume shadow)
+# Keep node_modules owned by root - Node.js only needs read access
+# This avoids slow usermod scanning at runtime when PUID/PGID changes
 RUN npm ci && \
     mv node_modules /node_modules && \
-    chown -R abc:abc /node_modules /data
+    chown abc:abc /data
 
 # Set NODE_PATH so Node finds modules in /node_modules
 ENV NODE_PATH=/node_modules
