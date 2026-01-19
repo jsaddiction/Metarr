@@ -16,23 +16,26 @@ echo "
 
 # Modify abc group to match PGID
 if [ "$(id -g abc)" != "${PGID}" ]; then
-    echo "[entrypoint] Setting abc group to GID ${PGID}..."
     groupmod -o -g "${PGID}" abc
-    echo "[entrypoint] Group modified"
 fi
 
 # Modify abc user to match PUID
 if [ "$(id -u abc)" != "${PUID}" ]; then
-    echo "[entrypoint] Setting abc user to UID ${PUID}..."
     usermod -o -u "${PUID}" abc
-    echo "[entrypoint] User modified"
 fi
 
-# Fix ownership of data directory
-echo "[entrypoint] Setting ownership of /data..."
-chown abc:abc /data
-echo "[entrypoint] /data ownership set"
+# lsiown: LinuxServer.io style ownership fix
+# Only chowns files that don't already have correct ownership (fast on repeat starts)
+lsiown() {
+    local user group path
+    IFS=: read -r user group <<< "$1"
+    path="$2"
+    find "$path" \( ! -group "$group" -o ! -user "$user" \) -exec chown "$user":"$group" {} + 2>/dev/null || true
+}
+
+# Fix ownership of data directory (only files with wrong ownership)
+lsiown abc:abc /data
 
 # Execute the command as the abc user
-echo "[entrypoint] Starting Metarr as abc (${PUID}:${PGID})..."
+echo "Starting Metarr as abc (${PUID}:${PGID})..."
 exec gosu abc "$@"
