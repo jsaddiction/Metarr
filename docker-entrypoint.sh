@@ -30,8 +30,7 @@ fi
 echo "Setting ownership of /data..."
 chown -R abc:abc /data
 
-# Fix ownership of node_modules
-chown -R abc:abc /node_modules 2>/dev/null || true
+# Note: /node_modules is already owned by abc from the Docker build
 
 # Execute the command as the abc user
 echo "Starting Metarr as abc (${PUID}:${PGID})..."
