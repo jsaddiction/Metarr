@@ -16,22 +16,23 @@ echo "
 
 # Modify abc group to match PGID
 if [ "$(id -g abc)" != "${PGID}" ]; then
-    echo "Setting abc group to GID ${PGID}..."
+    echo "[entrypoint] Setting abc group to GID ${PGID}..."
     groupmod -o -g "${PGID}" abc
+    echo "[entrypoint] Group modified"
 fi
 
 # Modify abc user to match PUID
 if [ "$(id -u abc)" != "${PUID}" ]; then
-    echo "Setting abc user to UID ${PUID}..."
+    echo "[entrypoint] Setting abc user to UID ${PUID}..."
     usermod -o -u "${PUID}" abc
+    echo "[entrypoint] User modified"
 fi
 
 # Fix ownership of data directory
-echo "Setting ownership of /data..."
-chown -R abc:abc /data
-
-# Note: /node_modules is already owned by abc from the Docker build
+echo "[entrypoint] Setting ownership of /data..."
+chown abc:abc /data
+echo "[entrypoint] /data ownership set"
 
 # Execute the command as the abc user
-echo "Starting Metarr as abc (${PUID}:${PGID})..."
+echo "[entrypoint] Starting Metarr as abc (${PUID}:${PGID})..."
 exec gosu abc "$@"
